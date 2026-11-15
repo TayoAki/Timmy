@@ -1907,3 +1907,175 @@ button.rp-person:hover {
   color: var(--text-3);
   flex: none;
 }
+
+/* ───────────── Appearance ───────────── */
+
+.palette-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.palette-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 10px 12px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  text-align: left;
+  transition: border-color 0.12s;
+}
+
+.palette-card:hover {
+  border-color: var(--line-strong);
+}
+
+.palette-card[aria-checked='true'] {
+  border-color: var(--accent);
+  outline: 1px solid var(--accent);
+}
+
+.palette-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 4px;
+}
+
+.palette-card-name {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.palette-card-name svg {
+  color: var(--accent-text);
+}
+
+.palette-card-hint {
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+/* Mini app shell painted with the palette's own tokens. */
+.pv {
+  display: grid;
+  grid-template-columns: 9% 27% minmax(0, 1fr);
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.pv i {
+  display: block;
+  border-radius: 3px;
+}
+
+.pv-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding-top: 12px;
+  background: var(--rail);
+  border-right: 1px solid var(--line);
+}
+
+.pv-rail i {
+  width: 11px;
+  height: 11px;
+  background: var(--line-strong);
+}
+
+.pv-rail .pv-logo {
+  background: var(--accent);
+}
+
+.pv-side {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px 9px;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+}
+
+.pv-nav {
+  height: 8px;
+  background: var(--line);
+}
+
+.pv-nav.on {
+  background: var(--accent-soft);
+}
+
+.pv-nav.short {
+  width: 60%;
+}
+
+.pv-main {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px;
+  background: var(--surface);
+}
+
+.pv-title {
+  width: 64%;
+  height: 9px;
+  background: var(--text);
+}
+
+.pv-line {
+  width: 90%;
+  height: 5px;
+  background: var(--text-3);
+}
+
+.pv-line.short {
+  width: 58%;
+}
+
+.pv-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.pv-block {
+  flex: 1;
+  height: 24px;
+  background: var(--surface-2);
+}
+
+.pv-button {
+  width: 40%;
+  height: 12px;
+  margin-top: auto;
+  background: var(--accent);
+}
+
+.seg-short {
+  display: none;
+}
+
+@container (max-width: 480px) {
+  .seg-long {
+    display: none;
+  }
+
+  .seg-short {
+    display: inline;
+  }
+
+  .pv {
+    aspect-ratio: 16 / 8;
+  }
+}

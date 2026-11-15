@@ -6,6 +6,7 @@ import {
   Hourglass,
   Inbox,
   ListFilter,
+  Palette,
   PenLine,
   Reply,
   Star,
@@ -284,7 +285,7 @@ const RULE_GROUPS: { id: RuleGroup; name: string; hint: string; icon: LucideIcon
 
 function RulesSide() {
   const { state, dispatch } = useStore();
-  const tab = state.route.view === 'rules' ? state.route.tab : 'triage';
+  const tab = state.route.view === 'rules' ? state.route.tab : null;
   return (
     <>
       <div className="side-head">
@@ -317,6 +318,23 @@ function RulesSide() {
               <span className="nav-count">{state.rules.filter((r) => r.group === g.id).length}</span>
             </button>
           ))}
+        </div>
+        <div className="side-group">
+          <div className="side-title">App</div>
+          <button
+            className="nav-item"
+            style={tint('var(--accent)')}
+            aria-current={state.route.view === 'appearance' ? 'page' : undefined}
+            onClick={() => dispatch({ type: 'navigate', route: { view: 'appearance' } })}
+          >
+            <span className="nav-icon">
+              <Palette size={16} />
+            </span>
+            <span className="nav-text">
+              <span className="nav-name">Appearance</span>
+              <span className="nav-hint">Light, dark and palettes</span>
+            </span>
+          </button>
         </div>
         <div className="side-group">
           <div className="side-title">Connected</div>

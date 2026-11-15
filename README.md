@@ -48,6 +48,7 @@ Files follow a numbered folder structure (`[02] Work › [10] Acme`, at most 5 l
 - **Thread:** `F` / `W` / `R` / `E` move the thread, `S` stars it, `Esc` goes back. Edit the draft, then **Send & track**. Every move can be undone from the toast.
 - **Search:** `⌘K` or `/`. Operators: `from:dana`, `is:waiting`, `project:acme`, `has:draft`, `has:attachment`
 - **Rules:** toggle rules or add one in plain language
+- **Appearance:** pick Light, Dark or Match system, and one of three dark palettes (Midnight, Graphite, Espresso) from the bottom bar or Settings › Appearance. The choice is saved in the browser.
 
 ## Design checks
 
@@ -68,7 +69,8 @@ src/
   state/      store.tsx — reducer for moves, triage, sending drafts, undo
   components/ shell (LeftRail, Sidebar, Frame, RightPanel, BottomBar), SearchPalette, shared bits
   views/      TodayView, MailboxView, ThreadView, OtherViews (activity, people, files, rules)
-  styles/     tokens.css (light/dark), layout.css, ui.css, views.css
+  state/      theme.tsx — light/dark mode and the dark palette, saved per browser
+  styles/     tokens.css (light + Midnight/Graphite/Espresso), layout.css, ui.css, views.css
 ```
 
 To connect a backend, replace `src/data/mock.ts` with API calls and turn the reducer actions in `src/state/store.tsx` into requests.

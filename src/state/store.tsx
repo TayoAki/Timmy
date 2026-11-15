@@ -13,7 +13,8 @@ export type Route =
   | { view: 'activity'; tab: string }
   | { view: 'people'; tab: string; person?: string }
   | { view: 'files'; tab: string; folder: string }
-  | { view: 'rules'; tab: RuleGroup };
+  | { view: 'rules'; tab: RuleGroup }
+  | { view: 'appearance' };
 
 export type Section = 'mail' | 'activity' | 'people' | 'files' | 'rules';
 
@@ -21,7 +22,7 @@ export const sectionOf = (r: Route): Section => {
   if (r.view === 'activity') return 'activity';
   if (r.view === 'people') return 'people';
   if (r.view === 'files') return 'files';
-  if (r.view === 'rules') return 'rules';
+  if (r.view === 'rules' || r.view === 'appearance') return 'rules';
   return 'mail';
 };
 

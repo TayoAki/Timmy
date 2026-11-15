@@ -33,6 +33,8 @@ export function RightPanel() {
     body = <FilesContext />;
   } else if (r.view === 'rules') {
     body = <RulesContext />;
+  } else if (r.view === 'appearance') {
+    body = <AppearanceContext />;
   } else if (r.view === 'activity') {
     body = <ActivityContext />;
   } else {
@@ -559,6 +561,23 @@ function RulesContext() {
             </li>
           ))}
         </ul>
+      </Section>
+    </>
+  );
+}
+
+// ───────────── Appearance ─────────────
+
+function AppearanceContext() {
+  return (
+    <>
+      <Section title="Readable in every palette">
+        <p className="rp-text">Body and secondary text stay at 4.5:1 contrast or better in all three dark palettes and in light mode.</p>
+      </Section>
+      <Section title="Labels keep their colors">
+        <p className="rp-text">
+          Follow Up stays red, Waiting amber and Read Through blue in every palette, so a label means the same thing whichever look you pick.
+        </p>
       </Section>
     </>
   );

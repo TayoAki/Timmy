@@ -589,8 +589,17 @@
   animation: toast-in 0.32s var(--ease-out);
 }
 
-:root[data-theme='dark'] .toast {
-  background: #2d2c29;
+[data-theme='dark'] .toast {
+  background: var(--line-strong);
+  color: var(--text);
+}
+
+[data-theme='dark'] .toast button:not(.toast-x) {
+  color: var(--accent-text);
+}
+
+[data-theme='dark'] .toast .toast-x {
+  color: var(--text-3);
 }
 
 .toast.warn {
@@ -796,4 +805,173 @@ mark {
   .palette-foot .hide-sm {
     display: none;
   }
+}
+
+/* ───────────── Theme controls ───────────── */
+
+/* Painted from whichever palette its data attributes select. */
+.swatch {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+}
+
+.swatch-sm {
+  width: 30px;
+  height: 20px;
+}
+
+.swatch-md {
+  width: 40px;
+  height: 26px;
+}
+
+.swatch::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 0 38%;
+  background: var(--surface);
+  border-left: 1px solid var(--line);
+}
+
+.swatch::after {
+  content: '';
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.seg-control {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+.seg-control button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.seg-control button:hover {
+  color: var(--text);
+}
+
+.seg-control button[aria-checked='true'] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+
+[data-theme='dark'] .seg-control button[aria-checked='true'] {
+  background: var(--line-strong);
+}
+
+.seg-control-lg {
+  max-width: 440px;
+}
+
+.seg-control-lg button {
+  height: 34px;
+  font-size: 13.5px;
+}
+
+.theme-menu {
+  position: relative;
+}
+
+.theme-pop {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  width: 296px;
+  padding: 12px;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-lg);
+  color: var(--text);
+  font-size: 13px;
+  white-space: normal;
+  z-index: 60;
+  animation: pop-in 0.24s var(--ease-out);
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
+}
+
+.theme-pop-label {
+  margin: 14px 4px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3);
+}
+
+.theme-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.theme-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border-radius: var(--r);
+  text-align: left;
+}
+
+.theme-option:hover {
+  background: var(--hover);
+}
+
+.theme-option[aria-checked='true'] {
+  background: var(--accent-soft);
+}
+
+.theme-option-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.theme-option-name {
+  font-weight: 550;
+}
+
+.theme-option-hint {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.theme-option-check {
+  color: var(--accent-text);
+  flex: none;
 }

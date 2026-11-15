@@ -6,6 +6,8 @@ import { RightPanel } from './components/RightPanel';
 import { SearchPalette } from './components/SearchPalette';
 import { Sidebar } from './components/Sidebar';
 import { StoreProvider, useStore, type Toast } from './state/store';
+import { ThemeProvider } from './state/theme';
+import { AppearanceView } from './views/AppearanceView';
 import { MailboxView } from './views/MailboxView';
 import { ActivityView, FilesView, PeopleView, RulesView } from './views/OtherViews';
 import { ThreadView } from './views/ThreadView';
@@ -13,9 +15,11 @@ import { TodayView } from './views/TodayView';
 
 export default function App() {
   return (
-    <StoreProvider>
-      <Shell />
-    </StoreProvider>
+    <ThemeProvider>
+      <StoreProvider>
+        <Shell />
+      </StoreProvider>
+    </ThemeProvider>
   );
 }
 
@@ -51,6 +55,7 @@ function Shell() {
       {r.view === 'people' && <PeopleView tab={r.tab} person={r.person} />}
       {r.view === 'files' && <FilesView key={r.folder} tab={r.tab} folder={r.folder} />}
       {r.view === 'rules' && <RulesView tab={r.tab} />}
+      {r.view === 'appearance' && <AppearanceView />}
       <RightPanel />
       <BottomBar />
       <div className="scrim" onClick={() => state.drawer && dispatch({ type: 'drawer', drawer: state.drawer })} />

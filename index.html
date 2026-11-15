@@ -6,6 +6,20 @@
     <meta name="description" content="Timmy — an email agent that triages your inbox, drafts replies and tracks what you owe and what you're waiting on." />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>Timmy</title>
+    <script>
+      // Apply the saved theme before first paint (same keys as src/state/theme.tsx).
+      (function () {
+        var mode = 'system';
+        var palette = 'midnight';
+        try {
+          mode = localStorage.getItem('timmy-mode') || localStorage.getItem('timmy-theme') || 'system';
+          palette = localStorage.getItem('timmy-palette') || 'midnight';
+        } catch (e) {}
+        var dark = mode === 'dark' || (mode === 'system' && !!window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-palette', palette);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
