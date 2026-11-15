@@ -1,0 +1,66 @@
+import { Bell, FileText, House, Search, Settings, Users } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { sectionOf, useStore, type Route, type Section } from '../state/store';
+import { Avatar, TimmyMark } from './common';
+
+interface Item {
+  section: Section | 'search';
+  label: string;
+  icon: ReactNode;
+  route?: Route;
+  badge?: number;
+}
+
+export function LeftRail() {
+  const { state, dispatch } = useStore();
+  const current = state.searchOpen ? 'search' : sectionOf(state.route);
+  const inbox = state.threads.filter((t) => t.box === 'inbox').length;
+
+  const items: Item[] = [
+    { section: 'mail', label: 'Today & mail', icon: <House size={20} />, route: { view: 'today', tab: 'brief' } },
+    { section: 'search', label: 'Search  ⌘K', icon: <Search size={20} /> },
+    { section: 'activity', label: 'Timmy’s activity', icon: <Bell size={20} />, route: { view: 'activity', tab: 'all' }, badge: inbox || undefined },
+    { section: 'people', label: 'People', icon: <Users size={20} />, route: { view: 'people', tab: 'priority', person: 'dana' } },
+    { section: 'files', label: 'Files', icon: <FileText size={20} />, route: { view: 'files', tab: 'linked', folder: '[02] Work' } },
+  ];
+
+  const go = (item: Item) => {
+    if (item.section === 'search') dispatch({ type: 'search', open: true });
+    else if (item.route) dispatch({ type: 'navigate', route: item.route });
+  };
+
+  return (
+    <nav className="rail" aria-label="Sections">
+      <div className="rail-logo" title="Timmy">
+        <TimmyMark size={32} />
+      </div>
+      {items.map((item) => (
+        <button
+          key={item.section}
+          className="rail-btn"
+          aria-label={item.label}
+          aria-current={current === item.section ? 'page' : undefined}
+          onClick={() => go(item)}
+        >
+          {item.icon}
+          {item.badge ? <span className="rail-badge">{item.badge}</span> : null}
+          <span className="rail-tip">{item.label}</span>
+        </button>
+      ))}
+      <div className="rail-spacer" />
+      <button
+        className="rail-btn"
+        aria-label="Rules & settings"
+        aria-current={current === 'rules' ? 'page' : undefined}
+        onClick={() => dispatch({ type: 'navigate', route: { view: 'rules', tab: 'triage' } })}
+      >
+        <Settings size={20} />
+        <span className="rail-tip">Rules & settings</span>
+      </button>
+      <button className="rail-btn" aria-label="Taylor Morgan" style={{ marginTop: 6 }}>
+        <Avatar id="me" size={30} />
+        <span className="rail-tip">Taylor Morgan</span>
+      </button>
+    </nav>
+  );
+}

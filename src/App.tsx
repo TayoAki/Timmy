@@ -1,0 +1,89 @@
+import { X } from 'lucide-react';
+import { useEffect } from 'react';
+import { BottomBar } from './components/BottomBar';
+import { LeftRail } from './components/LeftRail';
+import { RightPanel } from './components/RightPanel';
+import { SearchPalette } from './components/SearchPalette';
+import { Sidebar } from './components/Sidebar';
+import { StoreProvider, useStore, type Toast } from './state/store';
+import { MailboxView } from './views/MailboxView';
+import { ActivityView, FilesView, PeopleView, RulesView } from './views/OtherViews';
+import { ThreadView } from './views/ThreadView';
+import { TodayView } from './views/TodayView';
+
+export default function App() {
+  return (
+    <StoreProvider>
+      <Shell />
+    </StoreProvider>
+  );
+}
+
+function Shell() {
+  const { state, dispatch } = useStore();
+  const r = state.route;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const typing = e.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        dispatch({ type: 'search', open: !state.searchOpen });
+      } else if (e.key === '/' && !typing && !state.searchOpen) {
+        e.preventDefault();
+        dispatch({ type: 'search', open: true });
+      } else if (e.key === 'Escape' && state.drawer) {
+        dispatch({ type: 'drawer', drawer: state.drawer });
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [dispatch, state.searchOpen, state.drawer]);
+
+  return (
+    <div className="app" data-drawer={state.drawer ?? undefined}>
+      <LeftRail />
+      <Sidebar />
+      {r.view === 'today' && <TodayView tab={r.tab} />}
+      {r.view === 'box' && <MailboxView key={r.box} box={r.box} tab={r.tab} />}
+      {r.view === 'thread' && <ThreadView id={r.id} tab={r.tab} />}
+      {r.view === 'activity' && <ActivityView tab={r.tab} />}
+      {r.view === 'people' && <PeopleView tab={r.tab} person={r.person} />}
+      {r.view === 'files' && <FilesView key={r.folder} tab={r.tab} folder={r.folder} />}
+      {r.view === 'rules' && <RulesView tab={r.tab} />}
+      <RightPanel />
+      <BottomBar />
+      <div className="scrim" onClick={() => state.drawer && dispatch({ type: 'drawer', drawer: state.drawer })} />
+      {state.searchOpen && <SearchPalette />}
+      <Toasts />
+    </div>
+  );
+}
+
+function Toasts() {
+  const { state } = useStore();
+  return (
+    <div className="toasts" role="status" aria-live="polite">
+      {state.toasts.map((t) => (
+        <ToastItem key={t.id} toast={t} />
+      ))}
+    </div>
+  );
+}
+
+function ToastItem({ toast }: { toast: Toast }) {
+  const { dispatch } = useStore();
+  useEffect(() => {
+    const timer = window.setTimeout(() => dispatch({ type: 'dismissToast', id: toast.id }), 5200);
+    return () => window.clearTimeout(timer);
+  }, [toast.id, dispatch]);
+  return (
+    <div className={`toast${toast.tone === 'warn' ? ' warn' : ''}`}>
+      <span>{toast.text}</span>
+      {toast.undo && <button onClick={() => dispatch({ type: 'restore', toast: toast.id })}>Undo</button>}
+      <button className="toast-x" aria-label="Dismiss" onClick={() => dispatch({ type: 'dismissToast', id: toast.id })}>
+        <X size={14} />
+      </button>
+    </div>
+  );
+}
