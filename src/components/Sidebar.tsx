@@ -2,8 +2,6 @@ import {
   Archive,
   BookOpen,
   CalendarDays,
-  ChevronDown,
-  ChevronsUpDown,
   FolderTree,
   Hourglass,
   Inbox,
@@ -48,14 +46,13 @@ function MailSide() {
   return (
     <>
       <div className="side-head">
-        <button className="switcher" aria-label="Switch mailbox">
+        <div className="switcher">
           <Avatar id="me" size={28} />
           <span className="switcher-text">
             <span className="switcher-title">Work inbox</span>
             <span className="switcher-sub">taylor@northpeak.io</span>
           </span>
-          <ChevronsUpDown size={15} className="muted" />
-        </button>
+        </div>
       </div>
 
       <div className="side-scroll">
@@ -176,7 +173,7 @@ function PeopleSide() {
   return (
     <>
       <div className="side-head">
-        <button className="switcher">
+        <div className="switcher">
           <span className="nav-icon" style={tint('var(--c-green)')}>
             <ListFilter size={16} />
           </span>
@@ -184,8 +181,7 @@ function PeopleSide() {
             <span className="switcher-title">Relationships</span>
             <span className="switcher-sub">{RELATIONSHIPS.length} tracked · reviewed weekly</span>
           </span>
-          <ChevronDown size={15} className="muted" />
-        </button>
+        </div>
       </div>
       <div className="side-scroll">
         {groups.map((g) => (
@@ -228,7 +224,7 @@ function FilesSide() {
   return (
     <>
       <div className="side-head">
-        <button className="switcher">
+        <div className="switcher">
           <span className="nav-icon" style={tint('var(--c-sky)')}>
             <FolderTree size={16} />
           </span>
@@ -236,8 +232,7 @@ function FilesSide() {
             <span className="switcher-title">My Drive</span>
             <span className="switcher-sub">5 levels deep · 99 wide</span>
           </span>
-          <ChevronDown size={15} className="muted" />
-        </button>
+        </div>
       </div>
       <div className="side-scroll">
         <div className="side-group">
@@ -293,7 +288,7 @@ function RulesSide() {
   return (
     <>
       <div className="side-head">
-        <div className="switcher" style={{ cursor: 'default' }}>
+        <div className="switcher">
           <TimmyMark size={28} />
           <span className="switcher-text">
             <span className="switcher-title">Timmy’s rules</span>

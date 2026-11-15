@@ -1,8 +1,10 @@
 import {
   ArrowRight,
+  ArrowUp,
   BadgeDollarSign,
   CalendarDays,
   ChevronDown,
+  ChevronRight,
   FilePenLine,
   FolderInput,
   Inbox,
@@ -150,7 +152,7 @@ export function PeopleView({ tab, person }: { tab: string; person?: string }) {
       <div className="deal-strip">
         {deals.map((d) => (
           <button key={d.id} className="card deal-tile" onClick={() => dispatch({ type: 'navigate', route: { view: 'people', tab: active.id, person: d.contact } })}>
-            <span className="deal-logo" style={tint(d.stage === 'Closed won' ? 'var(--ok)' : 'var(--c-green)')}>
+            <span className="deal-logo" style={tint('var(--ok)')}>
               {d.company[0]}
             </span>
             <span className="deal-tile-text">
@@ -213,6 +215,8 @@ export function PeopleView({ tab, person }: { tab: string; person?: string }) {
 export function FilesView({ tab, folder }: { tab: string; folder: string }) {
   const { state, dispatch } = useStore();
   const [kind, setKind] = useState('');
+  const [owner, setOwner] = useState('');
+  const [within, setWithin] = useState(0);
   const top = FOLDERS.find((f) => `[${f.num}] ${f.name}` === folder);
   const parent = FOLDERS.find((f) => f.children?.some((c) => `[${c.num}] ${c.name}` === folder));
   const children = top?.children ?? [];
@@ -222,7 +226,10 @@ export function FilesView({ tab, folder }: { tab: string; folder: string }) {
     .filter((d) => d.path.includes(folder))
     .filter((d) => tab !== 'linked' || linkedIds.has(d.id))
     .filter((d) => !kind || d.kind === kind)
+    .filter((d) => !owner || d.owner === owner)
+    .filter((d) => !within || dayDiff(d.updated) >= -within)
     .sort((a, b) => a.name.localeCompare(b.name));
+  const owners = [...new Set(Object.values(DOCS).filter((d) => d.path.includes(folder)).map((d) => d.owner))];
 
   const threadFor = (docId: string) => state.threads.find((t) => t.docs?.includes(docId));
 
@@ -238,18 +245,17 @@ export function FilesView({ tab, folder }: { tab: string; folder: string }) {
     >
       <nav className="drive-crumbs" aria-label="Breadcrumb">
         <span>My Drive</span>
-        <span className="sep">›</span>
+        <ChevronRight size={20} className="sep" aria-hidden />
         {parent && (
           <>
             <button onClick={() => dispatch({ type: 'navigate', route: { view: 'files', tab, folder: `[${parent.num}] ${parent.name}` } })}>
               [{parent.num}] {parent.name}
             </button>
-            <span className="sep">›</span>
+            <ChevronRight size={20} className="sep" aria-hidden />
           </>
         )}
-        <span className="drive-current">
+        <span className="drive-current" aria-current="page">
           {folder}
-          <ChevronDown size={18} />
         </span>
       </nav>
 
@@ -264,19 +270,34 @@ export function FilesView({ tab, folder }: { tab: string; folder: string }) {
           </select>
           <ChevronDown size={14} />
         </label>
-        <span className="filter">
-          People
+        <label className="filter">
+          <select value={owner} onChange={(e) => setOwner(e.target.value)} aria-label="Owner">
+            <option value="">People</option>
+            {owners.map((id) => (
+              <option key={id} value={id}>
+                {id === 'me' ? 'Me' : PEOPLE[id]!.name}
+              </option>
+            ))}
+          </select>
           <ChevronDown size={14} />
-        </span>
-        <span className="filter">
-          Last modified
+        </label>
+        <label className="filter">
+          <select value={within} onChange={(e) => setWithin(Number(e.target.value))} aria-label="Last modified">
+            <option value={0}>Last modified</option>
+            <option value={1}>Today</option>
+            <option value={7}>Last 7 days</option>
+            <option value={30}>Last 30 days</option>
+          </select>
           <ChevronDown size={14} />
-        </span>
+        </label>
       </div>
 
       <div className="table files-table" role="table" aria-label="Files">
         <div className="table-row table-head" role="row">
-          <span role="columnheader">Name ↑</span>
+          <span role="columnheader" className="sorted">
+            Name
+            <ArrowUp size={13} aria-label="sorted A to Z" />
+          </span>
           <span role="columnheader">Came from</span>
           <span role="columnheader">Modified</span>
         </div>
@@ -309,7 +330,14 @@ export function FilesView({ tab, folder }: { tab: string; folder: string }) {
         {docs.map((d) => {
           const t = threadFor(d.id);
           return (
-            <div key={d.id} role="row" className="table-row" tabIndex={0} onClick={() => t && dispatch({ type: 'openThread', id: t.id, tab: 'links' })}>
+            <div
+              key={d.id}
+              role="row"
+              className={`table-row${t ? '' : ' static'}`}
+              tabIndex={t ? 0 : undefined}
+              onClick={() => t && dispatch({ type: 'openThread', id: t.id, tab: 'links' })}
+              onKeyDown={(e) => t && e.key === 'Enter' && dispatch({ type: 'openThread', id: t.id, tab: 'links' })}
+            >
               <span role="cell" className="cell-person">
                 <DocIcon kind={d.kind} size={20} />
                 <span>
@@ -388,9 +416,10 @@ export function RulesView({ tab }: { tab: RuleGroup }) {
       {tab === 'schedule' && (
         <div className="card card-pad schedule">
           <div>
-            <span className="eyebrow">Daily triage</span>
-            <p className="schedule-time mono">7:00 AM</p>
-            <span className="muted">Monday – Friday</span>
+            <p className="schedule-time">
+              <strong>Daily triage</strong> runs at <strong className="mono">7:00 AM</strong>
+            </p>
+            <span className="muted">Monday to Friday. Anything Timmy is unsure about waits in Triage.</span>
           </div>
           <div className="week">
             {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (

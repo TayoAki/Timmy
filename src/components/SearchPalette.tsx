@@ -1,4 +1,4 @@
-import { CornerDownLeft, FilePenLine, Hourglass, Paperclip, Reply, Search, UserRound } from 'lucide-react';
+import { FilePenLine, Hourglass, Paperclip, Reply, Search, UserRound } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { BOXES, DOCS, PEOPLE, PROJECTS } from '../data/mock';
 import type { Box, Thread } from '../data/types';
@@ -78,7 +78,7 @@ interface Result {
 }
 
 const TIPS = [
-  { q: 'from:dana ', d: 'Search by who sent it — you remember people better than dates.' },
+  { q: 'from:dana ', d: 'Search by who sent it. People are easier to remember than dates.' },
   { q: 'is:follow-up has:draft ', d: 'Replies Timmy has ready for you to send.' },
   { q: 'is:waiting ', d: 'Everything someone has promised you.' },
   { q: 'project:acme has:attachment ', d: 'Files that arrived by email for one project.' },
@@ -150,7 +150,7 @@ export function SearchPalette() {
             </span>
           ),
           title: <Highlight text={d.name} q={p.text} />,
-          sub: d.path.join(' › '),
+          sub: d.path.join(' / '),
           run: () => {
             close();
             if (t) dispatch({ type: 'openThread', id: t.id, tab: 'links' });
@@ -281,7 +281,7 @@ export function SearchPalette() {
           {hasQuery && results.length === 0 && (
             <div className="empty" style={{ padding: 32 }}>
               <strong>No matches</strong>
-              <span>Try the person’s name — <code className="mono">from:</code> is usually the fastest way back to a thread.</span>
+              <span>Try the person’s name. <code className="code">from:</code> is usually the fastest way back to a thread.</span>
             </div>
           )}
         </div>
@@ -291,8 +291,8 @@ export function SearchPalette() {
             <Kbd>↓</Kbd> to move <Kbd>↵</Kbd> to open
           </span>
           <span className="hide-sm">
-            <CornerDownLeft size={12} />
-            Operators: from: is: project: has:draft has:attachment
+            Operators: <code className="code">from:</code> <code className="code">is:</code> <code className="code">project:</code>{' '}
+            <code className="code">has:draft</code>
           </span>
         </div>
       </div>

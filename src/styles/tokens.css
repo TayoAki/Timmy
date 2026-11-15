@@ -10,8 +10,8 @@
   --line: #e5e2db;
   --line-strong: #d5d1c7;
   --text: #1c1b19;
-  --text-2: #55524b;
-  --text-3: #8a867d;
+  --text-2: #4d4a44;
+  --text-3: #64605a;
   --hover: rgba(28, 27, 25, 0.045);
   --active: rgba(28, 27, 25, 0.08);
   --scrim: rgba(20, 19, 17, 0.32);
@@ -24,7 +24,7 @@
   --on-accent: #ffffff;
   --focus-ring: 0 0 0 3px rgba(63, 81, 217, 0.28);
 
-  --ok: #1f7f53;
+  --ok: #19724a;
   --ok-soft: #e2f3e9;
   --warn: #9a5b00;
   --warn-soft: #fcefd6;
@@ -56,6 +56,8 @@
   --right-w: 328px;
   --bar-h: 30px;
 
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
   color-scheme: light;
 }
 
@@ -69,8 +71,8 @@
     --line: #2c2b28;
     --line-strong: #3a3935;
     --text: #edebe6;
-    --text-2: #b4b0a7;
-    --text-3: #817d74;
+    --text-2: #bdb9b0;
+    --text-3: #9a968d;
     --hover: rgba(255, 255, 255, 0.05);
     --active: rgba(255, 255, 255, 0.09);
     --scrim: rgba(0, 0, 0, 0.55);
@@ -103,8 +105,8 @@
   --line: #2c2b28;
   --line-strong: #3a3935;
   --text: #edebe6;
-  --text-2: #b4b0a7;
-  --text-3: #817d74;
+  --text-2: #bdb9b0;
+  --text-3: #9a968d;
   --hover: rgba(255, 255, 255, 0.05);
   --active: rgba(255, 255, 255, 0.09);
   --scrim: rgba(0, 0, 0, 0.55);
@@ -183,6 +185,40 @@ p {
 
 ::selection {
   background: var(--accent-soft);
+  color: var(--text);
+}
+
+input,
+textarea {
+  caret-color: var(--accent);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-3);
+  opacity: 1;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+a,
+.link {
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+p,
+li {
+  text-wrap: pretty;
 }
 
 .sr-only {

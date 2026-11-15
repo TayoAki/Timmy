@@ -56,13 +56,11 @@ function Brief() {
 
   return (
     <>
-      <p className="eyebrow">{fmtLongDate(NOW)}</p>
-      <h1 className="page-title" style={{ marginTop: 4 }}>
-        Good morning, Taylor.
-      </h1>
+      <h1 className="page-title">Good morning, Taylor.</h1>
       <p className="page-sub">
-        Timmy sorted 31 new emails overnight. {owe.length > 0 ? `${plural(owe.length, 'thing')} need you` : 'Nothing needs you'}
-        {quick > 0 ? ` — ${quick} are quick replies.` : '.'}
+        {fmtLongDate(NOW)}. Timmy sorted 33 emails overnight
+        {owe.length > 0 ? `, and ${plural(owe.length, 'thing')} need you` : ', and nothing needs you'}
+        {quick > 0 ? `, ${quick} of them quick replies.` : '.'}
       </p>
 
       <Highlight />
@@ -80,21 +78,24 @@ function Brief() {
         </div>
         <div className="card card-pad triage-summary">
           <p>
-            Timmy archived <strong>24 emails</strong> that matched your rules — receipts, calendar replies and newsletters — and saved 3 attachments
-            to Drive with dated names. {triage.length > 0 ? (
+            Timmy archived <strong>24 emails</strong> that matched your rules (receipts, calendar replies and newsletters), filed{' '}
+            <strong>2</strong> to Follow Up and saved the Figma receipt to [99] Receipts.{' '}
+            {triage.length > 0 ? (
               <>
-                It left <strong>{plural(triage.length, 'email')}</strong> for you to confirm, oldest first.
+                <strong>{plural(triage.length, 'email')}</strong> still need your call, oldest first.
               </>
             ) : (
-              <>You’ve confirmed everything else. Inbox zero.</>
+              <>You’ve sorted the rest. Inbox zero.</>
             )}
           </p>
-          <div className="flow">
-            <FlowStep color="var(--c-brown)" icon={<Archive size={14} />} n={24} label="Archived" />
-            <FlowStep color="var(--c-red)" icon={<Reply size={14} />} n={4} label="Follow Up" />
-            <FlowStep color="var(--c-amber)" icon={<Hourglass size={14} />} n={1} label="Waiting" />
-            <FlowStep color="var(--c-sky)" icon={<BookOpen size={14} />} n={1} label="Read Through" />
-            <FlowStep color="var(--c-slate)" icon={<Sparkles size={14} />} n={triage.length} label="Your call" />
+          <div className="triage-bar">
+            <Segments
+              parts={[
+                { n: 24, color: 'var(--c-brown)', label: 'archived' },
+                { n: 2, color: 'var(--c-red)', label: 'to Follow Up' },
+                { n: 7, color: 'var(--c-slate)', label: 'left for your call' },
+              ]}
+            />
           </div>
           {triage.length > 0 && (
             <button className="btn btn-sm" onClick={() => dispatch({ type: 'navigate', route: { view: 'today', tab: 'triage' } })}>
@@ -110,18 +111,6 @@ function Brief() {
   );
 }
 
-function FlowStep({ color, icon, n, label }: { color: string; icon: ReactNode; n: number; label: string }) {
-  return (
-    <div className="flow-step" style={tint(color)}>
-      <span className="nav-icon" style={{ width: 26, height: 26, borderRadius: 7 }}>
-        {icon}
-      </span>
-      <span className="mono flow-n">{n}</span>
-      <span className="flow-label">{label}</span>
-    </div>
-  );
-}
-
 function Highlight() {
   const { state, dispatch } = useStore();
   const [editing, setEditing] = useState(false);
@@ -134,7 +123,6 @@ function Highlight() {
         <Target size={18} />
       </span>
       <div className="highlight-body">
-        <span className="eyebrow">Today’s highlight</span>
         {editing ? (
           <form
             onSubmit={(e) => {
@@ -148,9 +136,9 @@ function Highlight() {
         ) : (
           <p className="highlight-text">{state.highlight}</p>
         )}
-        {focus && !editing && (
-          <span className="muted" style={{ fontSize: 12.5 }}>
-            Focus block {fmtTime(focus.start)} – {fmtTime(focus.end)} · suggested by Timmy from your Follow Up list
+        {!editing && (
+          <span className="highlight-meta">
+            Today’s highlight{focus ? ` · focus block ${fmtTime(focus.start)}–${fmtTime(focus.end)}` : ''}
           </span>
         )}
       </div>
@@ -301,7 +289,10 @@ function CalendarCard() {
         count={EVENTS.length}
         to={() => dispatch({ type: 'drawer', drawer: 'right' })}
       />
-      <div className="daystrip" aria-label="Day overview, 8 AM to 6 PM">
+      <div className="daystrip" role="img" aria-label={`${EVENTS.length} events between 8 AM and 6 PM`}>
+        {[10, 12, 14, 16].map((h) => (
+          <span key={h} className="daystrip-hour" style={{ left: `${((h - startH) / (endH - startH)) * 100}%` }} />
+        ))}
         {EVENTS.map((e) => (
           <span
             key={e.id}
@@ -311,14 +302,11 @@ function CalendarCard() {
           />
         ))}
         <span className="daystrip-now" style={{ left: `${pct(NOW)}%` }} />
-        <div className="daystrip-ticks mono">
-          <span>8</span>
-          <span>10</span>
-          <span>12</span>
-          <span>2</span>
-          <span>4</span>
-          <span>6</span>
-        </div>
+        {[8, 10, 12, 14, 16, 18].map((h) => (
+          <span key={h} className="daystrip-tick mono" style={{ left: `${((h - startH) / (endH - startH)) * 100}%` }}>
+            {h % 12 || 12}
+          </span>
+        ))}
       </div>
       <ul className="tc-list">
         {upcoming.map((e) => (
@@ -374,8 +362,8 @@ function Suggestions() {
       key: 'sow',
       text: (
         <>
-          <strong>Marcus</strong> said he’d send the signed SOW on Friday. It’s 3 days late, and you meet him at 10:30. I drafted a short nudge — or
-          ask him in person.
+          <strong>Marcus</strong> said he’d send the signed SOW on Friday. It’s 3 days late, and you meet him at 10:30. I drafted a short nudge, or
+          you can ask him in person.
         </>
       ),
       sources: sow.draft.sources,
@@ -579,7 +567,7 @@ function Drafts({ threads }: { threads: Thread[] }) {
                 </div>
                 {t.box === 'follow-up' && t.effort && <EffortChip effort={t.effort} />}
               </header>
-              <h3 className="draft-card-subject">{d.subject}</h3>
+              <h2 className="draft-card-subject">{d.subject}</h2>
               <div className="draft-card-body">
                 {lines.map((l, i) => (
                   <p key={i}>{l}</p>

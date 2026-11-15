@@ -196,7 +196,7 @@ function reducer(s: State, a: Action): State {
       if (!t) return s;
       const starred = s.threads.filter((x) => x.starred).length;
       if (!t.starred && starred >= 5) {
-        return { ...s, toasts: withToast(s, 'You have 5 starred threads. Unstar one first — if everything is starred, nothing is.', undefined, 'warn') };
+        return { ...s, toasts: withToast(s, 'Five threads are already starred. Unstar one first: if everything is starred, nothing is.', undefined, 'warn') };
       }
       return { ...s, threads: patch(s.threads, a.id, (x) => ({ ...x, starred: !x.starred })) };
     }

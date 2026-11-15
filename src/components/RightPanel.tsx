@@ -1,17 +1,16 @@
 import {
-  ArrowUpRight,
   BadgeDollarSign,
   CalendarClock,
   Check,
   CircleCheck,
-  Eye,
+  FolderOpen,
   Hourglass,
   Lightbulb,
   Sparkles,
   X,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { ACTIVITY, BOXES, DOCS, EVENTS, LABEL_GUIDE, NOW, PEOPLE, PROJECTS, RELATIONSHIPS } from '../data/mock';
+import { ARCHIVED_BASE, BOXES, DOCS, EVENTS, LABEL_GUIDE, NOW, PEOPLE, PROJECTS, RELATIONSHIPS } from '../data/mock';
 import type { Thread } from '../data/types';
 import { daysSince, fmtDay, fmtShortTime, fmtStamp, fmtTime, money } from '../lib/format';
 import { inBox, useStore } from '../state/store';
@@ -54,7 +53,7 @@ function Section({ title, aside, children }: { title: string; aside?: ReactNode;
   return (
     <section className="rp-section">
       <header className="rp-head">
-        <h3 className="rp-title">{title}</h3>
+        <h2 className="rp-title">{title}</h2>
         {aside}
       </header>
       {children}
@@ -158,7 +157,7 @@ function ThreadContext({ t }: { t: Thread }) {
     <>
       {t.waiting && t.box === 'waiting' && (
         <Section title="Waiting on">
-          <div className="rp-card waiting-card">
+          <div className="rp-card">
             <div className="rp-person" style={{ padding: 0 }}>
               <Avatar id={t.waiting.on} size={32} />
               <span className="rp-person-text">
@@ -217,13 +216,12 @@ function ThreadContext({ t }: { t: Thread }) {
               </span>
             </div>
             <div className="file-actions">
-              <button className="btn btn-sm">
-                <ArrowUpRight size={14} />
-                Open
-              </button>
-              <button className="btn btn-sm btn-ghost">
-                <Eye size={14} />
-                Preview
+              <button
+                className="btn btn-sm"
+                onClick={() => dispatch({ type: 'navigate', route: { view: 'files', tab: 'all', folder: primary.path[primary.path.length - 1]! } })}
+              >
+                <FolderOpen size={14} />
+                Show in Files
               </button>
             </div>
           </div>
@@ -234,7 +232,7 @@ function ThreadContext({ t }: { t: Thread }) {
         <Section title="CRM record">
           <div className="rp-card">
             <div className="deal-head">
-              <span className="deal-logo" style={tint('var(--c-green)')}>
+              <span className="deal-logo" style={tint('var(--ok)')}>
                 {deal.company[0]}
               </span>
               <div>
@@ -317,12 +315,10 @@ function LabelContext({ id }: { id: string }) {
       <>
         <div className="rp-hero" style={tint(box.color)}>
           <Folder color={box.color} size={36} />
-          <div>
-            <div className="mono muted" style={{ fontSize: 12 }}>
-              [{box.num}]
-            </div>
-            <h2 className="rp-hero-title">{box.name}</h2>
-          </div>
+          <h2 className="rp-hero-title">
+            <span className="rp-hero-num code">{box.num}</span>
+            {box.name}
+          </h2>
         </div>
         <Section title={guide.title}>
           <p className="rp-text">{guide.body}</p>
@@ -337,21 +333,17 @@ function LabelContext({ id }: { id: string }) {
           </button>
         </Section>
         <Section title="In this label">
-          <div className="stat-row">
-            <div className="stat">
-              <span className="stat-num mono">{id === 'archived' ? '2.4k' : count}</span>
-              <span className="stat-label">threads</span>
-            </div>
-            <div className="stat">
-              <span className="stat-num mono">{state.threads.filter((t) => t.box === id && t.draft).length}</span>
-              <span className="stat-label">drafts ready</span>
-            </div>
-            <div className="stat">
-              <span className="stat-num mono">
+          <div className="rp-card">
+            <dl className="kv flush">
+              <dt>Threads</dt>
+              <dd className="mono">{(id === 'archived' ? ARCHIVED_BASE + count : count).toLocaleString()}</dd>
+              <dt>Drafts ready</dt>
+              <dd className="mono">{state.threads.filter((t) => t.box === id && t.draft).length}</dd>
+              <dt>Late</dt>
+              <dd className="mono">
                 {state.threads.filter((t) => t.box === id && ((t.box === 'waiting' ? t.waiting?.due : t.due)?.getTime() ?? Infinity) < NOW.getTime()).length}
-              </span>
-              <span className="stat-label">overdue</span>
-            </div>
+              </dd>
+            </dl>
           </div>
         </Section>
       </>
@@ -368,10 +360,13 @@ function LabelContext({ id }: { id: string }) {
       <div className="rp-hero" style={tint(project.color)}>
         <Folder color={project.color} size={36} />
         <div>
-          <div className="mono muted" style={{ fontSize: 12 }}>
-            [{project.num}] · {project.hint}
-          </div>
-          <h2 className="rp-hero-title">{project.name}</h2>
+          <h2 className="rp-hero-title">
+            <span className="rp-hero-num code">{project.num}</span>
+            {project.name}
+          </h2>
+          <p className="muted" style={{ fontSize: 12.5 }}>
+            {project.hint}
+          </p>
         </div>
       </div>
       {deal && (
@@ -425,7 +420,7 @@ function PersonContext({ id }: { id: string }) {
         <p className="muted">
           {p.title} · {p.company}
         </p>
-        <p className="mono muted" style={{ fontSize: 12 }}>
+        <p className="muted" style={{ fontSize: 12.5 }}>
           {p.email}
         </p>
       </div>
@@ -458,7 +453,7 @@ function PersonContext({ id }: { id: string }) {
         <Section title="Deal">
           <div className="rp-card">
             <div className="deal-head">
-              <span className="deal-logo" style={tint('var(--c-green)')}>
+              <span className="deal-logo" style={tint('var(--ok)')}>
                 {deal.company[0]}
               </span>
               <div>
@@ -574,41 +569,25 @@ function RulesContext() {
 function ActivityContext() {
   const { state } = useStore();
   const today = state.activity.filter((a) => a.at.getDate() === NOW.getDate());
-  const counts = {
-    sorted: today.filter((a) => a.kind === 'triage' || a.kind === 'move').length + 30,
-    drafted: today.filter((a) => a.kind === 'draft').length + 3,
-    filed: today.filter((a) => a.kind === 'file').length,
-  };
+  const count = (...kinds: string[]) => today.filter((a) => kinds.includes(a.kind)).length;
   return (
     <>
-      <Section title="This morning">
-        <div className="stat-row">
-          <div className="stat">
-            <span className="stat-num mono">{counts.sorted}</span>
-            <span className="stat-label">sorted</span>
-          </div>
-          <div className="stat">
-            <span className="stat-num mono">{counts.drafted}</span>
-            <span className="stat-label">drafted</span>
-          </div>
-          <div className="stat">
-            <span className="stat-num mono">{counts.filed}</span>
-            <span className="stat-label">files saved</span>
-          </div>
-        </div>
-      </Section>
-      <Section title="Time saved this week">
+      <Section title="Today so far" aside={<span className="rp-aside mono">{today.length} actions</span>}>
         <div className="rp-card">
-          <span className="stat-num mono" style={{ fontSize: 28 }}>
-            3h 40m
-          </span>
-          <p className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-            Estimated from {ACTIVITY.length * 9} sorted emails and 14 drafts you sent with light edits.
-          </p>
+          <dl className="kv flush">
+            <dt>Sorting</dt>
+            <dd className="mono">{count('triage', 'move')}</dd>
+            <dt>Drafts</dt>
+            <dd className="mono">{count('draft', 'send')}</dd>
+            <dt>Files</dt>
+            <dd className="mono">{count('file')}</dd>
+            <dt>Calendar</dt>
+            <dd className="mono">{count('calendar', 'task', 'crm')}</dd>
+          </dl>
         </div>
       </Section>
       <Section title="Undo">
-        <p className="rp-text">Anything Timmy did can be undone from the log for 7 days. Undo also updates the rule that caused it.</p>
+        <p className="rp-text">Anything Timmy did can be undone from this log for 7 days. Undoing also updates the rule that caused it.</p>
       </Section>
     </>
   );

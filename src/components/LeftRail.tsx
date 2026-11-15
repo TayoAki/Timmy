@@ -57,10 +57,9 @@ export function LeftRail() {
         <Settings size={20} />
         <span className="rail-tip">Rules & settings</span>
       </button>
-      <button className="rail-btn" aria-label="Taylor Morgan" style={{ marginTop: 6 }}>
+      <div className="rail-me" title="Signed in as Taylor Morgan">
         <Avatar id="me" size={30} />
-        <span className="rail-tip">Taylor Morgan</span>
-      </button>
+      </div>
     </nav>
   );
 }

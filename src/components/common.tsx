@@ -4,7 +4,8 @@ import { PEOPLE, PROJECTS } from '../data/mock';
 import type { Thread } from '../data/types';
 import { dueInfo, initials } from '../lib/format';
 
-const TINTS = ['#d9534f', '#d98a1a', '#2f9a65', '#3591cc', '#8a4ec2', '#cc3f95', '#13998a', '#4a5bd6', '#9b7258', '#5f7d2f'];
+/** Avatar fills, all dark enough for white initials at 4.5:1 or better. */
+const TINTS = ['#c2413d', '#a8650c', '#23774e', '#24709f', '#7c43b3', '#b03580', '#0f7a6e', '#4252c9', '#865f47', '#4f6a24'];
 
 const tintFor = (id: string) => {
   let h = 0;
@@ -21,7 +22,7 @@ export function Avatar({ id, size = 32 }: { id: string; size?: number }) {
     width: size,
     height: size,
     fontSize: Math.round(size * 0.38),
-    '--tint': id === 'me' ? 'var(--accent)' : tintFor(id),
+    '--tint': id === 'me' ? '#4252c9' : tintFor(id),
   } as CSSProperties;
   return (
     <span className={`avatar${p?.bot ? ' bot' : ''}`} style={style} title={name} aria-hidden>

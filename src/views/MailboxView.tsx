@@ -1,4 +1,4 @@
-import { Archive, ArrowDown, ArrowUp, ChevronDown, FilePenLine, Sparkles, Star } from 'lucide-react';
+import { Archive, ArrowDown, ArrowUp, ChevronDown, ChevronRight, FilePenLine, Sparkles, Star } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { BOXES, LABEL_GUIDE, PEOPLE, PROJECTS } from '../data/mock';
 import type { Box, ProjectId, Thread } from '../data/types';
@@ -68,16 +68,15 @@ export function MailboxView({ box, tab }: { box: Box | ProjectId; tab: string })
     <Frame tabs={tabDefs} active={active.id} onTab={(id) => dispatch({ type: 'navigate', route: { view: 'box', box, tab: id } })} scrollKey={box}>
       <nav className="crumbs" aria-label="Breadcrumb">
         <button onClick={() => dispatch({ type: 'navigate', route: { view: 'today', tab: 'brief' } })}>Mail</button>
-        <span>›</span>
+        <ChevronRight size={14} aria-hidden />
         {isProject && (
           <>
             <span>Projects</span>
-            <span>›</span>
+            <ChevronRight size={14} aria-hidden />
           </>
         )}
-        <span className="crumb-current">
+        <span className="crumb-current" aria-current="page">
           [{label.num}] {label.name}
-          <ChevronDown size={14} />
         </span>
       </nav>
 

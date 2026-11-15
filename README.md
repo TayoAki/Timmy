@@ -49,6 +49,17 @@ Files follow a numbered folder structure (`[02] Work › [10] Acme`, at most 5 l
 - **Search:** `⌘K` or `/`. Operators: `from:dana`, `is:waiting`, `project:acme`, `has:draft`, `has:attachment`
 - **Rules:** toggle rules or add one in plain language
 
+## Design checks
+
+The [Impeccable](https://impeccable.style) design skill is installed in `.claude/skills/impeccable`. Run its detector against the dev server or the source:
+
+```bash
+npx impeccable detect http://localhost:5173
+npx impeccable detect src/
+```
+
+Known, intentional findings: em-dashes in file names (they're part of the naming convention) and the left-rail tooltip overlapping the sidebar while hovered.
+
 ## Code
 
 ```

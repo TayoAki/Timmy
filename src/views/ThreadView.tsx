@@ -4,6 +4,7 @@ import {
   BookOpen,
   Check,
   ChevronDown,
+  ChevronRight,
   CircleDot,
   Hourglass,
   Paperclip,
@@ -73,7 +74,7 @@ export function ThreadView({ id, tab }: { id: string; tab: ThreadTab }) {
           Back
         </button>
         <span>Mail</span>
-        <span>›</span>
+        <ChevronRight size={14} aria-hidden />
         <button onClick={() => dispatch({ type: 'navigate', route: { view: 'box', box: t.box, tab: 'all' } })}>
           [{label.num}] {label.name}
         </button>
@@ -120,7 +121,6 @@ function Summary({ t }: { t: Thread }) {
     <section className="summary">
       <TimmyMark size={30} />
       <div className="summary-body">
-        <span className="eyebrow">{t.box === 'waiting' ? 'What you’re waiting for' : 'What this needs'}</span>
         <p className="summary-ask">{t.ask}</p>
         {t.context && <p className="summary-context">{t.context}</p>}
       </div>
@@ -332,7 +332,7 @@ function Links({ t }: { t: Thread }) {
       {(t.docs ?? []).length === 0 && <p className="muted">No files linked to this thread.</p>}
       {deal && (
         <div className="card card-pad deal-link" style={{ marginTop: 16 }}>
-          <span className="deal-logo" style={{ ['--tint' as string]: 'var(--c-green)' }}>
+          <span className="deal-logo" style={{ ['--tint' as string]: 'var(--ok)' }}>
             {deal.company[0]}
           </span>
           <div style={{ flex: 1 }}>

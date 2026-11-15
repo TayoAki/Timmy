@@ -1,4 +1,4 @@
-import { FileSpreadsheet, FileText, FileType2, Presentation } from 'lucide-react';
+import { ChevronRight, FileSpreadsheet, FileText, FileType2, Presentation } from 'lucide-react';
 import type { Doc } from '../data/types';
 
 const KIND = {
@@ -56,9 +56,9 @@ export function DocPath({ path }: { path: string[] }) {
   return (
     <span className="doc-path">
       {path.map((p, i) => (
-        <span key={p}>
-          {i > 0 && <span className="sep">›</span>}
-          {p}
+        <span key={p} style={{ display: 'contents' }}>
+          {i > 0 && <ChevronRight size={11} aria-hidden />}
+          <span>{p}</span>
         </span>
       ))}
     </span>

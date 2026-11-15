@@ -75,7 +75,7 @@ export const LABEL_GUIDE: Record<string, { title: string; body: string; rule: st
   },
   archived: {
     title: 'Done, still searchable',
-    body: 'Archived mail is never deleted. Search by the person who sent it — you usually remember who, not when.',
+    body: 'Archived mail is never deleted. Search by the person who sent it. You usually remember who, not when.',
     rule: 'Calendar replies, receipts and notifications are archived without asking.',
   },
 };
@@ -176,21 +176,21 @@ export const THREADS: Thread[] = [
       kind: 'reply',
       to: ['dana'],
       cc: ['raj'],
-      subject: 'Approval by Fri — revised quote for 120 seats',
+      subject: 'Approval by Fri: revised quote for 120 seats',
       body:
-        'Hi Dana,\n\nCould you confirm by Friday, Nov 20 whether your CFO approves the revised quote below? That keeps the order form on track for a January 1 start.\n\n• 120 seats at $58 per seat per month (our 101–250 tier), billed annually: $83,520\n• That’s $4 less per seat than the 100-seat price in proposal v3\n• Raj — SSO is included at this tier, so there’s no separate add-on\n\nThe updated proposal is attached.\n\nBest,\nTaylor',
+        'Hi Dana,\n\nCould you confirm by Friday, Nov 20 whether your CFO approves the revised quote below? That keeps the order form on track for a January 1 start.\n\n• 120 seats at $58 per seat per month (our 101–250 tier), billed annually: $83,520\n• That’s $4 less per seat than the 100-seat price in proposal v3\n• Raj: SSO is included at this tier, so there’s no separate add-on\n\nThe updated proposal is attached.\n\nBest,\nTaylor',
       sources: ['proposal-v3', 'pricing-tiers', 'acme-call-notes'],
       attachments: ['proposal-v4'],
       trackAs: { on: 'dana', item: 'CFO approval on the 120-seat quote', due: d(20, 17) },
     },
     steps: [
       { id: 's1', text: 'Create task: revise quote to 120 seats', done: true, byTimmy: true },
-      { id: 's2', text: 'Check proposal v4 — Timmy updated seats and tier price', done: false },
+      { id: 's2', text: 'Check proposal v4: Timmy updated seats and tier price', done: false },
       { id: 's3', text: 'Send reply and track CFO approval in Waiting', done: false },
       { id: 's4', text: 'Update deal value to $83,520', done: false },
     ],
     history: [
-      { at: d(16, 7, 3), text: 'Sorted to [01] Follow Up — Dana asked you for a revised quote' },
+      { at: d(16, 7, 3), text: 'Sorted to [01] Follow Up: Dana asked you for a revised quote' },
       { at: d(16, 7, 3), text: 'Created task “Revise quote to 120 seats”, due Tue' },
       { at: d(16, 7, 3), text: 'Copied proposal v3 to v4 and updated seats and tier price' },
       { at: d(16, 7, 4), text: 'Drafted a reply from Pricing tiers 2026 and the Nov 13 call notes' },
@@ -204,7 +204,7 @@ export const THREADS: Thread[] = [
     project: 'northwind',
     participants: ['marcus', 'me'],
     unread: true,
-    ask: 'Confirm the Dec 1 pilot start with Marcus — he needs it today',
+    ask: 'Confirm the Dec 1 pilot start with Marcus. He needs it today',
     context: 'About a 2-minute reply. The signed SOW he promised for Friday hasn’t arrived, so the draft asks for it.',
     due: d(16, 17),
     effort: 'quick',
@@ -227,7 +227,7 @@ export const THREADS: Thread[] = [
       { id: 's1', text: 'Send the reply', done: false },
       { id: 's2', text: 'Send a kickoff invite for Dec 1', done: false },
     ],
-    history: [{ at: d(16, 7, 3), text: 'Sorted to [01] Follow Up — marked Quick (≈2 min)' }],
+    history: [{ at: d(16, 7, 3), text: 'Sorted to [01] Follow Up and marked Quick (about 2 min)' }],
   },
   {
     id: 'interview-feedback',
@@ -258,7 +258,7 @@ export const THREADS: Thread[] = [
       { id: 's1', text: 'Paste Timmy’s summary into the scorecard', done: false },
       { id: 's2', text: 'Send reply', done: false },
     ],
-    history: [{ at: d(16, 7, 45), text: 'Sorted to [01] Follow Up — due before the 4:30 PM debrief' }],
+    history: [{ at: d(16, 7, 45), text: 'Sorted to [01] Follow Up, due before the 4:30 PM debrief' }],
   },
   {
     id: 'expense-receipt',
@@ -315,7 +315,7 @@ export const THREADS: Thread[] = [
       { id: 's2', text: 'Block 2 hours on Thursday', done: false },
       { id: 's3', text: 'Pull renewal numbers from the pricing sheet', done: false },
     ],
-    history: [{ at: d(14, 11, 25), text: 'Sorted to [01] Follow Up — needs focus time' }],
+    history: [{ at: d(14, 11, 25), text: 'Sorted to [01] Follow Up as needing focus time' }],
   },
 
   // ───────────── [02] Waiting — someone owes you ─────────────
@@ -326,7 +326,7 @@ export const THREADS: Thread[] = [
     project: 'northwind',
     participants: ['marcus', 'me'],
     starred: true,
-    ask: 'Marcus owes you the signed SOW — promised Fri, Nov 13',
+    ask: 'Marcus owes you the signed SOW, promised for Fri, Nov 13',
     context: 'A promise isn’t the item, so this stays in Waiting until the signed SOW arrives. It’s 3 days late, and you’re meeting Marcus at 10:30 today.',
     deal: 'northwind',
     docs: ['northwind-sow'],
@@ -348,8 +348,8 @@ export const THREADS: Thread[] = [
       trackAs: { on: 'marcus', item: 'Signed pilot SOW', due: d(18, 17) },
     },
     history: [
-      { at: d(10, 13, 41), text: 'Moved to [02] Waiting — Marcus promised the signed SOW Friday' },
-      { at: d(16, 7, 5), text: 'Drafted a nudge — 3 days past the promised date' },
+      { at: d(10, 13, 41), text: 'Moved to [02] Waiting: Marcus promised the signed SOW Friday' },
+      { at: d(16, 7, 5), text: 'Drafted a nudge, 3 days past the promised date' },
     ],
   },
   {
@@ -370,7 +370,7 @@ export const THREADS: Thread[] = [
       },
       { id: 'ms2', from: 'hannah', to: ['me'], at: d(12, 17, 5), body: ['On it — I’ll have comments back to you by Thursday.', 'Hannah'] },
     ],
-    history: [{ at: d(12, 17, 6), text: 'Moved to [02] Waiting — Hannah promised comments Thursday' }],
+    history: [{ at: d(12, 17, 6), text: 'Moved to [02] Waiting: Hannah promised comments Thursday' }],
   },
   {
     id: 'mockups',
@@ -383,7 +383,7 @@ export const THREADS: Thread[] = [
       { id: 'mk1', from: 'me', to: ['kenji'], at: d(11, 9, 30), body: ['Hi Kenji — could you share the updated onboarding mockups once the review notes are in?', 'Taylor'] },
       { id: 'mk2', from: 'kenji', to: ['me'], at: d(11, 10, 2), body: ['Yep, Wednesday at the latest.', 'Kenji'] },
     ],
-    history: [{ at: d(11, 10, 3), text: 'Moved to [02] Waiting — Kenji promised Wednesday' }],
+    history: [{ at: d(11, 10, 3), text: 'Moved to [02] Waiting: Kenji promised Wednesday' }],
   },
   {
     id: 'travel-budget',
@@ -391,7 +391,7 @@ export const THREADS: Thread[] = [
     box: 'waiting',
     project: 'acme',
     participants: ['priya', 'me'],
-    ask: 'Priya owes you a travel budget approval — no reply in 6 days',
+    ask: 'Priya owes you a travel budget approval. No reply in 6 days',
     context: 'No date was promised. Timmy added it to the agenda for your 3:00 PM 1:1 with Priya.',
     docs: ['priya-1on1'],
     waiting: { on: 'priya', item: 'Travel budget approval', since: d(10, 9, 5) },
@@ -402,7 +402,7 @@ export const THREADS: Thread[] = [
       },
     ],
     history: [
-      { at: d(10, 9, 6), text: 'Moved to [02] Waiting — you asked Priya for approval' },
+      { at: d(10, 9, 6), text: 'Moved to [02] Waiting after you asked Priya for approval' },
       { at: d(16, 7, 4), text: 'Added “Travel budget approval” to your 1:1 notes with Priya' },
     ],
   },
@@ -550,20 +550,20 @@ export const THREADS: Thread[] = [
 ];
 
 export const ACTIVITY: Activity[] = [
-  { id: 'a1', at: d(16, 7, 2), kind: 'triage', text: 'Triaged 31 new emails: archived 24, left 7 for you' },
+  { id: 'a1', at: d(16, 7, 2), kind: 'triage', text: 'Triaged 33 new emails: archived 24, filed 2 to Follow Up, left 7 for you' },
   { id: 'a2', at: d(16, 7, 2), kind: 'file', text: 'Saved the Figma receipt as “2026-11-15 Figma — Receipt” in [02] Work › [99] Receipts', threadId: 'figma-receipt' },
   { id: 'a3', at: d(16, 7, 3), kind: 'task', text: 'Created task “Revise quote to 120 seats”, due Tue', threadId: 'acme-quote' },
   { id: 'a4', at: d(16, 7, 3), kind: 'file', text: 'Copied proposal v3 to v4 and updated seats and tier price', threadId: 'acme-quote' },
   { id: 'a5', at: d(16, 7, 4), kind: 'draft', text: 'Drafted a reply to Dana Whitfield from Pricing tiers 2026 and the Nov 13 call notes', threadId: 'acme-quote' },
   { id: 'a6', at: d(16, 7, 4), kind: 'calendar', text: 'Blocked 1:00–2:30 PM for “Focus: Revised Acme quote”', threadId: 'acme-quote' },
   { id: 'a7', at: d(16, 7, 4), kind: 'calendar', text: 'Added “Travel budget approval” to your 1:1 notes with Priya', threadId: 'travel-budget' },
-  { id: 'a8', at: d(16, 7, 5), kind: 'draft', text: 'Drafted a nudge to Marcus Lee — the signed SOW is 3 days late', threadId: 'northwind-sow' },
+  { id: 'a8', at: d(16, 7, 5), kind: 'draft', text: 'Drafted a nudge to Marcus Lee: the signed SOW is 3 days late', threadId: 'northwind-sow' },
   { id: 'a9', at: d(16, 7, 5), kind: 'file', text: 'Found the Oct 21 Harbor Grill receipt and attached it to a reply to Ben', threadId: 'expense-receipt' },
-  { id: 'a10', at: d(16, 7, 45), kind: 'triage', text: 'Sorted “Feedback for Jordan Kim” to [01] Follow Up — due before 4:30 PM', threadId: 'interview-feedback' },
-  { id: 'a11', at: d(14, 11, 25), kind: 'triage', text: 'Sorted “Q4 QBR deck” to [01] Follow Up — needs focus time', threadId: 'qbr-slides' },
-  { id: 'a12', at: d(12, 17, 6), kind: 'move', text: 'Moved “Acme MSA redlines” to [02] Waiting — Hannah promised Thursday', threadId: 'msa-redlines' },
+  { id: 'a10', at: d(16, 7, 45), kind: 'triage', text: 'Sorted “Feedback for Jordan Kim” to [01] Follow Up, due before 4:30 PM', threadId: 'interview-feedback' },
+  { id: 'a11', at: d(14, 11, 25), kind: 'triage', text: 'Sorted “Q4 QBR deck” to [01] Follow Up as needing focus time', threadId: 'qbr-slides' },
+  { id: 'a12', at: d(12, 17, 6), kind: 'move', text: 'Moved “Acme MSA redlines” to [02] Waiting: Hannah promised Thursday', threadId: 'msa-redlines' },
   { id: 'a13', at: d(12, 16, 28), kind: 'file', text: 'Saved Acme’s redlines as “2026-11-12 Acme — MSA redlines” in [02] Work › [10] Acme', threadId: 'msa-redlines' },
-  { id: 'a14', at: d(10, 13, 41), kind: 'move', text: 'Moved “Northwind pilot SOW” to [02] Waiting — Marcus promised Friday', threadId: 'northwind-sow' },
+  { id: 'a14', at: d(10, 13, 41), kind: 'move', text: 'Moved “Northwind pilot SOW” to [02] Waiting: Marcus promised Friday', threadId: 'northwind-sow' },
 ];
 
 export const RULES: Rule[] = [
