@@ -10,6 +10,9 @@ import { Avatar } from './common';
 
 /* ───────────── Modal ───────────── */
 
+/** Open modals, innermost last, so Escape only closes the top one. */
+const modalStack: symbol[] = [];
+
 export function Modal({
   open,
   onClose,
@@ -29,24 +32,31 @@ export function Modal({
 }) {
   const box = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  // Keep the latest onClose without re-running the open effect (which moves focus).
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
+    const token = Symbol('modal');
+    modalStack.push(token);
     const prev = document.activeElement as HTMLElement | null;
     const first = box.current?.querySelector<HTMLElement>('input, textarea, select, [data-autofocus]');
     (first ?? box.current)?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && modalStack[modalStack.length - 1] === token) {
         e.stopPropagation();
-        onClose();
+        closeRef.current();
       }
     };
     document.addEventListener('keydown', onKey, true);
     return () => {
       document.removeEventListener('keydown', onKey, true);
+      const i = modalStack.indexOf(token);
+      if (i >= 0) modalStack.splice(i, 1);
       prev?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
   return createPortal(
