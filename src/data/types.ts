@@ -84,6 +84,8 @@ export interface Thread {
   kind?: 'report' | 'howto' | 'reference';
   suggestion?: Suggestion;
   history?: { at: Date; text: string }[];
+  /** Urgency you set yourself; otherwise Timmy ranks the thread. */
+  urgency?: 'urgent' | 'later';
 }
 
 export interface Doc {
@@ -134,7 +136,7 @@ export interface CalEvent {
   threadId?: string;
 }
 
-export type ActivityKind = 'triage' | 'file' | 'task' | 'draft' | 'calendar' | 'crm' | 'move' | 'send';
+export type ActivityKind = 'triage' | 'file' | 'task' | 'draft' | 'calendar' | 'crm' | 'move' | 'send' | 'approval';
 
 export interface Activity {
   id: string;
@@ -144,7 +146,7 @@ export interface Activity {
   threadId?: string;
 }
 
-export type RuleGroup = 'triage' | 'writing' | 'files' | 'schedule';
+export type RuleGroup = 'triage' | 'urgency' | 'approvals' | 'writing' | 'files' | 'schedule';
 
 export interface Rule {
   id: string;
@@ -152,6 +154,8 @@ export interface Rule {
   text: string;
   enabled: boolean;
   hits: number;
+  /** Always on; shown with a lock. */
+  locked?: boolean;
 }
 
 export interface Label {

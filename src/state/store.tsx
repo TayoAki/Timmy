@@ -1,10 +1,13 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, type Dispatch, type ReactNode } from 'react';
 import { ACTIVITY, BOXES, DEALS, NOW, PEOPLE, PROJECTS, RULES, THREADS } from '../data/mock';
 import type { Activity, Box, Deal, Label, ProjectId, Rule, RuleGroup, Thread } from '../data/types';
+import { DECISIONS, type Decision } from '../data/decisions';
 import { WS_SEED } from '../data/ws-mock';
 import type { WS } from '../data/ws-types';
-import { fmtDay } from '../lib/format';
-import { applyOps, firstName, personName, registerPerson, type WsOp, type WsOptions } from './ws';
+import { fmtDay, money } from '../lib/format';
+import type { ApprovalKind, ApprovalRecord } from './approvals';
+import { DEFAULT_SCHEDULE, fmtClock, nextRun, scheduleRule, whenLabel, daysLabel, type Schedule } from './schedule';
+import { applyOps, decisionOps, firstName, personName, registerPerson, type WsOp, type WsOptions } from './ws';
 
 export type TodayTab = 'brief' | 'triage' | 'drafts';
 export type ThreadTab = 'conversation' | 'links' | 'history';
@@ -25,9 +28,10 @@ export type Route =
   | { view: 'projects'; tab: 'active' | 'archived' }
   | { view: 'project'; id: string; tab: 'overview' | 'tasks' | 'notes' | 'mail' | 'files' | 'ai' }
   | { view: 'contact'; id: string; tab: 'overview' | 'activity'; filter?: string }
-  | { view: 'library'; tab: 'prompts' | 'captured' | 'routines' | 'learned' };
+  | { view: 'library'; tab: 'prompts' | 'captured' | 'routines' | 'learned' }
+  | { view: 'approvals'; tab: 'open' | 'history'; filter?: ApprovalKind };
 
-export type Section = 'mail' | 'activity' | 'people' | 'files' | 'rules' | 'tasks' | 'calendar' | 'docs' | 'projects' | 'library';
+export type Section = 'mail' | 'approvals' | 'activity' | 'people' | 'files' | 'rules' | 'tasks' | 'calendar' | 'docs' | 'projects' | 'library';
 
 export const sectionOf = (r: Route): Section => {
   switch (r.view) {
@@ -53,6 +57,8 @@ export const sectionOf = (r: Route): Section => {
       return 'projects';
     case 'library':
       return 'library';
+    case 'approvals':
+      return 'approvals';
     default:
       return 'mail';
   }
@@ -77,6 +83,9 @@ interface Snapshot {
   deals: Record<string, Deal>;
   activity: Activity[];
   ws: WS;
+  decisions: Decision[];
+  approvalLog: ApprovalRecord[];
+  dismissed: string[];
 }
 
 export interface Toast {
@@ -104,6 +113,12 @@ export interface State {
   ws: WS;
   compose: ComposeDraft | null;
   capture: boolean;
+  /** Choices Timmy brought to you (prices, hiring calls, invites). */
+  decisions: Decision[];
+  /** Everything you approved or turned down, newest first. */
+  approvalLog: ApprovalRecord[];
+  /** When the morning run happens. */
+  schedule: Schedule;
 }
 
 export type Action =
@@ -137,7 +152,11 @@ export type Action =
   | { type: 'simulateReply'; id: string }
   | { type: 'makeDraft'; id: string }
   | { type: 'reset' }
-  | { type: 'capture'; open: boolean };
+  | { type: 'capture'; open: boolean }
+  | { type: 'setSchedule'; schedule: Partial<Schedule> }
+  | { type: 'setUrgency'; id: string; level: 'urgent' | 'later' | null }
+  /** Approve or turn down an item in the Approvals queue. */
+  | { type: 'resolve'; key: string; option: string; change?: { deal: string; stage: string; value: number } };
 
 /** Builds a workspace change: dispatch(ws([put('tasks', task)], { toast: 'Task added', undo: true })). */
 export const ws = (ops: WsOp[], options: WsOptions = {}): Action => ({ type: 'ws', ops, ...options });
@@ -170,6 +189,9 @@ const initial: State = {
   ws: WS_SEED,
   compose: null,
   capture: false,
+  decisions: DECISIONS,
+  approvalLog: [],
+  schedule: DEFAULT_SCHEDULE,
 };
 
 let toastSeq = 1;
@@ -178,7 +200,22 @@ let activitySeq = 1;
 /** Lower-cases the first letter unless the word is an acronym ("CFO approval" stays). */
 const lowerFirst = (s: string) => (/^[A-Z]{2}/.test(s) ? s : s.charAt(0).toLowerCase() + s.slice(1));
 
-const snap = (s: State): Snapshot => ({ threads: s.threads, deals: s.deals, activity: s.activity, ws: s.ws });
+const snap = (s: State): Snapshot => ({
+  threads: s.threads,
+  deals: s.deals,
+  activity: s.activity,
+  ws: s.ws,
+  decisions: s.decisions,
+  approvalLog: s.approvalLog,
+  dismissed: s.dismissed,
+});
+
+let recordSeq = 1;
+/** Adds a line to the Approvals history. */
+const recorded = (s: State, r: Omit<ApprovalRecord, 'id' | 'at'>): ApprovalRecord[] => [
+  { id: `ap-${recordSeq++}-${Date.now().toString(36)}`, at: new Date(NOW.getTime() + activitySeq * 60000), ...r },
+  ...s.approvalLog,
+];
 
 const dueDate = (iso?: string) => {
   if (!iso) return undefined;
@@ -290,12 +327,16 @@ function reducer(s: State, a: Action): State {
         ),
       };
 
-    case 'discardDraft':
+    case 'discardDraft': {
+      const t = s.threads.find((x) => x.id === a.id);
+      if (!t?.draft) return s;
       return {
         ...s,
         threads: patch(s.threads, a.id, (x) => ({ ...x, draft: undefined })),
+        approvalLog: recorded(s, { key: `draft:${t.id}`, kind: 'email', title: t.draft.subject, choice: 'Discarded', approved: false, thread: t.id }),
         toasts: withToast(s, 'Draft discarded', snap(s)),
       };
+    }
 
     case 'sendDraft': {
       const t = s.threads.find((x) => x.id === a.id);
@@ -337,6 +378,7 @@ function reducer(s: State, a: Action): State {
         ...s,
         threads: patch(s.threads, a.id, () => updated),
         activity: logged(s, `You sent “${draft.subject}”${track ? ' and Timmy started tracking the reply' : ''}`, 'send', t.id),
+        approvalLog: recorded(s, { key: `draft:${t.id}`, kind: 'email', title: draft.subject, choice: track ? 'Sent and tracked' : 'Sent', approved: true, thread: t.id }),
         toasts: withToast(s, where, snap(s)),
       };
     }
@@ -474,6 +516,104 @@ function reducer(s: State, a: Action): State {
       };
     }
 
+    case 'setSchedule': {
+      const schedule = { ...s.schedule, ...a.schedule };
+      const next = nextRun(schedule);
+      const timeChanged = a.schedule.time !== undefined || a.schedule.days !== undefined;
+      return {
+        ...s,
+        schedule,
+        rules: s.rules.map((r) => (r.id === 's1' ? { ...r, text: scheduleRule(schedule) } : r)),
+        toasts: timeChanged
+          ? withToast(
+              s,
+              next
+                ? `Morning run: ${daysLabel(schedule.days).toLowerCase()} at ${fmtClock(schedule.time)}. Next run ${whenLabel(next)}.`
+                : 'Morning run paused. Pick at least one day to restart it.',
+              undefined,
+              next ? undefined : 'warn',
+            )
+          : s.toasts,
+      };
+    }
+
+    case 'setUrgency': {
+      const t = s.threads.find((x) => x.id === a.id);
+      if (!t) return s;
+      const text =
+        a.level === 'urgent'
+          ? 'Marked urgent. Timmy will rank mail like this higher.'
+          : a.level === 'later'
+            ? 'Marked as able to wait. It drops out of the urgent list.'
+            : 'Timmy ranks this thread again.';
+      return {
+        ...s,
+        threads: patch(s.threads, a.id, (x) => ({ ...x, urgency: a.level ?? undefined })),
+        toasts: withToast(s, text, snap(s)),
+      };
+    }
+
+    case 'resolve': {
+      const [kind, id] = a.key.split(':') as [string, string];
+      if (kind === 'draft') {
+        return reducer(s, a.option === 'send' ? { type: 'sendDraft', id, track: true } : { type: 'discardDraft', id });
+      }
+      if (kind === 'crm') {
+        const deal = s.deals[id];
+        if (!deal) return s;
+        if (a.option !== 'apply' || !a.change) {
+          return {
+            ...s,
+            dismissed: [...s.dismissed, a.key],
+            approvalLog: recorded(s, { key: a.key, kind: 'crm', title: `Update ${deal.company}`, choice: 'Not now', approved: false }),
+            toasts: withToast(s, `Skipped. ${deal.company} stays as it is.`, snap(s)),
+          };
+        }
+        const next: Deal = { ...deal, stage: a.change.stage, value: a.change.value, suggestion: undefined };
+        return {
+          ...s,
+          deals: { ...s.deals, [id]: next },
+          activity: logged(s, `Updated ${deal.company}: ${next.stage}, ${money(next.value)}`, 'crm'),
+          approvalLog: recorded(s, { key: a.key, kind: 'crm', title: `Update ${deal.company} to ${next.stage}, ${money(next.value)}`, choice: 'Updated', approved: true }),
+          toasts: withToast(s, `${deal.company} updated · ${next.stage}, ${money(next.value)}`, snap(s)),
+        };
+      }
+      // A decision Timmy brought to you.
+      const dec = s.decisions.find((x) => x.id === id);
+      const opt = dec?.options.find((o) => o.id === a.option);
+      if (!dec || !opt || dec.chosen) return s;
+      let threads = s.threads;
+      let wsNext = s.ws;
+      let compose = s.compose;
+      for (const e of opt.effects) {
+        if (e.do === 'note') wsNext = applyOps(wsNext, decisionOps(wsNext, e.project, e.text, 'Approvals'));
+        else if (e.do === 'ws') wsNext = applyOps(wsNext, e.ops);
+        else if (e.do === 'compose') compose = e.draft;
+        else if (e.do === 'step')
+          threads = patch(threads, e.thread, (x) => ({ ...x, steps: x.steps?.map((st) => (st.id === e.step ? { ...st, done: true } : st)) }));
+        else if (e.do === 'redraft')
+          threads = patch(threads, e.thread, (x) =>
+            x.draft ? { ...x, draft: { ...x.draft, body: e.replace.reduce((b, [from, to]) => b.replace(from, to), x.draft.body) } } : x,
+          );
+        else if (e.do === 'draft')
+          threads = patch(threads, e.thread, (x) => ({
+            ...(x.box === 'inbox' ? moveThread(x, 'follow-up') : x),
+            draft: e.draft,
+            history: [...(x.history ?? []), { at: NOW, text: `Drafted a reply after you chose “${opt.label}”` }],
+          }));
+      }
+      return {
+        ...s,
+        threads,
+        ws: wsNext,
+        compose,
+        decisions: s.decisions.map((x) => (x.id === dec.id ? { ...x, chosen: { option: opt.id, at: NOW } } : x)),
+        activity: logged(s, `You decided “${dec.title}”: ${opt.label}`, 'approval', dec.thread),
+        approvalLog: recorded(s, { key: a.key, kind: dec.kind, title: dec.title, choice: opt.label, approved: !opt.holds, thread: dec.thread }),
+        toasts: withToast(s, opt.result, snap(s)),
+      };
+    }
+
     case 'reset':
       try {
         localStorage.removeItem(STORAGE_KEY);
@@ -538,9 +678,9 @@ const Ctx = createContext<{ state: State; dispatch: Dispatch<Action> } | null>(n
 
 /* ───────────── Saved in this browser ───────────── */
 
-const STORAGE_KEY = 'timmy-state-v1';
+const STORAGE_KEY = 'timmy-state-v2';
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
-const PERSISTED = ['threads', 'deals', 'activity', 'rules', 'ws', 'highlight', 'highlightDone', 'dismissed', 'route', 'back'] as const;
+const PERSISTED = ['threads', 'deals', 'activity', 'rules', 'ws', 'highlight', 'highlightDone', 'dismissed', 'route', 'back', 'decisions', 'approvalLog', 'schedule'] as const;
 
 function load(): State {
   try {

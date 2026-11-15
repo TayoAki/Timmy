@@ -26,8 +26,15 @@ import { NOW, PEOPLE } from '../data/mock';
 import { todaysEvents } from '../state/ws';
 import type { Box, Thread } from '../data/types';
 import { dayDiff, dueInfo, fmtDate, fmtLongDate, fmtShortTime, fmtTime, plural } from '../lib/format';
-import { boxTag, byOldest, inBox, labelOf, useStore, type TodayTab } from '../state/store';
-import { Avatar, EffortChip, Kbd, TimmyMark, tint } from '../components/common';
+import { boxTag, byOldest, counterpart, inBox, labelOf, useStore, type TodayTab } from '../state/store';
+import { openApprovals, type Approval } from '../state/approvals';
+import { LAST_RUN, LAST_RUN_COUNT, daysLabel } from '../state/schedule';
+import { openThreads, useUrgency, type UrgencyInfo } from '../state/urgency';
+import { ApprovalRow } from '../areas/approvals/ApprovalCard';
+import { Segmented } from '../components/kit';
+import { TimePicker } from '../components/TimePicker';
+import { UrgencyReasons, UrgencyTag } from '../components/Urgency';
+import { Avatar, EffortChip, Kbd, tint } from '../components/common';
 import { DocIcon } from '../components/DocBits';
 import { Frame } from '../components/Frame';
 
@@ -58,23 +65,33 @@ export function TodayView({ tab }: { tab: TodayTab }) {
 
 function Brief() {
   const { state, dispatch } = useStore();
+  const { rank } = useUrgency();
   const owe = inBox(state.threads, 'follow-up');
   const waiting = inBox(state.threads, 'waiting');
-  const quick = owe.filter((t) => t.effort === 'quick').length;
   const triage = inBox(state.threads, 'inbox');
+  const ranked = rank(openThreads(state.threads));
+  const urgent = ranked.filter((x) => x.u.level === 'urgent').length;
+  const approvals = openApprovals(state);
 
   return (
     <>
-      <h1 className="page-title">Good morning, Taylor.</h1>
+      <div className="brief-head">
+        <h1 className="page-title">Good morning, Taylor.</h1>
+        <RunControl />
+      </div>
       <p className="page-sub">
-        {fmtLongDate(NOW)}. Timmy sorted 33 emails overnight
-        {owe.length > 0 ? `, and ${plural(owe.length, 'thing')} need you` : ', and nothing needs you'}
-        {quick > 0 ? `, ${quick} of them quick replies.` : '.'}
+        {fmtLongDate(NOW)}. Timmy sorted {LAST_RUN_COUNT} emails this morning.{' '}
+        {urgent ? `${plural(urgent, 'thing')} ${urgent === 1 ? 'is' : 'are'} urgent` : 'Nothing is urgent'}
+        {approvals.length ? `, and ${plural(approvals.length, 'item')} ${approvals.length === 1 ? 'needs' : 'need'} your approval.` : '.'}
       </p>
 
       <QuickActions />
 
       <Highlight />
+
+      <UrgentSection ranked={ranked} />
+
+      <ApprovalsSection approvals={approvals} />
 
       <div className="tri-grid">
         <OweCard threads={owe} />
@@ -84,8 +101,8 @@ function Brief() {
 
       <section className="section">
         <div className="section-head">
-          <h2 className="section-title">Overnight triage</h2>
-          <span className="section-sub">6:00 PM – 7:02 AM</span>
+          <h2 className="section-title">This morning’s triage</h2>
+          <span className="section-sub">6:00 PM – {fmtTime(LAST_RUN)}</span>
         </div>
         <div className="card card-pad triage-summary">
           <p>
@@ -116,9 +133,136 @@ function Brief() {
           )}
         </div>
       </section>
-
-      <Suggestions />
     </>
+  );
+}
+
+/** When the morning run happens; change it right here. */
+function RunControl() {
+  const { state, dispatch } = useStore();
+  const s = state.schedule;
+  return (
+    <div className="run-control">
+      <span className="run-label">Morning run</span>
+      <TimePicker value={s.time} onChange={(time) => dispatch({ type: 'setSchedule', schedule: { time } })} label="Morning run time" align="right" />
+      <button className="btn btn-sm btn-ghost" onClick={() => dispatch({ type: 'navigate', route: { view: 'rules', tab: 'schedule' } })} title="Change the days in Settings › Schedule">
+        {daysLabel(s.days)}
+      </button>
+    </div>
+  );
+}
+
+/** The urgent list: only what needs you today, or everything open ranked. */
+function UrgentSection({ ranked }: { ranked: { t: Thread; u: UrgencyInfo }[] }) {
+  const { state, dispatch } = useStore();
+  const mode = state.schedule.brief;
+  const urgent = ranked.filter((x) => x.u.level === 'urgent');
+  const soon = ranked.filter((x) => x.u.level === 'soon').length;
+  const later = ranked.length - urgent.length - soon;
+  const rows = mode === 'urgent' ? urgent : ranked;
+  const setMode = (brief: 'urgent' | 'all') => dispatch({ type: 'setSchedule', schedule: { brief } });
+
+  return (
+    <section className="section" aria-labelledby="brief-urgent">
+      <div className="section-head urgent-head">
+        <div>
+          <h2 className="section-title" id="brief-urgent">
+            {mode === 'urgent' ? 'Needs you today' : 'Everything open'}
+          </h2>
+          <span className="section-sub">{mode === 'urgent' ? 'Ranked by Timmy. Open one to see why.' : 'Most urgent first.'}</span>
+        </div>
+        <Segmented
+          label="Show"
+          value={mode}
+          onChange={setMode}
+          options={[
+            { id: 'urgent', label: `Urgent · ${urgent.length}` },
+            { id: 'all', label: `Everything · ${ranked.length}` },
+          ]}
+        />
+      </div>
+      {rows.length > 0 ? (
+        <ol className="card urg-list">
+          {rows.map(({ t, u }, i) => {
+            const who = t.box === 'waiting' && t.waiting ? t.waiting.on : counterpart(t);
+            return (
+              <li key={t.id} className="urg-row">
+                <span className="urg-rank" aria-hidden>
+                  {i + 1}
+                </span>
+                <Avatar id={who} size={30} />
+                <div className="urg-row-text">
+                  <button className="urg-row-title" onClick={() => dispatch({ type: 'openThread', id: t.id })}>
+                    {t.ask}
+                  </button>
+                  <span className="urg-row-sub">
+                    <UrgencyReasons info={u} max={3} />
+                  </span>
+                </div>
+                <div className="urg-row-side">
+                  <UrgencyTag info={u} always={mode === 'all'} />
+                  <button className="btn btn-sm" onClick={() => dispatch({ type: 'openThread', id: t.id })}>
+                    {t.draft ? (t.draft.kind === 'nudge' ? 'Review nudge' : 'Review draft') : 'Open'}
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      ) : (
+        <div className="card empty">
+          <span className="empty-icon">
+            <CheckCheck size={20} />
+          </span>
+          <strong>Nothing urgent this morning</strong>
+          <span>Everything open can wait until later in the week.</span>
+        </div>
+      )}
+      {mode === 'urgent' && (soon > 0 || later > 0) && (
+        <p className="urg-more">
+          {soon > 0 && `${plural(soon, 'more thing')} for this week`}
+          {soon > 0 && later > 0 && ' and '}
+          {later > 0 && `${later} that can wait`}.{' '}
+          <button className="link-btn" onClick={() => setMode('all')}>
+            Show everything
+          </button>
+        </p>
+      )}
+    </section>
+  );
+}
+
+function ApprovalsSection({ approvals }: { approvals: Approval[] }) {
+  const { dispatch } = useStore();
+  return (
+    <section className="section" aria-labelledby="brief-approvals">
+      <div className="section-head">
+        <h2 className="section-title" id="brief-approvals">
+          Waiting for your approval
+        </h2>
+        {approvals.length > 0 && (
+          <button className="btn btn-xs btn-ghost" onClick={() => dispatch({ type: 'navigate', route: { view: 'approvals', tab: 'open' } })}>
+            See all {approvals.length}
+            <ArrowRight size={13} />
+          </button>
+        )}
+      </div>
+      {approvals.length > 0 ? (
+        <ul className="card ap-rows">
+          {approvals.slice(0, 4).map((a) => (
+            <ApprovalRow key={a.key} a={a} />
+          ))}
+        </ul>
+      ) : (
+        <div className="card empty">
+          <span className="empty-icon">
+            <CheckCheck size={20} />
+          </span>
+          <strong>Nothing waiting on you</strong>
+          <span>Drafts, invites and decisions Timmy prepares will wait here until you approve them.</span>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -242,7 +386,8 @@ function Segments({ parts }: { parts: { n: number; color: string; label: string 
 
 function OweCard({ threads }: { threads: Thread[] }) {
   const { dispatch } = useStore();
-  const sorted = [...threads].sort((a, b) => (a.due?.getTime() ?? Infinity) - (b.due?.getTime() ?? Infinity));
+  const { rank } = useUrgency();
+  const sorted = rank(threads).map((x) => x.t);
   const today = threads.filter((t) => t.due && dayDiff(t.due) <= 0).length;
   const week = threads.filter((t) => t.due && dayDiff(t.due) > 0 && dayDiff(t.due) < 7).length;
   return (
@@ -373,130 +518,6 @@ function CalendarCard() {
         ))}
       </ul>
     </article>
-  );
-}
-
-// ───────────── Suggestions (Timmy's proposed next steps) ─────────────
-
-interface Sug {
-  key: string;
-  text: ReactNode;
-  sources?: string[];
-  primary: { label: string; icon?: ReactNode; run: () => void };
-  secondary?: { label: string; run: () => void };
-}
-
-function Suggestions() {
-  const { state, dispatch } = useStore();
-  const t = (id: string) => state.threads.find((x) => x.id === id)!;
-  const open = (id: string) => () => dispatch({ type: 'openThread', id });
-
-  const all: Sug[] = [];
-  const acme = t('acme-quote');
-  if (acme.draft && acme.box === 'follow-up')
-    all.push({
-      key: 'acme',
-      text: (
-        <>
-          <strong>Dana</strong> asked for a revised quote for 120 seats by Tuesday. I copied proposal v3 to v4 with the 101–250 tier price and drafted a
-          reply that asks for her CFO’s approval by Friday.
-        </>
-      ),
-      sources: acme.draft.sources,
-      primary: { label: 'Review draft', icon: <FilePenLine size={14} />, run: open('acme-quote') },
-    });
-  const sow = t('northwind-sow');
-  if (sow.draft && sow.box === 'waiting')
-    all.push({
-      key: 'sow',
-      text: (
-        <>
-          <strong>Marcus</strong> said he’d send the signed SOW on Friday. It’s 3 days late, and you meet him at 10:30. I drafted a short nudge, or
-          you can ask him in person.
-        </>
-      ),
-      sources: sow.draft.sources,
-      primary: { label: 'Review nudge', icon: <FilePenLine size={14} />, run: open('northwind-sow') },
-    });
-  const bw = state.deals.brightwave!;
-  if (bw.stage !== 'Closed won')
-    all.push({
-      key: 'brightwave',
-      text: (
-        <>
-          <strong>Elena</strong> sent the countersigned Brightwave order form. Move the deal to <strong>Closed won</strong> ($36,000) and link the signed
-          form?
-        </>
-      ),
-      primary: { label: 'Update CRM', icon: <Check size={14} />, run: () => dispatch({ type: 'applyDeal', id: 'brightwave' }) },
-      secondary: { label: 'Open email', run: open('brightwave-signed') },
-    });
-  const travel = t('travel-budget');
-  if (travel.box === 'waiting')
-    all.push({
-      key: 'travel',
-      text: (
-        <>
-          <strong>Priya</strong> hasn’t replied about the travel budget in 6 days. I added it to the agenda for your 3:00 PM 1:1.
-        </>
-      ),
-      sources: ['priya-1on1'],
-      primary: { label: 'Open thread', run: open('travel-budget') },
-    });
-
-  const shown = all.filter((s) => !state.dismissed.includes(s.key));
-
-  return (
-    <section className="section">
-      <div className="section-head">
-        <h2 className="section-title">Timmy suggests</h2>
-        <span className="section-sub">{shown.length ? `${shown.length} ready for you` : 'All caught up'}</span>
-      </div>
-      <div className="sug-list">
-        {shown.map((s) => (
-          <article key={s.key} className="card sug">
-            <TimmyMark size={30} />
-            <div className="sug-body">
-              <p>{s.text}</p>
-              {s.sources && (
-                <div className="chips" style={{ marginTop: 8 }}>
-                  {s.sources.map((id) => (
-                    <span key={id} className="chip">
-                      <DocIcon kind={state.ws.files[id]!.kind} size={12} />
-                      {state.ws.files[id]!.name}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="sug-actions">
-              <button className="btn btn-sm btn-primary" onClick={s.primary.run}>
-                {s.primary.icon}
-                {s.primary.label}
-              </button>
-              {s.secondary ? (
-                <button className="btn btn-sm btn-ghost" onClick={s.secondary.run}>
-                  {s.secondary.label}
-                </button>
-              ) : (
-                <button className="btn btn-sm btn-ghost" onClick={() => dispatch({ type: 'dismiss', key: s.key })}>
-                  Not now
-                </button>
-              )}
-            </div>
-          </article>
-        ))}
-        {shown.length === 0 && (
-          <div className="card empty">
-            <span className="empty-icon">
-              <CheckCheck size={20} />
-            </span>
-            <strong>Nothing waiting on a decision</strong>
-            <span>Timmy will suggest next steps as new mail arrives.</span>
-          </div>
-        )}
-      </div>
-    </section>
   );
 }
 

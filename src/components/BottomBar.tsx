@@ -1,16 +1,22 @@
 import { Check, Monitor, Moon, Sun } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { fmtTime } from '../lib/format';
+import { openApprovals } from '../state/approvals';
+import { LAST_RUN, nextRun, whenLabel } from '../state/schedule';
 import { inBox, useStore } from '../state/store';
+import { openThreads, useUrgency } from '../state/urgency';
 import { MODES, PALETTES, Swatch, useTheme, type Mode } from '../state/theme';
 import { Kbd } from './common';
 
 const MODE_ICON: Record<Mode, typeof Sun> = { light: Sun, dark: Moon, system: Monitor };
 
 export function BottomBar() {
-  const { state } = useStore();
+  const { state, dispatch } = useStore();
   const inbox = inBox(state.threads, 'inbox').length;
-  const owe = inBox(state.threads, 'follow-up').length;
-  const waiting = inBox(state.threads, 'waiting').length;
+  const approvals = openApprovals(state).length;
+  const next = nextRun(state.schedule);
+  const { rank } = useUrgency();
+  const urgent = rank(openThreads(state.threads)).filter((x) => x.u.level === 'urgent').length;
 
   return (
     <footer className="bar">
@@ -19,11 +25,13 @@ export function BottomBar() {
           <span className="bar-status" />
           Timmy is up to date
         </span>
-        <span className="bar-item hide-sm">Last triage 7:02 AM · next tomorrow 7:00 AM</span>
+        <button className="bar-item bar-link hide-sm" onClick={() => dispatch({ type: 'navigate', route: { view: 'rules', tab: 'schedule' } })} title="Change the morning run in Settings › Schedule">
+          Last run {fmtTime(LAST_RUN)} · {next ? `next ${whenLabel(next)}` : 'morning run paused'}
+        </button>
       </div>
       <div className="bar-group">
         <span className="bar-item hide-sm mono">
-          {inbox} unsorted · {owe} owe · {waiting} waiting
+          {urgent} urgent · {approvals} to approve · {inbox} unsorted
         </span>
         <span className="bar-item hide-sm">
           <Kbd>⌘K</Kbd> search

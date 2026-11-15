@@ -49,9 +49,9 @@ export const FILING_FOLDER = 'filing';
 const files: WFile[] = [
   // [02] Work › [10] Acme
   { id: 'proposal-v3', name: '2026-Q4 Acme — Renewal proposal v3', kind: 'slides', folder: 'f02-10', updated: d(12, 13, 50), owner: 'me', project: 'acme' },
-  { id: 'proposal-v4', name: '2026-Q4 Acme — Renewal proposal v4 (draft)', kind: 'slides', folder: 'f02-10', updated: d(16, 7, 3), owner: 'me', createdByTimmy: true, project: 'acme' },
+  { id: 'proposal-v4', name: '2026-Q4 Acme — Renewal proposal v4 (draft)', kind: 'slides', folder: 'f02-10', updated: d(16, 8, 3), owner: 'me', createdByTimmy: true, project: 'acme' },
   { id: 'acme-quote', name: '2026-Q4 Acme — Quote tracker', kind: 'sheet', folder: 'f02-10', updated: d(13, 12, 0), owner: 'me', starred: true, project: 'acme' },
-  { id: 'acme-quote-summary', name: '2026-11-16 Acme — Revised quote summary', kind: 'doc', folder: 'f02-10', updated: d(16, 7, 4), owner: 'me', createdByTimmy: true, project: 'acme' },
+  { id: 'acme-quote-summary', name: '2026-11-16 Acme — Revised quote summary', kind: 'doc', folder: 'f02-10', updated: d(16, 8, 4), owner: 'me', createdByTimmy: true, project: 'acme' },
   { id: 'acme-call-notes', name: '2026-11-13 Acme — Call notes', kind: 'doc', folder: 'f02-10', updated: d(13, 11, 40), owner: 'me', project: 'acme' },
   { id: 'acme-running-notes', name: 'Acme Renewal — Running notes', kind: 'doc', folder: 'f02-10', updated: d(13, 12, 5), owner: 'me', project: 'acme' },
   { id: 'acme-stakeholders', name: '2026-11-06 Acme — Stakeholder map', kind: 'pdf', folder: 'f02-10', updated: d(6, 10, 22), owner: 'me', createdByTimmy: true, project: 'acme' },
@@ -64,11 +64,11 @@ const files: WFile[] = [
   // [02] Work › [13] Hiring
   { id: 'jordan-notes', name: '2026-11-13 Jordan Kim — Interview notes', kind: 'doc', folder: 'f02-13', updated: d(13, 15, 30), owner: 'me', project: 'hiring' },
   // [02] Work › [01] Management
-  { id: 'priya-1on1', name: 'Taylor / Priya — 1:1 notes', kind: 'doc', folder: 'f02-01', updated: d(16, 7, 4), owner: 'priya', starred: true },
+  { id: 'priya-1on1', name: 'Taylor / Priya — 1:1 notes', kind: 'doc', folder: 'f02-01', updated: d(16, 8, 4), owner: 'priya', starred: true },
   { id: 'offsite-agenda', name: '2027-Q1 Planning offsite — Agenda', kind: 'doc', folder: 'f02-01', updated: d(16, 6, 45), owner: 'nina' },
   // [02] Work › [99] Receipts
   { id: 'harbor-receipt', name: '2026-10-21 Harbor Grill — Receipt', kind: 'pdf', folder: 'f02-99', updated: oct(21, 21, 40), owner: 'me', createdByTimmy: true },
-  { id: 'figma-receipt', name: '2026-11-15 Figma — Receipt', kind: 'pdf', folder: 'f02-99', updated: d(16, 7, 2), owner: 'me', createdByTimmy: true },
+  { id: 'figma-receipt', name: '2026-11-15 Figma — Receipt', kind: 'pdf', folder: 'f02-99', updated: d(16, 8, 2), owner: 'me', createdByTimmy: true },
   // [03] Reference Documents
   { id: 'pricing-tiers', name: 'Pricing tiers 2026 — Working sheet', kind: 'sheet', folder: 'f03', updated: d(2, 9, 0), owner: 'priya', starred: true },
   { id: 'weekly-template', name: 'Weekly review — Template', kind: 'doc', folder: 'f03', updated: oct(5, 9, 0), owner: 'me' },
@@ -347,10 +347,10 @@ const decks: Deck[] = [
 /* ───────────── Tasks and quick notes ───────────── */
 
 const tasks: Task[] = [
-  { id: 't-acme-quote', title: 'Revise Acme quote to 120 seats', status: 'todo', project: 'acme', due: d(17, 17), priority: 'high', created: d(16, 7, 3), thread: 'acme-quote', contact: 'dana', event: 'focus-acme' },
-  { id: 't-scorecard', title: 'Add Jordan Kim scorecard', status: 'doing', project: 'hiring', due: d(16, 16, 30), priority: 'high', created: d(16, 7, 45), thread: 'interview-feedback' },
+  { id: 't-acme-quote', title: 'Revise Acme quote to 120 seats', status: 'todo', project: 'acme', due: d(17, 17), priority: 'high', created: d(16, 8, 3), thread: 'acme-quote', contact: 'dana', event: 'focus-acme' },
+  { id: 't-scorecard', title: 'Add Jordan Kim scorecard', status: 'doing', project: 'hiring', due: d(16, 16, 30), priority: 'high', created: d(16, 8, 6), thread: 'interview-feedback' },
   { id: 't-qbr', title: 'Fill in QBR slides 6–9 (pipeline and renewals)', status: 'todo', project: 'qbr', due: d(20, 17), priority: 'normal', created: d(14, 11, 25), thread: 'qbr-slides', event: 'qbr-prep' },
-  { id: 't-kickoff', title: 'Send Northwind kickoff invite for Dec 1', status: 'todo', project: 'northwind', due: d(18, 17), priority: 'normal', created: d(16, 7, 3), contact: 'marcus' },
+  { id: 't-kickoff', title: 'Send Northwind kickoff invite for Dec 1', status: 'todo', project: 'northwind', due: d(18, 17), priority: 'normal', created: d(16, 8, 3), contact: 'marcus' },
   { id: 't-receipt', title: 'Send Ben the Oct 21 dinner receipt', status: 'todo', due: d(18, 17), priority: 'low', created: d(13, 15, 5), thread: 'expense-receipt' },
   { id: 't-flights', title: 'Book flights for the Acme onsite', status: 'todo', project: 'acme', due: d(20, 12), priority: 'low', created: d(10, 9, 6), notes: 'Waiting on Priya’s travel budget approval.' },
   { id: 't-msa', title: 'Send MSA redlines to Hannah', status: 'done', project: 'acme', priority: 'normal', created: d(12, 9, 0) },

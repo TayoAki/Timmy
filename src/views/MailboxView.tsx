@@ -1,4 +1,6 @@
-import { Archive, ArrowDown, ArrowUp, ChevronDown, ChevronRight, FilePenLine, Sparkles, Star } from 'lucide-react';
+import { Archive, ArrowDown, ArrowUp, ChevronDown, ChevronRight, FilePenLine, Flame, Sparkles, Star } from 'lucide-react';
+import { UrgencyTag } from '../components/Urgency';
+import { useUrgency } from '../state/urgency';
 import { useMemo, useState } from 'react';
 import { BOXES, LABEL_GUIDE, PEOPLE, PROJECTS } from '../data/mock';
 import type { Box, ProjectId, Thread } from '../data/types';
@@ -8,6 +10,7 @@ import { Avatar, Folder, ThreadChips } from '../components/common';
 import { Frame, type TabDef } from '../components/Frame';
 
 type Filter = (t: Thread) => boolean;
+type Sort = 'urgency' | 'oldest' | 'newest';
 
 const TABS: Record<string, { id: string; label: string; test: Filter }[]> = {
   'follow-up': [
@@ -51,15 +54,16 @@ export function MailboxView({ box, tab }: { box: Box | ProjectId; tab: string })
 
   const [from, setFrom] = useState('');
   const [onlyDrafts, setOnlyDrafts] = useState(false);
-  const [oldestFirst, setOldestFirst] = useState(box === 'inbox' || box === 'follow-up');
+  const [sort, setSort] = useState<Sort>(box === 'inbox' ? 'oldest' : box === 'follow-up' || box === 'waiting' || isProject ? 'urgency' : 'newest');
+  const { rank } = useUrgency();
 
   const senders = useMemo(() => [...new Set(base.map(counterpart))], [base]);
 
-  const rows = base
+  const filtered = base
     .filter(active.test)
     .filter((t) => !from || t.participants.includes(from))
-    .filter((t) => !onlyDrafts || !!t.draft)
-    .sort(oldestFirst ? byOldest : byNewest);
+    .filter((t) => !onlyDrafts || !!t.draft);
+  const rows = sort === 'urgency' ? rank(filtered).map((x) => x.t) : [...filtered].sort(sort === 'oldest' ? byOldest : byNewest);
 
   const tabDefs: TabDef[] = tabs.map((t) => ({ id: t.id, label: t.label, count: base.filter(t.test).length }));
   const guide = LABEL_GUIDE[box];
@@ -102,10 +106,15 @@ export function MailboxView({ box, tab }: { box: Box | ProjectId; tab: string })
           <FilePenLine size={14} />
           Has draft
         </button>
-        <button className="filter" onClick={() => setOldestFirst((v) => !v)}>
-          {oldestFirst ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
-          {oldestFirst ? 'Oldest first' : 'Newest first'}
-        </button>
+        <label className="filter">
+          {sort === 'urgency' ? <Flame size={14} /> : sort === 'oldest' ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
+          <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="Sort">
+            <option value="urgency">Most urgent first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="newest">Newest first</option>
+          </select>
+          <ChevronDown size={14} />
+        </label>
         {(from || onlyDrafts) && (
           <button className="btn btn-xs btn-ghost" onClick={() => (setFrom(''), setOnlyDrafts(false))}>
             Clear
@@ -147,6 +156,7 @@ export function MailboxView({ box, tab }: { box: Box | ProjectId; tab: string })
 
 export function ThreadRow({ t, showProject = true }: { t: Thread; showProject?: boolean }) {
   const { dispatch } = useStore();
+  const { of } = useUrgency();
   const who = t.box === 'waiting' && t.waiting ? t.waiting.on : counterpart(t);
   const person = PEOPLE[who]!;
   const last = t.messages[t.messages.length - 1]!;
@@ -180,6 +190,7 @@ export function ThreadRow({ t, showProject = true }: { t: Thread; showProject?: 
       </div>
       <div className="row-meta">
         <span className="row-time">{fmtListDate(last.at)}</span>
+        <UrgencyTag info={of(t)} />
         {showProject === false && (
           <span className="chip plain" style={{ ['--tint' as string]: boxLabel.color }}>
             <span className="dot" />

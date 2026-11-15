@@ -14,6 +14,7 @@ import './styles/projects.css';
 import './styles/people.css';
 import './styles/files.css';
 import './styles/library.css';
+import './styles/approvals.css';
 import App from './App';
 
 createRoot(document.getElementById('root')!).render(

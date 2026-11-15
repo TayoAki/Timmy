@@ -455,7 +455,7 @@ function TeachByExample() {
   const { dispatch } = useStore();
   const [draft, setDraft] = useState('');
   const [edit, setEdit] = useState('');
-  const [group, setGroup] = useState<RuleGroup>('writing');
+  const [group, setGroup] = useState<LearnedRule['group']>('writing');
   const ok = words(draft) > 2 && words(edit) > 2 && draft.trim() !== edit.trim();
   const submit = () => {
     if (!ok) return;
@@ -489,8 +489,8 @@ function TeachByExample() {
         <div className="lib-teach-foot">
           <label className="lib-inline-field">
             <span>Rule group</span>
-            <select className="input" value={group} onChange={(e) => setGroup(e.target.value as RuleGroup)}>
-              {RULE_GROUPS.map((g) => (
+            <select className="input" value={group} onChange={(e) => setGroup(e.target.value as LearnedRule['group'])}>
+              {RULE_GROUPS.filter((g) => g.id !== 'urgency' && g.id !== 'approvals').map((g) => (
                 <option key={g.id} value={g.id}>
                   {g.name}
                 </option>

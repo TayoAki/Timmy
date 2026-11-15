@@ -32,6 +32,9 @@ import { counterpart, labelOf, useStore, ws, type ThreadTab } from '../state/sto
 import { Avatar, Kbd, ThreadChips, TimmyMark } from '../components/common';
 import { DocIcon, DocPath, DocThumb } from '../components/DocBits';
 import { Frame } from '../components/Frame';
+import { UrgencyLine } from '../components/Urgency';
+import { ApprovalCard } from '../areas/approvals/ApprovalCard';
+import { openApprovals } from '../state/approvals';
 
 const MOVES: { box: Box; key: string; label: string; icon: ReactNode }[] = [
   { box: 'follow-up', key: 'f', label: 'Follow Up', icon: <Reply size={15} /> },
@@ -108,6 +111,7 @@ export function ThreadView({ id, tab }: { id: string; tab: ThreadTab }) {
         </button>
       </div>
       <ThreadChips t={t} />
+      <UrgencyLine t={t} />
 
       <div className="move-bar" role="group" aria-label="Move thread">
         {MOVES.map((m) => (
@@ -131,6 +135,20 @@ export function ThreadView({ id, tab }: { id: string; tab: ThreadTab }) {
       {tab === 'links' && <Links t={t} />}
       {tab === 'history' && <History t={t} />}
     </Frame>
+  );
+}
+
+/** Decisions Timmy needs from you before this thread can move. */
+function ThreadDecisions({ t }: { t: Thread }) {
+  const { state } = useStore();
+  const items = openApprovals(state).filter((a) => a.thread === t.id && a.kind !== 'email');
+  if (!items.length) return null;
+  return (
+    <section className="thread-decisions" aria-label="Decisions for this thread">
+      {items.map((a) => (
+        <ApprovalCard key={a.key} a={a} inThread />
+      ))}
+    </section>
   );
 }
 
@@ -194,6 +212,7 @@ function Conversation({ t, replying, onReplyDone }: { t: Thread; replying: boole
         })}
       </div>
       {t.suggestion?.extra && t.project && t.box === 'inbox' && <ArrivedCard t={t} />}
+      <ThreadDecisions t={t} />
       {t.draft && <DraftCard t={t} draft={t.draft} />}
       {replying && !t.draft && <ReplyBox t={t} onDone={onReplyDone} />}
     </>

@@ -1,7 +1,7 @@
 import {
+  AlarmClock,
   Archive,
   BookOpen,
-  CalendarDays,
   FolderTree,
   Hourglass,
   Inbox,
@@ -10,12 +10,15 @@ import {
   Reply,
   RotateCcw,
   SquarePen,
+  Stamp,
   Star,
+  Flame,
   Sun,
   type LucideIcon,
 } from 'lucide-react';
 import { ARCHIVED_BASE, BOXES } from '../data/mock';
 import { todaysEvents } from '../state/ws';
+import { ApprovalsSide } from '../areas/approvals';
 import { CalendarSide } from '../areas/calendar';
 import { DocsSide } from '../areas/docs';
 import { FilesSide } from '../areas/files';
@@ -58,6 +61,8 @@ export function Sidebar() {
         <ProjectsSide />
       ) : section === 'library' ? (
         <LibrarySide />
+      ) : section === 'approvals' ? (
+        <ApprovalsSide />
       ) : (
         <MailSide />
       )}
@@ -201,10 +206,12 @@ function MailSide() {
 }
 
 const RULE_GROUPS: { id: RuleGroup; name: string; hint: string; icon: LucideIcon; color: string }[] = [
-  { id: 'triage', name: 'Triage', hint: 'How mail gets sorted', icon: Inbox, color: 'var(--c-red)' },
+  { id: 'triage', name: 'Triage', hint: 'How mail gets sorted', icon: Inbox, color: 'var(--c-slate)' },
+  { id: 'urgency', name: 'Urgency', hint: 'What counts as urgent', icon: Flame, color: 'var(--c-red)' },
+  { id: 'approvals', name: 'Approvals', hint: 'What needs your OK', icon: Stamp, color: 'var(--c-violet)' },
   { id: 'writing', name: 'Writing style', hint: 'How drafts sound', icon: PenLine, color: 'var(--c-violet)' },
   { id: 'files', name: 'Files & naming', hint: 'Where attachments go', icon: FolderTree, color: 'var(--c-sky)' },
-  { id: 'schedule', name: 'Schedule', hint: 'When Timmy runs', icon: CalendarDays, color: 'var(--c-green)' },
+  { id: 'schedule', name: 'Schedule', hint: 'When the morning run happens', icon: AlarmClock, color: 'var(--c-green)' },
 ];
 
 function RulesSide() {

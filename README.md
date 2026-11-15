@@ -6,6 +6,8 @@ Frontend for **Timmy**: an AI layer over Gmail plus its own workspace (Drive, Do
 
 This is the frontend only: everything runs in the browser on sample data, and your changes are saved in the browser (Settings › Reset demo data starts over). Gmail is the only service the product will connect to. The clock is fixed at Monday, Nov 16, 2026, 8:12 AM, so due dates and "late" labels stay consistent.
 
+Live preview: https://web-production-c4bbfc9c.up.railway.app (Railway, redeploys on every push to this branch).
+
 ```bash
 npm install
 npm run dev      # http://localhost:5173
@@ -18,7 +20,7 @@ The shell follows the wireframe: **left rail · sidebar · tabs + main content �
 
 | Area | What it holds |
 | --- | --- |
-| Left rail | Today & mail, Search (⌘K), Tasks, Calendar, Docs, Projects, People, Drive, AI library, Timmy's activity, Settings |
+| Left rail | Today & mail, Approvals, Search (⌘K), Tasks, Calendar, Docs, Projects, People, Drive, AI library, Timmy's activity, Settings |
 | Sidebar | Changes with the section. For mail it shows numbered labels, project folders, Starred (max 5) and `[99] Archived` |
 | Tabs | Views inside the current page (e.g. Daily brief / Triage / Drafts) |
 | Main content | The page itself |
@@ -41,6 +43,12 @@ The main flow: Dana asks for a revised quote → Timmy finds proposal v3, makes 
 ![Thread with Timmy's draft](docs/thread.png)
 
 Files follow a numbered folder structure (`[02] Work › [10] Acme`, at most 5 levels deep) and dated names (`2026-11-13 Acme — Call notes`, `2026-Q4 QBR — Briefing slides`).
+
+## The morning run, urgency and approvals
+
+- **Morning run:** Timmy sorts new mail, ranks it, drafts replies and lines up decisions at the time you pick (default 8:00 AM on weekdays). Change the time from the daily brief or Settings › Schedule; the status bar shows the next run.
+- **Urgency:** every open thread is ranked Urgent, Soon or Can wait, with the reasons shown ("Due today at 5:00 PM · Marcus is a priority contact · Says “today”"). The brief leads with only the urgent ones, or everything open if you prefer. Each signal is a rule in Settings › Urgency, and you can mark any thread urgent or able to wait yourself.
+- **Approvals:** one queue for everything that needs your OK: emails to send, decisions on price or hiring, CRM updates and calendar invites. Each decision shows the numbers and what Timmy will do for each choice. Nothing is sent without approval, every choice is logged under Decided, and Undo is on the notice that follows.
 
 ## Workflows it supports
 
@@ -83,10 +91,11 @@ Known, intentional findings: em-dashes in file names (they're part of the naming
 ```
 src/
   data/       types.ts + mock.ts (mail), ws-types.ts + ws-mock.ts (workspace seed)
-  state/      store.tsx (reducer, undo, saved in the browser), ws.ts (workspace helpers), theme.tsx
+  state/      store.tsx (reducer, undo, saved in the browser), ws.ts (workspace helpers), theme.tsx,
+              urgency.ts (ranking), approvals.ts (the queue), schedule.ts (morning run)
   components/ shell (LeftRail, Sidebar, Frame, RightPanel, BottomBar), Compose, SearchPalette, kit.tsx
   views/      mail screens: TodayView, MailboxView, ThreadView, OtherViews, AppearanceView
-  areas/      tasks, calendar, docs (docs, sheets, slides), projects, people, files (Drive), library
+  areas/      approvals, tasks, calendar, docs (docs, sheets, slides), projects, people, files (Drive), library
   styles/     tokens.css (light + Midnight/Graphite/Espresso), layout, ui, views, kit, one file per area
 ```
 

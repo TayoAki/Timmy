@@ -13,6 +13,7 @@ import {
 import type { ReactNode } from 'react';
 import { ARCHIVED_BASE, BOXES, LABEL_GUIDE, NOW, PEOPLE } from '../data/mock';
 import { pathOf, routeFromHref, todaysEvents } from '../state/ws';
+import { ApprovalsContext } from '../areas/approvals';
 import { CalendarContext } from '../areas/calendar';
 import { DocsContext, FileContext } from '../areas/docs';
 import { FilesContext } from '../areas/files';
@@ -52,6 +53,8 @@ export function RightPanel() {
     body = <ProjectsContext />;
   } else if (r.view === 'library') {
     body = <LibraryContext />;
+  } else if (r.view === 'approvals') {
+    body = <ApprovalsContext />;
   } else if (r.view === 'rules') {
     body = <RulesContext />;
   } else if (r.view === 'appearance') {

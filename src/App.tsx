@@ -1,5 +1,6 @@
 import { X } from 'lucide-react';
 import { useEffect } from 'react';
+import { ApprovalsView } from './areas/approvals';
 import { CalendarView } from './areas/calendar';
 import { DocsView, FileView } from './areas/docs';
 import { FilesView } from './areas/files';
@@ -83,6 +84,7 @@ function Shell() {
       {r.view === 'contact' && <ContactView key={r.id} />}
       {r.view === 'files' && <FilesView />}
       {r.view === 'library' && <LibraryView />}
+      {r.view === 'approvals' && <ApprovalsView />}
       <RightPanel />
       <BottomBar />
       <div className="scrim" onClick={() => state.drawer && dispatch({ type: 'drawer', drawer: state.drawer })} />

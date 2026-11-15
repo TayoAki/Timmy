@@ -82,7 +82,7 @@ export const LABEL_GUIDE: Record<string, { title: string; body: string; rule: st
 
 export const DOCS: Record<string, Doc> = {
   'proposal-v3': { id: 'proposal-v3', name: '2026-Q4 Acme — Renewal proposal v3', kind: 'slides', path: ['My Drive', '[02] Work', '[10] Acme'], updated: d(12, 13, 50), owner: 'me' },
-  'proposal-v4': { id: 'proposal-v4', name: '2026-Q4 Acme — Renewal proposal v4 (draft)', kind: 'slides', path: ['My Drive', '[02] Work', '[10] Acme'], updated: d(16, 7, 3), owner: 'me', createdByTimmy: true },
+  'proposal-v4': { id: 'proposal-v4', name: '2026-Q4 Acme — Renewal proposal v4 (draft)', kind: 'slides', path: ['My Drive', '[02] Work', '[10] Acme'], updated: d(16, 8, 3), owner: 'me', createdByTimmy: true },
   'pricing-tiers': { id: 'pricing-tiers', name: 'Pricing tiers 2026 — Working sheet', kind: 'sheet', path: ['My Drive', '[03] Reference Documents'], updated: d(2, 9, 0), owner: 'priya' },
   'acme-call-notes': { id: 'acme-call-notes', name: '2026-11-13 Acme — Call notes', kind: 'doc', path: ['My Drive', '[02] Work', '[10] Acme'], updated: d(13, 11, 40), owner: 'me' },
   'acme-stakeholders': { id: 'acme-stakeholders', name: '2026-11-06 Acme — Stakeholder map', kind: 'pdf', path: ['My Drive', '[02] Work', '[10] Acme'], updated: d(6, 10, 22), owner: 'me', createdByTimmy: true },
@@ -90,9 +90,9 @@ export const DOCS: Record<string, Doc> = {
   'northwind-sow': { id: 'northwind-sow', name: 'Northwind — Pilot SOW (final)', kind: 'doc', path: ['My Drive', '[02] Work', '[11] Northwind'], updated: d(9, 10, 2), owner: 'me' },
   'qbr-deck': { id: 'qbr-deck', name: '2026-Q4 QBR — Briefing slides', kind: 'slides', path: ['My Drive', '[02] Work', '[12] Q4 QBR'], updated: d(14, 11, 12), owner: 'priya' },
   'jordan-notes': { id: 'jordan-notes', name: '2026-11-13 Jordan Kim — Interview notes', kind: 'doc', path: ['My Drive', '[02] Work', '[13] Hiring'], updated: d(13, 15, 30), owner: 'me' },
-  'priya-1on1': { id: 'priya-1on1', name: 'Taylor / Priya — 1:1 notes', kind: 'doc', path: ['My Drive', '[02] Work', '[01] Management'], updated: d(16, 7, 4), owner: 'priya' },
+  'priya-1on1': { id: 'priya-1on1', name: 'Taylor / Priya — 1:1 notes', kind: 'doc', path: ['My Drive', '[02] Work', '[01] Management'], updated: d(16, 8, 4), owner: 'priya' },
   'harbor-receipt': { id: 'harbor-receipt', name: '2026-10-21 Harbor Grill — Receipt', kind: 'pdf', path: ['My Drive', '[02] Work', '[99] Receipts'], updated: oct(21, 21, 40), owner: 'me', createdByTimmy: true },
-  'figma-receipt': { id: 'figma-receipt', name: '2026-11-15 Figma — Receipt', kind: 'pdf', path: ['My Drive', '[02] Work', '[99] Receipts'], updated: d(16, 7, 2), owner: 'me', createdByTimmy: true },
+  'figma-receipt': { id: 'figma-receipt', name: '2026-11-15 Figma — Receipt', kind: 'pdf', path: ['My Drive', '[02] Work', '[99] Receipts'], updated: d(16, 8, 2), owner: 'me', createdByTimmy: true },
   'offsite-agenda': { id: 'offsite-agenda', name: '2027-Q1 Planning offsite — Agenda', kind: 'doc', path: ['My Drive', '[02] Work', '[01] Management'], updated: d(16, 6, 45), owner: 'nina' },
 };
 
@@ -191,11 +191,11 @@ export const THREADS: Thread[] = [
       { id: 's5', text: 'Update deal value to $83,520', done: false },
     ],
     history: [
-      { at: d(16, 7, 3), text: 'Sorted to [01] Follow Up: Dana asked you for a revised quote' },
-      { at: d(16, 7, 3), text: 'Created task “Revise quote to 120 seats”, due Tue' },
-      { at: d(16, 7, 3), text: 'Copied proposal v3 to v4 and updated seats and tier price' },
-      { at: d(16, 7, 4), text: 'Drafted a reply from Pricing tiers 2026 and the Nov 13 call notes' },
-      { at: d(16, 7, 4), text: 'Blocked 1:00–2:30 PM today for focus time' },
+      { at: d(16, 8, 3), text: 'Sorted to [01] Follow Up: Dana asked you for a revised quote' },
+      { at: d(16, 8, 3), text: 'Created task “Revise quote to 120 seats”, due Tue' },
+      { at: d(16, 8, 3), text: 'Copied proposal v3 to v4 and updated seats and tier price' },
+      { at: d(16, 8, 4), text: 'Drafted a reply from Pricing tiers 2026 and the Nov 13 call notes' },
+      { at: d(16, 8, 4), text: 'Blocked 1:00–2:30 PM today for focus time' },
     ],
   },
   {
@@ -228,7 +228,7 @@ export const THREADS: Thread[] = [
       { id: 's1', text: 'Send the reply', done: false },
       { id: 's2', text: 'Send a kickoff invite for Dec 1', done: false },
     ],
-    history: [{ at: d(16, 7, 3), text: 'Sorted to [01] Follow Up and marked Quick (about 2 min)' }],
+    history: [{ at: d(16, 8, 3), text: 'Sorted to [01] Follow Up and marked Quick (about 2 min)' }],
   },
   {
     id: 'interview-feedback',
@@ -259,7 +259,7 @@ export const THREADS: Thread[] = [
       { id: 's1', text: 'Paste Timmy’s summary into the scorecard', done: false },
       { id: 's2', text: 'Send reply', done: false },
     ],
-    history: [{ at: d(16, 7, 45), text: 'Sorted to [01] Follow Up, due before the 4:30 PM debrief' }],
+    history: [{ at: d(16, 8, 6), text: 'Sorted to [01] Follow Up, due before the 4:30 PM debrief' }],
   },
   {
     id: 'expense-receipt',
@@ -285,7 +285,7 @@ export const THREADS: Thread[] = [
       sources: ['harbor-receipt'],
       attachments: ['harbor-receipt'],
     },
-    history: [{ at: d(16, 7, 5), text: 'Found the Oct 21 receipt and attached it to a draft' }],
+    history: [{ at: d(16, 8, 5), text: 'Found the Oct 21 receipt and attached it to a draft' }],
   },
   {
     id: 'qbr-slides',
@@ -350,7 +350,7 @@ export const THREADS: Thread[] = [
     },
     history: [
       { at: d(10, 13, 41), text: 'Moved to [02] Waiting: Marcus promised the signed SOW Friday' },
-      { at: d(16, 7, 5), text: 'Drafted a nudge, 3 days past the promised date' },
+      { at: d(16, 8, 5), text: 'Drafted a nudge, 3 days past the promised date' },
     ],
   },
   {
@@ -404,7 +404,7 @@ export const THREADS: Thread[] = [
     ],
     history: [
       { at: d(10, 9, 6), text: 'Moved to [02] Waiting after you asked Priya for approval' },
-      { at: d(16, 7, 4), text: 'Added “Travel budget approval” to your 1:1 notes with Priya' },
+      { at: d(16, 8, 4), text: 'Added “Travel budget approval” to your 1:1 notes with Priya' },
     ],
   },
 
@@ -551,16 +551,16 @@ export const THREADS: Thread[] = [
 ];
 
 export const ACTIVITY: Activity[] = [
-  { id: 'a1', at: d(16, 7, 2), kind: 'triage', text: 'Triaged 33 new emails: archived 24, filed 2 to Follow Up, left 7 for you' },
-  { id: 'a2', at: d(16, 7, 2), kind: 'file', text: 'Saved the Figma receipt as “2026-11-15 Figma — Receipt” in [02] Work › [99] Receipts', threadId: 'figma-receipt' },
-  { id: 'a3', at: d(16, 7, 3), kind: 'task', text: 'Created task “Revise quote to 120 seats”, due Tue', threadId: 'acme-quote' },
-  { id: 'a4', at: d(16, 7, 3), kind: 'file', text: 'Copied proposal v3 to v4 and updated seats and tier price', threadId: 'acme-quote' },
-  { id: 'a5', at: d(16, 7, 4), kind: 'draft', text: 'Drafted a reply to Dana Whitfield from Pricing tiers 2026 and the Nov 13 call notes', threadId: 'acme-quote' },
-  { id: 'a6', at: d(16, 7, 4), kind: 'calendar', text: 'Blocked 1:00–2:30 PM for “Focus: Revised Acme quote”', threadId: 'acme-quote' },
-  { id: 'a7', at: d(16, 7, 4), kind: 'calendar', text: 'Added “Travel budget approval” to your 1:1 notes with Priya', threadId: 'travel-budget' },
-  { id: 'a8', at: d(16, 7, 5), kind: 'draft', text: 'Drafted a nudge to Marcus Lee: the signed SOW is 3 days late', threadId: 'northwind-sow' },
-  { id: 'a9', at: d(16, 7, 5), kind: 'file', text: 'Found the Oct 21 Harbor Grill receipt and attached it to a reply to Ben', threadId: 'expense-receipt' },
-  { id: 'a10', at: d(16, 7, 45), kind: 'triage', text: 'Sorted “Feedback for Jordan Kim” to [01] Follow Up, due before 4:30 PM', threadId: 'interview-feedback' },
+  { id: 'a1', at: d(16, 8, 2), kind: 'triage', text: 'Triaged 33 new emails: archived 24, filed 2 to Follow Up, left 7 for you' },
+  { id: 'a2', at: d(16, 8, 2), kind: 'file', text: 'Saved the Figma receipt as “2026-11-15 Figma — Receipt” in [02] Work › [99] Receipts', threadId: 'figma-receipt' },
+  { id: 'a3', at: d(16, 8, 3), kind: 'task', text: 'Created task “Revise quote to 120 seats”, due Tue', threadId: 'acme-quote' },
+  { id: 'a4', at: d(16, 8, 3), kind: 'file', text: 'Copied proposal v3 to v4 and updated seats and tier price', threadId: 'acme-quote' },
+  { id: 'a5', at: d(16, 8, 4), kind: 'draft', text: 'Drafted a reply to Dana Whitfield from Pricing tiers 2026 and the Nov 13 call notes', threadId: 'acme-quote' },
+  { id: 'a6', at: d(16, 8, 4), kind: 'calendar', text: 'Blocked 1:00–2:30 PM for “Focus: Revised Acme quote”', threadId: 'acme-quote' },
+  { id: 'a7', at: d(16, 8, 4), kind: 'calendar', text: 'Added “Travel budget approval” to your 1:1 notes with Priya', threadId: 'travel-budget' },
+  { id: 'a8', at: d(16, 8, 5), kind: 'draft', text: 'Drafted a nudge to Marcus Lee: the signed SOW is 3 days late', threadId: 'northwind-sow' },
+  { id: 'a9', at: d(16, 8, 5), kind: 'file', text: 'Found the Oct 21 Harbor Grill receipt and attached it to a reply to Ben', threadId: 'expense-receipt' },
+  { id: 'a10', at: d(16, 8, 6), kind: 'triage', text: 'Sorted “Feedback for Jordan Kim” to [01] Follow Up, due before 4:30 PM', threadId: 'interview-feedback' },
   { id: 'a11', at: d(14, 11, 25), kind: 'triage', text: 'Sorted “Q4 QBR deck” to [01] Follow Up as needing focus time', threadId: 'qbr-slides' },
   { id: 'a12', at: d(12, 17, 6), kind: 'move', text: 'Moved “Acme MSA redlines” to [02] Waiting: Hannah promised Thursday', threadId: 'msa-redlines' },
   { id: 'a13', at: d(12, 16, 28), kind: 'file', text: 'Saved Acme’s redlines as “2026-11-12 Acme — MSA redlines” in [02] Work › [10] Acme', threadId: 'msa-redlines' },
@@ -574,6 +574,18 @@ export const RULES: Rule[] = [
   { id: 'r4', group: 'triage', text: 'Archive calendar acceptances, receipts and social notifications without asking.', enabled: true, hits: 311 },
   { id: 'r5', group: 'triage', text: 'Industry reports and how-to emails go to Read Through.', enabled: true, hits: 27 },
   { id: 'r6', group: 'triage', text: 'Show me the oldest unsorted mail first.', enabled: true, hits: 0 },
+  { id: 'u1', group: 'urgency', text: 'Anything due today or already late is urgent.', enabled: true, hits: 31 },
+  { id: 'u2', group: 'urgency', text: 'A promise that’s past its date, or a request with no reply in 5 days, needs a nudge.', enabled: true, hits: 12 },
+  { id: 'u3', group: 'urgency', text: 'Words like “urgent”, “today”, “ASAP” or “end of day” raise urgency.', enabled: true, hits: 19 },
+  { id: 'u4', group: 'urgency', text: 'Mail from my priority contacts ranks higher.', enabled: true, hits: 23 },
+  { id: 'u5', group: 'urgency', text: 'Mail about an open deal ranks higher, more so above $50,000.', enabled: true, hits: 17 },
+  { id: 'u6', group: 'urgency', text: 'If I’m meeting the sender today, their mail ranks higher.', enabled: true, hits: 8 },
+  { id: 'u7', group: 'urgency', text: 'Newsletters, receipts and notifications are never urgent.', enabled: true, hits: 204 },
+  { id: 'p1', group: 'approvals', text: 'Never send an email for me without my approval.', enabled: true, hits: 96, locked: true },
+  { id: 'p2', group: 'approvals', text: 'Ask before changing a deal’s stage or value in the CRM.', enabled: true, hits: 11 },
+  { id: 'p3', group: 'approvals', text: 'Ask before sending or accepting calendar invites for me.', enabled: true, hits: 7 },
+  { id: 'p4', group: 'approvals', text: 'Bring any discount, price change or hiring call to me as a decision, with the numbers.', enabled: true, hits: 5 },
+  { id: 'p5', group: 'approvals', text: 'File receipts and archive calendar replies and newsletters without asking.', enabled: true, hits: 311 },
   { id: 'w1', group: 'writing', text: 'Put the action in the subject line and the first sentence.', enabled: true, hits: 64 },
   { id: 'w2', group: 'writing', text: 'In long threads, lead with what was decided and what still needs action. Put background at the bottom.', enabled: true, hits: 9 },
   { id: 'w3', group: 'writing', text: 'Sign off with “Best, Taylor”. No exclamation marks in customer emails.', enabled: true, hits: 58 },
@@ -582,7 +594,7 @@ export const RULES: Rule[] = [
   { id: 'f2', group: 'files', text: 'Save files where they will be used, not where they came from: [02] Work › the project folder.', enabled: true, hits: 73 },
   { id: 'f3', group: 'files', text: 'Receipts go to [02] Work › [99] Receipts.', enabled: true, hits: 40 },
   { id: 'f4', group: 'files', text: 'When a file is shared with me, add a shortcut instead of making a copy.', enabled: false, hits: 0 },
-  { id: 's1', group: 'schedule', text: 'Run triage every weekday at 7:00 AM.', enabled: true, hits: 52 },
+  { id: 's1', group: 'schedule', text: 'Run the morning brief on weekdays at 8:00 AM.', enabled: true, hits: 52 },
   { id: 's2', group: 'schedule', text: 'Block focus time for any Follow Up that needs more than 30 minutes.', enabled: true, hits: 14 },
   { id: 's3', group: 'schedule', text: 'Add stalled Waiting items to my next 1:1 with the person who owes them.', enabled: true, hits: 3 },
   { id: 's4', group: 'schedule', text: 'Never star more than 5 threads. If everything is starred, nothing is.', enabled: true, hits: 2 },

@@ -8,15 +8,20 @@ import {
   ListChecks,
   MoveRight,
   Plus,
+  Lock,
   Send,
+  Stamp,
   Undo2,
   type LucideIcon,
 } from 'lucide-react';
 import { useState } from 'react';
-import { NOW } from '../data/mock';
 import type { ActivityKind, RuleGroup } from '../data/types';
 import { dayDiff, fmtDay, fmtTime } from '../lib/format';
 import { useStore } from '../state/store';
+import { LAST_RUN, LAST_RUN_COUNT, fmtClock, nextRun, whenLabel } from '../state/schedule';
+import { URGENCY, type Urgency } from '../state/urgency';
+import { DayPicker, TimePicker } from '../components/TimePicker';
+import { Segmented } from '../components/kit';
 import { TimmyMark, tint } from '../components/common';
 import { Frame } from '../components/Frame';
 import { RULE_GROUPS } from '../components/Sidebar';
@@ -32,12 +37,14 @@ const KIND_META: Record<ActivityKind, { icon: LucideIcon; color: string; label: 
   task: { icon: ListChecks, color: 'var(--c-red)', label: 'Task' },
   calendar: { icon: CalendarDays, color: 'var(--c-green)', label: 'Calendar' },
   crm: { icon: BadgeDollarSign, color: 'var(--c-teal)', label: 'CRM' },
+  approval: { icon: Stamp, color: 'var(--c-violet)', label: 'Decided' },
 };
 
 const ACTIVITY_TABS: { id: string; label: string; kinds: ActivityKind[] | null }[] = [
   { id: 'all', label: 'All', kinds: null },
   { id: 'sorting', label: 'Sorting', kinds: ['triage', 'move'] },
   { id: 'drafts', label: 'Drafts & sends', kinds: ['draft', 'send'] },
+  { id: 'decisions', label: 'Decisions', kinds: ['approval'] },
   { id: 'files', label: 'Files', kinds: ['file'] },
   { id: 'other', label: 'Tasks, calendar & CRM', kinds: ['task', 'calendar', 'crm'] },
 ];
@@ -126,9 +133,11 @@ export function ActivityView({ tab }: { tab: string }) {
 
 const RULE_INTRO: Record<RuleGroup, string> = {
   triage: 'How Timmy sorts new mail. Every email ends up in Follow Up, Waiting, Read Through or the archive.',
+  urgency: 'How Timmy decides what’s urgent, so the morning brief leads with only what needs you today. Each rule is one signal; turn one off and Timmy stops using it.',
+  approvals: 'What Timmy prepares but never does without your OK. Approve, edit or turn things down in Approvals.',
   writing: 'How drafts should sound. Timmy also learns from the edits you make before sending.',
   files: 'Where attachments go and what they’re called, so they’re easy to find by search.',
-  schedule: 'When Timmy runs and how it uses your calendar.',
+  schedule: 'When the morning run happens and how Timmy uses your calendar.',
 };
 
 export function RulesView({ tab }: { tab: RuleGroup }) {
@@ -139,7 +148,7 @@ export function RulesView({ tab }: { tab: RuleGroup }) {
 
   return (
     <Frame
-      tabs={RULE_GROUPS.map((g) => ({ id: g.id, label: g.name, count: state.rules.filter((r) => r.group === g.id).length }))}
+      tabs={RULE_GROUPS.map((g) => ({ id: g.id, label: g.name }))}
       active={tab}
       onTab={(id) => dispatch({ type: 'navigate', route: { view: 'rules', tab: id as RuleGroup } })}
     >
@@ -150,7 +159,7 @@ export function RulesView({ tab }: { tab: RuleGroup }) {
         <div className="loop">
           {[
             { n: 'Capture', d: 'New mail arrives' },
-            { n: 'Organize', d: 'Timmy sorts it at 7:00' },
+            { n: 'Organize', d: `Timmy sorts it at ${fmtClock(state.schedule.time)}` },
             { n: 'Review', d: 'You confirm in Triage' },
             { n: 'Act', d: 'Drafts, tasks, calendar' },
           ].map((s, i) => (
@@ -163,28 +172,32 @@ export function RulesView({ tab }: { tab: RuleGroup }) {
         </div>
       )}
 
-      {tab === 'schedule' && (
-        <div className="card card-pad schedule">
-          <div>
-            <p className="schedule-time">
-              <strong>Daily triage</strong> runs at <strong className="mono">7:00 AM</strong>
-            </p>
-            <span className="muted">Monday to Friday. Anything Timmy is unsure about waits in Triage.</span>
-          </div>
-          <div className="week">
-            {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
-              <span key={i} className={i < 5 ? 'on' : ''}>
-                {d}
+      {tab === 'schedule' && <ScheduleCard />}
+
+      {tab === 'urgency' && (
+        <div className="urg-legend">
+          {(['urgent', 'soon', 'later'] as const).map((l) => (
+            <div key={l} className="urg-legend-item">
+              <span className={`urg urg-${l}`}>
+                <span className="urg-dot" aria-hidden />
+                {URGENCY[l].label}
               </span>
-            ))}
-          </div>
+              <span className="muted">{URGENCY_HELP[l]}</span>
+            </div>
+          ))}
         </div>
       )}
 
       <ul className="rules">
         {rules.map((r) => (
           <li key={r.id} className={`card rule${r.enabled ? '' : ' off'}`}>
-            <button className="switch" role="switch" aria-checked={r.enabled} aria-label={r.enabled ? 'Turn rule off' : 'Turn rule on'} onClick={() => dispatch({ type: 'toggleRule', id: r.id })} />
+            {r.locked ? (
+              <span className="rule-lock" title="Always on">
+                <Lock size={14} aria-label="Always on" />
+              </span>
+            ) : (
+              <button className="switch" role="switch" aria-checked={r.enabled} aria-label={r.enabled ? 'Turn rule off' : 'Turn rule on'} onClick={() => dispatch({ type: 'toggleRule', id: r.id })} />
+            )}
             <p className="rule-text">{r.text}</p>
             <span className="rule-hits mono">{r.hits ? `${r.hits}×` : 'new'}</span>
           </li>
@@ -208,8 +221,67 @@ export function RulesView({ tab }: { tab: RuleGroup }) {
         </button>
       </form>
       <p className="muted" style={{ fontSize: 12.5, marginTop: 10 }}>
-        Last run {fmtTime(new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate(), 7, 2))} today. Rule counts show how often each rule has fired.
+        Last run {fmtTime(LAST_RUN)} today. Rule counts show how often each rule has fired.
       </p>
     </Frame>
+  );
+}
+
+const URGENCY_HELP: Record<Urgency, string> = {
+  urgent: 'Due today or late, or a lot rides on it. The brief lists these first.',
+  soon: 'Needs you this week. Shown when you ask for everything open.',
+  later: 'No time pressure, or it’s someone else’s move.',
+};
+
+/** Settings › Schedule: when the morning run happens and what the brief leads with. */
+function ScheduleCard() {
+  const { state, dispatch } = useStore();
+  const s = state.schedule;
+  const next = nextRun(s);
+  const set = (schedule: Partial<typeof s>) => dispatch({ type: 'setSchedule', schedule });
+
+  return (
+    <section className="card card-pad sched" aria-labelledby="sched-title">
+      <div className="sched-head">
+        <h2 className="sched-title" id="sched-title">
+          Morning run
+        </h2>
+        <p className="muted">Timmy sorts new mail, ranks what’s urgent, drafts replies and lines up decisions, so your brief is ready when you sit down. Nothing is sent without your approval.</p>
+      </div>
+
+      <div className="sched-grid">
+        <div className="sched-field">
+          <span className="sched-label">Run at</span>
+          <TimePicker value={s.time} onChange={(time) => set({ time })} label="Morning run time" />
+        </div>
+        <div className="sched-field">
+          <span className="sched-label">On</span>
+          <DayPicker value={s.days} onChange={(days) => set({ days })} label="Days the morning run happens" />
+        </div>
+        <div className="sched-field">
+          <span className="sched-label">The brief leads with</span>
+          <Segmented
+            label="The brief leads with"
+            value={s.brief}
+            onChange={(brief) => set({ brief })}
+            options={[
+              { id: 'urgent', label: 'Urgent only' },
+              { id: 'all', label: 'Everything open' },
+            ]}
+          />
+        </div>
+      </div>
+
+      <p className="sched-status">
+        {next ? (
+          <>
+            <strong>Next run {whenLabel(next)}</strong> ({fmtDay(next)}).
+          </>
+        ) : (
+          <strong>Paused: pick at least one day.</strong>
+        )}{' '}
+        This morning’s run finished at {fmtTime(LAST_RUN)} and sorted {LAST_RUN_COUNT} emails.
+      </p>
+    </section>
   );
 }
