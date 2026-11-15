@@ -7,14 +7,18 @@ import { ArrowUpRight, Link2, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { Sheet, SheetColumn, WS } from '../../data/ws-types';
 import { useStore } from '../../state/store';
-import { cellValue, fmtCell } from '../../state/ws';
+import { fmtCell } from '../../state/ws';
+import { resolvedRow } from './sheetMath';
 import { openFile } from './shared';
 
 /** What each doc last showed for a sheet, keyed by sheet id → "row:column". Lives for the session. */
 const shown = new Map<string, Map<string, string>>();
 
 export const sheetCells = (sheet: Sheet, columns: SheetColumn[]) =>
-  sheet.rows.map((row) => columns.map((c) => fmtCell(cellValue(sheet, row, c), c)));
+  sheet.rows.map((row) => {
+    const full = resolvedRow(sheet, row);
+    return columns.map((c) => fmtCell(full[c.key] ?? '', c));
+  });
 
 /** Remember the values a sheet has before you edit it, so linked docs can show what changed. */
 export const rememberSheet = (sheet: Sheet) => {

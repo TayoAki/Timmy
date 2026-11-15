@@ -1295,7 +1295,7 @@ button.doc-unlinked-name:hover span {
 .deck-check {
   position: absolute;
   top: 8px;
-  left: 8px;
+  right: 8px;
   display: grid;
   place-items: center;
   width: 20px;

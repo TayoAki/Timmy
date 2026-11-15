@@ -5,26 +5,23 @@
  * the table as a linked table that refreshes from here.
  */
 import { ArrowUpRight, CalendarDays, DollarSign, FileText, Hash, Link2, Plus, Sigma, Trash2, Type, type LucideIcon } from 'lucide-react';
-import { useEffect, useId, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { DocIcon } from '../../components/DocBits';
 import { Field, Modal, Segmented } from '../../components/kit';
 import { NOW } from '../../data/mock';
 import type { Sheet, SheetColumn, WFile } from '../../data/ws-types';
 import { useStore, ws } from '../../state/store';
-import { cellValue, evalFormula, fmtCell, patch } from '../../state/ws';
+import { fmtCell, patch } from '../../state/ws';
 import { FilePick } from './FilePick';
 import { LinkedTable, rememberSheet } from './LinkedTable';
 import { NewDocDialog } from './NewDocDialog';
 import { docsLinkingSheet, openFile } from './shared';
+import { formulaProblem, resolvedRow, safeEval } from './sheetMath';
 import { bid } from './templates';
 
 const TYPE_ICON: Record<SheetColumn['type'], LucideIcon> = { text: Type, number: Hash, currency: DollarSign, date: CalendarDays };
 const TYPE_LABEL: Record<SheetColumn['type'], string> = { text: 'Text', number: 'Number', currency: 'Currency', date: 'Date' };
 const isNum = (c: SheetColumn) => c.type === 'number' || c.type === 'currency' || !!c.formula;
-
-/** Column names a formula refers to that don't exist. */
-const unknownRefs = (formula: string, columns: SheetColumn[]) =>
-  [...formula.matchAll(/\[([^\]]+)\]/g)].map((m) => m[1]!.trim()).filter((n) => !columns.some((c) => c.name.toLowerCase() === n.toLowerCase()));
 
 export function SheetEditor({ file, sheet }: { file: WFile; sheet: Sheet }) {
   const { state, dispatch } = useStore();
@@ -118,27 +115,30 @@ export function SheetEditor({ file, sheet }: { file: WFile; sheet: Sheet }) {
             </tr>
           </thead>
           <tbody>
-            {sheet.rows.map((row, i) => (
-              <tr key={i}>
-                <td className="sheet-rownum">{i + 1}</td>
-                {sheet.columns.map((c, j) =>
-                  c.formula ? (
-                    <td key={c.key} className="num computed" title={`Calculated: ${c.formula}`}>
-                      <output className="sheet-out">{fmtCell(cellValue(sheet, row, c), c) || <span className="muted">–</span>}</output>
-                    </td>
-                  ) : (
-                    <td key={c.key} className={isNum(c) ? 'num' : undefined}>
-                      <SheetCell sheetId={sheet.id} r={i} c={j} col={c} raw={row[c.key] ?? ''} onCommit={(v) => setCell(i, c, v)} onKey={onCellKey} />
-                    </td>
-                  ),
-                )}
-                <td className="sheet-tools">
-                  <button className="icon-btn sm" aria-label={`Delete row ${i + 1}`} onClick={() => removeRow(i)}>
-                    <Trash2 size={13} />
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {sheet.rows.map((row, i) => {
+              const full = resolvedRow(sheet, row);
+              return (
+                <tr key={i}>
+                  <td className="sheet-rownum">{i + 1}</td>
+                  {sheet.columns.map((c, j) =>
+                    c.formula ? (
+                      <td key={c.key} className="num computed" title={`Calculated: ${c.formula}`}>
+                        <output className="sheet-out">{fmtCell(full[c.key] ?? '', c) || <span className="muted">–</span>}</output>
+                      </td>
+                    ) : (
+                      <td key={c.key} className={isNum(c) ? 'num' : undefined}>
+                        <SheetCell sheetId={sheet.id} r={i} c={j} col={c} raw={row[c.key] ?? ''} onCommit={(v) => setCell(i, c, v)} onKey={onCellKey} />
+                      </td>
+                    ),
+                  )}
+                  <td className="sheet-tools">
+                    <button className="icon-btn sm" aria-label={`Delete row ${i + 1}`} onClick={() => removeRow(i)}>
+                      <Trash2 size={13} />
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
         <button className="sheet-add-row" onClick={addRow}>
@@ -255,8 +255,14 @@ function SheetCell({
   // While typing, show exactly what was typed ("12." stays "12.") and save the parsed value.
   const [draft, setDraft] = useState<string | null>(null);
   const shown = focused ? (draft ?? String(raw)) : fmtCell(raw, col);
+  const ref = useRef<HTMLInputElement>(null);
+  // Select the raw value once it replaces the formatted one, so typing replaces the cell.
+  useLayoutEffect(() => {
+    if (focused) ref.current?.select();
+  }, [focused]);
   return (
     <input
+      ref={ref}
       className="sheet-cell"
       data-sheet={sheetId}
       data-r={r}
@@ -265,10 +271,7 @@ function SheetCell({
       inputMode={isNum(col) ? 'decimal' : undefined}
       placeholder={col.type === 'date' && focused ? 'yyyy-mm-dd' : undefined}
       aria-label={`${col.name}, row ${r + 1}`}
-      onFocus={(e) => {
-        setFocused(true);
-        requestAnimationFrame(() => e.target.select());
-      }}
+      onFocus={() => setFocused(true)}
       onBlur={() => {
         setFocused(false);
         setDraft(null);
@@ -302,13 +305,12 @@ function ColumnDialog({
   const others = sheet.columns.filter((c) => c.key !== edit?.key);
   const trimmed = name.trim();
   const dup = others.some((c) => c.name.toLowerCase() === trimmed.toLowerCase());
-  const unknown = formula.trim() ? unknownRefs(formula, others) : [];
-  const badChars = formula.trim() && !/^[\d\s.+\-*/()]*$/.test(formula.replace(/\[[^\]]+\]/g, '1'));
+  const problem = formulaProblem(formula, others);
   const sampleRow = sheet.rows[0];
   const draftCol: SheetColumn = { key: '__draft', name: trimmed || 'New column', type, formula: formula.trim() || undefined };
-  const sample = formula.trim() && sampleRow && !unknown.length && !badChars ? evalFormula(formula, sampleRow, others) : '';
+  const sample = formula.trim() && sampleRow && !problem ? safeEval(formula, resolvedRow(sheet, sampleRow), others) : '';
   const usedBy = edit ? sheet.columns.filter((c) => c.formula && c.key !== edit.key && new RegExp(`\\[\\s*${edit.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\]`, 'i').test(c.formula)) : [];
-  const valid = trimmed && !dup && !unknown.length && !badChars;
+  const valid = trimmed && !dup && !problem;
 
   const insertRef = (n: string) => setFormula((f) => `${f}${f && !/\s$/.test(f) ? ' ' : ''}[${n}]`);
 
@@ -389,7 +391,7 @@ function ColumnDialog({
           onChange={(e) => setFormula(e.target.value)}
           placeholder="[Seats] * [Price] * 12"
           spellCheck={false}
-          aria-invalid={unknown.length > 0 || !!badChars}
+          aria-invalid={!!problem}
         />
         <div className="sheet-ref-chips" role="group" aria-label="Insert a column reference">
           {others.map((c) => (
@@ -398,16 +400,14 @@ function ColumnDialog({
             </button>
           ))}
         </div>
-        <span className={`field-hint${unknown.length || badChars ? ' sheet-error' : ''}`}>
-          {unknown.length
-            ? `No column named ${unknown.map((u) => `[${u}]`).join(', ')}. Use a name from the list.`
-            : badChars
-              ? 'Use column names in brackets, numbers and + - * / ( ).'
-              : formula.trim()
-                ? sample !== '' && sampleRow
-                  ? `Row 1 comes to ${fmtCell(sample, draftCol)}. New rows use the same formula.`
-                  : 'Row 1 has no value yet for one of these columns.'
-                : 'Write [Column name] to use a column, e.g. [Seats] * [Price] * 12. Every row, including new ones, uses it.'}
+        <span className={`field-hint${problem ? ' sheet-error' : ''}`}>
+          {problem
+            ? problem
+            : formula.trim()
+              ? sample !== '' && sampleRow
+                ? `Row 1 comes to ${fmtCell(sample, draftCol)}. New rows use the same formula.`
+                : 'Row 1 has no value yet for one of these columns.'
+              : 'Write [Column name] to use a column, e.g. [Seats] * [Price] * 12. Every row, including new ones, uses it.'}
         </span>
         {usedBy.length > 0 && <span className="field-hint">Used in {usedBy.map((c) => `“${c.name}”`).join(', ')}. Renaming updates those formulas.</span>}
       </div>
