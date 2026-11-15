@@ -140,7 +140,7 @@ function TaskForm({ onClose, initial, extraOps, savedToast }: Parameters<typeof 
             </Field>
           </div>
 
-          <div className="field-row">
+          <div className="field-row tk-seg-row">
             <div className="field">
               <span className="field-label">Priority</span>
               <Segmented label="Priority" options={PRIORITIES} value={priority} onChange={setPriority} />

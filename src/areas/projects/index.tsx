@@ -29,7 +29,7 @@ import { Avatar, DueChip, Folder } from '../../components/common';
 import { DocIcon, kindMeta } from '../../components/DocBits';
 import { Frame } from '../../components/Frame';
 import { EmptyState, Menu, SideHead } from '../../components/kit';
-import { PEOPLE } from '../../data/mock';
+import { NOW, PEOPLE } from '../../data/mock';
 import type { Project, Task, WFile } from '../../data/ws-types';
 import { fmtDate, fmtListDate, fmtStamp, money, plural } from '../../lib/format';
 import { byNewest, useStore, ws, type Route } from '../../state/store';
@@ -97,7 +97,7 @@ function useResponsibilities() {
   const work = Object.values(state.ws.folders)
     .filter((f) => f.parent === WORK_FOLDER && !projectFolders.has(f.id))
     .sort((a, b) => a.num.localeCompare(b.num));
-  const reference = ['f03', 'f01'].map((id) => state.ws.folders[id]).filter((f): f is NonNullable<typeof f> => !!f);
+  const reference = ['f03'].map((id) => state.ws.folders[id]).filter((f): f is NonNullable<typeof f> => !!f);
   return [...work, ...reference];
 }
 
@@ -213,7 +213,7 @@ function ProjectRow({ p }: { p: Project }) {
         <Folder color={p.color} size={30} />
         <span className="pj-row-text">
           <span className="pj-row-name">
-            <span className="code pj-num">[{p.num}]</span>
+            <span className="code pj-num">[{p.num}]</span>{' '}
             {p.name}
           </span>
           <span className="pj-row-sub">
@@ -241,7 +241,13 @@ function ProjectRow({ p }: { p: Project }) {
               <span className="mono pj-deal-value">{money(deal.value)}</span>
             </span>
           )}
-          {next ? <DueChip due={next.due} prefix="Next" /> : p.status === 'active' ? <span className="pj-quiet">No dates set</span> : null}
+          {next ? (
+            <span title={`Next: ${next.label}`}>
+              <DueChip due={next.due} prefix={next.due < NOW ? undefined : 'Due'} />
+            </span>
+          ) : p.status === 'active' ? (
+            <span className="pj-quiet">No dates set</span>
+          ) : null}
         </span>
       </button>
       {p.status === 'active' ? (
@@ -377,7 +383,7 @@ export function ProjectView() {
         <Folder color={p.color} size={40} />
         <div className="pj-head-text">
           <h1 className="page-title">
-            <span className="code pj-num">[{p.num}]</span>
+            <span className="code pj-num">[{p.num}]</span>{' '}
             {p.name}
           </h1>
           <p className="pj-head-sub">
@@ -872,9 +878,12 @@ function AiTab({ ctx }: { ctx: TabCtx }) {
   return (
     <>
       <section className="pj-tab">
-        <SectionHead title="Project update" sub="A five-line update (progress, numbers, risks, asks, next week) from the running notes and tasks." />
+        <SectionHead title="Project update" />
         <div className="pj-update">
-          <p>Timmy reads the latest decisions, task progress, what you’re waiting on and the deal, then opens a draft you can edit before sending.</p>
+          <p>
+            Five lines (progress, numbers, risks, asks, next week) drafted from the running notes, tasks, what you’re waiting on and the deal. You edit it
+            before it goes out.
+          </p>
           <button className="btn btn-primary" onClick={ctx.draftUpdate}>
             <Sparkles size={15} />
             Draft a project update

@@ -1,1 +1,608 @@
-/* people area styles */
+/* ───────────── People: CRM list, contact page, dialogs ───────────── */
+
+.crm-progress {
+  margin: 14px 0 22px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.crm-progress strong {
+  font-weight: 650;
+  color: var(--text);
+}
+
+.crm-quiet {
+  color: var(--text-3);
+}
+
+/* ───────────── Table ───────────── */
+
+.crm-table {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.crm-row {
+  display: grid;
+  grid-template-columns: minmax(170px, 1.3fr) 92px minmax(0, 1.7fr) 108px 72px 32px;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 14px 11px 16px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.crm-table.reconnect .crm-row {
+  grid-template-columns: minmax(170px, 1.3fr) 92px minmax(0, 1.7fr) 108px 72px 118px;
+}
+
+.crm-sugg .crm-row {
+  grid-template-columns: minmax(200px, 2fr) 150px minmax(0, 1fr) 90px;
+}
+
+.crm-row + .crm-row {
+  border-top: 1px solid var(--line);
+}
+
+.crm-row:not(.crm-th):hover {
+  background: var(--hover);
+}
+
+.crm-row:focus-visible {
+  border-radius: var(--r-lg);
+}
+
+.crm-th {
+  background: var(--panel);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3);
+  cursor: default;
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+
+.crm-cell {
+  min-width: 0;
+  color: var(--text-2);
+}
+
+/* .cell-person turns its spans into columns; keep the avatar centred. */
+.crm-row .cell-person > .avatar {
+  display: inline-grid;
+}
+
+.crm-last.late {
+  color: var(--danger);
+  font-weight: 550;
+}
+
+.crm-next {
+  display: block;
+  color: var(--text);
+}
+
+.crm-next-text {
+  overflow-wrap: anywhere;
+}
+
+.crm-missing {
+  color: var(--text-3);
+  font-style: italic;
+}
+
+.crm-actions {
+  display: flex;
+  justify-content: flex-end;
+  cursor: default;
+}
+
+/* ───────────── Contact page header ───────────── */
+
+.crm-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.crm-head-text {
+  min-width: 0;
+}
+
+.crm-name-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.crm-head-sub {
+  margin-top: 4px;
+  font-size: 14.5px;
+  color: var(--text-2);
+}
+
+.crm-head-loc {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+.crm-head-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: start;
+}
+
+.crm-quick {
+  padding-bottom: 22px;
+  margin-bottom: 26px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* ───────────── Two columns ───────────── */
+
+.crm-cols {
+  display: grid;
+  grid-template-columns: 296px minmax(0, 1fr);
+  align-items: start;
+  gap: 28px;
+}
+
+.crm-left {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.crm-right {
+  min-width: 0;
+}
+
+.crm-card {
+  padding: 12px 14px 16px 16px;
+}
+
+.crm-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 26px;
+  margin-bottom: 8px;
+}
+
+.crm-card-title {
+  font-size: 13.5px;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+}
+
+.crm-kv {
+  margin: 0;
+  grid-template-columns: 74px minmax(0, 1fr);
+  gap: 10px 10px;
+  align-items: baseline;
+}
+
+.crm-kv dd {
+  overflow-wrap: anywhere;
+}
+
+.crm-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--accent-text);
+}
+
+.crm-add:hover {
+  text-decoration: underline;
+}
+
+.crm-value-link {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 5px;
+  max-width: 100%;
+  font-size: 13px;
+  text-align: left;
+  color: var(--accent-text);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.crm-value-link svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.crm-value-link:hover {
+  text-decoration: underline;
+}
+
+.crm-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.crm-inline.wrap {
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.crm-select.input {
+  width: auto;
+  min-width: 128px;
+  height: 28px;
+  padding-left: 10px;
+  font-size: 13px;
+  background-position: calc(100% - 16px) 12px, calc(100% - 11px) 12px;
+}
+
+.crm-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.crm-about {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-2);
+  white-space: pre-wrap;
+}
+
+.crm-about-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.crm-row-btns {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.crm-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+/* ───────────── Activity ───────────── */
+
+.crm-composer {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  transition: border-color 0.12s;
+}
+
+.crm-composer:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+.crm-composer .input.textarea {
+  border: 0;
+  background: transparent;
+}
+
+.crm-composer .input.textarea:focus {
+  box-shadow: none;
+}
+
+.crm-composer-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 8px 8px 8px 12px;
+  border-top: 1px solid var(--line);
+}
+
+.crm-composer-closed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-lg);
+  font-size: 13.5px;
+  color: var(--text-3);
+  text-align: left;
+  transition: background 0.1s, color 0.1s;
+}
+
+.crm-composer-closed:hover {
+  border-style: solid;
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+
+.crm-filters {
+  margin: 18px 0 22px;
+}
+
+.crm-filter-count {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.filter[aria-pressed='true'] .crm-filter-count {
+  color: inherit;
+}
+
+.crm-history-title {
+  margin-bottom: 8px;
+}
+
+.crm-upcoming {
+  margin-bottom: 22px;
+}
+
+.crm-timeline li {
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.crm-timeline::before {
+  top: 18px;
+  bottom: 18px;
+}
+
+.crm-dot {
+  margin-top: 10px;
+  background: color-mix(in srgb, var(--tint) 16%, var(--surface));
+  color: var(--tint);
+}
+
+.crm-event {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+
+.crm-event-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.crm-event-kind {
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.crm-event-time {
+  white-space: nowrap;
+}
+
+.crm-event-text {
+  font-size: 13.5px;
+  color: var(--text);
+  text-align: left;
+}
+
+.crm-event-link:hover {
+  color: var(--accent-text);
+  text-decoration: underline;
+}
+
+.crm-event.done .crm-event-text {
+  color: var(--text-3);
+  text-decoration: line-through;
+  text-decoration-color: var(--line-strong);
+}
+
+.crm-event-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.crm-event-foot .crm-value-link {
+  font-size: 12.5px;
+}
+
+.crm-event-by {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.crm-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.crm-done-label {
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+/* ───────────── Sidebar and context panel ───────────── */
+
+.crm-nav .avatar {
+  justify-self: center;
+}
+
+.crm-nav-late {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+.crm-rp-link {
+  display: inline-block;
+  margin-top: 10px;
+}
+
+.crm-rp-next {
+  font-size: 13.5px;
+  font-weight: 550;
+}
+
+.crm-rp-icon {
+  flex: none;
+  color: var(--text-3);
+}
+
+/* ───────────── Dialog ───────────── */
+
+.crm-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.crm-switches {
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+
+.crm-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+}
+
+.crm-switch-row + .crm-switch-row {
+  border-top: 1px solid var(--line);
+}
+
+.crm-switch-row.disabled {
+  opacity: 0.55;
+}
+
+.crm-switch-row .switch:disabled {
+  cursor: not-allowed;
+}
+
+.crm-switch-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.crm-switch-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ───────────── Narrow main column ───────────── */
+
+@container (max-width: 760px) {
+  .crm-th {
+    display: none;
+  }
+
+  .crm-row,
+  .crm-table.reconnect .crm-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 12px;
+  }
+
+  .crm-row > .cell-person {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .crm-row > .crm-actions {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .crm-row > .crm-next {
+    grid-column: 1;
+    grid-row: 2;
+    padding-left: 42px;
+  }
+
+  .crm-row > .crm-due {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: end;
+  }
+
+  .crm-table:not(.crm-sugg) .crm-row > .crm-last,
+  .crm-row > .crm-cadence {
+    display: none;
+  }
+
+  .crm-sugg .crm-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .crm-sugg .crm-row > .crm-cell:not(.crm-actions) {
+    display: none;
+  }
+
+  .crm-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* On the Activity tab the timeline is what you came for; details follow. */
+  .crm-cols.tab-activity .crm-right {
+    order: -1;
+  }
+}
+
+@container (max-width: 480px) {
+  .crm-head {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .crm-head-tools {
+    grid-column: 2;
+  }
+
+  .crm-head .page-title {
+    font-size: 22px;
+  }
+
+  .crm-row > .crm-next {
+    padding-left: 0;
+  }
+
+  .crm-event-foot .crm-done {
+    margin-left: 0;
+  }
+}

@@ -210,8 +210,10 @@ export const nextOneOnOne = (ws: WS): { ev: WEvent; doc: DocBody } | null => {
   return ev ? { ev, doc: ws.docs[ev.notesDoc!]! } : null;
 };
 
-/** The next event worth preparing for: it has files, notes, an email or a note. */
-export const nextPrepEvent = (ws: WS) =>
-  Object.values(ws.events)
+/** The next meeting worth preparing for: it has files, notes, an email or a note. */
+export const nextPrepEvent = (ws: WS) => {
+  const upcoming = Object.values(ws.events)
     .filter((e) => e.end > NOW && e.kind !== 'personal' && (e.docs?.length || e.notesDoc || e.thread || e.note))
-    .sort((a, b) => a.start.getTime() - b.start.getTime())[0];
+    .sort((a, b) => a.start.getTime() - b.start.getTime());
+  return upcoming.find((e) => e.kind === 'meeting' && e.with.length > 0) ?? upcoming[0];
+};

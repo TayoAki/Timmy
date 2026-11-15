@@ -17,6 +17,8 @@ export interface NewDocInitial {
   event?: string;
   /** Blocks added after the template's own, e.g. a linked table. */
   blocks?: Block[];
+  /** A specific template card when one doc template has two, e.g. 'tracker'. */
+  templateKey?: TemplateKey;
 }
 
 const ME_FIRST = PEOPLE.me!.name.split(' ')[0]!;
@@ -45,6 +47,7 @@ function NewDocForm({ onClose, initial, onCreated }: { onClose: () => void; init
   const initialEvent = initial?.event ? W.events[initial.event] : undefined;
 
   const [key, setKey] = useState<TemplateKey>(() => {
+    if (initial?.templateKey) return initial.templateKey;
     if (initial?.template) return keyFor(initial.template);
     if (initialEvent) return initialEvent.with.length === 1 && initialEvent.recurring ? 'one-on-one' : 'team-meeting';
     return 'blank';

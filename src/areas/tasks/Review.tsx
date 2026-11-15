@@ -62,7 +62,7 @@ export function Review() {
     return 'task';
   };
 
-  const archive = (n: QuickNote) => dispatch(ws([patch('notes', n.id, { processed: 'archived' })], { toast: 'Archived. It stays out of the queue.', undo: true }));
+  const archive = (n: QuickNote) => dispatch(ws([patch('notes', n.id, { processed: 'archived' })], { toast: 'Note archived', undo: true }));
 
   const toAgenda = (n: QuickNote) => {
     const a = agendaOps(state.ws, n);
