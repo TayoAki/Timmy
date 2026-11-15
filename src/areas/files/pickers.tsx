@@ -54,16 +54,26 @@ export function FolderSelect({
 }) {
   const { state } = useStore();
   const tree = flatTree(state.ws).filter((n) => !exclude || n.folder.id !== exclude);
+  const current = state.ws.folders[value];
+  // The open list shows the tree; the closed field shows the full path instead
+  // of an indented name, so it reads "[02] Work › [10] Acme".
   return (
-    <select className="input dr-folder-select" value={value} onChange={(e) => onChange(e.target.value)} aria-label={label}>
-      {withRoot && <option value={ROOT}>My Drive</option>}
-      {tree.map(({ folder, depth }) => (
-        <option key={folder.id} value={folder.id}>
-          {INDENT.repeat(depth - (withRoot ? 0 : 1))}[{folder.num}] {folder.name}
-          {folder.id === suggested ? ' (suggested)' : ''}
-        </option>
-      ))}
-    </select>
+    <span className="dr-select">
+      <span className="dr-select-value" aria-hidden>
+        {current && <FolderGlyph color={current.color} size={16} />}
+        <span>{shortPath(state.ws, value)}</span>
+        {value === suggested && <span className="dr-select-note">Suggested</span>}
+      </span>
+      <select className="input" value={value} onChange={(e) => onChange(e.target.value)} aria-label={label}>
+        {withRoot && <option value={ROOT}>My Drive</option>}
+        {tree.map(({ folder, depth }) => (
+          <option key={folder.id} value={folder.id}>
+            {INDENT.repeat(depth - (withRoot ? 0 : 1))}[{folder.num}] {folder.name}
+            {folder.id === suggested ? ' (suggested)' : ''}
+          </option>
+        ))}
+      </select>
+    </span>
   );
 }
 

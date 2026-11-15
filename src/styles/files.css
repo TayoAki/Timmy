@@ -114,7 +114,19 @@
   margin-left: 4px;
 }
 
-/* The table */
+/* The table: visible overflow so row menus can open past the last row */
+
+.dr-table {
+  overflow: visible;
+}
+
+.dr-table .table-row:first-child {
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+}
+
+.dr-table .table-row:last-child {
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
+}
 
 .dr-table .table-row {
   grid-template-columns: minmax(0, 1fr) 170px 104px 40px;
@@ -360,8 +372,55 @@
   color: var(--accent-text);
 }
 
-.dr-folder-select {
+/* Folder select: native tree list, path shown when closed */
+
+.dr-select {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+.dr-select select {
+  color: transparent;
   font-size: 13px;
+}
+
+.dr-select select option {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.dr-select-value {
+  position: absolute;
+  inset: 0 32px 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text);
+  pointer-events: none;
+}
+
+.dr-select-value > span:nth-child(2) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dr-select-value svg {
+  flex: none;
+}
+
+.dr-select-note {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 /* Choices on a shared file */
@@ -786,10 +845,6 @@ button.dr-tree-toggle:hover {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .dr-searchbar .seg-control {
-    width: 100%;
-  }
-
   .drive-crumbs.dr-crumbs {
     font-size: 20px;
   }
@@ -800,6 +855,34 @@ button.dr-tree-toggle:hover {
 }
 
 @container (max-width: 480px) {
+  .dr-searchbar .seg-control {
+    width: 100%;
+  }
+
+  .dr-card-head {
+    flex-wrap: wrap;
+  }
+
+  .dr-card-title {
+    flex-basis: calc(100% - 34px);
+  }
+
+  .dr-card-head > .btn {
+    margin-left: 34px;
+  }
+
+  .dr-table .dr-row-name {
+    display: block;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .dr-table .dr-row-name svg {
+    display: inline;
+    margin-left: 5px;
+    vertical-align: -2px;
+  }
+
   .dr-card-foot {
     flex-direction: column;
     align-items: stretch;
@@ -821,4 +904,9 @@ button.dr-tree-toggle:hover {
   .dr-page-head .btn {
     width: 100%;
   }
+}
+
+/* File menu: wide enough for "Add a description keyword…" on one line */
+.dr-actions .menu-pop {
+  min-width: 248px;
 }

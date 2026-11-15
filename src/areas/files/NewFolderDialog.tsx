@@ -1,5 +1,5 @@
 import { Check } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Folder as FolderGlyph, tint } from '../../components/common';
 import { Field, Modal } from '../../components/kit';
 import { ws, useStore } from '../../state/store';
@@ -18,6 +18,12 @@ export function NewFolderDialog({ parent: initialParent, onClose }: { parent: st
   const [num, setNum] = useState(() => nextFreeNum(state.ws, parentId));
   const [name, setName] = useState('');
   const [color, setColor] = useState(FOLDER_COLORS[3]!.value);
+  const nameRef = useRef<HTMLInputElement>(null);
+  // The dialog focuses its first field; the name is what you type first.
+  useEffect(() => {
+    const t = window.setTimeout(() => nameRef.current?.focus(), 0);
+    return () => window.clearTimeout(t);
+  }, []);
 
   const depth = depthOf(state.ws, parentId) + 1;
   const tooDeep = depth > MAX_DEPTH;
@@ -89,7 +95,7 @@ export function NewFolderDialog({ parent: initialParent, onClose }: { parent: st
             />
           </Field>
           <Field label="Name">
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Brightwave" disabled={tooDeep} />
+            <input ref={nameRef} className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Brightwave" disabled={tooDeep} />
           </Field>
         </div>
         <Group label="Colour">

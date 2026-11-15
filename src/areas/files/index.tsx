@@ -44,8 +44,8 @@ export function FilesView() {
     <Frame
       tabs={[
         { id: 'browse', label: 'Browse' },
-        { id: 'filing', label: 'To file', count: counts.filing },
-        { id: 'shared', label: 'Shared with me', count: counts.shared },
+        { id: 'filing', label: 'To file', count: counts.filing || undefined },
+        { id: 'shared', label: 'Shared with me', count: counts.shared || undefined },
         { id: 'starred', label: `Starred ${counts.starred}/${MAX_STARRED}` },
       ]}
       active={tab}

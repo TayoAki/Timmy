@@ -115,8 +115,9 @@ export function FileActionsMenu({ fileId }: { fileId: string }) {
 
   return (
     // Dialogs render in a portal, but their events still bubble through React:
-    // stop them here so a click inside a dialog never opens the row underneath.
-    <span className="dr-actions" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+    // stop clicks and Enter/Space here so they never open the row underneath.
+    // Other keys pass, so Escape still reaches the menu's document listener.
+    <span className="dr-actions" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && e.stopPropagation()}>
       <Menu items={items} label={`Actions for ${f.name}`} />
       {dialog === 'rename' && <RenameDialog file={f} onClose={close} />}
       {dialog === 'describe' && <DescribeDialog file={f} onClose={close} />}

@@ -298,7 +298,7 @@ export function Starred() {
                 e.stopPropagation();
                 dispatch(starAction(state.ws, f));
               }}
-              onKeyDown={(e) => e.stopPropagation()}
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && e.stopPropagation()}
             >
               <StarOff size={14} />
               Unstar
