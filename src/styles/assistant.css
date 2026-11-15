@@ -1,31 +1,35 @@
 /* ───────────── Ask Timmy (bottom bar launcher + chat workspace) ───────────── */
 
 .ai-launch {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 8px;
-  height: 22px;
+  gap: 10px;
+  width: 100%;
+  height: 46px;
   min-width: 0;
-  padding: 0 4px 0 4px;
-  border-radius: 7px;
+  padding: 0 6px 0 10px;
+  border-radius: 13px;
   border: 1px solid var(--line-strong);
-  background: var(--surface);
+  background: var(--surface-2);
   color: var(--text-2);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 450;
+  text-align: left;
+  transition: border-color 0.12s, background 0.12s;
 }
 
 .ai-launch:hover {
   border-color: var(--accent-line);
+  background: var(--surface);
   color: var(--text);
 }
 
 .ai-launch .timmy-mark {
   flex: none;
-  border-radius: 4px;
 }
 
 .ai-launch-text {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -33,8 +37,25 @@
 }
 
 .ai-launch .kbd {
-  height: 16px;
-  font-size: 10.5px;
+  flex: none;
+}
+
+.ai-launch-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.ai-launch:hover .ai-launch-cta {
+  background: var(--accent-hover);
 }
 
 /* The workspace */
@@ -894,12 +915,12 @@
 .bar-ask {
   display: flex;
   justify-content: center;
-  flex: 1 1 320px;
+  flex: 1 1 420px;
   min-width: 0;
 }
 
 .bar-ask .ai-launch {
-  width: min(440px, 100%);
+  max-width: 600px;
 }
 
 /* The composer draws the focus ring; the text box inside it doesn't. */
@@ -909,16 +930,58 @@
   box-shadow: none;
 }
 
-@media (max-width: 640px) {
-  .bar > .bar-group:first-child {
+@media (max-width: 1100px) {
+  .bar-left {
     display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .bar {
+    gap: 8px;
+    padding: 0 6px 0 10px;
   }
 
   .bar-ask {
-    justify-content: flex-start;
+    flex-basis: 0;
   }
 
-  .ai-launch .kbd {
+  .ai-launch .kbd,
+  .bar-sep,
+  .bar-right .bar-stat:nth-last-child(-n + 2) {
     display: none;
+  }
+
+  .bar-right .theme-menu {
+    display: none;
+  }
+
+  .bar-stat {
+    min-width: 54px;
+  }
+}
+
+/* "Ask Timmy" reads on the button itself; the placeholder text shows from tablet up. */
+.ai-launch-name {
+  display: none;
+  margin-left: -1px;
+}
+
+@media (max-width: 480px) {
+  .ai-launch-text {
+    display: none;
+  }
+
+  .ai-launch-name {
+    display: inline;
+  }
+
+  .ai-launch {
+    gap: 8px;
+  }
+
+  .ai-launch-cta {
+    flex: 1;
+    justify-content: center;
   }
 }

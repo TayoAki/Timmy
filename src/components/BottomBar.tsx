@@ -1,4 +1,4 @@
-import { Check, Monitor, Moon, Sun } from 'lucide-react';
+import { Check, Flame, Inbox, Monitor, Moon, Search, Stamp, Sun, type LucideIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { fmtTime } from '../lib/format';
 import { openApprovals } from '../state/approvals';
@@ -6,7 +6,6 @@ import { LAST_RUN, nextRun, whenLabel } from '../state/schedule';
 import { inBox, useStore } from '../state/store';
 import { openThreads, useUrgency } from '../state/urgency';
 import { MODES, PALETTES, Swatch, useTheme, type Mode } from '../state/theme';
-import { Kbd } from './common';
 import { AssistantLauncher } from '../agent/Assistant';
 
 const MODE_ICON: Record<Mode, typeof Sun> = { light: Sun, dark: Moon, system: Monitor };
@@ -21,28 +20,47 @@ export function BottomBar() {
 
   return (
     <footer className="bar">
-      <div className="bar-group">
-        <span className="bar-item">
-          <span className="bar-status" />
-          Timmy is up to date
+      <div className="bar-group bar-left">
+        <span className="bar-status" aria-hidden />
+        <span className="bar-status-text">
+          <strong>Timmy is up to date</strong>
+          <button className="bar-link" onClick={() => dispatch({ type: 'navigate', route: { view: 'rules', tab: 'schedule' } })} title="Change the morning run in Settings › Schedule">
+            Last run {fmtTime(LAST_RUN)} · {next ? `next ${whenLabel(next)}` : 'morning run paused'}
+          </button>
         </span>
-        <button className="bar-item bar-link hide-sm" onClick={() => dispatch({ type: 'navigate', route: { view: 'rules', tab: 'schedule' } })} title="Change the morning run in Settings › Schedule">
-          Last run {fmtTime(LAST_RUN)} · {next ? `next ${whenLabel(next)}` : 'morning run paused'}
-        </button>
       </div>
+
       <div className="bar-ask">
         <AssistantLauncher />
       </div>
-      <div className="bar-group">
-        <span className="bar-item hide-sm mono">
-          {urgent} urgent · {approvals} to approve · {inbox} unsorted
-        </span>
-        <span className="bar-item hide-sm">
-          <Kbd>⌘K</Kbd> search
-        </span>
+
+      <nav className="bar-group bar-right" aria-label="Shortcuts">
+        <BarStat icon={Flame} label="Urgent" count={urgent} tone="urgent" onClick={() => dispatch({ type: 'navigate', route: { view: 'today', tab: 'brief' } })} />
+        <BarStat icon={Stamp} label="To approve" count={approvals} onClick={() => dispatch({ type: 'navigate', route: { view: 'approvals', tab: 'open' } })} />
+        <BarStat icon={Inbox} label="Unsorted" count={inbox} onClick={() => dispatch({ type: 'navigate', route: { view: 'today', tab: 'triage' } })} />
+        <span className="bar-sep" aria-hidden />
+        <button className="bar-stat" onClick={() => dispatch({ type: 'search', open: true })} title="Search (⌘K)">
+          <span className="bar-stat-icon">
+            <Search size={19} />
+          </span>
+          <span className="bar-stat-label">Search</span>
+        </button>
         <ThemeMenu />
-      </div>
+      </nav>
     </footer>
+  );
+}
+
+/** An icon with a count badge and a label under it, like a shop's cart button. */
+function BarStat({ icon: Icon, label, count, tone, onClick }: { icon: LucideIcon; label: string; count: number; tone?: 'urgent'; onClick: () => void }) {
+  return (
+    <button className="bar-stat" onClick={onClick} aria-label={`${label}: ${count}`}>
+      <span className="bar-stat-icon">
+        <Icon size={19} />
+        {count > 0 && <span className={`bar-badge${tone ? ` ${tone}` : ''}`}>{count > 99 ? '99+' : count}</span>}
+      </span>
+      <span className="bar-stat-label">{label}</span>
+    </button>
   );
 }
 
@@ -78,14 +96,16 @@ function ThemeMenu() {
     <div className="theme-menu" ref={wrap}>
       <button
         ref={trigger}
-        className="bar-btn"
+        className="bar-stat"
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={`Appearance: ${current}${mode === 'system' ? ', following system' : ''}`}
         onClick={() => setOpen((v) => !v)}
       >
-        <Icon size={13} />
-        <span className="hide-sm">{current}</span>
+        <span className="bar-stat-icon">
+          <Icon size={19} />
+        </span>
+        <span className="bar-stat-label">{current}</span>
       </button>
 
       {open && (

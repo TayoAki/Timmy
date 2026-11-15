@@ -25,7 +25,7 @@ The shell follows the wireframe: **left rail · sidebar · tabs + main content �
 | Tabs | Views inside the current page (e.g. Daily brief / Triage / Drafts) |
 | Main content | The page itself |
 | Right sidebar | Context for whatever is open: next actions, linked file, CRM record, today's calendar |
-| Bottom bar | Agent status, the next morning run, **Ask Timmy** (⌘I), counts, theme toggle |
+| Bottom bar | A full app bar: Timmy's status and next run, a large **Ask Timmy** field (⌘I), and shortcuts with count badges (Urgent, To approve, Unsorted), Search and Appearance |
 
 Below 1280px the right sidebar becomes a drawer. Below 900px the sidebar does too.
 

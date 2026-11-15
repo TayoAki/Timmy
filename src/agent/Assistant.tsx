@@ -24,9 +24,13 @@ export const ASK_KEY = `${MOD}I`;
 export function AssistantLauncher() {
   return (
     <button className="ai-launch" onClick={assistant.open} aria-haspopup="dialog" title={`Ask Timmy (${ASK_KEY})`}>
-      <TimmyMark size={16} />
+      <TimmyMark size={26} />
       <span className="ai-launch-text">Ask Timmy to do anything…</span>
       <Kbd>{ASK_KEY}</Kbd>
+      <span className="ai-launch-cta" aria-hidden>
+        Ask<span className="ai-launch-name"> Timmy</span>
+        <ArrowUp size={14} />
+      </span>
     </button>
   );
 }

@@ -416,17 +416,18 @@
 
 /* ───────────── Bottom bar ───────────── */
 
+/* A full app bar, like a shop's bottom bar: status, Ask Timmy, and shortcuts with counts. */
 .bar {
   grid-area: bar;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 0 12px 0 14px;
-  background: var(--rail);
+  gap: 20px;
+  padding: 0 12px 0 18px;
+  background: var(--surface);
   border-top: 1px solid var(--line);
-  font-size: 12px;
-  color: var(--text-3);
+  font-size: 12.5px;
+  color: var(--text-2);
   white-space: nowrap;
   z-index: 40;
 }
@@ -434,36 +435,109 @@
 .bar-group {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 4px;
   min-width: 0;
 }
 
-.bar-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.bar-left {
+  gap: 10px;
+  flex: 0 1 280px;
 }
 
 .bar-status {
-  width: 7px;
-  height: 7px;
+  width: 9px;
+  height: 9px;
+  flex: none;
   border-radius: 50%;
   background: var(--ok);
+  box-shadow: 0 0 0 3px var(--ok-soft);
 }
 
-.bar-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 22px;
+.bar-status-text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.bar-status-text strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.bar-status-text .bar-link {
+  justify-self: start;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.bar-right {
+  flex: none;
+}
+
+.bar-stat {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 3px;
+  min-width: 62px;
+  height: 52px;
   padding: 0 6px;
-  border-radius: 5px;
-  color: var(--text-3);
+  border-radius: var(--r);
+  color: var(--text-2);
 }
 
-.bar-btn:hover {
+.bar-stat:hover,
+.bar-stat[aria-expanded='true'] {
   background: var(--hover);
   color: var(--text);
+}
+
+.bar-stat-icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 22px;
+}
+
+.bar-stat-label {
+  font-size: 11.5px;
+  font-weight: 550;
+  line-height: 1;
+}
+
+.bar-badge {
+  position: absolute;
+  top: -6px;
+  left: calc(50% + 5px);
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  border: 2px solid var(--surface);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.bar-badge.urgent {
+  background: var(--danger);
+  color: #fff;
+}
+
+.bar-sep {
+  width: 1px;
+  height: 32px;
+  margin: 0 6px;
+  background: var(--line);
 }
 
 /* ───────────── Drawers (narrow screens) ───────────── */
