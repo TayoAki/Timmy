@@ -78,8 +78,8 @@
 }
 
 .btn-primary .kbd {
-  background: rgba(255, 255, 255, 0.16);
-  border-color: rgba(255, 255, 255, 0.25);
+  background: transparent;
+  border-color: color-mix(in srgb, var(--on-accent) 45%, transparent);
   color: inherit;
 }
 

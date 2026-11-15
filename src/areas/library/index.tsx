@@ -324,7 +324,7 @@ function Routines() {
             <article key={r.id} className="card lib-routine" id={`lib-routine-${r.id}`}>
               <header className="lib-routine-head">
                 <div>
-                  <h3>{r.name}</h3>
+                  <h2>{r.name}</h2>
                   {r.when && (
                     <span className="lib-meta">
                       <Clock size={13} aria-hidden />

@@ -1,10 +1,10 @@
 # Timmy
 
-Frontend for **Timmy**, an email agent that sorts your inbox, drafts replies from your files, and keeps track of what you owe and what you're waiting on.
+Frontend for **Timmy**: an AI layer over Gmail plus its own workspace (Drive, Docs, Sheets, Slides, Calendar, Tasks, a personal CRM and an AI library), so people get a Google Workspace-style suite without paying Google for it. Timmy sorts your inbox, drafts replies from your files, and keeps track of what you owe and what you're waiting on.
 
 ![Daily brief](docs/today.png)
 
-This is a clickable prototype running on mock data. The clock is fixed at Monday, Nov 16, 2026, 8:12 AM, so due dates and "late" labels stay consistent.
+This is the frontend only: everything runs in the browser on sample data, and your changes are saved in the browser (Settings › Reset demo data starts over). Gmail is the only service the product will connect to. The clock is fixed at Monday, Nov 16, 2026, 8:12 AM, so due dates and "late" labels stay consistent.
 
 ```bash
 npm install
@@ -18,7 +18,7 @@ The shell follows the wireframe: **left rail · sidebar · tabs + main content �
 
 | Area | What it holds |
 | --- | --- |
-| Left rail | Sections: Today & mail, Search (⌘K), Timmy's activity, People, Files, Rules |
+| Left rail | Today & mail, Search (⌘K), Tasks, Calendar, Docs, Projects, People, Drive, AI library, Timmy's activity, Settings |
 | Sidebar | Changes with the section. For mail it shows numbered labels, project folders, Starred (max 5) and `[99] Archived` |
 | Tabs | Views inside the current page (e.g. Daily brief / Triage / Drafts) |
 | Main content | The page itself |
@@ -42,10 +42,27 @@ The main flow: Dana asks for a revised quote → Timmy finds proposal v3, makes 
 
 Files follow a numbered folder structure (`[02] Work › [10] Acme`, at most 5 levels deep) and dated names (`2026-11-13 Acme — Call notes`, `2026-Q4 QBR — Briefing slides`).
 
+## Workflows it supports
+
+Each follows Jeff Su's published system.
+
+| Workflow | Where | What you can do |
+| --- | --- | --- |
+| 1. Drive folders and filing | Drive | Numbered folders (5 deep, 99 = archive), "Where will you use this?" filing with dated names, leave / shortcut / copy for shared files, star 5 at most, description keywords |
+| 2. Gmail | Today & mail | Triage into Follow Up / Waiting / Read Through, 2-minute replies, compose with Track in Waiting, Ask Timmy to draft, send a recap |
+| 3. Tasks, quick notes, Calendar | Tasks, Calendar | Quick capture (⌘J), thoughts vs. notes, tasks from emails, weekly review queue, block time, daily highlight |
+| 4. Docs and meetings | Docs | Create and name in one step, templates, running 1:1 table, team tracker, linked files, recap email |
+| 5. Sheets and Slides | Docs | Named-column formulas, linked tables that refresh in docs, decks from layouts, copy slides to [04] Quick Share |
+| 6. Project dashboard | Projects | Project home with tasks, notes, mail, files and AI; New task / New note link themselves; active and archived views |
+| 7. Personal CRM | People | Start with 10–20 people, one or two priority contacts, reviews by cadence, contact history |
+| 8. Browser and AI | AI library, search | Prompts captured then filed by use case, routines, rules learned from your edits, project sources |
+| One workday | Mail → Tasks → Calendar → Sheets → Docs → Projects | Email to Follow Up, task, time block, update the tracker (linked doc refreshes), reply asking for approval, Waiting, approval arrives (demo button), decision recorded in the project's running notes |
+
 ## Try it
 
 - **Today:** review the draft, accept triage suggestions, update the CRM from a suggestion
-- **Thread:** `F` / `W` / `R` / `E` move the thread, `S` stars it, `Esc` goes back. Edit the draft, then **Send & track**. Every move can be undone from the toast.
+- **Thread:** `F` / `W` / `R` / `E` move the thread, `S` stars it, `A` replies, `D` asks Timmy to draft, `Esc` goes back. Edit the draft, then **Send & track**. On a Waiting thread, **Demo: … replies** simulates the answer. Every move can be undone from the toast.
+- **Anywhere:** `C` composes, `⌘J` quick-captures a task or note
 - **Search:** `⌘K` or `/`. Operators: `from:dana`, `is:waiting`, `project:acme`, `has:draft`, `has:attachment`
 - **Rules:** toggle rules or add one in plain language
 - **Appearance:** pick Light, Dark or Match system, and one of three dark palettes (Midnight, Graphite, Espresso) from the bottom bar or Settings › Appearance. The choice is saved in the browser.
@@ -65,12 +82,12 @@ Known, intentional findings: em-dashes in file names (they're part of the naming
 
 ```
 src/
-  data/       types.ts, mock.ts (people, threads, docs, deals, calendar, rules)
-  state/      store.tsx — reducer for moves, triage, sending drafts, undo
-  components/ shell (LeftRail, Sidebar, Frame, RightPanel, BottomBar), SearchPalette, shared bits
-  views/      TodayView, MailboxView, ThreadView, OtherViews (activity, people, files, rules)
-  state/      theme.tsx — light/dark mode and the dark palette, saved per browser
-  styles/     tokens.css (light + Midnight/Graphite/Espresso), layout.css, ui.css, views.css
+  data/       types.ts + mock.ts (mail), ws-types.ts + ws-mock.ts (workspace seed)
+  state/      store.tsx (reducer, undo, saved in the browser), ws.ts (workspace helpers), theme.tsx
+  components/ shell (LeftRail, Sidebar, Frame, RightPanel, BottomBar), Compose, SearchPalette, kit.tsx
+  views/      mail screens: TodayView, MailboxView, ThreadView, OtherViews, AppearanceView
+  areas/      tasks, calendar, docs (docs, sheets, slides), projects, people, files (Drive), library
+  styles/     tokens.css (light + Midnight/Graphite/Espresso), layout, ui, views, kit, one file per area
 ```
 
-To connect a backend, replace `src/data/mock.ts` with API calls and turn the reducer actions in `src/state/store.tsx` into requests.
+Workspace data changes through one action: `dispatch(ws([put(...), patch(...), remove(...)], { toast, undo }))`. To connect Gmail later, replace the mail half of `src/data/mock.ts` with API calls; the workspace stays local or moves to Timmy's own storage.

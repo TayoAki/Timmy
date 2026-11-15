@@ -45,9 +45,9 @@
   flex-direction: column;
   gap: 8px;
   min-height: 240px;
-  padding: 8px;
+  padding: 4px;
   border-radius: var(--r-lg);
-  background: var(--surface-2);
+  background: transparent;
   outline: 1px dashed transparent;
   outline-offset: -1px;
   transition: background 0.12s, outline-color 0.12s;
