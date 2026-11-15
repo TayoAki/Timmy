@@ -177,6 +177,11 @@
   font-weight: 600;
 }
 
+/* Project colours are mid-tones; pull the letter toward the text colour so it reads on its tint. */
+.pj-deal-logo {
+  color: color-mix(in srgb, var(--tint) 58%, var(--text));
+}
+
 /* ───────────── Ongoing responsibilities ───────────── */
 
 .pj-areas {

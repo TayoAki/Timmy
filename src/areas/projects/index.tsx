@@ -560,7 +560,7 @@ function Overview({ ctx }: { ctx: TabCtx }) {
             <SectionHead title="Deal" />
             <div className="card pj-card">
               <div className="deal-head">
-                <span className="deal-logo" style={{ ['--tint' as string]: p.color }}>
+                <span className="deal-logo pj-deal-logo" style={{ ['--tint' as string]: p.color }}>
                   {deal.company[0]}
                 </span>
                 <div>
@@ -1101,7 +1101,7 @@ export function ProjectsContext() {
         <RpSection title="Deal">
           <div className="rp-card">
             <div className="deal-head">
-              <span className="deal-logo" style={{ ['--tint' as string]: p.color }}>
+              <span className="deal-logo pj-deal-logo" style={{ ['--tint' as string]: p.color }}>
                 {deal.company[0]}
               </span>
               <div>
