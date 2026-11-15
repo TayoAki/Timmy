@@ -233,7 +233,12 @@ function Meetings({ meetings, onNew }: { meetings: MeetingDoc[]; onNew: (i: NewD
     .filter((f) => !!f)
     .sort(byUpdated);
   const upcoming = upcomingMeetings(W);
-  const withoutNotes = upcoming.filter((e) => !e.notesDoc && !Object.values(W.docs).some((d) => d.event === e.id) && e.with.length > 0).slice(0, 4);
+  // One row per meeting series: the weekly standup shows once, not four times.
+  const seen = new Set<string>();
+  const withoutNotes = upcoming
+    .filter((e) => !e.notesDoc && !Object.values(W.docs).some((d) => d.event === e.id) && e.with.length > 0)
+    .filter((e) => (seen.has(e.title) ? false : (seen.add(e.title), true)))
+    .slice(0, 5);
 
   const link = (docId: string, eventId: string) => {
     const e = W.events[eventId];

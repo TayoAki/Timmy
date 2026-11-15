@@ -100,19 +100,32 @@ export const childFolders = (ws: WS, parent: string | null) =>
 
 /* ───────────── Sheets ───────────── */
 
-/** Evaluates a named-column formula such as "[Seats] * [Price] * 12". */
-export const evalFormula = (formula: string, row: Record<string, string | number>, columns: SheetColumn[]): number | '' => {
+/**
+ * Evaluates a named-column formula such as "[Seats] * [Price] * 12".
+ * A formula may use other formula columns; unfinished or circular formulas give an empty cell.
+ */
+export const evalFormula = (formula: string, row: Record<string, string | number>, columns: SheetColumn[], depth = 0): number | '' => {
+  if (depth > 8) return '';
   let ok = true;
   const expr = formula.replace(/\[([^\]]+)\]/g, (_, name: string) => {
     const col = columns.find((c) => c.name.toLowerCase() === name.trim().toLowerCase());
-    const v = col ? Number(row[col.key]) : NaN;
-    if (!col || Number.isNaN(v) || row[col.key] === '') ok = false;
+    if (!col) {
+      ok = false;
+      return '0';
+    }
+    const raw = col.formula ? evalFormula(col.formula, row, columns, depth + 1) : row[col.key];
+    const v = Number(raw);
+    if (raw === '' || raw === undefined || Number.isNaN(v)) ok = false;
     return String(v);
   });
   if (!ok || !/^[\d\s.+\-*/()]+$/.test(expr)) return '';
-  // Only digits and arithmetic operators reach this point.
-  const value = Function(`"use strict"; return (${expr});`)() as number;
-  return Number.isFinite(value) ? Math.round(value * 100) / 100 : '';
+  try {
+    // Only digits and arithmetic operators reach this point.
+    const value = Function(`"use strict"; return (${expr});`)() as number;
+    return Number.isFinite(value) ? Math.round(value * 100) / 100 : '';
+  } catch {
+    return '';
+  }
 };
 
 export const cellValue = (sheet: Sheet, row: Record<string, string | number>, col: SheetColumn) =>

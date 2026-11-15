@@ -39,7 +39,8 @@ export function DeckView({ file, deck }: { file: WFile; deck: Deck }) {
   const ordered = deck.slides.filter((s) => sel.includes(s.id)).map((s) => s.id);
   const confidential = deck.slides.filter((s) => s.confidential).length;
   const withNotes = deck.slides.filter((s) => s.notes).length;
-  const working = editableFiles(W).filter((f) => f.id !== file.id && f.kind !== 'slides' && file.project && f.project === file.project);
+  const sources = file.project ? (W.projects[file.project]?.sources ?? []) : [];
+  const working = editableFiles(W).filter((f) => f.id !== file.id && f.kind !== 'slides' && !!file.project && (f.project === file.project || sources.includes(f.id)));
 
   const toggle = (i: number, shift: boolean) => {
     const id = deck.slides[i]!.id;
@@ -171,9 +172,9 @@ export function DeckView({ file, deck }: { file: WFile; deck: Deck }) {
                   <span className="deck-num">{i + 1}</span>
                   <span className="deck-title">{s.title}</span>
                   {s.confidential && (
-                    <span className="chip deck-conf deck-conf-chip">
+                    <span className="chip deck-conf deck-conf-chip" title="Confidential">
                       <Lock size={11} aria-hidden />
-                      Confidential
+                      <span className="deck-conf-label">Confidential</span>
                     </span>
                   )}
                   {s.notes && <MessageSquareText size={14} className="deck-notes-icon" aria-label="Has speaker notes" />}

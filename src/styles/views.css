@@ -510,7 +510,7 @@ button.rp-person:hover {
   bottom: 10%;
   font-size: 9px;
   font-weight: 700;
-  background: var(--c-red);
+  background: #c22f36;
   color: #fff;
   padding: 2px 5px;
   border-radius: 3px;

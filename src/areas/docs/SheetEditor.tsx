@@ -13,7 +13,7 @@ import type { Sheet, SheetColumn, WFile } from '../../data/ws-types';
 import { useStore, ws } from '../../state/store';
 import { fmtCell, patch } from '../../state/ws';
 import { FilePick } from './FilePick';
-import { LinkedTable, rememberSheet } from './LinkedTable';
+import { LinkedTable, markShown, rememberSheet } from './LinkedTable';
 import { NewDocDialog } from './NewDocDialog';
 import { docsLinkingSheet, openFile } from './shared';
 import { formulaProblem, resolvedRow, safeEval } from './sheetMath';
@@ -215,6 +215,7 @@ export function SheetEditor({ file, sheet }: { file: WFile; sheet: Sheet }) {
         }
         onPick={(d) => {
           setInsertOpen(false);
+          markShown(sheet);
           const body = W.docs[d.id]!;
           dispatch(
             ws([patch('docs', d.id, { blocks: [...body.blocks, { id: bid(), type: 'linked-table', sheet: sheet.id }] }), patch('files', d.id, { updated: NOW })], {
@@ -226,7 +227,10 @@ export function SheetEditor({ file, sheet }: { file: WFile; sheet: Sheet }) {
       />
       <NewDocDialog
         open={newDocOpen}
-        onClose={() => setNewDocOpen(false)}
+        onClose={() => {
+          setNewDocOpen(false);
+          markShown(sheet);
+        }}
         initial={{ template: 'blank', project: file.project, folder: file.folder, blocks: [{ id: bid(), type: 'linked-table', sheet: sheet.id }] }}
       />
     </div>

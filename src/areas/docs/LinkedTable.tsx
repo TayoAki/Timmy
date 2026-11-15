@@ -28,6 +28,12 @@ export const rememberSheet = (sheet: Sheet) => {
   shown.set(sheet.id, map);
 };
 
+/** A doc now shows the sheet as it is: nothing counts as changed for it yet. */
+export const markShown = (sheet: Sheet) => {
+  shown.delete(sheet.id);
+  rememberSheet(sheet);
+};
+
 export const linkedColumns = (sheet: Sheet, cols?: string[]) =>
   cols?.length ? sheet.columns.filter((c) => cols.includes(c.key) || cols.includes(c.name)) : sheet.columns;
 

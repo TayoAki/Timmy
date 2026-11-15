@@ -36,7 +36,7 @@ import { fmtDate } from '../../lib/format';
 import { useStore, ws, type Action } from '../../state/store';
 import { isoDay, patch, type WsOptions } from '../../state/ws';
 import { FilePick } from './FilePick';
-import { LinkedTable } from './LinkedTable';
+import { LinkedTable, markShown } from './LinkedTable';
 import { DOC_KEYWORDS, parseName } from './naming';
 import { eventsForDoc, fmtWhen, nextOccurrence, openFile, shortPath } from './shared';
 import { bid, TEMPLATE_LABEL, templateDef, keyFor } from './templates';
@@ -393,10 +393,12 @@ export function DocEditor({ file, body }: { file: WFile; body: DocBody }) {
     <div className="doc-editor">
       <div className="doc-toolbar">
         <div className="doc-toolbar-info">
-          <span className="chip">
-            <TemplateIcon size={12} aria-hidden />
-            {TEMPLATE_LABEL[body.template]}
-          </span>
+          {body.template !== 'blank' && (
+            <span className="chip">
+              <TemplateIcon size={12} aria-hidden />
+              {TEMPLATE_LABEL[body.template]}
+            </span>
+          )}
           {nextEv && (
             <button
               className="chip doc-chip-btn"
@@ -496,6 +498,7 @@ export function DocEditor({ file, body }: { file: WFile; body: DocBody }) {
         onPick={(f) => {
           const where = pick!.where;
           setPick(null);
+          if (W.sheets[f.id]) markShown(W.sheets[f.id]!);
           insert([{ id: bid(), type: 'linked-table', sheet: f.id }], where);
           dispatch({ type: 'toast', text: `Linked table from “${f.name}” added` });
         }}
