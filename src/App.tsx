@@ -8,6 +8,7 @@ import { LibraryView } from './areas/library';
 import { ContactView, PeopleView } from './areas/people';
 import { ProjectsView, ProjectView } from './areas/projects';
 import { TasksView } from './areas/tasks';
+import { Assistant } from './agent/Assistant';
 import { BottomBar } from './components/BottomBar';
 import { Compose } from './components/Compose';
 import { PushToTalk } from './components/Dictation';
@@ -94,6 +95,7 @@ function Shell() {
       {state.searchOpen && <SearchPalette />}
       {state.compose && <Compose />}
       <QuickCapture />
+      <Assistant />
       <PushToTalk />
       <Toasts />
     </div>

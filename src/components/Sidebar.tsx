@@ -18,7 +18,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { clearBlobs } from '../lib/blobs';
-import { chatStore } from '../state/assistant';
+import { assistant } from '../agent/conversations';
 import { ARCHIVED_BASE, BOXES } from '../data/mock';
 import { todaysEvents } from '../state/ws';
 import { ApprovalsSide } from '../areas/approvals';
@@ -310,7 +310,7 @@ function RulesSide() {
                     dispatch({ type: 'reset' });
                     // Uploaded and saved files, and the chat, start over too.
                     void clearBlobs();
-                    chatStore.clear();
+                    assistant.clearAll();
                   }}
                 >
                   Reset

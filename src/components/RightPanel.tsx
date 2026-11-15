@@ -28,7 +28,6 @@ import type { Step, Thread } from '../data/types';
 import { daysSince, fmtDay, fmtShortTime, fmtStamp, fmtTime, money } from '../lib/format';
 import { inBox, labelOf, useStore } from '../state/store';
 import { Avatar, DueChip, Folder, TimmyMark, tint } from './common';
-import { ChatPanel } from './ChatPanel';
 import { DocIcon, DocPath, DocThumb } from './DocBits';
 
 export function RightPanel() {
@@ -72,14 +71,11 @@ export function RightPanel() {
   }
 
   return (
-    <aside className="right has-chat" aria-label="Context">
-      <div className="right-top">
-        <button className="icon-btn sm right-close" aria-label="Close panel" onClick={() => dispatch({ type: 'drawer', drawer: 'right' })}>
-          <X size={16} />
-        </button>
-        {body}
-      </div>
-      <ChatPanel />
+    <aside className="right" aria-label="Context">
+      <button className="icon-btn sm right-close" aria-label="Close panel" onClick={() => dispatch({ type: 'drawer', drawer: 'right' })}>
+        <X size={16} />
+      </button>
+      {body}
     </aside>
   );
 }

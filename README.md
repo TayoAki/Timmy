@@ -24,8 +24,8 @@ The shell follows the wireframe: **left rail · sidebar · tabs + main content �
 | Sidebar | Changes with the section. For mail it shows numbered labels, project folders, Starred (max 5) and `[99] Archived` |
 | Tabs | Views inside the current page (e.g. Daily brief / Triage / Drafts) |
 | Main content | The page itself |
-| Right sidebar | Context for whatever is open (next actions, linked file, CRM record, today's calendar) on top, and **Ask Timmy**, a chat docked at the bottom |
-| Bottom bar | Agent status, last/next triage run, counts, theme toggle |
+| Right sidebar | Context for whatever is open: next actions, linked file, CRM record, today's calendar |
+| Bottom bar | Agent status, the next morning run, **Ask Timmy** (⌘I), counts, theme toggle |
 
 Below 1280px the right sidebar becomes a drawer. Below 900px the sidebar does too.
 
@@ -50,15 +50,17 @@ Files follow a numbered folder structure (`[02] Work › [10] Acme`, at most 5 l
 - **Urgency:** every open thread is ranked Urgent, Soon or Can wait, with the reasons shown ("Due today at 5:00 PM · Marcus is a priority contact · Says “today”"). The brief leads with only the urgent ones, or everything open if you prefer. Each signal is a rule in Settings › Urgency, and you can mark any thread urgent or able to wait yourself.
 - **Approvals:** one queue for everything that needs your OK: emails to send, decisions on price or hiring, CRM updates and calendar invites. Each decision shows the numbers and what Timmy will do for each choice. Nothing is sent without approval, every choice is logged under Decided, and Undo is on the notice that follows.
 
-## Ask Timmy (chat)
+## Ask Timmy (AG-UI)
 
-The chat at the bottom of the right sidebar answers from what's in the app and knows what's open: "What's urgent?", "What needs my approval?", "Summarize this thread", "Draft a reply", "Brief me on the pipeline", "Find focus time today", "Move my brief to 7:30", "Remind me to … tomorrow", "Find …", and research or competitor questions (it says plainly that outside sources aren't connected yet and offers to start a research doc). Anything that changes data is proposed with a button; nothing happens until you confirm. The answers come from a local engine over the sample data; a real model replaces `reply()` in `src/state/assistant.ts`.
+Click **Ask Timmy** in the bottom bar or press ⌘I (Ctrl+I) anywhere. It opens a chat workspace with your conversations on the left. Ask in plain words ("Plan my day", "Draft replies to everything urgent", "What needs my approval?", "Brief me on the pipeline", "Move my brief to 7:30", "Remind me to call Dana tomorrow", "Research competitor pricing"). Timmy shows the steps it works through, answers, and puts **live widgets from the app** in the conversation: the urgent list with Send and Draft, the approvals queue, today's calendar with free time to block, the pipeline, a thread with its draft and next actions. Widgets read live data and act only when you press their button; following a link closes the chat and takes you there. It knows what you have open ("Using: …", removable), and voice works here too.
+
+Timmy speaks the [AG-UI protocol](https://docs.ag-ui.com) (`@ag-ui/client`): the page sends `RunAgentInput` (messages, the open screen as context, and the widgets as frontend tools in `src/agent/tools.ts`) and renders the events that come back: `STEP_*` for the work, `TEXT_MESSAGE_*` for the answer, `TOOL_CALL_*` for widgets. In this preview the agent runs in the browser over the sample data (`src/agent/agent.ts`, `plan.ts`). Set `VITE_TIMMY_AGENT_URL` to any AG-UI endpoint (LangGraph, Mastra, CrewAI, Pydantic AI or your own) and the same workspace talks to that agent; it can call the same widgets.
 
 ## Voice
 
 Talk instead of typing, as in [OpenWhispr](https://github.com/OpenWhispr/openwhispr) (MIT), but in the browser:
 
-- **Mic buttons** in a reply, a new email and Ask Timmy; **push-to-talk** anywhere by holding Ctrl+Shift+Space (changeable). With a text field focused the words land at the cursor; with nothing focused they go to Ask Timmy.
+- **Mic buttons** in a reply, a new email and Ask Timmy; **push-to-talk** anywhere by holding Ctrl+Shift+Space (changeable). With a text field focused the words land at the cursor; with nothing focused Ask Timmy opens and answers them.
 - **Engines** (Settings › Voice): *Private* runs Whisper in your browser (downloaded once from Hugging Face, then cached; audio never leaves the device) and *Fast* uses the browser's own speech recognition (Chrome and Edge send audio to their speech service).
 - **Dictionary:** names and companies from your contacts are corrected after transcription ("dana whitefield at north peak" → "Dana Whitfield at Northpeak").
 
@@ -127,11 +129,12 @@ Known, intentional findings: em-dashes in file names (they're part of the naming
 src/
   data/       types.ts + mock.ts (mail), ws-types.ts + ws-mock.ts (workspace seed)
   state/      store.tsx (reducer, undo, saved in the browser), ws.ts (workspace helpers), theme.tsx,
-              urgency.ts (ranking), approvals.ts (the queue), schedule.ts (morning run), assistant.ts (Ask Timmy)
+              urgency.ts (ranking), approvals.ts (the queue), schedule.ts (morning run), assistant.ts (answer engine)
   lib/        office.ts (.docx/.xlsx/.pptx export), blobs.ts (file bytes in IndexedDB), dictation.ts + whisper.worker.ts (voice)
 public/craft  the four Craft apps' web builds (scripts/build-craft.sh, scripts/package-craft.py)
   components/ shell (LeftRail, Sidebar, Frame, RightPanel, BottomBar), Compose, SearchPalette, kit.tsx
-  views/      mail screens: TodayView, MailboxView, ThreadView, OtherViews, AppearanceView
+  views/      mail screens: TodayView, MailboxView, ThreadView, OtherViews, AppearanceView, VoiceView
+  agent/      Ask Timmy: AG-UI agent (agent.ts, plan.ts), widget tools (tools.ts, widgets.tsx), conversations, the workspace
   areas/      approvals, tasks, calendar, docs (docs, sheets, slides), projects, people, files (Drive), library,
               viewers (the Craft apps: CraftViewer, upload)
   styles/     tokens.css (light + Midnight/Graphite/Espresso), layout, ui, views, kit, one file per area

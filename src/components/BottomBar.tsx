@@ -7,6 +7,7 @@ import { inBox, useStore } from '../state/store';
 import { openThreads, useUrgency } from '../state/urgency';
 import { MODES, PALETTES, Swatch, useTheme, type Mode } from '../state/theme';
 import { Kbd } from './common';
+import { AssistantLauncher } from '../agent/Assistant';
 
 const MODE_ICON: Record<Mode, typeof Sun> = { light: Sun, dark: Moon, system: Monitor };
 
@@ -28,6 +29,9 @@ export function BottomBar() {
         <button className="bar-item bar-link hide-sm" onClick={() => dispatch({ type: 'navigate', route: { view: 'rules', tab: 'schedule' } })} title="Change the morning run in Settings › Schedule">
           Last run {fmtTime(LAST_RUN)} · {next ? `next ${whenLabel(next)}` : 'morning run paused'}
         </button>
+      </div>
+      <div className="bar-ask">
+        <AssistantLauncher />
       </div>
       <div className="bar-group">
         <span className="bar-item hide-sm mono">

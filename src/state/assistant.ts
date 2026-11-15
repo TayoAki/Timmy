@@ -7,7 +7,6 @@
  *
  * The conversation lives in a tiny external store, saved in this browser.
  */
-import { useSyncExternalStore } from 'react';
 import { NOW, PEOPLE } from '../data/mock';
 import type { Thread } from '../data/types';
 import type { Block, WEvent, WFile } from '../data/ws-types';
@@ -56,77 +55,6 @@ export interface ChatMessage {
 }
 
 export type Reply = Omit<ChatMessage, 'id' | 'role' | 'at'>;
-
-/* ───────────── Store ───────────── */
-
-export type ChatSize = 'min' | 'normal' | 'max';
-
-interface ChatState {
-  messages: ChatMessage[];
-  size: ChatSize;
-  thinking: boolean;
-}
-
-const KEY = 'timmy-chat-v1';
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
-
-const load = (): ChatState => {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) {
-      const saved = JSON.parse(raw, (_k, v) => (typeof v === 'string' && ISO_DATE.test(v) ? new Date(v) : v)) as Partial<ChatState>;
-      return { messages: Array.isArray(saved.messages) ? saved.messages : [], size: saved.size ?? 'normal', thinking: false };
-    }
-  } catch {
-    /* storage unavailable or corrupt: start empty */
-  }
-  return { messages: [], size: 'normal', thinking: false };
-};
-
-let chat: ChatState = load();
-const listeners = new Set<() => void>();
-
-const set = (next: Partial<ChatState>) => {
-  chat = { ...chat, ...next };
-  try {
-    localStorage.setItem(KEY, JSON.stringify({ messages: chat.messages.slice(-60), size: chat.size }));
-  } catch {
-    /* storage full or unavailable: the chat still works */
-  }
-  listeners.forEach((l) => l());
-};
-
-const subscribe = (l: () => void) => {
-  listeners.add(l);
-  return () => listeners.delete(l);
-};
-
-export const useChat = () => useSyncExternalStore(subscribe, () => chat);
-
-let seq = 0;
-const mid = () => `m-${Date.now().toString(36)}-${++seq}`;
-
-export const chatStore = {
-  get: () => chat,
-  /** Adds your message, then Timmy's reply after a short pause. */
-  ask(text: string, context: string | undefined, answer: () => Reply) {
-    set({ messages: [...chat.messages, { id: mid(), role: 'user', text, context, at: Date.now() }], thinking: true });
-    window.setTimeout(() => {
-      let r: Reply;
-      try {
-        r = answer();
-      } catch {
-        r = { text: 'Something went wrong working that out. Try asking another way.' };
-      }
-      set({ messages: [...chat.messages, { id: mid(), role: 'timmy', at: Date.now(), ...r }], thinking: false });
-    }, 400);
-  },
-  choose(messageId: string, choiceId: string) {
-    set({ messages: chat.messages.map((m) => (m.id === messageId ? { ...m, chosen: choiceId } : m)) });
-  },
-  clear: () => set({ messages: [], thinking: false }),
-  size: (size: ChatSize) => set({ size }),
-};
 
 /* ───────────── Context: what's open ───────────── */
 
@@ -207,7 +135,7 @@ const day = (d: Date, h = 17, m = 0) => new Date(d.getFullYear(), d.getMonth(), 
 const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
 /** "tomorrow", "friday", "by wed", "today", "next week" → a due date at 5 PM. */
-function parseDue(text: string): Date | undefined {
+export function parseDue(text: string): Date | undefined {
   const t = text.toLowerCase();
   if (/\btoday\b|\btonight\b|end of (the )?day/.test(t)) return day(NOW);
   if (/\btomorrow\b/.test(t)) return day(new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() + 1));
@@ -225,7 +153,7 @@ function parseDue(text: string): Date | undefined {
 }
 
 /** Strips the date words from a task title. */
-const tidyTitle = (s: string) =>
+export const tidyTitle = (s: string) =>
   cap(
     s
       .replace(/\b(by|on|before|due)?\s*(today|tonight|tomorrow|next week|end of (the )?day|(this |next )?(sun|mon|tue|wed|thu|fri|sat)[a-z]*)\b/gi, '')
@@ -235,7 +163,7 @@ const tidyTitle = (s: string) =>
   );
 
 /** "9", "7:30", "9am", "8.45 pm" → "HH:MM" in 15-minute steps. */
-function parseClock(text: string): string | null {
+export function parseClock(text: string): string | null {
   const m = text.toLowerCase().match(/\b(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?(?=\b|$)/);
   if (!m) return null;
   let h = Number(m[1]);
@@ -254,7 +182,7 @@ function parseClock(text: string): string | null {
 }
 
 /** The first free stretch of at least `mins` minutes today between now and 6 PM. */
-function freeSlot(events: WEvent[], mins = 60): { start: Date; end: Date } | null {
+export function freeSlot(events: WEvent[], mins = 60): { start: Date; end: Date } | null {
   const end = day(NOW, 18);
   let cursor = new Date(Math.ceil(NOW.getTime() / (15 * 60000)) * 15 * 60000);
   const busy = events.filter((e) => e.end > cursor).sort((a, b) => a.start.getTime() - b.start.getTime());
@@ -266,7 +194,7 @@ function freeSlot(events: WEvent[], mins = 60): { start: Date; end: Date } | nul
   return stop <= end ? { start: cursor, end: stop } : null;
 }
 
-const words = (q: string) =>
+export const words = (q: string) =>
   q
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
@@ -274,7 +202,7 @@ const words = (q: string) =>
     .filter((w) => w.length > 2 && !STOP.has(w));
 const STOP = new Set(['the', 'and', 'for', 'about', 'with', 'from', 'find', 'search', 'show', 'where', 'look', 'files', 'file', 'mail', 'email', 'emails', 'related', 'any', 'all', 'this', 'that', 'what', 'whats', 'are', 'there', 'can', 'you', 'please', 'doc', 'docs']);
 
-function threadText(t: Thread) {
+export function threadText(t: Thread) {
   return `${t.subject} ${t.ask} ${t.participants.map((p) => PEOPLE[p]?.name ?? p).join(' ')} ${t.messages.map((m) => m.body.join(' ')).join(' ')}`.toLowerCase();
 }
 
