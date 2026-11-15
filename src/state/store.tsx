@@ -1,10 +1,10 @@
-import { createContext, useContext, useMemo, useReducer, type Dispatch, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useReducer, type Dispatch, type ReactNode } from 'react';
 import { ACTIVITY, BOXES, DEALS, NOW, PEOPLE, PROJECTS, RULES, THREADS } from '../data/mock';
 import type { Activity, Box, Deal, Label, ProjectId, Rule, RuleGroup, Thread } from '../data/types';
 import { WS_SEED } from '../data/ws-mock';
 import type { WS } from '../data/ws-types';
 import { fmtDay } from '../lib/format';
-import { applyOps, firstName, personName, type WsOp, type WsOptions } from './ws';
+import { applyOps, firstName, personName, registerPerson, type WsOp, type WsOptions } from './ws';
 
 export type TodayTab = 'brief' | 'triage' | 'drafts';
 export type ThreadTab = 'conversation' | 'links' | 'history';
@@ -136,6 +136,7 @@ export type Action =
   | { type: 'reply'; id: string; body: string; track?: { on: string; item: string; due?: string } | null }
   | { type: 'simulateReply'; id: string }
   | { type: 'makeDraft'; id: string }
+  | { type: 'reset' }
   | { type: 'capture'; open: boolean };
 
 /** Builds a workspace change: dispatch(ws([put('tasks', task)], { toast: 'Task added', undo: true })). */
@@ -470,6 +471,14 @@ function reducer(s: State, a: Action): State {
       };
     }
 
+    case 'reset':
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch {
+        /* storage unavailable */
+      }
+      return { ...initial, toasts: withToast(initial, 'Demo data reset') };
+
     case 'makeDraft': {
       const t = s.threads.find((x) => x.id === a.id);
       if (!t || t.draft) return s;
@@ -524,8 +533,44 @@ function reducer(s: State, a: Action): State {
 
 const Ctx = createContext<{ state: State; dispatch: Dispatch<Action> } | null>(null);
 
+/* ───────────── Saved in this browser ───────────── */
+
+const STORAGE_KEY = 'timmy-state-v1';
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+const PERSISTED = ['threads', 'deals', 'activity', 'rules', 'ws', 'highlight', 'highlightDone', 'dismissed', 'route', 'back'] as const;
+
+function load(): State {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return initial;
+    const saved = JSON.parse(raw, (_k, v) => (typeof v === 'string' && ISO_DATE.test(v) ? new Date(v) : v)) as Partial<State>;
+    const next = { ...initial };
+    for (const key of PERSISTED) if (saved[key] !== undefined) (next as Record<string, unknown>)[key] = saved[key];
+    // Collections added in later versions fall back to the seed.
+    next.ws = { ...initial.ws, ...next.ws };
+    for (const c of Object.values(next.ws.contacts)) registerPerson({ id: c.id, name: c.name, email: c.email, title: c.title, company: c.company });
+    return next;
+  } catch {
+    return initial;
+  }
+}
+
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, initial);
+  const [state, dispatch] = useReducer(reducer, undefined, load);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const out: Record<string, unknown> = {};
+        for (const key of PERSISTED) out[key] = state[key];
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(out));
+      } catch {
+        /* storage full or unavailable: the session still works */
+      }
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [state]);
+
   const value = useMemo(() => ({ state, dispatch }), [state]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

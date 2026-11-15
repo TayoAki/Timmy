@@ -476,3 +476,13 @@ select.input {
   font-weight: 400;
   color: var(--text-3);
 }
+
+.btn-danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--on-accent);
+}
+
+.btn-danger:hover {
+  background: color-mix(in srgb, var(--danger) 88%, var(--text));
+}

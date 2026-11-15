@@ -8,6 +8,7 @@ import {
   Palette,
   PenLine,
   Reply,
+  RotateCcw,
   SquarePen,
   Star,
   Sun,
@@ -24,7 +25,9 @@ import { ProjectsSide } from '../areas/projects';
 import { TasksSide } from '../areas/tasks';
 import type { Box, RuleGroup } from '../data/types';
 import { inBox, sectionOf, useStore } from '../state/store';
+import { useState } from 'react';
 import { Avatar, Folder, Kbd, TimmyMark, tint } from './common';
+import { Modal } from './kit';
 
 const BOX_ICONS: Record<Box, LucideIcon> = {
   inbox: Inbox,
@@ -207,6 +210,7 @@ const RULE_GROUPS: { id: RuleGroup; name: string; hint: string; icon: LucideIcon
 function RulesSide() {
   const { state, dispatch } = useStore();
   const tab = state.route.view === 'rules' ? state.route.tab : null;
+  const [resetting, setResetting] = useState(false);
   return (
     <>
       <div className="side-head">
@@ -256,6 +260,41 @@ function RulesSide() {
               <span className="nav-hint">Light, dark and palettes</span>
             </span>
           </button>
+          <button className="nav-item" style={tint('var(--c-slate)')} onClick={() => setResetting(true)}>
+            <span className="nav-icon">
+              <RotateCcw size={16} />
+            </span>
+            <span className="nav-text">
+              <span className="nav-name">Reset demo data</span>
+              <span className="nav-hint">Start again from the sample workspace</span>
+            </span>
+          </button>
+          <Modal
+            open={resetting}
+            onClose={() => setResetting(false)}
+            title="Reset demo data?"
+            description="Everything you created or changed in this browser (mail, tasks, docs, files, contacts) goes back to the sample workspace. This can't be undone."
+            footer={
+              <>
+                <button className="btn btn-sm btn-ghost" onClick={() => setResetting(false)}>
+                  Cancel
+                </button>
+                <button
+                  className="btn btn-sm btn-danger"
+                  onClick={() => {
+                    setResetting(false);
+                    dispatch({ type: 'reset' });
+                  }}
+                >
+                  Reset
+                </button>
+              </>
+            }
+          >
+            <p className="muted" style={{ fontSize: 13 }}>
+              Your theme choice is kept.
+            </p>
+          </Modal>
         </div>
         <div className="side-group">
           <div className="side-title">Connected</div>
