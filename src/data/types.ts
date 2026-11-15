@@ -42,6 +42,8 @@ export interface Step {
   text: string;
   done: boolean;
   byTimmy?: boolean;
+  /** Where to do it, as an app link such as "file:acme-quote". */
+  href?: string;
 }
 
 export interface Waiting {

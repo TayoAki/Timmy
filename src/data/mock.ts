@@ -185,9 +185,10 @@ export const THREADS: Thread[] = [
     },
     steps: [
       { id: 's1', text: 'Create task: revise quote to 120 seats', done: true, byTimmy: true },
-      { id: 's2', text: 'Check proposal v4: Timmy updated seats and tier price', done: false },
-      { id: 's3', text: 'Send reply and track CFO approval in Waiting', done: false },
-      { id: 's4', text: 'Update deal value to $83,520', done: false },
+      { id: 's2', text: 'Update the quote tracker; the summary doc refreshes from it', done: false, href: 'file:acme-quote' },
+      { id: 's3', text: 'Check proposal v4: Timmy updated seats and tier price', done: false, href: 'file:proposal-v4' },
+      { id: 's4', text: 'Send reply and track CFO approval in Waiting', done: false },
+      { id: 's5', text: 'Update deal value to $83,520', done: false },
     ],
     history: [
       { at: d(16, 7, 3), text: 'Sorted to [01] Follow Up: Dana asked you for a revised quote' },

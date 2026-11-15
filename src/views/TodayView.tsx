@@ -11,8 +11,16 @@ import {
   Reply,
   Send,
   Sparkles,
+  FilePlus2,
+  ListPlus,
+  SquarePen,
+  StickyNote,
   Target,
+  UserPlus,
 } from 'lucide-react';
+import { ContactDialog } from '../areas/people/ContactDialog';
+import { NewDocDialog } from '../areas/docs/NewDocDialog';
+import { TaskDialog } from '../areas/tasks/TaskDialog';
 import { useState, type ReactNode } from 'react';
 import { NOW, PEOPLE } from '../data/mock';
 import { todaysEvents } from '../state/ws';
@@ -64,6 +72,8 @@ function Brief() {
         {quick > 0 ? `, ${quick} of them quick replies.` : '.'}
       </p>
 
+      <QuickActions />
+
       <Highlight />
 
       <div className="tri-grid">
@@ -109,6 +119,43 @@ function Brief() {
 
       <Suggestions />
     </>
+  );
+}
+
+/** Start anything from the home page; each item links itself where it belongs. */
+function QuickActions() {
+  const { dispatch } = useStore();
+  const [task, setTask] = useState(false);
+  const [doc, setDoc] = useState(false);
+  const [contact, setContact] = useState(false);
+  return (
+    <div className="quick-actions" role="group" aria-label="Quick actions">
+      <button className="btn btn-sm" onClick={() => setTask(true)}>
+        <ListPlus size={14} />
+        New task
+      </button>
+      <button className="btn btn-sm" onClick={() => dispatch({ type: 'capture', open: true })}>
+        <StickyNote size={14} />
+        Quick note
+        <Kbd>⌘J</Kbd>
+      </button>
+      <button className="btn btn-sm" onClick={() => dispatch({ type: 'compose', draft: { to: [], subject: '', body: '' } })}>
+        <SquarePen size={14} />
+        New email
+        <Kbd>C</Kbd>
+      </button>
+      <button className="btn btn-sm" onClick={() => setDoc(true)}>
+        <FilePlus2 size={14} />
+        New doc
+      </button>
+      <button className="btn btn-sm" onClick={() => setContact(true)}>
+        <UserPlus size={14} />
+        Add contact
+      </button>
+      <TaskDialog open={task} onClose={() => setTask(false)} />
+      <NewDocDialog open={doc} onClose={() => setDoc(false)} />
+      <ContactDialog open={contact} onClose={() => setContact(false)} />
+    </div>
   );
 }
 

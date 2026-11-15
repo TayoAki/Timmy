@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { ARCHIVED_BASE, BOXES, LABEL_GUIDE, NOW, PEOPLE, PROJECTS } from '../data/mock';
-import { pathOf, todaysEvents } from '../state/ws';
+import { pathOf, routeFromHref, todaysEvents } from '../state/ws';
 import { CalendarContext } from '../areas/calendar';
 import { DocsContext, FileContext } from '../areas/docs';
 import { FilesContext } from '../areas/files';
@@ -212,7 +212,7 @@ function ThreadContext({ t }: { t: Thread }) {
         <Section title="Next actions" aside={<span className="rp-aside mono">{done}/{t.steps.length}</span>}>
           <ul className="steps">
             {t.steps.map((s) => (
-              <li key={s.id}>
+              <li key={s.id} className="step-row">
                 <button
                   className={`step${s.done ? ' done' : ''}`}
                   onClick={() => dispatch({ type: 'toggleStep', id: t.id, step: s.id })}
@@ -222,6 +222,11 @@ function ThreadContext({ t }: { t: Thread }) {
                   <span className="step-text">{s.text}</span>
                   {s.byTimmy && <span className="step-by">Timmy</span>}
                 </button>
+                {s.href && (
+                  <button className="icon-btn sm step-open" aria-label={`Open: ${s.text}`} title="Open" onClick={() => dispatch({ type: 'navigate', route: routeFromHref(s.href!) })}>
+                    <ArrowUpRight size={14} />
+                  </button>
+                )}
               </li>
             ))}
           </ul>

@@ -2,24 +2,33 @@ import {
   Archive,
   ArrowLeft,
   BookOpen,
+  CalendarPlus,
   Check,
   ChevronDown,
   ChevronRight,
   CircleDot,
+  FlaskConical,
   Hourglass,
+  ListChecks,
+  ListPlus,
+  NotebookPen,
   Paperclip,
   Reply,
+  ReplyAll,
   Send,
   Sparkles,
   Star,
   Trash2,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { PEOPLE } from '../data/mock';
-import { pathOf } from '../state/ws';
+import { NOW, PEOPLE } from '../data/mock';
+import { decisionOps, firstName, isoDay, pathOf } from '../state/ws';
+import { BlockTimeDialog } from '../areas/calendar/BlockTimeDialog';
+import { TaskDialog } from '../areas/tasks/TaskDialog';
+import { AutoTextarea, Field, Modal } from '../components/kit';
 import type { Box, Draft, Thread } from '../data/types';
 import { fmtDay, fmtStamp } from '../lib/format';
-import { labelOf, useStore, type ThreadTab } from '../state/store';
+import { counterpart, labelOf, useStore, ws, type ThreadTab } from '../state/store';
 import { Avatar, Kbd, ThreadChips, TimmyMark } from '../components/common';
 import { DocIcon, DocPath, DocThumb } from '../components/DocBits';
 import { Frame } from '../components/Frame';
@@ -37,6 +46,7 @@ const typing = (el: EventTarget | null) =>
 export function ThreadView({ id, tab }: { id: string; tab: ThreadTab }) {
   const { state, dispatch } = useStore();
   const t = state.threads.find((x) => x.id === id);
+  const [replying, setReplying] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -47,6 +57,11 @@ export function ThreadView({ id, tab }: { id: string; tab: ThreadTab }) {
         dispatch({ type: 'move', id: t.id, box: move.box });
       } else if (e.key.toLowerCase() === 's') {
         dispatch({ type: 'toggleStar', id: t.id });
+      } else if (e.key.toLowerCase() === 'd' && !t.draft) {
+        dispatch({ type: 'makeDraft', id: t.id });
+      } else if (e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        setReplying(true);
       } else if (e.key === 'Escape') {
         dispatch({ type: 'back' });
       }
@@ -110,7 +125,9 @@ export function ThreadView({ id, tab }: { id: string; tab: ThreadTab }) {
         ))}
       </div>
 
-      {tab === 'conversation' && <Conversation t={t} />}
+      <ThreadActions t={t} onReply={() => (setReplying(true), dispatch({ type: 'openThread', id: t.id, tab: 'conversation' }))} />
+
+      {tab === 'conversation' && <Conversation t={t} replying={replying} onReplyDone={() => setReplying(false)} />}
       {tab === 'links' && <Links t={t} />}
       {tab === 'history' && <History t={t} />}
     </Frame>
@@ -129,7 +146,7 @@ function Summary({ t }: { t: Thread }) {
   );
 }
 
-function Conversation({ t }: { t: Thread }) {
+function Conversation({ t, replying, onReplyDone }: { t: Thread; replying: boolean; onReplyDone: () => void }) {
   const { state } = useStore();
   const [expanded, setExpanded] = useState<string[]>([]);
   const lastId = t.messages[t.messages.length - 1]!.id;
@@ -176,8 +193,233 @@ function Conversation({ t }: { t: Thread }) {
           );
         })}
       </div>
+      {t.suggestion?.extra && t.project && t.box === 'inbox' && <ArrivedCard t={t} />}
       {t.draft && <DraftCard t={t} draft={t.draft} />}
+      {replying && !t.draft && <ReplyBox t={t} onDone={onReplyDone} />}
     </>
+  );
+}
+
+/* ───────────── Actions that connect mail to tasks, calendar and projects ───────────── */
+
+const recapBody = (t: Thread) => {
+  const open = (t.steps ?? []).filter((s) => !s.done).map((s) => `• ${s.text}`);
+  return [
+    'Hi all,',
+    `Where things stand: ${t.ask}.`,
+    open.length ? `Open actions:\n${open.join('\n')}` : 'No open actions.',
+    t.context ? `Background: ${t.context}` : '',
+    'Best,\nTaylor',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+};
+
+function ThreadActions({ t, onReply }: { t: Thread; onReply: () => void }) {
+  const { state, dispatch } = useStore();
+  const [taskOpen, setTaskOpen] = useState(false);
+  const [blockOpen, setBlockOpen] = useState(false);
+  const [decisionOpen, setDecisionOpen] = useState(false);
+  const project = t.project ? state.ws.projects[t.project] : undefined;
+  const linkedTask = Object.values(state.ws.tasks).find((x) => x.thread === t.id && x.status !== 'done');
+  const others = t.participants.filter((p) => p !== 'me');
+
+  return (
+    <div className="thread-actions" role="group" aria-label="Thread actions">
+      <button className="btn btn-sm" onClick={onReply}>
+        <Reply size={14} />
+        Reply
+        <Kbd>A</Kbd>
+      </button>
+      {!t.draft && (
+        <button className="btn btn-sm" onClick={() => dispatch({ type: 'makeDraft', id: t.id })}>
+          <Sparkles size={14} />
+          Ask Timmy to draft
+          <Kbd>D</Kbd>
+        </button>
+      )}
+      {t.messages.length > 1 && others.length > 0 && (
+        <button
+          className="btn btn-sm btn-ghost"
+          onClick={() =>
+            dispatch({ type: 'compose', draft: { to: others, subject: `Recap: ${t.subject.replace(/^Re:\s*/, '')}`, body: recapBody(t), project: t.project } })
+          }
+        >
+          <ReplyAll size={14} />
+          Send a recap
+        </button>
+      )}
+      <span className="thread-actions-sep" aria-hidden />
+      {linkedTask ? (
+        <button className="btn btn-sm btn-ghost" onClick={() => dispatch({ type: 'navigate', route: { view: 'tasks', tab: 'board', project: linkedTask.project } })}>
+          <ListChecks size={14} />
+          Task: {linkedTask.title}
+        </button>
+      ) : (
+        <button className="btn btn-sm btn-ghost" onClick={() => setTaskOpen(true)}>
+          <ListPlus size={14} />
+          Create task
+        </button>
+      )}
+      <button className="btn btn-sm btn-ghost" onClick={() => setBlockOpen(true)}>
+        <CalendarPlus size={14} />
+        Block time
+      </button>
+      {project?.notesDoc && (
+        <button className="btn btn-sm btn-ghost" onClick={() => setDecisionOpen(true)}>
+          <NotebookPen size={14} />
+          Record decision
+        </button>
+      )}
+      {t.box === 'waiting' && t.waiting && (
+        <button className="btn btn-sm btn-ghost demo-btn" onClick={() => dispatch({ type: 'simulateReply', id: t.id })} title="Demo only: pretend the reply arrived">
+          <FlaskConical size={14} />
+          Demo: {firstName(t.waiting.on)} replies
+        </button>
+      )}
+
+      <TaskDialog
+        open={taskOpen}
+        onClose={() => setTaskOpen(false)}
+        initial={{ title: t.ask.replace(/ by (Mon|Tue|Wed|Thu|Fri|Sat|Sun),.*$/, ''), thread: t.id, project: t.project, due: t.due, contact: counterpart(t), priority: t.effort === 'focus' ? 'high' : 'normal' }}
+      />
+      <BlockTimeDialog
+        open={blockOpen}
+        onClose={() => setBlockOpen(false)}
+        title={t.subject.replace(/^Re:\s*/, '')}
+        thread={t.id}
+        task={linkedTask?.id}
+        minutes={t.effort === 'focus' ? 90 : t.effort === 'quick' ? 15 : 60}
+      />
+      {project && (
+        <DecisionDialog open={decisionOpen} onClose={() => setDecisionOpen(false)} t={t} projectName={`[${project.num}] ${project.name}`} />
+      )}
+    </div>
+  );
+}
+
+function DecisionDialog({ open, onClose, t, projectName, archive }: { open: boolean; onClose: () => void; t: Thread; projectName: string; archive?: boolean }) {
+  const { state, dispatch } = useStore();
+  const last = t.messages[t.messages.length - 1]!;
+  const suggested =
+    t.id === 'acme-quote' && last.from !== 'me' ? 'CFO approved 120 seats at $58 per seat; order form next' : last.body.find((p) => !/^(hi|hello|thanks)/i.test(p))?.slice(0, 120) ?? '';
+  const [text, setText] = useState(suggested);
+  useEffect(() => setText(suggested), [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  const save = () => {
+    if (!text.trim() || !t.project) return;
+    dispatch(ws(decisionOps(state.ws, t.project, text.trim(), `Email: ${t.subject}`), { toast: `Recorded in ${projectName} running notes`, undo: true, log: `Recorded a decision for ${projectName}` }));
+    if (archive) dispatch({ type: 'move', id: t.id, box: 'archived', quiet: true });
+    onClose();
+  };
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Record a decision"
+      description={`Adds a dated row to the top of the ${projectName} running notes.`}
+      footer={
+        <>
+          <button className="btn btn-sm btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="btn btn-sm btn-primary" onClick={save} disabled={!text.trim()}>
+            <Check size={14} />
+            {archive ? 'Record and archive' : 'Record decision'}
+          </button>
+        </>
+      }
+    >
+      <Field label="Decision or update" hint={`${NOW.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · from this email`}>
+        <AutoTextarea minRows={2} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), save())} />
+      </Field>
+    </Modal>
+  );
+}
+
+/** Shown when the thing you were waiting on has arrived. */
+function ArrivedCard({ t }: { t: Thread }) {
+  const { state, dispatch } = useStore();
+  const [open, setOpen] = useState(false);
+  const project = state.ws.projects[t.project!];
+  return (
+    <section className="arrived card">
+      <Check size={18} className="arrived-icon" />
+      <div className="arrived-body">
+        <strong>The item you were waiting on arrived</strong>
+        <span className="muted">Clear the label and write the decision into the project’s running notes, where the team will look for it.</span>
+      </div>
+      <div className="arrived-actions">
+        <button className="btn btn-sm btn-primary" onClick={() => setOpen(true)}>
+          <NotebookPen size={14} />
+          Record decision and archive
+        </button>
+        <button className="btn btn-sm btn-ghost" onClick={() => dispatch({ type: 'move', id: t.id, box: 'archived' })}>
+          Archive only
+        </button>
+      </div>
+      {project && <DecisionDialog open={open} onClose={() => setOpen(false)} t={t} projectName={`[${project.num}] ${project.name}`} archive />}
+    </section>
+  );
+}
+
+/** A plain reply, with the option to track the answer in Waiting. */
+function ReplyBox({ t, onDone }: { t: Thread; onDone: () => void }) {
+  const { dispatch } = useStore();
+  const who = counterpart(t);
+  const [body, setBody] = useState(`Hi ${firstName(who)},\n\n`);
+  const [track, setTrack] = useState(false);
+  const [item, setItem] = useState('');
+  const [due, setDue] = useState(isoDay(new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() + 3)));
+  const area = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = area.current;
+    if (el) {
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    }
+  }, []);
+  const send = () => {
+    if (!body.trim() || (track && !item.trim())) return;
+    dispatch({ type: 'reply', id: t.id, body, track: track ? { on: who, item: item.trim(), due } : null });
+    onDone();
+  };
+  return (
+    <section className="draft card" aria-label="Reply">
+      <header className="draft-head">
+        <Avatar id="me" size={26} />
+        <div style={{ flex: 1 }}>
+          <strong>Reply to {PEOPLE[who]?.name ?? who}</strong>
+        </div>
+      </header>
+      <textarea ref={area} className="draft-body" value={body} onChange={(e) => setBody(e.target.value)} aria-label="Reply" rows={6} />
+      <div className="compose-track">
+        <button className="switch" role="switch" aria-checked={track} aria-label="Track the reply in Waiting" onClick={() => setTrack((v) => !v)} />
+        <div className="compose-track-text">
+          <span className="compose-track-title">
+            <Hourglass size={13} />
+            Track in [02] Waiting
+          </span>
+          {track ? (
+            <div className="compose-track-fields">
+              <input className="input" value={item} onChange={(e) => setItem(e.target.value)} placeholder="What they owe you" aria-label="What they owe you" />
+              <input className="input" type="date" value={due} onChange={(e) => setDue(e.target.value)} aria-label="Promised by" />
+            </div>
+          ) : (
+            <span className="muted">Without tracking, sending clears the label and archives the thread.</span>
+          )}
+        </div>
+      </div>
+      <footer className="draft-foot">
+        <button className="btn btn-sm btn-ghost" onClick={onDone}>
+          <Trash2 size={14} />
+          Discard
+        </button>
+        <button className="btn btn-sm btn-primary" onClick={send} disabled={!body.trim() || (track && !item.trim())}>
+          <Send size={14} />
+          {track ? 'Send & track in Waiting' : 'Send'}
+        </button>
+      </footer>
+    </section>
   );
 }
 

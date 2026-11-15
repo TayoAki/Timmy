@@ -135,6 +135,7 @@ export type Action =
   | { type: 'sendNew'; draft: ComposeDraft }
   | { type: 'reply'; id: string; body: string; track?: { on: string; item: string; due?: string } | null }
   | { type: 'simulateReply'; id: string }
+  | { type: 'makeDraft'; id: string }
   | { type: 'capture'; open: boolean };
 
 /** Builds a workspace change: dispatch(ws([put('tasks', task)], { toast: 'Task added', undo: true })). */
@@ -466,6 +467,25 @@ function reducer(s: State, a: Action): State {
         threads: patch(s.threads, a.id, () => next),
         activity: logged(s, `You replied to “${t.subject}”`, 'send', t.id),
         toasts: withToast(s, where, snap(s)),
+      };
+    }
+
+    case 'makeDraft': {
+      const t = s.threads.find((x) => x.id === a.id);
+      if (!t || t.draft) return s;
+      const who = [...t.messages].reverse().find((m) => m.from !== 'me')?.from ?? t.participants.find((p) => p !== 'me') ?? 'me';
+      const ask = t.ask.replace(/^[A-Z]/, (c) => c.toLowerCase());
+      const draft = {
+        kind: 'reply' as const,
+        to: [who],
+        subject: t.subject.startsWith('Re:') ? t.subject : `Re: ${t.subject}`,
+        body: `Hi ${firstName(who)},\n\nThanks for this. On your note (${ask}): here is where things stand, and what I need from you to keep it moving.\n\nBest,\nTaylor`,
+        sources: (t.docs ?? []).slice(0, 2),
+      };
+      return {
+        ...s,
+        threads: patch(s.threads, a.id, (x) => ({ ...x, draft, history: [...(x.history ?? []), { at: NOW, text: 'Drafted a reply on request' }] })),
+        toasts: withToast(s, 'Timmy drafted a reply'),
       };
     }
 

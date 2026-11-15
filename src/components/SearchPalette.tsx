@@ -1,9 +1,10 @@
-import { FilePenLine, Hourglass, Paperclip, Reply, Search, UserRound } from 'lucide-react';
+import { FilePenLine, Hourglass, ListChecks, Paperclip, Reply, Search, UserRound } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { BOXES, DOCS, PEOPLE, PROJECTS } from '../data/mock';
+import { BOXES, PEOPLE, PROJECTS } from '../data/mock';
+import { pathOf } from '../state/ws';
 import type { Box, Thread } from '../data/types';
 import { byNewest, counterpart, labelOf, useStore } from '../state/store';
-import { Avatar, Kbd, tint } from './common';
+import { Avatar, Folder, Kbd, tint } from './common';
 import { DocIcon } from './DocBits';
 
 interface Parsed {
@@ -136,11 +137,16 @@ export function SearchPalette() {
     }
 
     if (hasQuery && !p.box && !p.hasDraft) {
-      const docs = Object.values(DOCS)
-        .filter((d) => (!p.text || d.name.toLowerCase().includes(p.text)) && (!p.project || d.path.join(' ').toLowerCase().includes(PROJECTS.find((x) => x.id === p.project)?.name.split(' ')[0]!.toLowerCase() ?? '')))
-        .slice(0, 4);
-      for (const d of docs) {
-        const t = state.threads.find((x) => x.docs?.includes(d.id));
+      const W = state.ws;
+      const projectFolder = p.project ? W.projects[p.project]?.folder : undefined;
+      const files = Object.values(W.files)
+        .filter((d) => !d.filing && !d.shortcutOf)
+        .filter((d) => !p.text || `${d.name} ${d.description ?? ''}`.toLowerCase().includes(p.text))
+        .filter((d) => !p.from || d.owner === p.from || d.sharedBy === p.from)
+        .filter((d) => !projectFolder || d.folder === projectFolder || d.project === p.project)
+        .sort((a, b) => b.updated.getTime() - a.updated.getTime())
+        .slice(0, 5);
+      for (const d of files) {
         out.push({
           key: `d-${d.id}`,
           group: 'Files',
@@ -150,16 +156,57 @@ export function SearchPalette() {
             </span>
           ),
           title: <Highlight text={d.name} q={p.text} />,
-          sub: d.path.join(' / '),
+          sub: pathOf(W, d.folder).join(' / '),
           run: () => {
             close();
-            if (t) dispatch({ type: 'openThread', id: t.id, tab: 'links' });
-            else dispatch({ type: 'navigate', route: { view: 'files', tab: 'all', folder: d.path[d.path.length - 1]! } });
+            dispatch({ type: 'navigate', route: { view: 'file', id: d.id } });
           },
         });
       }
-      const people = Object.values(PEOPLE)
-        .filter((x) => x.id !== 'me' && !x.bot && p.text && (x.name.toLowerCase().includes(p.text) || x.company?.toLowerCase().includes(p.text)))
+      if (p.text && !p.from) {
+        const tasks = Object.values(W.tasks)
+          .filter((x) => x.status !== 'done' && x.title.toLowerCase().includes(p.text) && (!p.project || x.project === p.project))
+          .slice(0, 3);
+        for (const x of tasks) {
+          out.push({
+            key: `t-${x.id}`,
+            group: 'Tasks',
+            icon: (
+              <span className="palette-file">
+                <ListChecks size={16} />
+              </span>
+            ),
+            title: <Highlight text={x.title} q={p.text} />,
+            sub: [x.project ? W.projects[x.project]?.name : null, x.status === 'doing' ? 'In progress' : 'To do'].filter(Boolean).join(' · '),
+            run: () => {
+              close();
+              dispatch({ type: 'navigate', route: { view: 'tasks', tab: 'board', project: x.project } });
+            },
+          });
+        }
+        const projects = Object.values(W.projects)
+          .filter((x) => `${x.name} ${x.client ?? ''}`.toLowerCase().includes(p.text))
+          .slice(0, 3);
+        for (const x of projects) {
+          out.push({
+            key: `pr-${x.id}`,
+            group: 'Projects',
+            icon: <Folder color={x.color} size={22} />,
+            title: (
+              <>
+                <span className="code muted">[{x.num}]</span> <Highlight text={x.name} q={p.text} />
+              </>
+            ),
+            sub: x.goal ?? x.client ?? '',
+            run: () => {
+              close();
+              dispatch({ type: 'navigate', route: { view: 'project', id: x.id, tab: 'overview' } });
+            },
+          });
+        }
+      }
+      const people = Object.values(W.contacts)
+        .filter((x) => !x.bot && p.text && `${x.name} ${x.company ?? ''} ${x.email}`.toLowerCase().includes(p.text))
         .slice(0, 3);
       for (const x of people) {
         out.push({
@@ -167,7 +214,7 @@ export function SearchPalette() {
           group: 'People',
           icon: <Avatar id={x.id} size={28} />,
           title: <Highlight text={x.name} q={p.text} />,
-          sub: `${x.title} · ${x.company}`,
+          sub: [x.title, x.company].filter(Boolean).join(' · ') || x.email,
           meta: (
             <span className="chip">
               <UserRound size={12} />
@@ -176,13 +223,13 @@ export function SearchPalette() {
           ),
           run: () => {
             close();
-            dispatch({ type: 'navigate', route: { view: 'people', tab: 'all', person: x.id } });
+            dispatch({ type: 'navigate', route: { view: 'contact', id: x.id, tab: 'overview' } });
           },
         });
       }
     }
     return out;
-  }, [p, hasQuery, state.threads, dispatch]);
+  }, [p, hasQuery, state.threads, state.ws, dispatch]);
 
   useEffect(() => setActive(0), [q]);
 

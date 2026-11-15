@@ -2079,3 +2079,91 @@ button.rp-person:hover {
     aspect-ratio: 16 / 8;
   }
 }
+
+/* ───────────── Thread actions ───────────── */
+
+.thread-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: -6px 0 20px;
+}
+
+.thread-actions-sep {
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: var(--line-strong);
+}
+
+.thread-actions .btn-ghost {
+  max-width: 280px;
+}
+
+.thread-actions .btn-ghost span,
+.thread-actions .btn-ghost {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.demo-btn {
+  border: 1px dashed var(--line-strong);
+}
+
+.arrived {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 12px;
+  margin-top: 18px;
+  padding: 14px 16px;
+  background: color-mix(in srgb, var(--ok-soft) 70%, var(--surface));
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+}
+
+.arrived-icon {
+  color: var(--ok);
+  margin-top: 2px;
+}
+
+.arrived-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13.5px;
+}
+
+.arrived-actions {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+@container (max-width: 480px) {
+  .thread-actions-sep {
+    display: none;
+  }
+}
+
+.step-row {
+  display: flex;
+  align-items: flex-start;
+}
+
+.step-row .step {
+  flex: 1;
+}
+
+.step-open {
+  margin: 7px 8px 0 0;
+  flex: none;
+}
+
+.quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}

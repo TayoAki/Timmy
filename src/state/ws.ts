@@ -188,3 +188,22 @@ export const routeFromHref = (href: string): Route => {
       return { view: 'today', tab: 'brief' };
   }
 };
+
+/* ───────────── Project running notes ───────────── */
+
+/**
+ * Ops that add a dated decision to the top of a project's running-notes table
+ * (the doc's first table: Date / Decision or update / Source).
+ */
+export const decisionOps = (ws: WS, projectId: string, text: string, source: string): WsOp[] => {
+  const project = ws.projects[projectId];
+  const doc = project?.notesDoc ? ws.docs[project.notesDoc] : undefined;
+  if (!doc) return [];
+  const row = [NOW.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), text, source];
+  const idx = doc.blocks.findIndex((b) => b.type === 'table');
+  const blocks =
+    idx >= 0
+      ? doc.blocks.map((b, i) => (i === idx && b.type === 'table' ? { ...b, rows: [row, ...b.rows] } : b))
+      : [{ id: uid('b'), type: 'table' as const, columns: ['Date', 'Decision or update', 'Source'], rows: [row] }, ...doc.blocks];
+  return [patch('docs', doc.id, { blocks }), patch('files', doc.id, { updated: NOW })];
+};
