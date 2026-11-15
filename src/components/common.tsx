@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { CircleAlert, Clock, FilePenLine, Hourglass, Timer, Zap } from 'lucide-react';
 import { PEOPLE, PROJECTS } from '../data/mock';
+import { useStore } from '../state/store';
 import type { Thread } from '../data/types';
 import { dueInfo, initials } from '../lib/format';
 
@@ -66,7 +67,8 @@ export function DueChip({ due, prefix }: { due: Date; prefix?: string }) {
 }
 
 export function ProjectChip({ id }: { id: string }) {
-  const p = PROJECTS.find((x) => x.id === id);
+  const { state } = useStore();
+  const p = state.ws.projects[id] ?? PROJECTS.find((x) => x.id === id);
   if (!p) return null;
   return (
     <span className="chip plain" style={tint(p.color)}>

@@ -29,7 +29,7 @@ import { Avatar, DueChip, Folder } from '../../components/common';
 import { DocIcon, kindMeta } from '../../components/DocBits';
 import { Frame } from '../../components/Frame';
 import { EmptyState, Menu, SideHead } from '../../components/kit';
-import { NOW, PEOPLE } from '../../data/mock';
+import { NOW, PEOPLE, PROJECTS } from '../../data/mock';
 import type { Project, Task, WFile } from '../../data/ws-types';
 import { fmtDate, fmtListDate, fmtStamp, money, plural } from '../../lib/format';
 import { byNewest, useStore, ws, type Route } from '../../state/store';
@@ -783,10 +783,12 @@ function MailTab({ ctx }: { ctx: TabCtx }) {
   return (
     <section className="pj-tab">
       <SectionHead title="Mail" sub={`Threads labelled [${p.num}] ${p.name}.`}>
-        <button className="btn btn-sm" onClick={() => dispatch({ type: 'navigate', route: { view: 'box', box: p.id, tab: 'all' } })}>
-          <LayoutList size={14} />
-          Open label
-        </button>
+        {PROJECTS.some((x) => x.id === p.id) && (
+          <button className="btn btn-sm" onClick={() => dispatch({ type: 'navigate', route: { view: 'box', box: p.id, tab: 'all' } })}>
+            <LayoutList size={14} />
+            Open label
+          </button>
+        )}
         <button className="btn btn-sm btn-primary" onClick={ctx.compose}>
           <SquarePen size={14} />
           Compose

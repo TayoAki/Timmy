@@ -42,8 +42,8 @@ const TABS: Record<string, { id: string; label: string; test: Filter }[]> = {
 
 export function MailboxView({ box, tab }: { box: Box | ProjectId; tab: string }) {
   const { state, dispatch } = useStore();
-  const isProject = PROJECTS.some((p) => p.id === box);
-  const label = labelOf(box);
+  const isProject = !!state.ws.projects[box] || PROJECTS.some((p) => p.id === box);
+  const label = labelOf(box, state.ws);
   const tabs = TABS[isProject ? 'project' : box]!;
   const active = tabs.find((t) => t.id === tab) ?? tabs[0]!;
 

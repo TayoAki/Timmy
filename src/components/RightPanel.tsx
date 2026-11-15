@@ -11,7 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { ARCHIVED_BASE, BOXES, LABEL_GUIDE, NOW, PEOPLE, PROJECTS } from '../data/mock';
+import { ARCHIVED_BASE, BOXES, LABEL_GUIDE, NOW, PEOPLE } from '../data/mock';
 import { pathOf, routeFromHref, todaysEvents } from '../state/ws';
 import { CalendarContext } from '../areas/calendar';
 import { DocsContext, FileContext } from '../areas/docs';
@@ -22,7 +22,7 @@ import { ProjectsContext } from '../areas/projects';
 import { TasksContext } from '../areas/tasks';
 import type { Thread } from '../data/types';
 import { daysSince, fmtDay, fmtShortTime, fmtStamp, fmtTime, money } from '../lib/format';
-import { inBox, useStore } from '../state/store';
+import { inBox, labelOf, useStore } from '../state/store';
 import { Avatar, DueChip, Folder, TimmyMark, tint } from './common';
 import { DocIcon, DocPath, DocThumb } from './DocBits';
 
@@ -383,7 +383,7 @@ function LabelContext({ id }: { id: string }) {
     );
   }
 
-  const project = PROJECTS.find((p) => p.id === id)!;
+  const project = labelOf(id, state.ws);
   const threads = state.threads.filter((t) => t.project === id);
   const docs = [...new Set(threads.flatMap((t) => t.docs ?? []))].map((d) => state.ws.files[d]!);
   const dealId = threads.find((t) => t.deal)?.deal;

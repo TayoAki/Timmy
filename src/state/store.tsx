@@ -143,8 +143,11 @@ export type Action =
 export const ws = (ops: WsOp[], options: WsOptions = {}): Action => ({ type: 'ws', ops, ...options });
 
 export const ALL_LABELS: Label[] = [...BOXES, ...PROJECTS];
-export const labelOf = (id: string): Label =>
-  ALL_LABELS.find((l) => l.id === id) ?? { id: id as ProjectId, num: '··', name: id, hint: '', color: 'var(--c-slate)' };
+export const labelOf = (id: string, wsState?: WS): Label => {
+  const p = wsState?.projects[id];
+  if (p) return { id: p.id, num: p.num, name: p.name, hint: p.client ?? '', color: p.color };
+  return ALL_LABELS.find((l) => l.id === id) ?? { id: id as ProjectId, num: '··', name: id, hint: '', color: 'var(--c-slate)' };
+};
 export const boxTag = (box: Box) => {
   const l = labelOf(box);
   return `[${l.num}] ${l.name}`;
@@ -404,7 +407,7 @@ function reducer(s: State, a: Action): State {
         ...s,
         ws: applyOps(s.ws, a.ops),
         activity: a.log ? logged(s, a.log, 'file') : s.activity,
-        toasts: a.toast ? withToast(s, a.toast, a.undo ? snap(s) : undefined) : s.toasts,
+        toasts: a.toast ? withToast(s, a.toast, a.undo ? snap(s) : undefined, a.tone) : s.toasts,
       };
 
     case 'compose':

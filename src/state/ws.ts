@@ -29,6 +29,8 @@ export interface WsOptions {
   undo?: boolean;
   /** Add a line to Timmy's activity log. */
   log?: string;
+  /** Show the toast as a warning. */
+  tone?: 'warn';
 }
 
 export const applyOps = (ws: WS, ops: WsOp[]): WS => {

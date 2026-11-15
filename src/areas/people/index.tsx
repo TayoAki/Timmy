@@ -20,7 +20,7 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { TaskDialog } from '../tasks/TaskDialog';
 import { Avatar, DueChip, tint } from '../../components/common';
 import { DocIcon } from '../../components/DocBits';
@@ -111,7 +111,6 @@ export function PeopleView() {
   const due = dueForReview(state.ws, state.threads);
   const sugg = suggestions(state.ws);
   const [adding, setAdding] = useState(false);
-  const { open } = useCrmActions();
 
   const rows = tab === 'priority' ? prio : tab === 'due' ? due : tab === 'tracked' ? all : sugg;
 
@@ -154,7 +153,11 @@ export function PeopleView() {
         <ContactTable rows={rows} mode={tab} />
       )}
 
-      <ContactDialog open={adding} onClose={() => setAdding(false)} onSaved={(id) => open({ id } as Contact)} />
+      <ContactDialog
+        open={adding}
+        onClose={() => setAdding(false)}
+        onSaved={(id) => dispatch({ type: 'navigate', route: { view: 'contact', id, tab: 'overview' } })}
+      />
     </Frame>
   );
 }
@@ -208,7 +211,7 @@ function rowKeys(go: () => void) {
   return {
     tabIndex: 0,
     onClick: go,
-    onKeyDown: (e: React.KeyboardEvent) => {
+    onKeyDown: (e: KeyboardEvent) => {
       if (e.key === 'Enter' && e.target === e.currentTarget) go();
     },
   };
