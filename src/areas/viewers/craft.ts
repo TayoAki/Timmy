@@ -12,11 +12,15 @@ import { exportNative, officeExt, withExt } from '../../lib/office';
 
 export type CraftApp = 'wordcraft' | 'gridcraft' | 'deckcraft' | 'pdfcraft';
 
-export const CRAFT: Record<CraftApp, { title: string; noun: string; kind: FileKind; exts: string[] }> = {
-  wordcraft: { title: 'WordCraft', noun: 'document', kind: 'doc', exts: ['docx', 'doc', 'dotx', 'odt', 'ott', 'rtf', 'txt', 'md', 'markdown', 'html', 'htm'] },
-  gridcraft: { title: 'GridCraft', noun: 'spreadsheet', kind: 'sheet', exts: ['xlsx', 'xlsm', 'xls', 'ods', 'csv', 'tsv', 'numbers'] },
-  deckcraft: { title: 'DeckCraft', noun: 'presentation', kind: 'slides', exts: ['pptx', 'potx', 'key'] },
-  pdfcraft: { title: 'PdfCraft', noun: 'PDF', kind: 'pdf', exts: ['pdf'] },
+/**
+ * `label` is what people see in Timmy; `title` is the project's own name, kept
+ * for credits (README, public/craft/<app>/SOURCE.txt and the licence files).
+ */
+export const CRAFT: Record<CraftApp, { title: string; label: string; noun: string; kind: FileKind; exts: string[]; does: string }> = {
+  wordcraft: { title: 'WordCraft', label: 'Document editor', noun: 'document', kind: 'doc', exts: ['docx', 'doc', 'dotx', 'odt', 'ott', 'rtf', 'txt', 'md', 'markdown', 'html', 'htm'], does: 'page layout, styles, comments and track changes' },
+  gridcraft: { title: 'GridCraft', label: 'Spreadsheet editor', noun: 'spreadsheet', kind: 'sheet', exts: ['xlsx', 'xlsm', 'xls', 'ods', 'csv', 'tsv', 'numbers'], does: 'formulas, formatting and charts' },
+  deckcraft: { title: 'DeckCraft', label: 'Presentation editor', noun: 'presentation', kind: 'slides', exts: ['pptx', 'potx', 'key'], does: 'themes, layouts, animation and presenting' },
+  pdfcraft: { title: 'PdfCraft', label: 'PDF editor', noun: 'PDF', kind: 'pdf', exts: ['pdf'], does: 'annotations, forms, signing and page tools' },
 };
 
 export const CRAFT_APPS = Object.keys(CRAFT) as CraftApp[];

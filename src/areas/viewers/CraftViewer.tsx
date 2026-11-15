@@ -9,6 +9,8 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { NOW } from '../../data/mock';
 import type { WFile } from '../../data/ws-types';
 import { putBlob } from '../../lib/blobs';
+import { FULLSCREEN_KEY, useFullscreen } from '../../lib/fullscreen';
+import { Kbd } from '../../components/common';
 import { officeExt } from '../../lib/office';
 import { useStore, ws } from '../../state/store';
 import { folderLabel, patch, put, uid } from '../../state/ws';
@@ -31,7 +33,7 @@ export function CraftViewer({ file, app, note }: { file: WFile; app: CraftApp; n
   const [error, setError] = useState('');
   const [dirty, setDirty] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const [full, setFull] = useState(false);
+  const fs = useFullscreen<HTMLElement>();
   const wsRef = useRef(state.ws);
   wsRef.current = state.ws;
   const fileRef = useRef(file);
@@ -42,6 +44,7 @@ export function CraftViewer({ file, app, note }: { file: WFile; app: CraftApp; n
 
   // Is the app installed on this server? (A dev server answers unknown paths with the SPA page.)
   useEffect(() => {
+    hideCommunityLinks(app);
     let alive = true;
     setStatus('checking');
     fetch(`/craft/${app}/index.html`, { cache: 'no-cache' })
@@ -63,7 +66,7 @@ export function CraftViewer({ file, app, note }: { file: WFile; app: CraftApp; n
     const timer = window.setTimeout(() => {
       if (!alive) return;
       setStatus((s) => (s === 'loading' ? 'failed' : s));
-      setError(`${meta.title} didn’t start in time.`);
+      setError(`The ${meta.label.toLowerCase()} didn’t start in time.`);
     }, START_TIMEOUT);
     const post = (msg: object, transfer?: Transferable[]) => frame.current?.contentWindow?.postMessage(msg, window.location.origin, transfer ?? []);
 
@@ -77,7 +80,7 @@ export function CraftViewer({ file, app, note }: { file: WFile; app: CraftApp; n
           ws([patch('files', target.current.id, { stored: true, format: ext, updated: NOW })], {
             toast: ok ? `Saved “${t?.name ?? f.name}”` : 'Saved for this session only: this browser isn’t keeping files',
             tone: ok ? undefined : 'warn',
-            log: `Saved “${t?.name ?? f.name}” from ${meta.title}`,
+            log: `Saved “${t?.name ?? f.name}” in the ${meta.label.toLowerCase()}`,
           }),
         );
         return ok;
@@ -104,7 +107,7 @@ export function CraftViewer({ file, app, note }: { file: WFile; app: CraftApp; n
             toast: ok ? `Saved “${name}”${folder ? ` in ${folderLabel(folder)}` : ''}` : `Saved “${name}” for this session only: this browser isn’t keeping files`,
             tone: ok ? undefined : 'warn',
             undo: true,
-            log: `Saved “${name}” from ${meta.title}`,
+            log: `Saved “${name}” in the ${meta.label.toLowerCase()}`,
           },
         ),
       );
@@ -137,7 +140,7 @@ export function CraftViewer({ file, app, note }: { file: WFile; app: CraftApp; n
       } else if (kind === 'dirty') {
         setDirty(!!m.dirty);
       } else if (kind === 'failed') {
-        if (m.id) dispatch({ type: 'toast', text: `${meta.title} couldn’t save: ${String(m.error ?? 'unknown error')}`, tone: 'warn' });
+        if (m.id) dispatch({ type: 'toast', text: `The ${meta.label.toLowerCase()} couldn’t save: ${String(m.error ?? 'unknown error')}`, tone: 'warn' });
         else {
           setError(String(m.error ?? ''));
           setStatus('failed');
@@ -168,12 +171,13 @@ export function CraftViewer({ file, app, note }: { file: WFile; app: CraftApp; n
     return () => window.removeEventListener('beforeunload', onLeave);
   }, [dirty]);
 
-  useEffect(() => {
-    if (!full) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setFull(false);
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [full]);
+  // ⌘\ also works while the editor in the frame has the keyboard.
+  const unlisten = useRef<() => void>(() => undefined);
+  useEffect(() => () => unlisten.current(), []);
+  const onFrameLoad = () => {
+    unlisten.current();
+    unlisten.current = fs.listenIn(frame.current?.contentWindow);
+  };
 
   const save = async () => {
     const data = await fileBytes(fileRef.current, wsRef.current);
@@ -187,11 +191,11 @@ export function CraftViewer({ file, app, note }: { file: WFile; app: CraftApp; n
   const showFrame = live;
 
   return (
-    <section className={`craft${full ? ' full' : ''}`} aria-label={`${file.name} in ${meta.title}`}>
+    <section ref={fs.ref} className={`craft${fs.full ? ' full' : ''}`} aria-label={`${file.name} in the ${meta.label.toLowerCase()}`}>
       <div className="craft-bar">
         <span className={`craft-app craft-${app}`}>
           <span className="craft-dot" aria-hidden />
-          {meta.title}
+          {meta.label}
         </span>
         <span className="craft-state" role="status">
           {status === 'ready' && (dirty ? 'Unsaved changes. Use File › Save to keep them.' : 'Saves go to this file in Drive.')}
@@ -203,27 +207,28 @@ export function CraftViewer({ file, app, note }: { file: WFile; app: CraftApp; n
             Download
           </button>
           {showFrame && (
-            <button className="btn btn-xs btn-ghost" onClick={retry} title={`Reload ${meta.title}`}>
+            <button className="btn btn-xs btn-ghost" onClick={retry} title={`Reload the ${meta.label.toLowerCase()}`}>
               <RotateCcw size={13} />
               Reload
             </button>
           )}
-          <button className="btn btn-xs btn-ghost" onClick={() => setFull((v) => !v)} aria-pressed={full}>
-            {full ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-            {full ? 'Exit full screen' : 'Full screen'}
+          <button className="btn btn-xs btn-ghost" onClick={fs.toggle} aria-pressed={fs.full} title={`${fs.full ? 'Exit full screen' : 'Full screen'} (${FULLSCREEN_KEY})`}>
+            {fs.full ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+            {fs.full ? 'Exit full screen' : 'Full screen'}
+            <Kbd>{FULLSCREEN_KEY}</Kbd>
           </button>
         </div>
       </div>
 
       <div className="craft-stage">
-        {showFrame && <iframe key={attempt} ref={frame} src={src} title={`${meta.title}: ${file.name}`} allow="clipboard-read; clipboard-write; fullscreen" />}
+        {showFrame && <iframe key={attempt} ref={frame} src={src} title={`${meta.label}: ${file.name}`} allow="clipboard-read; clipboard-write; fullscreen" onLoad={onFrameLoad} />}
         {status !== 'ready' && (
           <div className={`craft-overlay${showFrame ? ' over' : ''}`}>
             {status === 'missing' ? (
-              <Problem title={`${meta.title} isn’t installed on this server`} body="Run npm run craft to build the Craft apps into public/craft, then reload." onRetry={retry} onDownload={save} />
+              <Problem title={`The ${meta.label.toLowerCase()} isn’t installed on this server`} body="Run npm run craft to build the editors into public/craft, then reload." onRetry={retry} onDownload={save} />
             ) : status === 'failed' ? (
               <Problem
-                title={`${meta.title} couldn’t open the ${meta.noun}`}
+                title={`The ${meta.label.toLowerCase()} couldn’t open the ${meta.noun}`}
                 body={error || `It needs a browser with WebGPU or WebGL2. You can still download the file.`}
                 onRetry={retry}
                 onDownload={save}
@@ -233,8 +238,8 @@ export function CraftViewer({ file, app, note }: { file: WFile; app: CraftApp; n
             ) : (
               <div className="craft-loading">
                 <span className="craft-spinner" aria-hidden />
-                <strong>Opening in {meta.title}…</strong>
-                <span>The first time takes a few seconds while the app downloads. After that it opens straight away.</span>
+                <strong>Opening the {meta.noun}…</strong>
+                <span>The first time takes a few seconds while the editor downloads. After that it opens straight away.</span>
               </div>
             )}
           </div>
@@ -243,6 +248,22 @@ export function CraftViewer({ file, app, note }: { file: WFile; app: CraftApp; n
       {note && <p className="craft-note">{note}</p>}
     </section>
   );
+}
+
+/**
+ * The editors run on our origin, so their stored preferences are ours to set:
+ * WordCraft's title-bar community button is a preference, switched off here.
+ * (PdfCraft's is removed at build time: scripts/patches/pdfcraft-hosted.patch.)
+ */
+function hideCommunityLinks(app: CraftApp) {
+  if (app !== 'wordcraft') return;
+  try {
+    const key = 'wordcraft.ui';
+    const prefs = JSON.parse(localStorage.getItem(key) || '{}') as Record<string, unknown>;
+    if (prefs.showDiscord !== false) localStorage.setItem(key, JSON.stringify({ ...prefs, showDiscord: false }));
+  } catch {
+    /* storage unavailable: the button stays */
+  }
 }
 
 function Problem({ title, body, onRetry, onDownload }: { title: string; body: string; onRetry: () => void; onDownload?: () => void }) {

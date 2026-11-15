@@ -1,7 +1,8 @@
 /* One file, any kind: a shared header, then the editor or preview for its kind. */
-import { ArrowLeft, ChevronRight, Download, FileX, FolderOpen, Mail, Sparkles, Star } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Download, FileX, FolderOpen, Mail, Maximize2, Minimize2, Sparkles, Star } from 'lucide-react';
+import { FULLSCREEN_KEY, useFullscreen } from '../../lib/fullscreen';
 import { useEffect, useState } from 'react';
-import { Avatar } from '../../components/common';
+import { Avatar, Kbd } from '../../components/common';
 import { DocIcon, DocPath, DocThumb, kindMeta } from '../../components/DocBits';
 import { Frame } from '../../components/Frame';
 import { EmptyState, Segmented } from '../../components/kit';
@@ -48,6 +49,9 @@ export function FileView() {
   const entry = W.files[id];
   const file = entry?.shortcutOf ? W.files[entry.shortcutOf] : entry;
   const [mode, setMode] = useState<'timmy' | 'craft'>('timmy');
+  // Full screen for Timmy's own editors (the full editors have their own, same shortcut).
+  const nativeView = !!file && mode === 'timmy' && hasNativeBody(file, W);
+  const fs = useFullscreen<HTMLDivElement>(nativeView);
 
   if (!entry || !file) {
     return (
@@ -102,20 +106,36 @@ export function FileView() {
       wide={file.kind === 'sheet' || file.kind === 'slides' || (viewer && !!app)}
       scrollKey={file.id}
     >
-      <FileHeader file={file} shortcut={entry.shortcutOf ? entry : undefined} />
-      {native && app && <ModeSwitch file={file} app={app} mode={mode} onMode={setMode} />}
-      {body}
+      <div ref={fs.ref} className={`file-stage${fs.full ? ' full' : ''}`}>
+        <FileHeader file={file} shortcut={entry.shortcutOf ? entry : undefined} />
+        {native && app && <ModeSwitch file={file} app={app} mode={mode} onMode={setMode} onFull={nativeView ? fs.toggle : undefined} full={fs.full} />}
+        {body}
+      </div>
     </Frame>
   );
 }
 
 const craftNote = (file: WFile, app: CraftApp) =>
   file.stored
-    ? `This is the .${file.format ?? officeExt(file.kind)} copy you saved from ${CRAFT[app].title}. The Timmy editor keeps its own version, which Timmy reads for drafts.`
-    : `${CRAFT[app].title} opens a .${officeExt(file.kind)} copy of this ${CRAFT[app].noun}. Saving there keeps that copy with the file; the Timmy editor keeps its own version, which Timmy reads for drafts.`;
+    ? `This is the .${file.format ?? officeExt(file.kind)} copy you saved in the full editor. The Timmy editor keeps its own version, which Timmy reads for drafts.`
+    : `The full editor opens a .${officeExt(file.kind)} copy of this ${CRAFT[app].noun}. Saving there keeps that copy with the file; the Timmy editor keeps its own version, which Timmy reads for drafts.`;
 
 /** Timmy's editor or the full Craft app, for a Timmy doc, sheet or deck. */
-function ModeSwitch({ file, app, mode, onMode }: { file: WFile; app: CraftApp; mode: 'timmy' | 'craft'; onMode: (m: 'timmy' | 'craft') => void }) {
+function ModeSwitch({
+  file,
+  app,
+  mode,
+  onMode,
+  onFull,
+  full,
+}: {
+  file: WFile;
+  app: CraftApp;
+  mode: 'timmy' | 'craft';
+  onMode: (m: 'timmy' | 'craft') => void;
+  onFull?: () => void;
+  full?: boolean;
+}) {
   const { state } = useStore();
   const save = async () => {
     const data = await fileBytes(file, state.ws);
@@ -129,17 +149,26 @@ function ModeSwitch({ file, app, mode, onMode }: { file: WFile; app: CraftApp; m
         onChange={onMode}
         options={[
           { id: 'timmy', label: 'Timmy editor' },
-          { id: 'craft', label: CRAFT[app].title },
+          { id: 'craft', label: 'Full editor' },
         ]}
       />
       <span className="file-mode-hint">
-        {mode === 'timmy' ? `Open in ${CRAFT[app].title} for the full ${CRAFT[app].noun} editor.` : `The .${file.format ?? officeExt(file.kind)} file, in ${CRAFT[app].title}.`}
+        {mode === 'timmy' ? `The full editor adds ${CRAFT[app].does}.` : `The .${file.format ?? officeExt(file.kind)} file, in the ${CRAFT[app].label.toLowerCase()}.`}
       </span>
       {mode === 'timmy' && (
-        <button className="btn btn-xs btn-ghost" onClick={save} style={{ marginLeft: 'auto' }}>
-          <Download size={13} aria-hidden />
-          Download .{file.format ?? officeExt(file.kind)}
-        </button>
+        <div className="file-mode-actions">
+          <button className="btn btn-xs btn-ghost" onClick={save}>
+            <Download size={13} aria-hidden />
+            Download .{file.format ?? officeExt(file.kind)}
+          </button>
+          {onFull && (
+            <button className="btn btn-xs btn-ghost" onClick={onFull} aria-pressed={!!full} title={`${full ? 'Exit full screen' : 'Full screen'} (${FULLSCREEN_KEY})`}>
+              {full ? <Minimize2 size={13} aria-hidden /> : <Maximize2 size={13} aria-hidden />}
+              {full ? 'Exit full screen' : 'Full screen'}
+              <Kbd>{FULLSCREEN_KEY}</Kbd>
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

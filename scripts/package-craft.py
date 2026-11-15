@@ -19,6 +19,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DEST = ROOT / "public" / "craft"
 APPS = ["wordcraft", "gridcraft", "deckcraft", "pdfcraft"]
+# Inside Timmy the editors go by what they do; the projects' names stay in SOURCE.txt and the licences.
+LABEL = {"wordcraft": "Document editor", "gridcraft": "Spreadsheet editor", "deckcraft": "Presentation editor", "pdfcraft": "PDF editor"}
 
 LOADER = """<script type="module">
   // Timmy hosts this page: the .wasm ships gzipped and is decompressed here. If it can't
@@ -34,7 +36,7 @@ LOADER = """<script type="module">
     window.wasmBindings = bindings;
     dispatchEvent(new CustomEvent('TrunkApplicationStarted', {{ detail: {{ wasm: instance }} }}));
   }} catch (err) {{
-    const message = '{title} couldn’t start: ' + (err && err.message ? err.message : err);
+    const message = 'The {label} couldn’t start: ' + (err && err.message ? err.message : err);
     const note = document.getElementById('{app}_loading');
     if (note) note.textContent = message;
     if (new URLSearchParams(location.search).get('host') === 'parent' && window.parent !== window) {{
@@ -72,13 +74,15 @@ def package(app: str, out: Path, checkouts: Path) -> None:
             print(f"{app}: wasm-opt failed, shipping the unoptimised build\n{r.stderr[-400:]}")
             opt.unlink(missing_ok=True)
     data = (opt if opt.exists() else wasm).read_bytes()
-    with gzip.open(dest / f"{app}-web_bg.wasmz", "wb", compresslevel=9) as f:
+    # mtime=0 keeps the output identical for an identical build, so git doesn't store a new copy.
+    with open(dest / f"{app}-web_bg.wasmz", "wb") as raw, gzip.GzipFile(fileobj=raw, mode="wb", compresslevel=9, mtime=0) as f:
         f.write(data)
 
     # The app's own page, with Trunk's build links swapped for the loader.
     page = re.sub(r"\s*<link data-trunk[^>]*/>", "", shell)
-    page = page.replace("<title>", f'<meta name="craft-app" content="{app}">\n  <title>', 1)
-    page = page.replace("</body>", LOADER.format(app=app, title=title) + "\n</body>", 1)
+    page = page.replace(f"<title>{title}</title>", f'<meta name="craft-app" content="{app}">\n  <title>{LABEL[app]}</title>', 1)
+    page = re.sub(r"Loading [A-Za-z]+&hellip;", "Opening&hellip;", page)
+    page = page.replace("</body>", LOADER.format(app=app, label=LABEL[app].lower()) + "\n</body>", 1)
     (dest / "index.html").write_text(page)
 
     for name in ("LICENSE-MIT", "LICENSE-APACHE", "NOTICE"):

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="craft-app" content="pdfcraft">
-  <title>PdfCraft</title>
+  <title>PDF editor</title>
     <!-- Recognises text off the page's thread (crates/ui-egui/src/workflows/ocr_web.rs). -->
     <style>
       html, body { margin: 0; height: 100%; overflow: hidden; background: #f1f1f3; }
@@ -28,7 +28,7 @@
     window.wasmBindings = bindings;
     dispatchEvent(new CustomEvent('TrunkApplicationStarted', { detail: { wasm: instance } }));
   } catch (err) {
-    const message = 'PdfCraft couldn’t start: ' + (err && err.message ? err.message : err);
+    const message = 'The pdf editor couldn’t start: ' + (err && err.message ? err.message : err);
     const note = document.getElementById('pdfcraft_loading');
     if (note) note.textContent = message;
     if (new URLSearchParams(location.search).get('host') === 'parent' && window.parent !== window) {

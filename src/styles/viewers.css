@@ -190,3 +190,41 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+
+.file-mode-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-left: auto;
+}
+
+/* Full screen: the browser's own (:fullscreen), or filling the window. */
+.craft:fullscreen {
+  height: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.craft.full:fullscreen {
+  inset: 0;
+  box-shadow: none;
+}
+
+.file-stage:fullscreen,
+.file-stage.full {
+  overflow: auto;
+  padding: 28px max(32px, calc((100% - 1120px) / 2));
+  background: var(--bg);
+}
+
+.file-stage.full {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+}
+
+.craft .kbd,
+.file-mode .kbd {
+  margin-left: 2px;
+}

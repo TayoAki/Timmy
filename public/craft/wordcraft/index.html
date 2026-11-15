@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
   <meta name="craft-app" content="wordcraft">
-  <title>WordCraft</title>
+  <title>Document editor</title>
   <style>
     html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #e6e6e6; }
     #wordcraft_canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
@@ -14,7 +14,7 @@
 </head>
 <body>
   <canvas id="wordcraft_canvas"></canvas>
-  <div id="wordcraft_loading">Loading WordCraft&hellip;</div>
+  <div id="wordcraft_loading">Opening&hellip;</div>
 <script type="module">
   // Timmy hosts this page: the .wasm ships gzipped and is decompressed here. If it can't
   // start, the page says so and tells a hosting page (?host=parent) at once.
@@ -29,7 +29,7 @@
     window.wasmBindings = bindings;
     dispatchEvent(new CustomEvent('TrunkApplicationStarted', { detail: { wasm: instance } }));
   } catch (err) {
-    const message = 'WordCraft couldn’t start: ' + (err && err.message ? err.message : err);
+    const message = 'The document editor couldn’t start: ' + (err && err.message ? err.message : err);
     const note = document.getElementById('wordcraft_loading');
     if (note) note.textContent = message;
     if (new URLSearchParams(location.search).get('host') === 'parent' && window.parent !== window) {

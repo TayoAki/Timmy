@@ -2,13 +2,16 @@ import {
   ArrowUpRight,
   BadgeDollarSign,
   CalendarClock,
+  CalendarPlus,
   Check,
   CircleCheck,
   FolderOpen,
   Hourglass,
   Lightbulb,
+  Send,
   Sparkles,
   X,
+  type LucideIcon,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { ARCHIVED_BASE, BOXES, LABEL_GUIDE, NOW, PEOPLE } from '../data/mock';
@@ -21,7 +24,7 @@ import { LibraryContext } from '../areas/library';
 import { PeopleContext } from '../areas/people';
 import { ProjectsContext } from '../areas/projects';
 import { TasksContext } from '../areas/tasks';
-import type { Thread } from '../data/types';
+import type { Step, Thread } from '../data/types';
 import { daysSince, fmtDay, fmtShortTime, fmtStamp, fmtTime, money } from '../lib/format';
 import { inBox, labelOf, useStore } from '../state/store';
 import { Avatar, DueChip, Folder, TimmyMark, tint } from './common';
@@ -182,6 +185,24 @@ function TodayContext() {
 
 // ───────────── Thread ─────────────
 
+/** The verb a next action shows, and does when clicked. */
+function stepVerb(s: Step, t: Thread): { label: string; icon: LucideIcon } | undefined {
+  if (s.run && !s.done) {
+    switch (s.run.do) {
+      case 'send':
+        return t.draft ? { label: t.draft.trackAs ? 'Send & track' : 'Send', icon: Send } : undefined;
+      case 'deal':
+        return { label: 'Update', icon: BadgeDollarSign };
+      case 'decide':
+        return { label: s.run.verb, icon: Check };
+      case 'block':
+        return { label: 'Block', icon: CalendarPlus };
+    }
+  }
+  if (s.href) return { label: 'Open', icon: ArrowUpRight };
+  return undefined;
+}
+
 function ThreadContext({ t }: { t: Thread }) {
   const { state, dispatch } = useStore();
   const deal = t.deal ? state.deals[t.deal] : undefined;
@@ -220,24 +241,39 @@ function ThreadContext({ t }: { t: Thread }) {
       {t.steps && t.steps.length > 0 && (
         <Section title="Next actions" aside={<span className="rp-aside mono">{done}/{t.steps.length}</span>}>
           <ul className="steps">
-            {t.steps.map((s) => (
-              <li key={s.id} className="step-row">
-                <button
-                  className={`step${s.done ? ' done' : ''}`}
-                  onClick={() => dispatch({ type: 'toggleStep', id: t.id, step: s.id })}
-                  aria-pressed={s.done}
-                >
-                  <span className="step-box">{s.done && <Check size={12} strokeWidth={3} />}</span>
-                  <span className="step-text">{s.text}</span>
-                  {s.byTimmy && <span className="step-by">Timmy</span>}
-                </button>
-                {s.href && (
-                  <button className="icon-btn sm step-open" aria-label={`Open: ${s.text}`} title="Open" onClick={() => dispatch({ type: 'navigate', route: routeFromHref(s.href!) })}>
-                    <ArrowUpRight size={14} />
+            {t.steps.map((s) => {
+              const verb = stepVerb(s, t);
+              const run = () =>
+                s.run && !s.done
+                  ? dispatch({ type: 'runStep', id: t.id, step: s.id })
+                  : s.href
+                    ? dispatch({ type: 'navigate', route: routeFromHref(s.href) })
+                    : dispatch({ type: 'toggleStep', id: t.id, step: s.id });
+              return (
+                <li key={s.id} className={`step-row${s.done ? ' done' : ''}`}>
+                  <button
+                    className="step-check"
+                    role="checkbox"
+                    aria-checked={s.done}
+                    aria-label={`${s.done ? 'Mark not done' : 'Mark done'}: ${s.text}`}
+                    title={s.done ? 'Mark not done' : 'Mark done without doing it here'}
+                    onClick={() => dispatch({ type: 'toggleStep', id: t.id, step: s.id })}
+                  >
+                    <span className="step-box">{s.done && <Check size={12} strokeWidth={3} />}</span>
                   </button>
-                )}
-              </li>
-            ))}
+                  <button className="step-main" onClick={run} title={verb ? `${verb.label}: ${s.text}` : undefined}>
+                    <span className="step-text">{s.text}</span>
+                    {s.byTimmy && <span className="step-by">Timmy</span>}
+                    {verb && (
+                      <span className="step-verb">
+                        <verb.icon size={12} aria-hidden />
+                        {verb.label}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </Section>
       )}

@@ -37,13 +37,26 @@ export interface Draft {
   kind?: 'reply' | 'nudge';
 }
 
+/** What clicking a next action does. */
+export type StepRun =
+  /** Send the thread's draft (tracked in Waiting when the draft has a tracking line). */
+  | { do: 'send' }
+  /** Apply the CRM update the thread's deal is waiting for. */
+  | { do: 'deal' }
+  /** Make a decision from Approvals with this option. */
+  | { do: 'decide'; decision: string; option: string; verb: string }
+  /** Block focus time: day yyyy-mm-dd, start HH:MM. */
+  | { do: 'block'; title: string; day: string; start: string; minutes: number };
+
 export interface Step {
   id: string;
   text: string;
   done: boolean;
   byTimmy?: boolean;
-  /** Where to do it, as an app link such as "file:acme-quote". */
+  /** Where to do it, as an app link such as "file:acme-quote". Clicking the step opens it. */
   href?: string;
+  /** Clicking the step does this, then ticks it. */
+  run?: StepRun;
 }
 
 export interface Waiting {

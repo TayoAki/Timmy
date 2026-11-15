@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Builds the Craft apps' web versions (storytold/wordcraft, gridcraft, deckcraft,
-# pdfcraft) and copies them into public/craft/ for Timmy to host.
+# pdfcraft), with Timmy's patches from scripts/patches, and copies them into
+# public/craft/ for Timmy to host.
 #
 # Needs: git, a Rust toolchain with the wasm32-unknown-unknown target, and
 # wasm-bindgen-cli 0.2.129 (the version all four lockfiles pin):
@@ -34,6 +35,10 @@ for app in "${APPS[@]}"; do
   fi
   git -C "$repo" fetch -q --depth 1 origin "${REV[$app]}"
   git -C "$repo" checkout -q --detach FETCH_HEAD
+  # Timmy's changes for hosting (e.g. no community buttons): scripts/patches/<app>-*.patch
+  for patch in "$ROOT"/scripts/patches/"$app"-*.patch; do
+    [ -e "$patch" ] && git -C "$repo" apply "$patch"
+  done
 
   echo "== $app: cargo build"
   # PdfCraft's release profile uses one codegen unit; 16 builds several times faster.

@@ -64,17 +64,18 @@ Talk instead of typing, as in [OpenWhispr](https://github.com/OpenWhispr/openwhi
 
 The microphone needs HTTPS (Railway serves it).
 
-## Files: WordCraft, GridCraft, DeckCraft and PdfCraft
+## Files: the full editors
 
-Documents, spreadsheets, presentations and PDFs open inside Timmy in the open-source [Craft apps](https://getartcraft.com/apps) by ArtCraft (MIT or Apache-2.0): [WordCraft](https://github.com/storytold/wordcraft) (.docx, .odt, .rtf, .md…), [GridCraft](https://github.com/storytold/gridcraft) (.xlsx, .xls, .ods, .csv), [DeckCraft](https://github.com/storytold/deckcraft) (.pptx) and [PdfCraft](https://github.com/storytold/pdfcraft) (.pdf). They're Rust apps compiled to WebAssembly and served by this site from `public/craft/<app>/`, so everything stays a web app.
+Documents, spreadsheets, presentations and PDFs open inside Timmy in full editors (shown as Document, Spreadsheet, Presentation and PDF editor). They are the open-source [Craft apps](https://getartcraft.com/apps) by ArtCraft (MIT or Apache-2.0), unbranded for hosting; their licences ship in `public/craft/<app>/`: [WordCraft](https://github.com/storytold/wordcraft) (.docx, .odt, .rtf, .md…), [GridCraft](https://github.com/storytold/gridcraft) (.xlsx, .xls, .ods, .csv), [DeckCraft](https://github.com/storytold/deckcraft) (.pptx) and [PdfCraft](https://github.com/storytold/pdfcraft) (.pdf). They're Rust apps compiled to WebAssembly and served by this site from `public/craft/<app>/`, so everything stays a web app.
 
-- **Click any file** in Drive, a project or search to open it. PDFs and uploaded office files open straight in their app. Timmy's own docs, sheets and decks keep the Timmy editor (which Timmy reads for drafts and linked tables) with a switch to open a .docx/.xlsx/.pptx copy in the Craft app, and a Download button.
+- **Click any file** in Drive, a project or search to open it. PDFs and uploaded office files open straight in their editor. Timmy's own docs, sheets and decks keep the Timmy editor (which Timmy reads for drafts and linked tables) with a switch to the full editor on a .docx/.xlsx/.pptx copy, and a Download button.
+- **Full screen:** ⌘\ (Ctrl+\) toggles full screen for any editor, Timmy's or the full ones, even while the full editor has the keyboard. Esc also leaves it.
 - **Upload** from Drive or a project's Files tab. The bytes stay in the browser (IndexedDB).
 - **Save** inside the app (File › Save) stores the file back in Drive; Save As or an export to another format adds a copy next to it. Unsaved changes are shown and guarded, and a file one app hands to another (for example PDF → Word) opens in the right app.
 
 How it's wired: `src/areas/viewers/CraftViewer.tsx` frames `/craft/<app>/index.html?host=parent` and speaks the apps' host messages ([craft-web-host](https://github.com/storytold/craft-libs/tree/main/crates/web-host): `ready` → `open {name, bytes}`; `save`, `dirty`, `failed`, `handoff`). `src/lib/office.ts` exports Timmy docs, sheets (formulas become cell formulas) and decks. The demo files are in `public/samples` (`npm run samples` regenerates them).
 
-To rebuild the apps (Rust with the `wasm32-unknown-unknown` target and `wasm-bindgen-cli` 0.2.129; about 30 minutes for all four):
+Hosting changes live in `scripts/patches/` (PdfCraft's community button is removed; WordCraft's is switched off through its stored preference). To rebuild the apps (Rust with the `wasm32-unknown-unknown` target and `wasm-bindgen-cli` 0.2.129; about 30 minutes for all four):
 
 ```bash
 npm run craft
@@ -101,6 +102,7 @@ Each follows Jeff Su's published system.
 ## Try it
 
 - **Today:** review the draft, accept triage suggestions, update the CRM from a suggestion
+- **Next actions** (right panel on a thread): click one and Timmy does it: sends the reply, updates the deal, sends the invite, blocks the time or opens the file. Tick the box to mark one done without doing it.
 - **Thread:** the whole conversation is shown with the reply box open below it. `F` / `W` / `R` / `E` move the thread, `S` stars it, `A` replies, `D` asks Timmy to draft, `Esc` goes back. Edit the draft, then **Send & track**. On a Waiting thread, **Demo: … replies** simulates the answer. Every move can be undone from the toast.
 - **Anywhere:** `C` composes, `⌘J` quick-captures a task or note, hold Ctrl+Shift+Space to talk
 - **Files:** open the Acme project › Files and click the order form (.docx), the MSA redlines (.pdf) or the quote tracker (switch to GridCraft); the Northwind budget (.xlsx) and the Hiring interview loop (.pptx) are in their projects

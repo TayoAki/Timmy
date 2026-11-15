@@ -4,10 +4,10 @@ import type { Activity, Box, Deal, Label, ProjectId, Rule, RuleGroup, Thread } f
 import { DECISIONS, type Decision } from '../data/decisions';
 import { WS_SEED } from '../data/ws-mock';
 import type { WS } from '../data/ws-types';
-import { fmtDay, money } from '../lib/format';
+import { fmtDay, fmtTime, money } from '../lib/format';
 import type { ApprovalKind, ApprovalRecord } from './approvals';
 import { DEFAULT_SCHEDULE, fmtClock, nextRun, scheduleRule, whenLabel, daysLabel, type Schedule } from './schedule';
-import { applyOps, decisionOps, firstName, personName, registerPerson, type WsOp, type WsOptions } from './ws';
+import { applyOps, decisionOps, firstName, personName, put, registerPerson, type WsOp, type WsOptions } from './ws';
 
 export type TodayTab = 'brief' | 'triage' | 'drafts';
 export type ThreadTab = 'conversation' | 'links' | 'history';
@@ -136,6 +136,8 @@ export type Action =
   | { type: 'discardDraft'; id: string }
   | { type: 'sendDraft'; id: string; track: boolean }
   | { type: 'toggleStep'; id: string; step: string }
+  /** Do what a next action says (send, update the deal, decide, block time), then tick it. */
+  | { type: 'runStep'; id: string; step: string }
   | { type: 'applyDeal'; id: string }
   | { type: 'toggleRule'; id: string }
   | { type: 'addRule'; group: RuleGroup; text: string }
@@ -211,6 +213,8 @@ const snap = (s: State): Snapshot => ({
   approvalLog: s.approvalLog,
   dismissed: s.dismissed,
 });
+
+const fmtShortClock = (d: Date) => fmtTime(d).replace(':00', '');
 
 let recordSeq = 1;
 /** Adds a line to the Approvals history. */
@@ -397,16 +401,70 @@ function reducer(s: State, a: Action): State {
     case 'applyDeal': {
       const deal = s.deals[a.id];
       if (!deal) return s;
+      // Acme's value follows the price you approved ($58, or $62 if you kept it).
+      const kept = s.decisions.find((x) => x.id === 'acme-price')?.chosen?.option === 'hold';
       const nextDeal: Deal =
         a.id === 'acme'
-          ? { ...deal, value: 83520, stage: 'Proposal sent', suggestion: undefined }
+          ? { ...deal, value: kept ? 89280 : 83520, stage: 'Proposal sent', suggestion: undefined }
           : { ...deal, stage: 'Closed won', suggestion: undefined };
       return {
         ...s,
         deals: { ...s.deals, [a.id]: nextDeal },
-        activity: logged(s, `Updated ${deal.company}: ${nextDeal.stage}`, 'crm'),
-        toasts: withToast(s, `${deal.company} updated · ${nextDeal.stage}`, snap(s)),
+        activity: logged(s, `Updated ${deal.company}: ${nextDeal.stage}, ${money(nextDeal.value)}`, 'crm'),
+        approvalLog: recorded(s, { key: `crm:${a.id}`, kind: 'crm', title: `Update ${deal.company} to ${nextDeal.stage}, ${money(nextDeal.value)}`, choice: 'Updated', approved: true }),
+        toasts: withToast(s, `${deal.company} updated · ${nextDeal.stage}, ${money(nextDeal.value)}`, snap(s)),
       };
+    }
+
+    case 'runStep': {
+      const t = s.threads.find((x) => x.id === a.id);
+      const st = t?.steps?.find((x) => x.id === a.step);
+      if (!t || !st?.run) return s;
+      const tick = (from: State, note: string): State => ({
+        ...from,
+        threads: patch(from.threads, t.id, (x) => ({
+          ...x,
+          steps: x.steps?.map((y) => (y.id === st.id ? { ...y, done: true } : y)),
+          history: [...(x.history ?? []), { at: NOW, text: note }],
+        })),
+      });
+      const already = (text: string) => tick({ ...s, toasts: withToast(s, text) }, `Ticked “${st.text}”`);
+      const run = st.run;
+      if (run.do === 'send') {
+        if (!t.draft) return already('Nothing left to send: the reply already went out.');
+        // sendDraft ticks the send steps and offers Undo.
+        return tick(reducer(s, { type: 'sendDraft', id: t.id, track: true }), `Did “${st.text}”`);
+      }
+      if (run.do === 'deal') {
+        const deal = t.deal ? s.deals[t.deal] : undefined;
+        if (!deal) return already('This thread has no deal to update.');
+        if (deal.stage === 'Closed won' || deal.stage === 'Proposal sent') return already(`${deal.company} is already up to date.`);
+        return tick(reducer(s, { type: 'applyDeal', id: deal.id }), `Did “${st.text}”`);
+      }
+      if (run.do === 'decide') {
+        const dec = s.decisions.find((x) => x.id === run.decision);
+        if (!dec) return s;
+        if (dec.chosen) return already(`Already decided: ${dec.options.find((o) => o.id === dec.chosen!.option)?.label ?? 'done'}.`);
+        return tick(reducer(s, { type: 'resolve', key: `dec:${dec.id}`, option: run.option }), `Did “${st.text}”`);
+      }
+      // Block focus time.
+      const [h, m] = run.start.split(':').map(Number);
+      const [y, mo, d] = run.day.split('-').map(Number);
+      const start = new Date(y!, mo! - 1, d!, h!, m!);
+      const end = new Date(start.getTime() + run.minutes * 60000);
+      const clash = Object.values(s.ws.events).some((e) => e.start < end && e.end > start && e.kind !== 'personal');
+      if (clash) return { ...s, toasts: withToast(s, `${fmtDay(start)} ${fmtShortClock(start)} is taken. Use Block time on the thread to pick another slot.`, undefined, 'warn') };
+      const id = `ev-step-${t.id}-${st.id}`;
+      const when = `${fmtDay(start)}, ${fmtShortClock(start)}–${fmtShortClock(end)}`;
+      return tick(
+        {
+          ...s,
+          ws: applyOps(s.ws, [put('events', { id, title: run.title, start, end, kind: 'focus', with: [], thread: t.id })]),
+          activity: logged(s, `Blocked ${when} for “${run.title.replace(/^Focus: /, '')}”`, 'calendar', t.id),
+          toasts: withToast(s, `Blocked ${when} for ${run.title.replace(/^Focus: /, '')}`, snap(s)),
+        },
+        `Blocked ${when}`,
+      );
     }
 
     case 'toggleRule':
