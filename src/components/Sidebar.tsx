@@ -5,6 +5,7 @@ import {
   FolderTree,
   Hourglass,
   Inbox,
+  Mic,
   Palette,
   PenLine,
   Reply,
@@ -16,6 +17,8 @@ import {
   Sun,
   type LucideIcon,
 } from 'lucide-react';
+import { clearBlobs } from '../lib/blobs';
+import { chatStore } from '../state/assistant';
 import { ARCHIVED_BASE, BOXES } from '../data/mock';
 import { todaysEvents } from '../state/ws';
 import { ApprovalsSide } from '../areas/approvals';
@@ -267,6 +270,20 @@ function RulesSide() {
               <span className="nav-hint">Light, dark and palettes</span>
             </span>
           </button>
+          <button
+            className="nav-item"
+            style={tint('var(--c-red)')}
+            aria-current={state.route.view === 'voice' ? 'page' : undefined}
+            onClick={() => dispatch({ type: 'navigate', route: { view: 'voice' } })}
+          >
+            <span className="nav-icon">
+              <Mic size={16} />
+            </span>
+            <span className="nav-text">
+              <span className="nav-name">Voice</span>
+              <span className="nav-hint">Dictation and push-to-talk</span>
+            </span>
+          </button>
           <button className="nav-item" style={tint('var(--c-slate)')} onClick={() => setResetting(true)}>
             <span className="nav-icon">
               <RotateCcw size={16} />
@@ -280,7 +297,7 @@ function RulesSide() {
             open={resetting}
             onClose={() => setResetting(false)}
             title="Reset demo data?"
-            description="Everything you created or changed in this browser (mail, tasks, docs, files, contacts) goes back to the sample workspace. This can't be undone."
+            description="Everything you created or changed in this browser (mail, tasks, docs, uploaded files, contacts and the chat with Timmy) goes back to the sample workspace. This can't be undone."
             footer={
               <>
                 <button className="btn btn-sm btn-ghost" onClick={() => setResetting(false)}>
@@ -291,6 +308,9 @@ function RulesSide() {
                   onClick={() => {
                     setResetting(false);
                     dispatch({ type: 'reset' });
+                    // Uploaded and saved files, and the chat, start over too.
+                    void clearBlobs();
+                    chatStore.clear();
                   }}
                 >
                   Reset

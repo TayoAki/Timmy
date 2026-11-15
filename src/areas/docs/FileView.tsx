@@ -1,10 +1,13 @@
 /* One file, any kind: a shared header, then the editor or preview for its kind. */
-import { ArrowLeft, ChevronRight, FileX, FolderOpen, Mail, Sparkles, Star } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Download, FileX, FolderOpen, Mail, Sparkles, Star } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Avatar } from '../../components/common';
 import { DocIcon, DocPath, DocThumb, kindMeta } from '../../components/DocBits';
 import { Frame } from '../../components/Frame';
-import { EmptyState } from '../../components/kit';
+import { EmptyState, Segmented } from '../../components/kit';
+import { officeExt } from '../../lib/office';
+import { CraftViewer } from '../viewers/CraftViewer';
+import { appForFile, CRAFT, download, fileBytes, hasNativeBody, hasOwnBytes, type CraftApp } from '../viewers/craft';
 import { NOW } from '../../data/mock';
 import type { WFile, WS } from '../../data/ws-types';
 import { fmtStamp } from '../../lib/format';
@@ -44,6 +47,7 @@ export function FileView() {
   const id = state.route.view === 'file' ? state.route.id : '';
   const entry = W.files[id];
   const file = entry?.shortcutOf ? W.files[entry.shortcutOf] : entry;
+  const [mode, setMode] = useState<'timmy' | 'craft'>('timmy');
 
   if (!entry || !file) {
     return (
@@ -79,8 +83,13 @@ export function FileView() {
     dispatch(ws([op, patch('files', file.id, { updated: NOW })]));
   };
 
+  const app = appForFile(file);
+  const native = hasNativeBody(file, W);
+  const viewer = mode === 'craft' || (!native && !!app && (hasOwnBytes(file) || file.kind === 'pdf'));
+
   let body;
-  if (file.kind === 'doc') body = doc ? <DocEditor file={file} body={doc} /> : <Blank kind="doc" onStart={start} />;
+  if (viewer && app) body = <CraftViewer file={file} app={app} note={native ? craftNote(file, app) : undefined} />;
+  else if (file.kind === 'doc') body = doc ? <DocEditor file={file} body={doc} /> : <Blank kind="doc" onStart={start} />;
   else if (file.kind === 'sheet') body = sheet ? <SheetEditor file={file} sheet={sheet} /> : <Blank kind="sheet" onStart={start} />;
   else if (file.kind === 'slides') body = deck ? <DeckView file={file} deck={deck} /> : <Blank kind="slides" onStart={start} />;
   else body = <Preview file={file} />;
@@ -90,12 +99,49 @@ export function FileView() {
       tabs={[{ id: 'file', label: meta.label, count }]}
       active="file"
       onTab={() => undefined}
-      wide={file.kind === 'sheet' || file.kind === 'slides'}
+      wide={file.kind === 'sheet' || file.kind === 'slides' || (viewer && !!app)}
       scrollKey={file.id}
     >
       <FileHeader file={file} shortcut={entry.shortcutOf ? entry : undefined} />
+      {native && app && <ModeSwitch file={file} app={app} mode={mode} onMode={setMode} />}
       {body}
     </Frame>
+  );
+}
+
+const craftNote = (file: WFile, app: CraftApp) =>
+  file.stored
+    ? `This is the .${file.format ?? officeExt(file.kind)} copy you saved from ${CRAFT[app].title}. The Timmy editor keeps its own version, which Timmy reads for drafts.`
+    : `${CRAFT[app].title} opens a .${officeExt(file.kind)} copy of this ${CRAFT[app].noun}. Saving there keeps that copy with the file; the Timmy editor keeps its own version, which Timmy reads for drafts.`;
+
+/** Timmy's editor or the full Craft app, for a Timmy doc, sheet or deck. */
+function ModeSwitch({ file, app, mode, onMode }: { file: WFile; app: CraftApp; mode: 'timmy' | 'craft'; onMode: (m: 'timmy' | 'craft') => void }) {
+  const { state } = useStore();
+  const save = async () => {
+    const data = await fileBytes(file, state.ws);
+    if (data) download(data.name, data.bytes);
+  };
+  return (
+    <div className="file-mode">
+      <Segmented
+        label="Open with"
+        value={mode}
+        onChange={onMode}
+        options={[
+          { id: 'timmy', label: 'Timmy editor' },
+          { id: 'craft', label: CRAFT[app].title },
+        ]}
+      />
+      <span className="file-mode-hint">
+        {mode === 'timmy' ? `Open in ${CRAFT[app].title} for the full ${CRAFT[app].noun} editor.` : `The .${file.format ?? officeExt(file.kind)} file, in ${CRAFT[app].title}.`}
+      </span>
+      {mode === 'timmy' && (
+        <button className="btn btn-xs btn-ghost" onClick={save} style={{ marginLeft: 'auto' }}>
+          <Download size={13} aria-hidden />
+          Download .{file.format ?? officeExt(file.kind)}
+        </button>
+      )}
+    </div>
   );
 }
 

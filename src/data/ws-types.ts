@@ -38,6 +38,12 @@ export interface WFile {
   /** An attachment waiting to be filed, with Timmy's suggestion. */
   filing?: { folder: string; name: string; fromThread?: string };
   project?: ProjectId;
+  /** The office or PDF format of the file's own bytes (docx, xlsx, pptx, pdf…), opened in a Craft app. */
+  format?: string;
+  /** The bytes are kept in this browser: uploaded, or saved from a Craft app. */
+  stored?: boolean;
+  /** A sample file that ships with the demo, e.g. "/samples/acme-msa.pdf". */
+  sample?: string;
 }
 
 /* ───────────── Docs ───────────── */

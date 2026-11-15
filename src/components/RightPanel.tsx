@@ -25,6 +25,7 @@ import type { Thread } from '../data/types';
 import { daysSince, fmtDay, fmtShortTime, fmtStamp, fmtTime, money } from '../lib/format';
 import { inBox, labelOf, useStore } from '../state/store';
 import { Avatar, DueChip, Folder, TimmyMark, tint } from './common';
+import { ChatPanel } from './ChatPanel';
 import { DocIcon, DocPath, DocThumb } from './DocBits';
 
 export function RightPanel() {
@@ -57,6 +58,8 @@ export function RightPanel() {
     body = <ApprovalsContext />;
   } else if (r.view === 'rules') {
     body = <RulesContext />;
+  } else if (r.view === 'voice') {
+    body = <VoiceContext />;
   } else if (r.view === 'appearance') {
     body = <AppearanceContext />;
   } else if (r.view === 'activity') {
@@ -66,11 +69,14 @@ export function RightPanel() {
   }
 
   return (
-    <aside className="right" aria-label="Context">
-      <button className="icon-btn sm right-close" aria-label="Close panel" onClick={() => dispatch({ type: 'drawer', drawer: 'right' })}>
-        <X size={16} />
-      </button>
-      {body}
+    <aside className="right has-chat" aria-label="Context">
+      <div className="right-top">
+        <button className="icon-btn sm right-close" aria-label="Close panel" onClick={() => dispatch({ type: 'drawer', drawer: 'right' })}>
+          <X size={16} />
+        </button>
+        {body}
+      </div>
+      <ChatPanel />
     </aside>
   );
 }
@@ -474,6 +480,21 @@ function RulesContext() {
 }
 
 // ───────────── Appearance ─────────────
+
+function VoiceContext() {
+  return (
+    <>
+      <Section title="Talk instead of typing">
+        <p className="rp-text">
+          Press the mic in a reply, a new email or Ask Timmy, or hold your push-to-talk shortcut (Ctrl+Shift+Space unless you changed it) anywhere in Timmy.
+        </p>
+      </Section>
+      <Section title="Where the words go">
+        <p className="rp-text">With a text field focused, they land at the cursor. With nothing focused, they go to Ask Timmy below as a question.</p>
+      </Section>
+    </>
+  );
+}
 
 function AppearanceContext() {
   return (

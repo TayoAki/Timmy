@@ -1,0 +1,3 @@
+GridCraft: https://github.com/storytold/gridcraft at 44050e9447e12d5b2a5559e258ffea83b9891507
+Built for Timmy with cargo build --release --target wasm32-unknown-unknown -p gridcraft-web and wasm-bindgen --target web --weak-refs.
+Licensed MIT OR Apache-2.0; see LICENSE-MIT, LICENSE-APACHE and NOTICE.

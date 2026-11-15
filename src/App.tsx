@@ -10,6 +10,7 @@ import { ProjectsView, ProjectView } from './areas/projects';
 import { TasksView } from './areas/tasks';
 import { BottomBar } from './components/BottomBar';
 import { Compose } from './components/Compose';
+import { PushToTalk } from './components/Dictation';
 import { LeftRail } from './components/LeftRail';
 import { QuickCapture } from './components/QuickCapture';
 import { RightPanel } from './components/RightPanel';
@@ -22,6 +23,7 @@ import { MailboxView } from './views/MailboxView';
 import { ActivityView, RulesView } from './views/OtherViews';
 import { ThreadView } from './views/ThreadView';
 import { TodayView } from './views/TodayView';
+import { VoiceView } from './views/VoiceView';
 
 export default function App() {
   return (
@@ -70,10 +72,11 @@ function Shell() {
       <Sidebar />
       {r.view === 'today' && <TodayView tab={r.tab} />}
       {r.view === 'box' && <MailboxView key={r.box} box={r.box} tab={r.tab} />}
-      {r.view === 'thread' && <ThreadView id={r.id} tab={r.tab} />}
+      {r.view === 'thread' && <ThreadView key={r.id} id={r.id} tab={r.tab} />}
       {r.view === 'activity' && <ActivityView tab={r.tab} />}
       {r.view === 'rules' && <RulesView tab={r.tab} />}
       {r.view === 'appearance' && <AppearanceView />}
+      {r.view === 'voice' && <VoiceView />}
       {r.view === 'tasks' && <TasksView />}
       {r.view === 'calendar' && <CalendarView />}
       {r.view === 'docs' && <DocsView />}
@@ -91,6 +94,7 @@ function Shell() {
       {state.searchOpen && <SearchPalette />}
       {state.compose && <Compose />}
       <QuickCapture />
+      <PushToTalk />
       <Toasts />
     </div>
   );

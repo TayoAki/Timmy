@@ -6,3 +6,4 @@ dist
 # Impeccable: the engine binary downloads on first use; hooks are per-machine settings
 .claude/skills/impeccable/scripts/bin/
 .claude/settings.local.json
+.craft-build/

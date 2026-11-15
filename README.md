@@ -4,7 +4,7 @@ Frontend for **Timmy**: an AI layer over Gmail plus its own workspace (Drive, Do
 
 ![Daily brief](docs/today.png)
 
-This is the frontend only: everything runs in the browser on sample data, and your changes are saved in the browser (Settings › Reset demo data starts over). Gmail is the only service the product will connect to. The clock is fixed at Monday, Nov 16, 2026, 8:12 AM, so due dates and "late" labels stay consistent.
+This is the frontend only: everything runs in the browser on sample data, and your changes are saved in the browser (Settings › Reset demo data starts over). Gmail is the only service the product will connect to (the voice option downloads its speech model from Hugging Face once). The clock is fixed at Monday, Nov 16, 2026, 8:12 AM, so due dates and "late" labels stay consistent.
 
 Live preview: https://web-production-c4bbfc9c.up.railway.app (Railway, redeploys on every push to this branch).
 
@@ -24,7 +24,7 @@ The shell follows the wireframe: **left rail · sidebar · tabs + main content �
 | Sidebar | Changes with the section. For mail it shows numbered labels, project folders, Starred (max 5) and `[99] Archived` |
 | Tabs | Views inside the current page (e.g. Daily brief / Triage / Drafts) |
 | Main content | The page itself |
-| Right sidebar | Context for whatever is open: next actions, linked file, CRM record, people, today's calendar |
+| Right sidebar | Context for whatever is open (next actions, linked file, CRM record, today's calendar) on top, and **Ask Timmy**, a chat docked at the bottom |
 | Bottom bar | Agent status, last/next triage run, counts, theme toggle |
 
 Below 1280px the right sidebar becomes a drawer. Below 900px the sidebar does too.
@@ -50,6 +50,38 @@ Files follow a numbered folder structure (`[02] Work › [10] Acme`, at most 5 l
 - **Urgency:** every open thread is ranked Urgent, Soon or Can wait, with the reasons shown ("Due today at 5:00 PM · Marcus is a priority contact · Says “today”"). The brief leads with only the urgent ones, or everything open if you prefer. Each signal is a rule in Settings › Urgency, and you can mark any thread urgent or able to wait yourself.
 - **Approvals:** one queue for everything that needs your OK: emails to send, decisions on price or hiring, CRM updates and calendar invites. Each decision shows the numbers and what Timmy will do for each choice. Nothing is sent without approval, every choice is logged under Decided, and Undo is on the notice that follows.
 
+## Ask Timmy (chat)
+
+The chat at the bottom of the right sidebar answers from what's in the app and knows what's open: "What's urgent?", "What needs my approval?", "Summarize this thread", "Draft a reply", "Brief me on the pipeline", "Find focus time today", "Move my brief to 7:30", "Remind me to … tomorrow", "Find …", and research or competitor questions (it says plainly that outside sources aren't connected yet and offers to start a research doc). Anything that changes data is proposed with a button; nothing happens until you confirm. The answers come from a local engine over the sample data; a real model replaces `reply()` in `src/state/assistant.ts`.
+
+## Voice
+
+Talk instead of typing, as in [OpenWhispr](https://github.com/OpenWhispr/openwhispr) (MIT), but in the browser:
+
+- **Mic buttons** in a reply, a new email and Ask Timmy; **push-to-talk** anywhere by holding Ctrl+Shift+Space (changeable). With a text field focused the words land at the cursor; with nothing focused they go to Ask Timmy.
+- **Engines** (Settings › Voice): *Private* runs Whisper in your browser (downloaded once from Hugging Face, then cached; audio never leaves the device) and *Fast* uses the browser's own speech recognition (Chrome and Edge send audio to their speech service).
+- **Dictionary:** names and companies from your contacts are corrected after transcription ("dana whitefield at north peak" → "Dana Whitfield at Northpeak").
+
+The microphone needs HTTPS (Railway serves it).
+
+## Files: WordCraft, GridCraft, DeckCraft and PdfCraft
+
+Documents, spreadsheets, presentations and PDFs open inside Timmy in the open-source [Craft apps](https://getartcraft.com/apps) by ArtCraft (MIT or Apache-2.0): [WordCraft](https://github.com/storytold/wordcraft) (.docx, .odt, .rtf, .md…), [GridCraft](https://github.com/storytold/gridcraft) (.xlsx, .xls, .ods, .csv), [DeckCraft](https://github.com/storytold/deckcraft) (.pptx) and [PdfCraft](https://github.com/storytold/pdfcraft) (.pdf). They're Rust apps compiled to WebAssembly and served by this site from `public/craft/<app>/`, so everything stays a web app.
+
+- **Click any file** in Drive, a project or search to open it. PDFs and uploaded office files open straight in their app. Timmy's own docs, sheets and decks keep the Timmy editor (which Timmy reads for drafts and linked tables) with a switch to open a .docx/.xlsx/.pptx copy in the Craft app, and a Download button.
+- **Upload** from Drive or a project's Files tab. The bytes stay in the browser (IndexedDB).
+- **Save** inside the app (File › Save) stores the file back in Drive; Save As or an export to another format adds a copy next to it. Unsaved changes are shown and guarded, and a file one app hands to another (for example PDF → Word) opens in the right app.
+
+How it's wired: `src/areas/viewers/CraftViewer.tsx` frames `/craft/<app>/index.html?host=parent` and speaks the apps' host messages ([craft-web-host](https://github.com/storytold/craft-libs/tree/main/crates/web-host): `ready` → `open {name, bytes}`; `save`, `dirty`, `failed`, `handoff`). `src/lib/office.ts` exports Timmy docs, sheets (formulas become cell formulas) and decks. The demo files are in `public/samples` (`npm run samples` regenerates them).
+
+To rebuild the apps (Rust with the `wasm32-unknown-unknown` target and `wasm-bindgen-cli` 0.2.129; about 30 minutes for all four):
+
+```bash
+npm run craft
+```
+
+Each app's `.wasm` ships gzipped (10–22 MB) and is decompressed in the browser. The apps need WebGPU or WebGL2, which every current browser has.
+
 ## Workflows it supports
 
 Each follows Jeff Su's published system.
@@ -69,8 +101,9 @@ Each follows Jeff Su's published system.
 ## Try it
 
 - **Today:** review the draft, accept triage suggestions, update the CRM from a suggestion
-- **Thread:** `F` / `W` / `R` / `E` move the thread, `S` stars it, `A` replies, `D` asks Timmy to draft, `Esc` goes back. Edit the draft, then **Send & track**. On a Waiting thread, **Demo: … replies** simulates the answer. Every move can be undone from the toast.
-- **Anywhere:** `C` composes, `⌘J` quick-captures a task or note
+- **Thread:** the whole conversation is shown with the reply box open below it. `F` / `W` / `R` / `E` move the thread, `S` stars it, `A` replies, `D` asks Timmy to draft, `Esc` goes back. Edit the draft, then **Send & track**. On a Waiting thread, **Demo: … replies** simulates the answer. Every move can be undone from the toast.
+- **Anywhere:** `C` composes, `⌘J` quick-captures a task or note, hold Ctrl+Shift+Space to talk
+- **Files:** open the Acme project › Files and click the order form (.docx), the MSA redlines (.pdf) or the quote tracker (switch to GridCraft); the Northwind budget (.xlsx) and the Hiring interview loop (.pptx) are in their projects
 - **Search:** `⌘K` or `/`. Operators: `from:dana`, `is:waiting`, `project:acme`, `has:draft`, `has:attachment`
 - **Rules:** toggle rules or add one in plain language
 - **Appearance:** pick Light, Dark or Match system, and one of three dark palettes (Midnight, Graphite, Espresso) from the bottom bar or Settings › Appearance. The choice is saved in the browser.
@@ -92,10 +125,13 @@ Known, intentional findings: em-dashes in file names (they're part of the naming
 src/
   data/       types.ts + mock.ts (mail), ws-types.ts + ws-mock.ts (workspace seed)
   state/      store.tsx (reducer, undo, saved in the browser), ws.ts (workspace helpers), theme.tsx,
-              urgency.ts (ranking), approvals.ts (the queue), schedule.ts (morning run)
+              urgency.ts (ranking), approvals.ts (the queue), schedule.ts (morning run), assistant.ts (Ask Timmy)
+  lib/        office.ts (.docx/.xlsx/.pptx export), blobs.ts (file bytes in IndexedDB), dictation.ts + whisper.worker.ts (voice)
+public/craft  the four Craft apps' web builds (scripts/build-craft.sh, scripts/package-craft.py)
   components/ shell (LeftRail, Sidebar, Frame, RightPanel, BottomBar), Compose, SearchPalette, kit.tsx
   views/      mail screens: TodayView, MailboxView, ThreadView, OtherViews, AppearanceView
-  areas/      approvals, tasks, calendar, docs (docs, sheets, slides), projects, people, files (Drive), library
+  areas/      approvals, tasks, calendar, docs (docs, sheets, slides), projects, people, files (Drive), library,
+              viewers (the Craft apps: CraftViewer, upload)
   styles/     tokens.css (light + Midnight/Graphite/Espresso), layout, ui, views, kit, one file per area
 ```
 

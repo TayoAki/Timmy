@@ -21,6 +21,7 @@ import {
   UserPlus,
   WandSparkles,
 } from 'lucide-react';
+import { UploadButton } from '../viewers/Upload';
 import { useState } from 'react';
 import { NewDocDialog } from '../docs/NewDocDialog';
 import { TaskDialog } from '../tasks/TaskDialog';
@@ -834,6 +835,7 @@ function FilesTab({ ctx }: { ctx: TabCtx }) {
           <FolderOpen size={14} />
           Open folder
         </button>
+        <UploadButton folder={p.folder} project={p.id} className="btn btn-sm" />
         <button className="btn btn-sm" onClick={ctx.newNote}>
           <FilePlus2 size={14} />
           New note

@@ -21,6 +21,7 @@ export type Route =
   | { view: 'files'; tab: string; folder: string }
   | { view: 'rules'; tab: RuleGroup }
   | { view: 'appearance' }
+  | { view: 'voice' }
   | { view: 'tasks'; tab: 'board' | 'list' | 'review'; project?: string }
   | { view: 'calendar'; tab: 'week' | 'day'; date?: string }
   | { view: 'docs'; tab: 'recent' | 'meetings' | 'templates' }
@@ -44,6 +45,7 @@ export const sectionOf = (r: Route): Section => {
       return 'files';
     case 'rules':
     case 'appearance':
+    case 'voice':
       return 'rules';
     case 'tasks':
       return 'tasks';

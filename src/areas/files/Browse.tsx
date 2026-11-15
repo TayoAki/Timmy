@@ -10,6 +10,7 @@ import { useStore } from '../../state/store';
 import { childFolders, folderLabel } from '../../state/ws';
 import { FileActionsMenu, openFile } from './FileActions';
 import { NewFolderDialog } from './NewFolderDialog';
+import { UploadButton } from '../viewers/Upload';
 import { ROOT, SHARED_FOLDER, ancestors, daysAgo, descWords, filesIn, filesUnder, itemCount, personLabel, shortPath, targetOf } from './drive';
 
 const KINDS = [
@@ -93,10 +94,15 @@ export function Browse({ folder }: { folder: string }) {
             </span>
           ))}
         </nav>
-        <button className="btn" onClick={() => setNewFolder(true)}>
-          <FolderPlus size={15} />
-          New folder
-        </button>
+        <div className="dr-head-actions">
+          {folder !== ROOT && folder !== SHARED_FOLDER && (
+            <UploadButton folder={folder} project={Object.values(state.ws.projects).find((p) => p.folder === folder)?.id} />
+          )}
+          <button className="btn" onClick={() => setNewFolder(true)}>
+            <FolderPlus size={15} />
+            New folder
+          </button>
+        </div>
       </div>
 
       <div className="dr-searchbar">

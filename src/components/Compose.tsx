@@ -6,6 +6,8 @@ import { useStore, type ComposeDraft } from '../state/store';
 import { firstName, isoDay, parseIsoDay } from '../state/ws';
 import { AutoTextarea, PeoplePicker } from './kit';
 import { Kbd, TimmyMark } from './common';
+import { MicButton } from './Dictation';
+import { joinAt } from '../lib/dictation';
 
 const addDays = (n: number) => {
   const d = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() + n);
@@ -37,6 +39,20 @@ export function Compose() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const close = () => dispatch({ type: 'compose', draft: null });
+
+  // Dictated text goes in at the cursor, or at the end if you haven't clicked into the message.
+  const caret = useRef<[number, number] | null>(null);
+  const dictate = (said: string) => {
+    const [start, end] = caret.current ?? [draft.body.length, draft.body.length];
+    const next = joinAt(draft.body, start, end, said);
+    set({ body: next.value });
+    caret.current = [next.caret, next.caret];
+    requestAnimationFrame(() => {
+      const el = document.getElementById('compose-body') as HTMLTextAreaElement | null;
+      el?.focus();
+      el?.setSelectionRange(next.caret, next.caret);
+    });
+  };
 
   const askTimmy = () => {
     const to = draft.to[0];
@@ -104,10 +120,12 @@ export function Compose() {
       </div>
 
       <AutoTextarea
+        id="compose-body"
         className="compose-body"
         minRows={7}
         value={draft.body}
         onChange={(e) => set({ body: e.target.value })}
+        onSelect={(e) => (caret.current = [e.currentTarget.selectionStart, e.currentTarget.selectionEnd])}
         placeholder="Lead with the ask in the first sentence. Context goes below."
         aria-label="Message"
       />
@@ -177,6 +195,7 @@ export function Compose() {
           Discard
         </button>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <MicButton onText={dictate} label="Dictate the message" />
           <button className="btn btn-sm" onClick={askTimmy} disabled={!draft.to.length}>
             <TimmyMark size={16} muted />
             Ask Timmy to draft

@@ -33,6 +33,8 @@ import { Avatar, Kbd, ThreadChips, TimmyMark } from '../components/common';
 import { DocIcon, DocPath, DocThumb } from '../components/DocBits';
 import { Frame } from '../components/Frame';
 import { UrgencyLine } from '../components/Urgency';
+import { MicButton } from '../components/Dictation';
+import { joinAt } from '../lib/dictation';
 import { ApprovalCard } from '../areas/approvals/ApprovalCard';
 import { openApprovals } from '../state/approvals';
 
@@ -49,7 +51,9 @@ const typing = (el: EventTarget | null) =>
 export function ThreadView({ id, tab }: { id: string; tab: ThreadTab }) {
   const { state, dispatch } = useStore();
   const t = state.threads.find((x) => x.id === id);
-  const [replying, setReplying] = useState(false);
+  // The reply box starts open (no-reply senders excepted); pressing Reply or A also focuses it.
+  const [replying, setReplying] = useState(() => !!t && !PEOPLE[counterpart(t)]?.bot);
+  const [focusReply, setFocusReply] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -65,6 +69,7 @@ export function ThreadView({ id, tab }: { id: string; tab: ThreadTab }) {
       } else if (e.key.toLowerCase() === 'a') {
         e.preventDefault();
         setReplying(true);
+        setFocusReply(true);
       } else if (e.key === 'Escape') {
         dispatch({ type: 'back' });
       }
@@ -129,9 +134,11 @@ export function ThreadView({ id, tab }: { id: string; tab: ThreadTab }) {
         ))}
       </div>
 
-      <ThreadActions t={t} onReply={() => (setReplying(true), dispatch({ type: 'openThread', id: t.id, tab: 'conversation' }))} />
+      <ThreadActions t={t} onReply={() => (setReplying(true), setFocusReply(true), dispatch({ type: 'openThread', id: t.id, tab: 'conversation' }))} />
 
-      {tab === 'conversation' && <Conversation t={t} replying={replying} onReplyDone={() => setReplying(false)} />}
+      {tab === 'conversation' && (
+        <Conversation t={t} replying={replying} focusReply={focusReply} onReplyDone={() => (setReplying(false), setFocusReply(false))} />
+      )}
       {tab === 'links' && <Links t={t} />}
       {tab === 'history' && <History t={t} />}
     </Frame>
@@ -164,9 +171,10 @@ function Summary({ t }: { t: Thread }) {
   );
 }
 
-function Conversation({ t, replying, onReplyDone }: { t: Thread; replying: boolean; onReplyDone: () => void }) {
+function Conversation({ t, replying, focusReply, onReplyDone }: { t: Thread; replying: boolean; focusReply: boolean; onReplyDone: () => void }) {
   const { state } = useStore();
-  const [expanded, setExpanded] = useState<string[]>([]);
+  // The whole thread is shown; earlier messages can be folded away.
+  const [collapsed, setCollapsed] = useState<string[]>([]);
   const lastId = t.messages[t.messages.length - 1]!.id;
 
   return (
@@ -174,11 +182,17 @@ function Conversation({ t, replying, onReplyDone }: { t: Thread; replying: boole
       <Summary t={t} />
       <div className="messages">
         {t.messages.map((m) => {
-          const open = m.id === lastId || expanded.includes(m.id);
+          const open = m.id === lastId || !collapsed.includes(m.id);
           const p = PEOPLE[m.from]!;
           return (
             <article key={m.id} className={`msg${open ? '' : ' collapsed'}`}>
-              <button className="msg-head" onClick={() => setExpanded((x) => (x.includes(m.id) ? x.filter((y) => y !== m.id) : [...x, m.id]))} disabled={m.id === lastId}>
+              <button
+                className="msg-head"
+                onClick={() => setCollapsed((x) => (x.includes(m.id) ? x.filter((y) => y !== m.id) : [...x, m.id]))}
+                disabled={m.id === lastId}
+                aria-expanded={open}
+                title={m.id === lastId ? undefined : open ? 'Fold this message' : 'Show this message'}
+              >
                 <Avatar id={m.from} size={32} />
                 <div className="msg-who">
                   <span className="row-from">{m.from === 'me' ? 'You' : p.name}</span>
@@ -214,7 +228,7 @@ function Conversation({ t, replying, onReplyDone }: { t: Thread; replying: boole
       {t.suggestion?.extra && t.project && t.box === 'inbox' && <ArrivedCard t={t} />}
       <ThreadDecisions t={t} />
       {t.draft && <DraftCard t={t} draft={t.draft} />}
-      {replying && !t.draft && <ReplyBox t={t} onDone={onReplyDone} />}
+      {replying && !t.draft && <ReplyBox t={t} onDone={onReplyDone} autoFocus={focusReply} />}
     </>
   );
 }
@@ -382,7 +396,7 @@ function ArrivedCard({ t }: { t: Thread }) {
 }
 
 /** A plain reply, with the option to track the answer in Waiting. */
-function ReplyBox({ t, onDone }: { t: Thread; onDone: () => void }) {
+function ReplyBox({ t, onDone, autoFocus }: { t: Thread; onDone: () => void; autoFocus?: boolean }) {
   const { dispatch } = useStore();
   const who = counterpart(t);
   const [body, setBody] = useState(`Hi ${firstName(who)},\n\n`);
@@ -390,17 +404,31 @@ function ReplyBox({ t, onDone }: { t: Thread; onDone: () => void }) {
   const [item, setItem] = useState('');
   const [due, setDue] = useState(isoDay(new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() + 3)));
   const area = useRef<HTMLTextAreaElement>(null);
+  // Focus only when asked (Reply or A): an open-by-default box shouldn't take the keyboard
+  // shortcuts away or scroll the thread out of view.
   useEffect(() => {
     const el = area.current;
-    if (el) {
+    if (el && autoFocus) {
       el.focus();
       el.setSelectionRange(el.value.length, el.value.length);
     }
-  }, []);
+  }, [autoFocus]);
   const send = () => {
     if (!body.trim() || (track && !item.trim())) return;
     dispatch({ type: 'reply', id: t.id, body, track: track ? { on: who, item: item.trim(), due } : null });
     onDone();
+  };
+  // Dictated text goes in at the cursor, or at the end if you haven't clicked into the reply.
+  const caret = useRef<[number, number] | null>(null);
+  const dictate = (said: string) => {
+    const [start, end] = caret.current ?? [body.length, body.length];
+    const next = joinAt(body, start, end, said);
+    setBody(next.value);
+    caret.current = [next.caret, next.caret];
+    requestAnimationFrame(() => {
+      area.current?.focus();
+      area.current?.setSelectionRange(next.caret, next.caret);
+    });
   };
   return (
     <section className="draft card" aria-label="Reply">
@@ -410,7 +438,15 @@ function ReplyBox({ t, onDone }: { t: Thread; onDone: () => void }) {
           <strong>Reply to {PEOPLE[who]?.name ?? who}</strong>
         </div>
       </header>
-      <textarea ref={area} className="draft-body" value={body} onChange={(e) => setBody(e.target.value)} aria-label="Reply" rows={6} />
+      <textarea
+        ref={area}
+        className="draft-body"
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        onSelect={(e) => (caret.current = [e.currentTarget.selectionStart, e.currentTarget.selectionEnd])}
+        aria-label="Reply"
+        rows={6}
+      />
       <div className="compose-track">
         <button className="switch" role="switch" aria-checked={track} aria-label="Track the reply in Waiting" onClick={() => setTrack((v) => !v)} />
         <div className="compose-track-text">
@@ -429,10 +465,13 @@ function ReplyBox({ t, onDone }: { t: Thread; onDone: () => void }) {
         </div>
       </div>
       <footer className="draft-foot">
-        <button className="btn btn-sm btn-ghost" onClick={onDone}>
-          <Trash2 size={14} />
-          Discard
-        </button>
+        <span className="draft-foot-left">
+          <button className="btn btn-sm btn-ghost" onClick={onDone}>
+            <Trash2 size={14} />
+            Discard
+          </button>
+          <MicButton onText={dictate} label="Dictate your reply" />
+        </span>
         <button className="btn btn-sm btn-primary" onClick={send} disabled={!body.trim() || (track && !item.trim())}>
           <Send size={14} />
           {track ? 'Send & track in Waiting' : 'Send'}

@@ -54,10 +54,13 @@ const files: WFile[] = [
   { id: 'acme-quote-summary', name: '2026-11-16 Acme — Revised quote summary', kind: 'doc', folder: 'f02-10', updated: d(16, 8, 4), owner: 'me', createdByTimmy: true, project: 'acme' },
   { id: 'acme-call-notes', name: '2026-11-13 Acme — Call notes', kind: 'doc', folder: 'f02-10', updated: d(13, 11, 40), owner: 'me', project: 'acme' },
   { id: 'acme-running-notes', name: 'Acme Renewal — Running notes', kind: 'doc', folder: 'f02-10', updated: d(13, 12, 5), owner: 'me', project: 'acme' },
-  { id: 'acme-stakeholders', name: '2026-11-06 Acme — Stakeholder map', kind: 'pdf', folder: 'f02-10', updated: d(6, 10, 22), owner: 'me', createdByTimmy: true, project: 'acme' },
-  { id: 'acme-msa', name: '2026-11-12 Acme — MSA redlines', kind: 'pdf', folder: 'f02-10', updated: d(12, 16, 28), owner: 'me', createdByTimmy: true, project: 'acme' },
+  { id: 'acme-stakeholders', name: '2026-11-06 Acme — Stakeholder map', kind: 'pdf', folder: 'f02-10', updated: d(6, 10, 22), owner: 'me', createdByTimmy: true, project: 'acme', format: 'pdf', sample: '/samples/acme-stakeholders.pdf' },
+  { id: 'acme-msa', name: '2026-11-12 Acme — MSA redlines', kind: 'pdf', folder: 'f02-10', updated: d(12, 16, 28), owner: 'me', createdByTimmy: true, project: 'acme', format: 'pdf', sample: '/samples/acme-msa.pdf' },
   // [02] Work › [11] Northwind
   { id: 'northwind-sow', name: 'Northwind — Pilot SOW (final)', kind: 'doc', folder: 'f02-11', updated: d(9, 10, 2), owner: 'me', project: 'northwind' },
+  { id: 'acme-order-form', name: '2026-11-16 Acme — Order form (draft)', kind: 'doc', folder: 'f02-10', updated: d(16, 8, 4), owner: 'me', createdByTimmy: true, project: 'acme', format: 'docx', sample: '/samples/acme-order-form.docx', description: 'order form contract 120 seats signature' },
+  { id: 'northwind-budget', name: 'Northwind Pilot — Budget', kind: 'sheet', folder: 'f02-11', updated: d(9, 11, 20), owner: 'marcus', project: 'northwind', format: 'xlsx', sample: '/samples/northwind-budget.xlsx', description: 'pilot budget seats onboarding migration' },
+  { id: 'hiring-loop', name: 'Platform Engineer — Interview loop', kind: 'slides', folder: 'f02-13', updated: d(10, 16, 5), owner: 'sofia', project: 'hiring', format: 'pptx', sample: '/samples/hiring-loop.pptx', description: 'interview loop scorecard criteria' },
   { id: 'northwind-notes', name: 'Northwind Pilot — Running notes', kind: 'doc', folder: 'f02-11', updated: d(10, 14, 0), owner: 'me', project: 'northwind' },
   // [02] Work › [12] Q4 QBR
   { id: 'qbr-deck', name: '2026-Q4 QBR — Briefing slides', kind: 'slides', folder: 'f02-12', updated: d(14, 11, 12), owner: 'priya', project: 'qbr' },
@@ -67,8 +70,8 @@ const files: WFile[] = [
   { id: 'priya-1on1', name: 'Taylor / Priya — 1:1 notes', kind: 'doc', folder: 'f02-01', updated: d(16, 8, 4), owner: 'priya', starred: true },
   { id: 'offsite-agenda', name: '2027-Q1 Planning offsite — Agenda', kind: 'doc', folder: 'f02-01', updated: d(16, 6, 45), owner: 'nina' },
   // [02] Work › [99] Receipts
-  { id: 'harbor-receipt', name: '2026-10-21 Harbor Grill — Receipt', kind: 'pdf', folder: 'f02-99', updated: oct(21, 21, 40), owner: 'me', createdByTimmy: true },
-  { id: 'figma-receipt', name: '2026-11-15 Figma — Receipt', kind: 'pdf', folder: 'f02-99', updated: d(16, 8, 2), owner: 'me', createdByTimmy: true },
+  { id: 'harbor-receipt', name: '2026-10-21 Harbor Grill — Receipt', kind: 'pdf', folder: 'f02-99', updated: oct(21, 21, 40), owner: 'me', createdByTimmy: true, format: 'pdf', sample: '/samples/harbor-receipt.pdf' },
+  { id: 'figma-receipt', name: '2026-11-15 Figma — Receipt', kind: 'pdf', folder: 'f02-99', updated: d(16, 8, 2), owner: 'me', createdByTimmy: true, format: 'pdf', sample: '/samples/figma-receipt.pdf' },
   // [03] Reference Documents
   { id: 'pricing-tiers', name: 'Pricing tiers 2026 — Working sheet', kind: 'sheet', folder: 'f03', updated: d(2, 9, 0), owner: 'priya', starred: true },
   { id: 'weekly-template', name: 'Weekly review — Template', kind: 'doc', folder: 'f03', updated: oct(5, 9, 0), owner: 'me' },
@@ -85,11 +88,11 @@ const files: WFile[] = [
   { id: 'offsite-rsvp', name: 'Offsite RSVP and dietary needs', kind: 'doc', folder: SHARED_FOLDER, updated: d(16, 6, 46), owner: 'nina', sharedBy: 'nina', share: 'pending' },
   // Attachments waiting to be filed
   {
-    id: 'att-brightwave', name: 'Brightwave_OrderForm_countersigned.pdf', kind: 'pdf', folder: FILING_FOLDER, updated: d(15, 20, 14), owner: 'elena',
+    id: 'att-brightwave', name: 'Brightwave_OrderForm_countersigned.pdf', kind: 'pdf', folder: FILING_FOLDER, updated: d(15, 20, 14), owner: 'elena', format: 'pdf', sample: '/samples/att-brightwave.pdf',
     filing: { folder: 'f02-14', name: '2026-11-15 Brightwave — Signed order form', fromThread: 'brightwave-signed' },
   },
   {
-    id: 'att-pricing-report', name: 'State_of_B2B_SaaS_Pricing_2026.pdf', kind: 'pdf', folder: FILING_FOLDER, updated: d(14, 6, 0), owner: 'pricing',
+    id: 'att-pricing-report', name: 'State_of_B2B_SaaS_Pricing_2026.pdf', kind: 'pdf', folder: FILING_FOLDER, updated: d(14, 6, 0), owner: 'pricing', format: 'pdf', sample: '/samples/att-pricing-report.pdf',
     filing: { folder: 'f03', name: '2026 B2B SaaS pricing — Report', fromThread: 'pricing-report' },
   },
   {

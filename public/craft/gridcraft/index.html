@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="craft-app" content="gridcraft">
+  <title>GridCraft</title>
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #f3f3f3; }
+    #gridcraft_canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    #gridcraft_loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      color: #555; font: 14px system-ui, sans-serif; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <canvas id="gridcraft_canvas"></canvas>
+  <div id="gridcraft_loading">Loading GridCraft&hellip;</div>
+<script type="module">
+  // Timmy hosts this page: the .wasm ships gzipped and is decompressed here. If it can't
+  // start, the page says so and tells a hosting page (?host=parent) at once.
+  import init, * as bindings from './gridcraft-web.js';
+  async function wasm() {
+    const res = await fetch('./gridcraft-web_bg.wasmz');
+    if (!res.ok) throw new Error('could not download it (HTTP ' + res.status + ')');
+    return new Response(res.body.pipeThrough(new DecompressionStream('gzip')), { headers: { 'Content-Type': 'application/wasm' } });
+  }
+  try {
+    const instance = await init({ module_or_path: wasm() });
+    window.wasmBindings = bindings;
+    dispatchEvent(new CustomEvent('TrunkApplicationStarted', { detail: { wasm: instance } }));
+  } catch (err) {
+    const message = 'GridCraft couldn’t start: ' + (err && err.message ? err.message : err);
+    const note = document.getElementById('gridcraft_loading');
+    if (note) note.textContent = message;
+    if (new URLSearchParams(location.search).get('host') === 'parent' && window.parent !== window) {
+      window.parent.postMessage({ type: 'gridcraft:failed', version: '1', error: message }, location.origin);
+    }
+  }
+</script>
+</body>
+</html>
