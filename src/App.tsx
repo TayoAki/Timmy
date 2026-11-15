@@ -1,7 +1,16 @@
 import { X } from 'lucide-react';
 import { useEffect } from 'react';
+import { CalendarView } from './areas/calendar';
+import { DocsView, FileView } from './areas/docs';
+import { FilesView } from './areas/files';
+import { LibraryView } from './areas/library';
+import { ContactView, PeopleView } from './areas/people';
+import { ProjectsView, ProjectView } from './areas/projects';
+import { TasksView } from './areas/tasks';
 import { BottomBar } from './components/BottomBar';
+import { Compose } from './components/Compose';
 import { LeftRail } from './components/LeftRail';
+import { QuickCapture } from './components/QuickCapture';
 import { RightPanel } from './components/RightPanel';
 import { SearchPalette } from './components/SearchPalette';
 import { Sidebar } from './components/Sidebar';
@@ -9,7 +18,7 @@ import { StoreProvider, useStore, type Toast } from './state/store';
 import { ThemeProvider } from './state/theme';
 import { AppearanceView } from './views/AppearanceView';
 import { MailboxView } from './views/MailboxView';
-import { ActivityView, FilesView, PeopleView, RulesView } from './views/OtherViews';
+import { ActivityView, RulesView } from './views/OtherViews';
 import { ThreadView } from './views/ThreadView';
 import { TodayView } from './views/TodayView';
 
@@ -23,26 +32,36 @@ export default function App() {
   );
 }
 
+const isTyping = (t: EventTarget | null) =>
+  t instanceof HTMLElement && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable);
+
 function Shell() {
   const { state, dispatch } = useStore();
   const r = state.route;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const typing = e.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      const typing = isTyping(e.target);
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         dispatch({ type: 'search', open: !state.searchOpen });
+      } else if (mod && e.key.toLowerCase() === 'j') {
+        e.preventDefault();
+        dispatch({ type: 'capture', open: !state.capture });
       } else if (e.key === '/' && !typing && !state.searchOpen) {
         e.preventDefault();
         dispatch({ type: 'search', open: true });
+      } else if (e.key.toLowerCase() === 'c' && !typing && !mod && !e.altKey && !state.compose && !state.searchOpen) {
+        e.preventDefault();
+        dispatch({ type: 'compose', draft: { to: [], subject: '', body: '' } });
       } else if (e.key === 'Escape' && state.drawer) {
         dispatch({ type: 'drawer', drawer: state.drawer });
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [dispatch, state.searchOpen, state.drawer]);
+  }, [dispatch, state.searchOpen, state.drawer, state.capture, state.compose]);
 
   return (
     <div className="app" data-drawer={state.drawer ?? undefined}>
@@ -52,14 +71,24 @@ function Shell() {
       {r.view === 'box' && <MailboxView key={r.box} box={r.box} tab={r.tab} />}
       {r.view === 'thread' && <ThreadView id={r.id} tab={r.tab} />}
       {r.view === 'activity' && <ActivityView tab={r.tab} />}
-      {r.view === 'people' && <PeopleView tab={r.tab} person={r.person} />}
-      {r.view === 'files' && <FilesView key={r.folder} tab={r.tab} folder={r.folder} />}
       {r.view === 'rules' && <RulesView tab={r.tab} />}
       {r.view === 'appearance' && <AppearanceView />}
+      {r.view === 'tasks' && <TasksView />}
+      {r.view === 'calendar' && <CalendarView />}
+      {r.view === 'docs' && <DocsView />}
+      {r.view === 'file' && <FileView key={r.id} />}
+      {r.view === 'projects' && <ProjectsView />}
+      {r.view === 'project' && <ProjectView key={r.id} />}
+      {r.view === 'people' && <PeopleView />}
+      {r.view === 'contact' && <ContactView key={r.id} />}
+      {r.view === 'files' && <FilesView />}
+      {r.view === 'library' && <LibraryView />}
       <RightPanel />
       <BottomBar />
       <div className="scrim" onClick={() => state.drawer && dispatch({ type: 'drawer', drawer: state.drawer })} />
       {state.searchOpen && <SearchPalette />}
+      {state.compose && <Compose />}
+      <QuickCapture />
       <Toasts />
     </div>
   );

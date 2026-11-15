@@ -1,4 +1,5 @@
 import {
+  ArrowUpRight,
   BadgeDollarSign,
   CalendarClock,
   Check,
@@ -10,7 +11,15 @@ import {
   X,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { ARCHIVED_BASE, BOXES, DOCS, EVENTS, LABEL_GUIDE, NOW, PEOPLE, PROJECTS, RELATIONSHIPS } from '../data/mock';
+import { ARCHIVED_BASE, BOXES, LABEL_GUIDE, NOW, PEOPLE, PROJECTS } from '../data/mock';
+import { pathOf, todaysEvents } from '../state/ws';
+import { CalendarContext } from '../areas/calendar';
+import { DocsContext, FileContext } from '../areas/docs';
+import { FilesContext } from '../areas/files';
+import { LibraryContext } from '../areas/library';
+import { PeopleContext } from '../areas/people';
+import { ProjectsContext } from '../areas/projects';
+import { TasksContext } from '../areas/tasks';
 import type { Thread } from '../data/types';
 import { daysSince, fmtDay, fmtShortTime, fmtStamp, fmtTime, money } from '../lib/format';
 import { inBox, useStore } from '../state/store';
@@ -27,10 +36,22 @@ export function RightPanel() {
     body = t ? <ThreadContext t={t} /> : null;
   } else if (r.view === 'box') {
     body = <LabelContext id={r.box} />;
-  } else if (r.view === 'people') {
-    body = <PersonContext id={r.person ?? 'dana'} />;
+  } else if (r.view === 'people' || r.view === 'contact') {
+    body = <PeopleContext />;
   } else if (r.view === 'files') {
     body = <FilesContext />;
+  } else if (r.view === 'tasks') {
+    body = <TasksContext />;
+  } else if (r.view === 'calendar') {
+    body = <CalendarContext />;
+  } else if (r.view === 'docs') {
+    body = <DocsContext />;
+  } else if (r.view === 'file') {
+    body = <FileContext />;
+  } else if (r.view === 'projects' || r.view === 'project') {
+    body = <ProjectsContext />;
+  } else if (r.view === 'library') {
+    body = <LibraryContext />;
   } else if (r.view === 'rules') {
     body = <RulesContext />;
   } else if (r.view === 'appearance') {
@@ -67,7 +88,8 @@ function Section({ title, aside, children }: { title: string; aside?: ReactNode;
 
 function TodayContext() {
   const { state, dispatch } = useStore();
-  const prep = EVENTS.find((e) => e.start > NOW && e.note && e.with.length > 0);
+  const events = todaysEvents(state.ws);
+  const prep = events.find((e) => e.start > NOW && e.note && e.with.length > 0);
   const waitingSoon = inBox(state.threads, 'waiting')
     .filter((t) => t.waiting?.due)
     .sort((a, b) => a.waiting!.due!.getTime() - b.waiting!.due!.getTime())
@@ -77,15 +99,18 @@ function TodayContext() {
     <>
       <Section title="Today’s calendar" aside={<span className="rp-aside">{fmtDay(NOW)}</span>}>
         <ol className="agenda">
-          {EVENTS.map((e) => {
+          {events.map((e) => {
             const past = e.end < NOW;
             return (
-              <li key={e.id} className={`agenda-item${e.focus ? ' focus' : ''}${past ? ' past' : ''}`}>
+              <li key={e.id} className={`agenda-item${e.kind === 'focus' ? ' focus' : ''}${past ? ' past' : ''}`}>
                 <span className="agenda-time mono">{fmtShortTime(e.start)}</span>
                 <button
                   className="agenda-block"
-                  onClick={() => e.threadId && dispatch({ type: 'openThread', id: e.threadId })}
-                  disabled={!e.threadId}
+                  onClick={() =>
+                    e.thread
+                      ? dispatch({ type: 'openThread', id: e.thread })
+                      : dispatch({ type: 'navigate', route: { view: 'calendar', tab: 'day' } })
+                  }
                 >
                   <span className="agenda-title">{e.title}</span>
                   <span className="agenda-sub">
@@ -113,12 +138,12 @@ function TodayContext() {
             </p>
             {prep.docs?.map((id) => (
               <div key={id} className="file-line">
-                <DocIcon kind={DOCS[id]!.kind} size={15} />
-                <span>{DOCS[id]!.name}</span>
+                <DocIcon kind={state.ws.files[id]!.kind} size={15} />
+                <span>{state.ws.files[id]!.name}</span>
               </div>
             ))}
-            {prep.threadId && (
-              <button className="btn btn-sm" style={{ marginTop: 10 }} onClick={() => dispatch({ type: 'openThread', id: prep.threadId! })}>
+            {prep.thread && (
+              <button className="btn btn-sm" style={{ marginTop: 10 }} onClick={() => dispatch({ type: 'openThread', id: prep.thread! })}>
                 Open thread
               </button>
             )}
@@ -151,7 +176,7 @@ function TodayContext() {
 function ThreadContext({ t }: { t: Thread }) {
   const { state, dispatch } = useStore();
   const deal = t.deal ? state.deals[t.deal] : undefined;
-  const primary = t.docs?.[0] ? DOCS[t.docs[0]] : undefined;
+  const primary = t.docs?.[0] ? state.ws.files[t.docs[0]] : undefined;
   const others = t.participants.filter((p) => p !== 'me');
   const done = t.steps?.filter((s) => s.done).length ?? 0;
 
@@ -212,18 +237,19 @@ function ThreadContext({ t }: { t: Thread }) {
                 <DocIcon kind={primary.kind} size={15} />
                 <span>{primary.name}</span>
               </div>
-              <DocPath path={primary.path} />
+              <DocPath path={pathOf(state.ws, primary.folder)} />
               <span className="muted" style={{ fontSize: 12 }}>
                 {primary.createdByTimmy ? 'Created by Timmy · ' : ''}Edited {fmtStamp(primary.updated)}
               </span>
             </div>
             <div className="file-actions">
-              <button
-                className="btn btn-sm"
-                onClick={() => dispatch({ type: 'navigate', route: { view: 'files', tab: 'all', folder: primary.path[primary.path.length - 1]! } })}
-              >
+              <button className="btn btn-sm" onClick={() => dispatch({ type: 'navigate', route: { view: 'file', id: primary.id } })}>
+                <ArrowUpRight size={14} />
+                Open
+              </button>
+              <button className="btn btn-sm btn-ghost" onClick={() => dispatch({ type: 'navigate', route: { view: 'files', tab: 'browse', folder: primary.folder } })}>
                 <FolderOpen size={14} />
-                Show in Files
+                Show in folder
               </button>
             </div>
           </div>
@@ -281,12 +307,12 @@ function ThreadContext({ t }: { t: Thread }) {
         <ul className="rp-list">
           {others.map((id) => {
             const p = PEOPLE[id]!;
-            const rel = RELATIONSHIPS.find((x) => x.person === id);
+            const rel = state.ws.contacts[id];
             return (
               <li key={id}>
                 <button
                   className="rp-person"
-                  onClick={() => !p.bot && dispatch({ type: 'navigate', route: { view: 'people', tab: 'priority', person: id } })}
+                  onClick={() => !p.bot && dispatch({ type: 'navigate', route: { view: 'contact', id, tab: 'overview' } })}
                 >
                   <Avatar id={id} size={30} />
                   <span className="rp-person-text">
@@ -354,7 +380,7 @@ function LabelContext({ id }: { id: string }) {
 
   const project = PROJECTS.find((p) => p.id === id)!;
   const threads = state.threads.filter((t) => t.project === id);
-  const docs = [...new Set(threads.flatMap((t) => t.docs ?? []))].map((d) => DOCS[d]!);
+  const docs = [...new Set(threads.flatMap((t) => t.docs ?? []))].map((d) => state.ws.files[d]!);
   const dealId = threads.find((t) => t.deal)?.deal;
   const deal = dealId ? state.deals[dealId] : undefined;
   return (
@@ -400,133 +426,6 @@ function LabelContext({ id }: { id: string }) {
           <Lightbulb size={13} />
           Files live where you use them: [02] Work › {project.name.split(' ')[0]}.
         </p>
-      </Section>
-    </>
-  );
-}
-
-// ───────────── People ─────────────
-
-function PersonContext({ id }: { id: string }) {
-  const { state, dispatch } = useStore();
-  const p = PEOPLE[id]!;
-  const rel = RELATIONSHIPS.find((x) => x.person === id);
-  const deal = rel?.deal ? state.deals[rel.deal] : undefined;
-  const threads = state.threads.filter((t) => t.participants.includes(id) && t.box !== 'archived');
-
-  return (
-    <>
-      <div className="person-hero">
-        <Avatar id={id} size={56} />
-        <h2 className="rp-hero-title">{p.name}</h2>
-        <p className="muted">
-          {p.title} · {p.company}
-        </p>
-        <p className="muted" style={{ fontSize: 12.5 }}>
-          {p.email}
-        </p>
-      </div>
-      {rel && (
-        <Section title="Relationship">
-          <div className="rp-card">
-            <dl className="kv">
-              <dt>Cadence</dt>
-              <dd>{rel.cadence}</dd>
-              <dt>Last</dt>
-              <dd>{rel.last}</dd>
-              <dt>Next</dt>
-              <dd>
-                {rel.next}
-                <span className="muted"> · {rel.owner === 'me' ? 'You' : PEOPLE[rel.owner]!.name.split(' ')[0]}</span>
-              </dd>
-              {rel.due && (
-                <>
-                  <dt>Due</dt>
-                  <dd>
-                    <DueChip due={rel.due} />
-                  </dd>
-                </>
-              )}
-            </dl>
-          </div>
-        </Section>
-      )}
-      {deal && (
-        <Section title="Deal">
-          <div className="rp-card">
-            <div className="deal-head">
-              <span className="deal-logo" style={tint('var(--ok)')}>
-                {deal.company[0]}
-              </span>
-              <div>
-                <strong>{deal.company}</strong>
-                <div className="muted mono" style={{ fontSize: 12.5 }}>
-                  {money(deal.value)}
-                </div>
-              </div>
-              <span className={`stage${deal.stage === 'Closed won' ? ' won' : ''}`}>{deal.stage}</span>
-            </div>
-            {deal.suggestion && (
-              <div className="suggest">
-                <Lightbulb size={14} />
-                <span>{deal.suggestion}</span>
-                <button className="btn btn-xs" onClick={() => dispatch({ type: 'applyDeal', id: deal.id })}>
-                  Apply
-                </button>
-              </div>
-            )}
-          </div>
-        </Section>
-      )}
-      <Section title="Open threads" aside={<span className="rp-aside mono">{threads.length}</span>}>
-        <ul className="rp-list">
-          {threads.map((t) => (
-            <li key={t.id}>
-              <button className="rp-thread" onClick={() => dispatch({ type: 'openThread', id: t.id })}>
-                <span className="dot" style={tint(BOXES.find((b) => b.id === t.box)!.color)} />
-                <span>{t.subject}</span>
-              </button>
-            </li>
-          ))}
-          {threads.length === 0 && <li className="muted">Nothing open.</li>}
-        </ul>
-      </Section>
-    </>
-  );
-}
-
-// ───────────── Files ─────────────
-
-function FilesContext() {
-  const examples = [
-    { name: '2026 Budget — Working sheet', why: 'Year only: easy to search for' },
-    { name: '2026-Q4 QBR — Briefing slides', why: 'Quarter for period files' },
-    { name: '2026-11 Monthly review — Slides', why: 'Month for recurring files' },
-    { name: '2026-11-13 Acme — Call notes', why: 'Full date when you know the folder' },
-  ];
-  return (
-    <>
-      <Section title="How Timmy names files">
-        <p className="rp-text">
-          Saved attachments get a date at the granularity they need, the project, then a keyword: <em>Doc</em>, <em>Meeting notes</em>,{' '}
-          <em>Working sheet</em>, <em>Briefing slides</em> or <em>Form</em>.
-        </p>
-        <ul className="naming">
-          {examples.map((e) => (
-            <li key={e.name}>
-              <code>{e.name}</code>
-              <span>{e.why}</span>
-            </li>
-          ))}
-        </ul>
-      </Section>
-      <Section title="Folder rules">
-        <ul className="rp-bullets">
-          <li>At most 5 levels deep. The 6th level holds files only.</li>
-          <li>Up to 99 folders per level, numbered so the ones you use most sort first.</li>
-          <li>[99] is always the archive.</li>
-          <li>File by where you’ll use it, not where it came from.</li>
-        </ul>
       </Section>
     </>
   );

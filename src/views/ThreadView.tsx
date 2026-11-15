@@ -15,7 +15,8 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { DOCS, PEOPLE } from '../data/mock';
+import { PEOPLE } from '../data/mock';
+import { pathOf } from '../state/ws';
 import type { Box, Draft, Thread } from '../data/types';
 import { fmtDay, fmtStamp } from '../lib/format';
 import { labelOf, useStore, type ThreadTab } from '../state/store';
@@ -129,6 +130,7 @@ function Summary({ t }: { t: Thread }) {
 }
 
 function Conversation({ t }: { t: Thread }) {
+  const { state } = useStore();
   const [expanded, setExpanded] = useState<string[]>([]);
   const lastId = t.messages[t.messages.length - 1]!.id;
 
@@ -163,7 +165,7 @@ function Conversation({ t }: { t: Thread }) {
                       {m.attachments.map((id) => (
                         <span key={id} className="chip">
                           <Paperclip size={12} />
-                          {DOCS[id]!.name}
+                          {state.ws.files[id]!.name}
                         </span>
                       ))}
                     </div>
@@ -190,7 +192,7 @@ function checks(d: Draft) {
 }
 
 function DraftCard({ t, draft }: { t: Thread; draft: Draft }) {
-  const { dispatch } = useStore();
+  const { state, dispatch } = useStore();
   const area = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -211,8 +213,8 @@ function DraftCard({ t, draft }: { t: Thread; draft: Draft }) {
           <div className="chips" style={{ marginTop: 6 }}>
             {draft.sources.map((id) => (
               <span key={id} className="chip">
-                <DocIcon kind={DOCS[id]!.kind} size={12} />
-                {DOCS[id]!.name}
+                <DocIcon kind={state.ws.files[id]!.kind} size={12} />
+                {state.ws.files[id]!.name}
               </span>
             ))}
           </div>
@@ -261,7 +263,7 @@ function DraftCard({ t, draft }: { t: Thread; draft: Draft }) {
           {draft.attachments.map((id) => (
             <span key={id} className="chip accent">
               <Paperclip size={12} />
-              {DOCS[id]!.name}
+              {state.ws.files[id]!.name}
             </span>
           ))}
         </div>
@@ -310,7 +312,7 @@ function Links({ t }: { t: Thread }) {
     <div style={{ marginTop: 24 }}>
       <div className="link-grid">
         {(t.docs ?? []).map((id) => {
-          const d = DOCS[id]!;
+          const d = state.ws.files[id]!;
           return (
             <article key={id} className="card link-card">
               <DocThumb doc={d} />
@@ -319,7 +321,7 @@ function Links({ t }: { t: Thread }) {
                   <DocIcon kind={d.kind} size={15} />
                   <span>{d.name}</span>
                 </div>
-                <DocPath path={d.path} />
+                <DocPath path={pathOf(state.ws, d.folder)} />
                 <span className="muted" style={{ fontSize: 12 }}>
                   {d.createdByTimmy ? 'Saved by Timmy · ' : ''}
                   {fmtStamp(d.updated)}

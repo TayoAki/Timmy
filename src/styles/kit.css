@@ -1,0 +1,478 @@
+/* ───────────── Shared kit: modal, fields, menu, people picker ───────────── */
+
+.modal-overlay {
+  align-items: flex-start;
+  padding-top: 12vh;
+}
+
+.modal {
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  animation: pop-in 0.24s var(--ease-out);
+}
+
+.modal:focus {
+  outline: none;
+}
+
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px 4px;
+}
+
+.modal-title {
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.modal-desc {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 20px 18px;
+  overflow-y: auto;
+}
+
+.modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.field.inline {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.field-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.field-hint {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+select.input {
+  appearance: none;
+  padding-right: 32px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-3) 50%), linear-gradient(135deg, var(--text-3) 50%, transparent 50%);
+  background-position: calc(100% - 16px) 16px, calc(100% - 11px) 16px;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.input.textarea {
+  height: auto;
+  min-height: 72px;
+  padding: 9px 12px;
+  line-height: 1.5;
+  resize: none;
+}
+
+.menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.menu-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 65;
+  min-width: 200px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-lg);
+  animation: pop-in 0.18s var(--ease-out);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: var(--r-sm);
+  font-size: 13px;
+  text-align: left;
+  color: var(--text);
+}
+
+.menu-item svg {
+  color: var(--text-3);
+  flex: none;
+}
+
+.menu-item:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.menu-item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.menu-item.danger,
+.menu-item.danger svg {
+  color: var(--danger);
+}
+
+.menu-hint {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.people-picker {
+  position: relative;
+}
+
+.people-picker-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 4px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+
+.people-picker-box:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+.people-picker-input {
+  flex: 1;
+  min-width: 120px;
+  height: 26px;
+  border: 0;
+  background: transparent;
+  outline: none;
+}
+
+.people-picker-input:focus-visible {
+  box-shadow: none;
+}
+
+.recip-x {
+  display: grid;
+  place-items: center;
+  margin-left: 2px;
+  color: var(--text-3);
+  border-radius: 4px;
+}
+
+.recip-x:hover {
+  color: var(--text);
+}
+
+.people-picker-list {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 66;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-lg);
+}
+
+.people-picker-list button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  text-align: left;
+  font-size: 13px;
+}
+
+.people-picker-list button:hover {
+  background: var(--hover);
+}
+
+.people-picker-list button > span:last-child {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.people-picker-list .muted {
+  font-size: 12px;
+}
+
+.empty-icon.neutral {
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+
+.side-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.side-head-action .btn {
+  width: 100%;
+}
+
+.thumb-image {
+  width: 70%;
+  height: 74%;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--c-violet) 18%, var(--surface));
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+}
+
+.thumb-image span {
+  width: 30%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--c-violet) 45%, var(--surface));
+}
+
+/* ───────────── Compose ───────────── */
+
+.compose {
+  position: fixed;
+  right: 24px;
+  bottom: calc(var(--bar-h) + 12px);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  width: min(600px, calc(100vw - 32px));
+  max-height: calc(100dvh - var(--bar-h) - 48px);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  animation: pop-in 0.24s var(--ease-out);
+}
+
+.compose-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 8px 8px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  font-size: 13.5px;
+}
+
+.compose-bar strong {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.compose-min {
+  flex-direction: row;
+  align-items: center;
+  width: 300px;
+  padding: 4px 6px 4px 0;
+}
+
+.compose-head {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 14px;
+  text-align: left;
+  font-size: 13.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.compose-fields {
+  padding: 2px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.compose-field {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 13.5px;
+}
+
+.compose-field + .compose-field {
+  border-top: 1px solid var(--line);
+}
+
+.compose-field .people-picker-box {
+  border-color: transparent;
+  padding-left: 0;
+}
+
+.compose-field .people-picker-box:focus-within {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.compose-body.input {
+  border: 0;
+  border-radius: 0;
+  padding: 14px 16px;
+  min-height: 160px;
+  max-height: 40vh;
+  overflow-y: auto;
+  font-size: 14px;
+}
+
+.compose-body.input:focus {
+  box-shadow: none;
+}
+
+.compose-track {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--c-amber) 7%, var(--surface));
+}
+
+.compose-track .switch {
+  margin-top: 1px;
+}
+
+.compose-track-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.compose-track-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.compose-track-title svg {
+  color: var(--c-amber);
+}
+
+.compose-track-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px auto;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.compose-project {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.compose-project .input {
+  height: 28px;
+  width: auto;
+  font-size: 12.5px;
+}
+
+.compose-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.compose-btn {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.compose-btn .kbd {
+  margin-left: auto;
+}
+
+@media (max-width: 599px) {
+  .compose {
+    inset: 0 0 var(--bar-h) 0;
+    width: auto;
+    max-height: none;
+    border-radius: 0;
+  }
+
+  .compose-track-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .compose-project {
+    margin-left: 0;
+  }
+}
+
+.draft-subject::placeholder,
+.people-picker-input::placeholder {
+  font-weight: 400;
+  color: var(--text-3);
+}

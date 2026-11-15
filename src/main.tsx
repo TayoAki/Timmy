@@ -6,6 +6,14 @@ import './styles/tokens.css';
 import './styles/layout.css';
 import './styles/ui.css';
 import './styles/views.css';
+import './styles/kit.css';
+import './styles/tasks.css';
+import './styles/calendar.css';
+import './styles/docs.css';
+import './styles/projects.css';
+import './styles/people.css';
+import './styles/files.css';
+import './styles/library.css';
 import App from './App';
 
 createRoot(document.getElementById('root')!).render(

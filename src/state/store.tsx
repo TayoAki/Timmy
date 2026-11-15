@@ -1,7 +1,10 @@
 import { createContext, useContext, useMemo, useReducer, type Dispatch, type ReactNode } from 'react';
 import { ACTIVITY, BOXES, DEALS, NOW, PEOPLE, PROJECTS, RULES, THREADS } from '../data/mock';
 import type { Activity, Box, Deal, Label, ProjectId, Rule, RuleGroup, Thread } from '../data/types';
+import { WS_SEED } from '../data/ws-mock';
+import type { WS } from '../data/ws-types';
 import { fmtDay } from '../lib/format';
+import { applyOps, firstName, personName, type WsOp, type WsOptions } from './ws';
 
 export type TodayTab = 'brief' | 'triage' | 'drafts';
 export type ThreadTab = 'conversation' | 'links' | 'history';
@@ -14,22 +17,66 @@ export type Route =
   | { view: 'people'; tab: string; person?: string }
   | { view: 'files'; tab: string; folder: string }
   | { view: 'rules'; tab: RuleGroup }
-  | { view: 'appearance' };
+  | { view: 'appearance' }
+  | { view: 'tasks'; tab: 'board' | 'list' | 'review'; project?: string }
+  | { view: 'calendar'; tab: 'week' | 'day'; date?: string }
+  | { view: 'docs'; tab: 'recent' | 'meetings' | 'templates' }
+  | { view: 'file'; id: string }
+  | { view: 'projects'; tab: 'active' | 'archived' }
+  | { view: 'project'; id: string; tab: 'overview' | 'tasks' | 'notes' | 'mail' | 'files' | 'ai' }
+  | { view: 'contact'; id: string; tab: 'overview' | 'activity'; filter?: string }
+  | { view: 'library'; tab: 'prompts' | 'captured' | 'routines' | 'learned' };
 
-export type Section = 'mail' | 'activity' | 'people' | 'files' | 'rules';
+export type Section = 'mail' | 'activity' | 'people' | 'files' | 'rules' | 'tasks' | 'calendar' | 'docs' | 'projects' | 'library';
 
 export const sectionOf = (r: Route): Section => {
-  if (r.view === 'activity') return 'activity';
-  if (r.view === 'people') return 'people';
-  if (r.view === 'files') return 'files';
-  if (r.view === 'rules' || r.view === 'appearance') return 'rules';
-  return 'mail';
+  switch (r.view) {
+    case 'activity':
+      return 'activity';
+    case 'people':
+    case 'contact':
+      return 'people';
+    case 'files':
+      return 'files';
+    case 'rules':
+    case 'appearance':
+      return 'rules';
+    case 'tasks':
+      return 'tasks';
+    case 'calendar':
+      return 'calendar';
+    case 'docs':
+    case 'file':
+      return 'docs';
+    case 'projects':
+    case 'project':
+      return 'projects';
+    case 'library':
+      return 'library';
+    default:
+      return 'mail';
+  }
 };
+
+/** Detail screens keep the list you came from as the Back target. */
+const isDetail = (r: Route) => r.view === 'thread' || r.view === 'file' || r.view === 'contact' || r.view === 'project';
+
+/** A new email or reply being written in the compose window. */
+export interface ComposeDraft {
+  to: string[];
+  cc?: string[];
+  subject: string;
+  body: string;
+  /** Track the reply in [02] Waiting: what they owe you and by when (yyyy-mm-dd). */
+  track?: { on?: string; item: string; due?: string } | null;
+  project?: string;
+}
 
 interface Snapshot {
   threads: Thread[];
   deals: Record<string, Deal>;
   activity: Activity[];
+  ws: WS;
 }
 
 export interface Toast {
@@ -53,6 +100,10 @@ export interface State {
   searchOpen: boolean;
   searchQuery: string;
   drawer: 'side' | 'right' | null;
+  /** Drive, Docs, Sheets, Slides, Tasks, Calendar, CRM, Projects, AI library. */
+  ws: WS;
+  compose: ComposeDraft | null;
+  capture: boolean;
 }
 
 export type Action =
@@ -78,10 +129,20 @@ export type Action =
   | { type: 'dismissToast'; id: number }
   | { type: 'restore'; toast: number }
   | { type: 'search'; open: boolean; query?: string }
-  | { type: 'drawer'; drawer: State['drawer'] };
+  | { type: 'drawer'; drawer: State['drawer'] }
+  | ({ type: 'ws'; ops: WsOp[] } & WsOptions)
+  | { type: 'compose'; draft: ComposeDraft | null }
+  | { type: 'sendNew'; draft: ComposeDraft }
+  | { type: 'reply'; id: string; body: string; track?: { on: string; item: string; due?: string } | null }
+  | { type: 'simulateReply'; id: string }
+  | { type: 'capture'; open: boolean };
+
+/** Builds a workspace change: dispatch(ws([put('tasks', task)], { toast: 'Task added', undo: true })). */
+export const ws = (ops: WsOp[], options: WsOptions = {}): Action => ({ type: 'ws', ops, ...options });
 
 export const ALL_LABELS: Label[] = [...BOXES, ...PROJECTS];
-export const labelOf = (id: string) => ALL_LABELS.find((l) => l.id === id)!;
+export const labelOf = (id: string): Label =>
+  ALL_LABELS.find((l) => l.id === id) ?? { id: id as ProjectId, num: '··', name: id, hint: '', color: 'var(--c-slate)' };
 export const boxTag = (box: Box) => {
   const l = labelOf(box);
   return `[${l.num}] ${l.name}`;
@@ -101,6 +162,9 @@ const initial: State = {
   searchOpen: false,
   searchQuery: '',
   drawer: null,
+  ws: WS_SEED,
+  compose: null,
+  capture: false,
 };
 
 let toastSeq = 1;
@@ -109,7 +173,13 @@ let activitySeq = 1;
 /** Lower-cases the first letter unless the word is an acronym ("CFO approval" stays). */
 const lowerFirst = (s: string) => (/^[A-Z]{2}/.test(s) ? s : s.charAt(0).toLowerCase() + s.slice(1));
 
-const snap = (s: State): Snapshot => ({ threads: s.threads, deals: s.deals, activity: s.activity });
+const snap = (s: State): Snapshot => ({ threads: s.threads, deals: s.deals, activity: s.activity, ws: s.ws });
+
+const dueDate = (iso?: string) => {
+  if (!iso) return undefined;
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y!, m! - 1, d!, 17, 0);
+};
 
 const patch = (threads: Thread[], id: string, fn: (t: Thread) => Thread) =>
   threads.map((t) => (t.id === id ? fn(t) : t));
@@ -136,11 +206,13 @@ const moveThread = (t: Thread, box: Box): Thread => {
 
 function reducer(s: State, a: Action): State {
   switch (a.type) {
-    case 'navigate':
-      return { ...s, route: a.route, drawer: null, back: a.route.view === 'thread' ? s.back : a.route };
+    case 'navigate': {
+      const back = isDetail(a.route) ? (isDetail(s.route) ? s.back : s.route) : a.route;
+      return { ...s, route: a.route, drawer: null, back };
+    }
 
     case 'openThread': {
-      const back = s.route.view === 'thread' ? s.back : s.route;
+      const back = isDetail(s.route) ? s.back : s.route;
       return {
         ...s,
         back,
@@ -324,6 +396,109 @@ function reducer(s: State, a: Action): State {
 
     case 'drawer':
       return { ...s, drawer: s.drawer === a.drawer ? null : a.drawer };
+
+    case 'ws':
+      return {
+        ...s,
+        ws: applyOps(s.ws, a.ops),
+        activity: a.log ? logged(s, a.log, 'file') : s.activity,
+        toasts: a.toast ? withToast(s, a.toast, a.undo ? snap(s) : undefined) : s.toasts,
+      };
+
+    case 'compose':
+      return { ...s, compose: a.draft };
+
+    case 'capture':
+      return { ...s, capture: a.open };
+
+    case 'sendNew': {
+      const d = a.draft;
+      const tid = `sent-${Date.now().toString(36)}`;
+      const track = d.track?.item ? d.track : null;
+      const on = track?.on ?? d.to[0] ?? 'me';
+      const due = dueDate(track?.due);
+      const names = d.to.map(firstName).join(', ');
+      const thread: Thread = {
+        id: tid,
+        subject: d.subject.trim() || '(no subject)',
+        box: track ? 'waiting' : 'archived',
+        project: d.project,
+        participants: [...new Set([...d.to, ...(d.cc ?? []), 'me'])],
+        messages: [{ id: `${tid}-1`, from: 'me', to: d.to, cc: d.cc, at: NOW, body: d.body.split(/\n\n+/) }],
+        ask: track
+          ? `${firstName(on)} owes you: ${lowerFirst(track.item)}${due ? ` by ${fmtDay(due)}` : ''}`
+          : `You wrote to ${names}`,
+        waiting: track ? { on, item: track.item, due, since: NOW } : undefined,
+        context: track ? 'Timmy will draft a nudge if the date slips.' : undefined,
+        history: [{ at: NOW, text: track ? `Sent and tracked in [02] Waiting${due ? ` until ${fmtDay(due)}` : ''}` : 'Sent' }],
+      };
+      return {
+        ...s,
+        compose: null,
+        threads: [thread, ...s.threads],
+        activity: logged(s, `You sent “${thread.subject}”${track ? ' and Timmy started tracking the reply' : ''}`, 'send', tid),
+        toasts: withToast(s, track ? `Sent · tracking in [02] Waiting${due ? ` until ${fmtDay(due)}` : ''}` : `Sent to ${names}`, snap(s)),
+      };
+    }
+
+    case 'reply': {
+      const t = s.threads.find((x) => x.id === a.id);
+      if (!t) return s;
+      const to = [...new Set(t.messages.map((m) => m.from).filter((p) => p !== 'me'))];
+      const msg = { id: `reply-${Date.now().toString(36)}`, from: 'me', to: to.length ? to : t.participants.filter((p) => p !== 'me'), at: NOW, body: a.body.split(/\n\n+/) };
+      const track = a.track?.item ? a.track : null;
+      const due = dueDate(track?.due);
+      const box: Box = track ? 'waiting' : t.box === 'follow-up' || t.box === 'inbox' ? 'archived' : t.box;
+      const next: Thread = {
+        ...t,
+        box,
+        draft: undefined,
+        unread: false,
+        suggestion: undefined,
+        messages: [...t.messages, msg],
+        waiting: track ? { on: track.on, item: track.item, due, since: NOW } : t.waiting,
+        ask: track ? `${firstName(track.on)} owes you: ${lowerFirst(track.item)}${due ? ` by ${fmtDay(due)}` : ''}` : t.ask,
+        history: [...(t.history ?? []), { at: NOW, text: track ? `Replied and tracked in [02] Waiting${due ? ` until ${fmtDay(due)}` : ''}` : 'Replied' }],
+      };
+      const where = track ? `Replied · tracking in [02] Waiting${due ? ` until ${fmtDay(due)}` : ''}` : box === 'archived' ? 'Replied · label cleared and archived' : 'Replied';
+      return {
+        ...s,
+        threads: patch(s.threads, a.id, () => next),
+        activity: logged(s, `You replied to “${t.subject}”`, 'send', t.id),
+        toasts: withToast(s, where, snap(s)),
+      };
+    }
+
+    case 'simulateReply': {
+      const t = s.threads.find((x) => x.id === a.id);
+      if (!t?.waiting) return s;
+      const who = t.waiting.on;
+      const body =
+        t.id === 'acme-quote'
+          ? ['Hi Taylor,', 'Good news: our CFO approved the 120-seat quote at $58 per seat. Please send the order form so we can start on January 1.', 'Thanks,\nDana']
+          : ['Hi Taylor,', `Here’s the ${lowerFirst(t.waiting.item)} you asked for.`, `Thanks,\n${firstName(who)}`];
+      const next: Thread = {
+        ...t,
+        box: 'inbox',
+        unread: true,
+        messages: [...t.messages, { id: `sim-${Date.now().toString(36)}`, from: who, to: ['me'], at: NOW, body }],
+        ask: `${firstName(who)} delivered: ${lowerFirst(t.waiting.item)}`,
+        context: 'The item you were waiting on arrived. Archive the thread and record the decision in the project notes.',
+        suggestion: {
+          box: 'archived',
+          confidence: 'high',
+          reason: 'The item you were waiting on arrived.',
+          extra: t.project ? 'Record the decision in the project’s running notes' : undefined,
+        },
+        history: [...(t.history ?? []), { at: NOW, text: `${personName(who)} replied: the item arrived` }],
+      };
+      return {
+        ...s,
+        threads: patch(s.threads, a.id, () => next),
+        activity: logged(s, `${personName(who)} delivered “${t.waiting.item}”`, 'triage', t.id),
+        toasts: withToast(s, `${firstName(who)} replied · moved to [00] Inbox`),
+      };
+    }
   }
 }
 

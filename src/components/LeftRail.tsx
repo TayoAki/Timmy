@@ -1,4 +1,4 @@
-import { Bell, FileText, House, Search, Settings, Users } from 'lucide-react';
+import { Bell, CalendarDays, FileText, FolderKanban, HardDrive, House, Library, ListChecks, Search, Settings, Users } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { sectionOf, useStore, type Route, type Section } from '../state/store';
 import { Avatar, TimmyMark } from './common';
@@ -15,13 +15,19 @@ export function LeftRail() {
   const { state, dispatch } = useStore();
   const current = state.searchOpen ? 'search' : sectionOf(state.route);
   const inbox = state.threads.filter((t) => t.box === 'inbox').length;
+  const captured = Object.values(state.ws.notes).filter((n) => !n.processed).length;
 
   const items: Item[] = [
     { section: 'mail', label: 'Today & mail', icon: <House size={20} />, route: { view: 'today', tab: 'brief' } },
     { section: 'search', label: 'Search  ⌘K', icon: <Search size={20} /> },
+    { section: 'tasks', label: 'Tasks', icon: <ListChecks size={20} />, route: { view: 'tasks', tab: 'board' }, badge: captured || undefined },
+    { section: 'calendar', label: 'Calendar', icon: <CalendarDays size={20} />, route: { view: 'calendar', tab: 'week' } },
+    { section: 'docs', label: 'Docs', icon: <FileText size={20} />, route: { view: 'docs', tab: 'recent' } },
+    { section: 'projects', label: 'Projects', icon: <FolderKanban size={20} />, route: { view: 'projects', tab: 'active' } },
+    { section: 'people', label: 'People', icon: <Users size={20} />, route: { view: 'people', tab: 'priority' } },
+    { section: 'files', label: 'Drive', icon: <HardDrive size={20} />, route: { view: 'files', tab: 'browse', folder: 'f02' } },
+    { section: 'library', label: 'AI library', icon: <Library size={20} />, route: { view: 'library', tab: 'prompts' } },
     { section: 'activity', label: 'Timmy’s activity', icon: <Bell size={20} />, route: { view: 'activity', tab: 'all' }, badge: inbox || undefined },
-    { section: 'people', label: 'People', icon: <Users size={20} />, route: { view: 'people', tab: 'priority', person: 'dana' } },
-    { section: 'files', label: 'Files', icon: <FileText size={20} />, route: { view: 'files', tab: 'linked', folder: '[02] Work' } },
   ];
 
   const go = (item: Item) => {

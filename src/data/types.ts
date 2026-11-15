@@ -1,5 +1,5 @@
 export type Box = 'inbox' | 'follow-up' | 'waiting' | 'read-through' | 'archived';
-export type ProjectId = 'acme' | 'northwind' | 'qbr' | 'hiring';
+export type ProjectId = string;
 export type Effort = 'quick' | 'focus';
 export type Confidence = 'high' | 'medium' | 'low';
 

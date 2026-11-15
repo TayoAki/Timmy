@@ -5,18 +5,26 @@ import {
   FolderTree,
   Hourglass,
   Inbox,
-  ListFilter,
   Palette,
   PenLine,
   Reply,
+  SquarePen,
   Star,
   Sun,
   type LucideIcon,
 } from 'lucide-react';
-import { ARCHIVED_BASE, BOXES, DOCS, EVENTS, FOLDERS, PEOPLE, PROJECTS, RELATIONSHIPS } from '../data/mock';
+import { ARCHIVED_BASE, BOXES } from '../data/mock';
+import { todaysEvents } from '../state/ws';
+import { CalendarSide } from '../areas/calendar';
+import { DocsSide } from '../areas/docs';
+import { FilesSide } from '../areas/files';
+import { LibrarySide } from '../areas/library';
+import { PeopleSide } from '../areas/people';
+import { ProjectsSide } from '../areas/projects';
+import { TasksSide } from '../areas/tasks';
 import type { Box, RuleGroup } from '../data/types';
 import { inBox, sectionOf, useStore } from '../state/store';
-import { Avatar, Folder, TimmyMark, tint } from './common';
+import { Avatar, Folder, Kbd, TimmyMark, tint } from './common';
 
 const BOX_ICONS: Record<Box, LucideIcon> = {
   inbox: Inbox,
@@ -31,7 +39,25 @@ export function Sidebar() {
   const section = sectionOf(state.route);
   return (
     <aside className="side" aria-label="Sidebar">
-      {section === 'people' ? <PeopleSide /> : section === 'files' ? <FilesSide /> : section === 'rules' ? <RulesSide /> : <MailSide />}
+      {section === 'people' ? (
+        <PeopleSide />
+      ) : section === 'files' ? (
+        <FilesSide />
+      ) : section === 'rules' ? (
+        <RulesSide />
+      ) : section === 'tasks' ? (
+        <TasksSide />
+      ) : section === 'calendar' ? (
+        <CalendarSide />
+      ) : section === 'docs' ? (
+        <DocsSide />
+      ) : section === 'projects' ? (
+        <ProjectsSide />
+      ) : section === 'library' ? (
+        <LibrarySide />
+      ) : (
+        <MailSide />
+      )}
     </aside>
   );
 }
@@ -43,6 +69,8 @@ function MailSide() {
   const starred = state.threads.filter((t) => t.starred);
   const archived = ARCHIVED_BASE + inBox(state.threads, 'archived').length;
   const owe = inBox(state.threads, 'follow-up').length;
+  const meetings = todaysEvents(state.ws).filter((e) => e.kind === 'meeting').length;
+  const projects = Object.values(state.ws.projects).filter((p) => p.status === 'active');
 
   return (
     <>
@@ -54,6 +82,11 @@ function MailSide() {
             <span className="switcher-sub">taylor@northpeak.io</span>
           </span>
         </div>
+        <button className="btn btn-primary compose-btn" onClick={() => dispatch({ type: 'compose', draft: { to: [], subject: '', body: '' } })}>
+          <SquarePen size={15} />
+          Compose
+          <Kbd>C</Kbd>
+        </button>
       </div>
 
       <div className="side-scroll">
@@ -69,7 +102,7 @@ function MailSide() {
             <span className="nav-text">
               <span className="nav-name">Today</span>
               <span className="nav-hint">
-                {owe} to do · {EVENTS.length} meetings
+                {owe} to do · {meetings} meetings
               </span>
             </span>
           </button>
@@ -106,7 +139,7 @@ function MailSide() {
 
         <div className="side-group">
           <div className="side-title">Projects</div>
-          {PROJECTS.map((p) => (
+          {projects.map((p) => (
             <button
               key={p.id}
               className="nav-item compact"
@@ -159,118 +192,6 @@ function MailSide() {
           </span>
           <span className="nav-count">{archived.toLocaleString()}</span>
         </button>
-      </div>
-    </>
-  );
-}
-
-function PeopleSide() {
-  const { state, dispatch } = useStore();
-  const current = state.route.view === 'people' ? state.route.person : undefined;
-  const groups = [
-    { title: 'Priority', items: RELATIONSHIPS.filter((r) => r.priority) },
-    { title: 'Staying in touch', items: RELATIONSHIPS.filter((r) => !r.priority) },
-  ];
-  return (
-    <>
-      <div className="side-head">
-        <div className="switcher">
-          <span className="nav-icon" style={tint('var(--c-green)')}>
-            <ListFilter size={16} />
-          </span>
-          <span className="switcher-text">
-            <span className="switcher-title">Relationships</span>
-            <span className="switcher-sub">{RELATIONSHIPS.length} tracked · reviewed weekly</span>
-          </span>
-        </div>
-      </div>
-      <div className="side-scroll">
-        {groups.map((g) => (
-          <div className="side-group" key={g.title}>
-            <div className="side-title">
-              {g.title}
-              <span className="mono">{g.items.length}</span>
-            </div>
-            {g.items.map((rel) => {
-              const p = PEOPLE[rel.person]!;
-              return (
-                <button
-                  key={rel.person}
-                  className="nav-item"
-                  aria-current={current === rel.person ? 'page' : undefined}
-                  onClick={() => dispatch({ type: 'navigate', route: { view: 'people', tab: state.route.view === 'people' ? state.route.tab : 'priority', person: rel.person } })}
-                >
-                  <Avatar id={rel.person} size={30} />
-                  <span className="nav-text">
-                    <span className="nav-name">{p.name}</span>
-                    <span className="nav-hint">{rel.next}</span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        ))}
-      </div>
-    </>
-  );
-}
-
-function FilesSide() {
-  const { state, dispatch } = useStore();
-  const folder = state.route.view === 'files' ? state.route.folder : '';
-  const open = (name: string) =>
-    dispatch({ type: 'navigate', route: { view: 'files', tab: state.route.view === 'files' ? state.route.tab : 'linked', folder: name } });
-  const countIn = (name: string) => Object.values(DOCS).filter((d) => d.path.includes(name)).length;
-
-  return (
-    <>
-      <div className="side-head">
-        <div className="switcher">
-          <span className="nav-icon" style={tint('var(--c-sky)')}>
-            <FolderTree size={16} />
-          </span>
-          <span className="switcher-text">
-            <span className="switcher-title">My Drive</span>
-            <span className="switcher-sub">5 levels deep · 99 wide</span>
-          </span>
-        </div>
-      </div>
-      <div className="side-scroll">
-        <div className="side-group">
-          <div className="side-title">Folders</div>
-          {FOLDERS.map((f) => {
-            const name = `[${f.num}] ${f.name}`;
-            return (
-              <div key={name}>
-                <button className="nav-item compact" aria-current={folder === name ? 'page' : undefined} onClick={() => open(name)}>
-                  <Folder color={f.color} size={17} />
-                  <span className="nav-name">
-                    <span className="num">{f.num}</span>
-                    {f.name}
-                  </span>
-                  <span className="nav-count">{countIn(name) || ''}</span>
-                </button>
-                {f.children && (
-                  <div style={{ paddingLeft: 18 }}>
-                    {f.children.map((c) => {
-                      const child = `[${c.num}] ${c.name}`;
-                      return (
-                        <button key={child} className="nav-item compact" aria-current={folder === child ? 'page' : undefined} onClick={() => open(child)}>
-                          <Folder color={c.color} size={15} />
-                          <span className="nav-name">
-                            <span className="num">{c.num}</span>
-                            {c.name}
-                          </span>
-                          <span className="nav-count">{countIn(child) || ''}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
       </div>
     </>
   );

@@ -14,7 +14,8 @@ import {
   Target,
 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
-import { DOCS, EVENTS, NOW, PEOPLE } from '../data/mock';
+import { NOW, PEOPLE } from '../data/mock';
+import { todaysEvents } from '../state/ws';
 import type { Box, Thread } from '../data/types';
 import { dayDiff, dueInfo, fmtDate, fmtLongDate, fmtShortTime, fmtTime, plural } from '../lib/format';
 import { boxTag, byOldest, inBox, labelOf, useStore, type TodayTab } from '../state/store';
@@ -115,7 +116,7 @@ function Highlight() {
   const { state, dispatch } = useStore();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(state.highlight);
-  const focus = EVENTS.find((e) => e.focus);
+  const focus = todaysEvents(state.ws).find((e) => e.kind === 'focus');
 
   return (
     <div className={`highlight${state.highlightDone ? ' done' : ''}`}>
@@ -274,11 +275,12 @@ function WaitingCard({ threads }: { threads: Thread[] }) {
 }
 
 function CalendarCard() {
-  const { dispatch } = useStore();
+  const { state, dispatch } = useStore();
+  const events = todaysEvents(state.ws);
   const startH = 8;
   const endH = 18;
   const pct = (d: Date) => ((d.getHours() + d.getMinutes() / 60 - startH) / (endH - startH)) * 100;
-  const upcoming = EVENTS.filter((e) => e.end > NOW).slice(0, 3);
+  const upcoming = events.filter((e) => e.end > NOW).slice(0, 3);
 
   return (
     <article className="card tri-card">
@@ -286,17 +288,17 @@ function CalendarCard() {
         icon={<CalendarDays size={16} />}
         color="var(--c-green)"
         title="Today’s calendar"
-        count={EVENTS.length}
-        to={() => dispatch({ type: 'drawer', drawer: 'right' })}
+        count={events.length}
+        to={() => dispatch({ type: 'navigate', route: { view: 'calendar', tab: 'day' } })}
       />
-      <div className="daystrip" role="img" aria-label={`${EVENTS.length} events between 8 AM and 6 PM`}>
+      <div className="daystrip" role="img" aria-label={`${events.length} events between 8 AM and 6 PM`}>
         {[10, 12, 14, 16].map((h) => (
           <span key={h} className="daystrip-hour" style={{ left: `${((h - startH) / (endH - startH)) * 100}%` }} />
         ))}
-        {EVENTS.map((e) => (
+        {events.map((e) => (
           <span
             key={e.id}
-            className={`daystrip-ev${e.focus ? ' focus' : ''}`}
+            className={`daystrip-ev${e.kind === 'focus' ? ' focus' : ''}`}
             style={{ left: `${pct(e.start)}%`, width: `${Math.max(pct(e.end) - pct(e.start), 1.6)}%` }}
             title={`${e.title} · ${fmtTime(e.start)}`}
           />
@@ -311,12 +313,12 @@ function CalendarCard() {
       <ul className="tc-list">
         {upcoming.map((e) => (
           <li key={e.id}>
-            <button onClick={() => e.threadId && dispatch({ type: 'openThread', id: e.threadId })}>
+            <button onClick={() => e.thread && dispatch({ type: 'openThread', id: e.thread })}>
               <span className="mono tc-time">{fmtShortTime(e.start)}</span>
               <span className="tc-lines">
                 <span className="tc-item">{e.title}</span>
                 <span className="tc-sub">
-                  {e.focus ? 'Focus block · Timmy' : e.with.map((x) => PEOPLE[x]!.name.split(' ')[0]).join(', ')}
+                  {e.kind === 'focus' ? 'Focus block · Timmy' : e.with.map((x) => PEOPLE[x]!.name.split(' ')[0]).join(', ')}
                 </span>
               </span>
             </button>
@@ -413,8 +415,8 @@ function Suggestions() {
                 <div className="chips" style={{ marginTop: 8 }}>
                   {s.sources.map((id) => (
                     <span key={id} className="chip">
-                      <DocIcon kind={DOCS[id]!.kind} size={12} />
-                      {DOCS[id]!.name}
+                      <DocIcon kind={state.ws.files[id]!.kind} size={12} />
+                      {state.ws.files[id]!.name}
                     </span>
                   ))}
                 </div>
@@ -546,7 +548,7 @@ const fmtShortWhen = (d: Date) => (dayDiff(d) === 0 ? fmtTime(d) : `Yesterday ${
 // ───────────── Drafts ─────────────
 
 function Drafts({ threads }: { threads: Thread[] }) {
-  const { dispatch } = useStore();
+  const { state, dispatch } = useStore();
   return (
     <>
       <h1 className="page-title">Drafts</h1>
@@ -576,8 +578,8 @@ function Drafts({ threads }: { threads: Thread[] }) {
               <div className="chips">
                 {d.sources.map((id) => (
                   <span key={id} className="chip">
-                    <DocIcon kind={DOCS[id]!.kind} size={12} />
-                    {DOCS[id]!.name.replace(/^\d{4}(-Q\d|-\d{2}-\d{2})? ?/, '')}
+                    <DocIcon kind={state.ws.files[id]!.kind} size={12} />
+                    {state.ws.files[id]!.name.replace(/^\d{4}(-Q\d|-\d{2}-\d{2})? ?/, '')}
                   </span>
                 ))}
               </div>

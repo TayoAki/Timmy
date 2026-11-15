@@ -1,22 +1,23 @@
-import { ChevronRight, FileSpreadsheet, FileText, FileType2, Presentation } from 'lucide-react';
-import type { Doc } from '../data/types';
+import { ChevronRight, FileImage, FileSpreadsheet, FileText, FileType2, Presentation } from 'lucide-react';
+import type { FileKind, WFile } from '../data/ws-types';
 
 const KIND = {
   slides: { icon: Presentation, color: 'var(--c-amber)', label: 'Slides' },
   sheet: { icon: FileSpreadsheet, color: 'var(--c-green)', label: 'Sheet' },
   doc: { icon: FileText, color: 'var(--c-sky)', label: 'Doc' },
   pdf: { icon: FileType2, color: 'var(--c-red)', label: 'PDF' },
+  image: { icon: FileImage, color: 'var(--c-violet)', label: 'Image' },
 } as const;
 
-export const kindMeta = (k: Doc['kind']) => KIND[k];
+export const kindMeta = (k: FileKind) => KIND[k];
 
-export function DocIcon({ kind, size = 16 }: { kind: Doc['kind']; size?: number }) {
+export function DocIcon({ kind, size = 16 }: { kind: FileKind; size?: number }) {
   const { icon: Icon, color } = KIND[kind];
   return <Icon size={size} style={{ color, flex: 'none' }} aria-hidden />;
 }
 
 /** A tiny stylised preview of a file, so linked files are recognisable at a glance. */
-export function DocThumb({ doc }: { doc: Doc }) {
+export function DocThumb({ doc }: { doc: Pick<WFile, 'kind'> }) {
   return (
     <div className={`thumb thumb-${doc.kind}`} aria-hidden>
       {doc.kind === 'slides' && (
@@ -37,6 +38,11 @@ export function DocThumb({ doc }: { doc: Doc }) {
           {Array.from({ length: 24 }, (_, i) => (
             <span key={i} className={i < 4 ? 'head' : ''} />
           ))}
+        </div>
+      )}
+      {doc.kind === 'image' && (
+        <div className="thumb-image">
+          <span />
         </div>
       )}
       {(doc.kind === 'doc' || doc.kind === 'pdf') && (
