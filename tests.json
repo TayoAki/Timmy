@@ -276,8 +276,9 @@
   },
   {
    "id": "staging-full",
-   "covers": "the ten live suites against the staging deploy on Railway (170 checks on the build with the phase 1 review fixes). The demo suites are not run against a deployed build of this branch: web deploys the older branch.",
-   "status": "pass"
+   "covers": "the live-mode browser suites (e2e/live/run-all.sh, 11 suites, 199 checks) against the staging server on Railway with stand-in providers",
+   "status": "pass",
+   "result": "11 of 11 pass on build 231dc18 (Nov 16, 2026)"
   },
   {
    "id": "prod-smoke",

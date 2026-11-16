@@ -73,7 +73,7 @@ Cost measurement: `server/scripts/measure-cost.ts` (the header says how to run i
 | API unit and integration (`server/test`, 18 files) | 286 of 286 pass |
 | Demo-mode Playwright (`e2e/`, 12 suites, 348 checks) | 12 of 12 pass |
 | Live-mode Playwright (`e2e/live/`, 12 suites, 205 checks) | 12 of 12 pass. Eleven run on one server; `live-verify` runs on a server restarted with address confirmation required. |
-| Live-mode Playwright against **staging** (Railway) | Being re-run on this build; the result is recorded in the next commit. |
+| Live-mode Playwright against **staging** (Railway) | 11 of 11 pass (199 checks) on build `231dc18`, including the new Outlook and Drive suite. On its first staging run that suite failed at its second connect: my test helper took the Drive connect as finished because the address bar still showed the earlier Outlook one. The helper now waits for each connect's own return trip. The app was not at fault and was not changed for it. |
 | Composio tool check (`server/scripts/check-composio.mts`, real API, read-only) | Pass: 21 tools and 8 events exist at the pinned versions and take the arguments the code sends. |
 | Real connect links for Outlook and Drive (Composio's real API) | Pass: a link was minted for each through the server's own code, with the pinned versions, and the pending accounts were removed again. Composio accepted the narrower Outlook permission set (`timmy-outlook-a7eae611`: mail and profile only). Nobody has signed in through them yet. |
 | Demo suites against a deployed build of this branch | Not run: `web` deploys the older branch, and I won't change that service without your OK |
