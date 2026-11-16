@@ -6,6 +6,7 @@ import { MoreHorizontal, X, type LucideIcon } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../state/store';
+import { EMAIL, personName, registerMail } from '../state/ws';
 import { Avatar } from './common';
 
 /* ───────────── Modal ───────────── */
@@ -139,23 +140,39 @@ export function PeoplePicker({ value, onChange, placeholder = 'Add a person', si
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
   const contacts = Object.values(state.ws.contacts).filter((c) => !c.bot);
+  const term = q.trim().toLowerCase();
+  // Names that start with what you typed come first, so "Lena" never picks Elena.
+  const rank = (c: (typeof contacts)[number]) => {
+    const n = c.name.toLowerCase();
+    return n === term || c.email.toLowerCase() === term ? 0 : n.startsWith(term) || n.split(' ').some((w) => w.startsWith(term)) ? 1 : c.email.toLowerCase().startsWith(term) ? 2 : 3;
+  };
   const matches = contacts
     .filter((c) => !value.includes(c.id))
-    .filter((c) => !q || `${c.name} ${c.email} ${c.company ?? ''}`.toLowerCase().includes(q.toLowerCase()))
+    .filter((c) => !term || `${c.name} ${c.email} ${c.company ?? ''}`.toLowerCase().includes(term))
+    .sort((a, b) => rank(a) - rank(b))
     .slice(0, 6);
+  const isEmail = EMAIL.test(q.trim());
+  const known = isEmail ? contacts.find((c) => c.email.toLowerCase() === term) : undefined;
   const add = (id: string) => {
-    onChange(single ? [id] : [...value, id]);
+    onChange(single ? [id] : [...value.filter((v) => v !== id), id]);
     setQ('');
     setOpen(false);
   };
+  // A full address that isn't in People becomes a recipient as it is.
+  const addTyped = () => {
+    if (!isEmail) return false;
+    add(known ? known.id : registerMail(q.trim()));
+    return true;
+  };
+  const stray = !!term && !isEmail && !matches.some((c) => rank(c) < 3);
   return (
     <div className="people-picker">
       <div className="people-picker-box">
         {value.map((id) => (
           <span key={id} className="recip">
             <Avatar id={id} size={18} />
-            {state.ws.contacts[id]?.name ?? id}
-            <button type="button" className="recip-x" aria-label={`Remove ${state.ws.contacts[id]?.name ?? id}`} onClick={() => onChange(value.filter((v) => v !== id))}>
+            {state.ws.contacts[id]?.name ?? personName(id)}
+            <button type="button" className="recip-x" aria-label={`Remove ${state.ws.contacts[id]?.name ?? personName(id)}`} onClick={() => onChange(value.filter((v) => v !== id))}>
               <X size={12} />
             </button>
           </span>
@@ -167,11 +184,11 @@ export function PeoplePicker({ value, onChange, placeholder = 'Add a person', si
             placeholder={value.length ? '' : placeholder}
             onChange={(e) => (setQ(e.target.value), setOpen(true))}
             onFocus={() => setOpen(true)}
-            onBlur={() => setTimeout(() => setOpen(false), 120)}
+            onBlur={() => setTimeout(() => (addTyped(), setOpen(false)), 120)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && matches[0]) {
-                e.preventDefault();
-                add(matches[0].id);
+              if (e.key === 'Enter' || e.key === ',' || e.key === ';' || (e.key === 'Tab' && isEmail)) {
+                // Enter takes the top match only when it starts with what you typed, so "Lena" never becomes Elena.
+                if (addTyped() || (e.key === 'Enter' && matches[0] && rank(matches[0]) < 3 && (add(matches[0].id), true))) e.preventDefault();
               }
               if (e.key === 'Backspace' && !q && value.length) onChange(value.slice(0, -1));
             }}
@@ -179,8 +196,22 @@ export function PeoplePicker({ value, onChange, placeholder = 'Add a person', si
           />
         )}
       </div>
-      {open && matches.length > 0 && (
+      {stray && <p className="people-picker-hint">No one in People matches “{q.trim()}”. Type a full email address to write to someone new.</p>}
+      {open && (matches.length > 0 || (isEmail && !known)) && (
         <ul className="people-picker-list" role="listbox">
+          {isEmail && !known && (
+            <li>
+              <button type="button" role="option" aria-selected={false} onMouseDown={(e) => e.preventDefault()} onClick={addTyped}>
+                <span className="people-picker-new" aria-hidden>
+                  @
+                </span>
+                <span>
+                  <strong>{q.trim()}</strong>
+                  <span className="muted">New address · not in People</span>
+                </span>
+              </button>
+            </li>
+          )}
           {matches.map((c) => (
             <li key={c.id}>
               <button type="button" role="option" aria-selected={false} onMouseDown={(e) => e.preventDefault()} onClick={() => add(c.id)}>

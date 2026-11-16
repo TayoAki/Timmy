@@ -298,7 +298,7 @@ function FormCard({ f }: { f: FormSource }) {
           </div>
           <div className="form-switches">
             <label className="inline-check">
-              <input type="checkbox" checked={f.autoReply} onChange={(e) => set({ autoReply: e.target.checked })} /> Timmy sends the first reply right away
+              <input type="checkbox" checked={f.autoReply} onChange={(e) => set({ autoReply: e.target.checked })} /> Send the first reply automatically. This skips your approval; off, Timmy drafts it and the lead waits on Today.
             </label>
             <label className="inline-check">
               <input type="checkbox" checked={f.textToo} disabled={!state.out.channels.sms?.connected} onChange={(e) => set({ textToo: e.target.checked })} /> Text them too, if they ticked “text me”

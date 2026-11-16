@@ -11,7 +11,7 @@ import { outbound, type OutOp } from './outbound';
 import { outboundSeed } from '../data/outbound-mock';
 import type { Outbound } from '../data/outbound-types';
 import { DEFAULT_SCHEDULE, fmtClock, nextRun, scheduleRule, whenLabel, daysLabel, type Schedule } from './schedule';
-import { applyOps, decisionOps, firstName, midSentence, patch as wsPatch, personName, put, registerPerson, type WsOp, type WsOptions } from './ws';
+import { applyOps, decisionOps, firstName, midSentence, patch as wsPatch, personFromMail, personName, put, registerPerson, type WsOp, type WsOptions } from './ws';
 
 export type TodayTab = 'brief' | 'triage' | 'drafts';
 export type ThreadTab = 'conversation' | 'links' | 'history';
@@ -303,6 +303,15 @@ const retext = (space: WS, file: string, replace: [string, string][]): WS => {
 const tickDealSteps = (threads: Thread[], deal: string) =>
   threads.map((t) => (t.deal === deal && t.steps?.some((x) => x.run?.do === 'deal' && !x.done) ? { ...t, steps: t.steps.map((x) => (x.run?.do === 'deal' ? { ...x, done: true } : x)) } : t));
 
+/** "I'll send the scorecard by 3" → "send the scorecard by 3". Null when the email makes no promise. */
+export const promiseIn = (body: string): string | null => {
+  const m = body.replace(/’/g, "'").match(/\bI(?:'ll| will)\s+((?:send|share|get|have|finish|submit|file|add|fill|write|put|do)\b[^.\n!?]*)/i);
+  if (!m) return null;
+  const what = m[1]!.trim().replace(/\s+/g, ' ');
+  // "I'll send an invite" with an invite step is the invite flow, not a promise to remember.
+  return /\b(invite|calendar invite)\b/i.test(what) ? null : what.length > 90 ? `${what.slice(0, 88)}…` : what;
+};
+
 /** Only the next actions that mean "send this reply" are done when it goes out. */
 const isSendStep = (st: { text: string; run?: { do: string } }) => (st.run ? st.run.do === 'send' : /^(send|reply)\b(?!.*\b(invite|receipt|file|deck)\b)/i.test(st.text));
 
@@ -461,7 +470,8 @@ function reducer(s: State, a: Action): State {
         attachments: draft.attachments,
       };
       const track = a.track && draft.trackAs;
-      const box: Box = track ? 'waiting' : t.box === 'waiting' ? 'waiting' : 'archived';
+      const promise = promiseIn(draft.body);
+      const box: Box = track ? 'waiting' : t.box === 'waiting' ? 'waiting' : promise ? 'follow-up' : 'archived';
       const steps = t.steps?.map((st) => (isSendStep(st) ? { ...st, done: true } : st));
       const updated: Thread = {
         ...t,
@@ -474,9 +484,11 @@ function reducer(s: State, a: Action): State {
           : t.waiting,
         ask: track
           ? `${firstName(draft.trackAs!.on)} owes you: ${lowerFirst(draft.trackAs!.item)} by ${fmtDay(draft.trackAs!.due)}`
-          : t.ask,
-        context: track ? 'Timmy will draft a nudge if the date slips.' : t.context,
-        history: [...(t.history ?? []), { at: NOW, text: track ? `Sent. Moved to [02] Waiting until ${fmtDay(draft.trackAs!.due)}` : 'Sent' }],
+          : promise
+            ? `You promised ${firstName(draft.to[0]!)}: ${promise}`
+            : t.ask,
+        context: track ? 'Timmy will draft a nudge if the date slips.' : promise ? 'Your reply made a promise. This stays in Follow Up until you do it.' : t.context,
+        history: [...(t.history ?? []), { at: NOW, text: track ? `Sent. Moved to [02] Waiting until ${fmtDay(draft.trackAs!.due)}` : promise ? `Sent. You promised to ${promise}; kept in [01] Follow Up` : 'Sent' }],
       };
       let threads = patch(base.threads, a.id, () => updated);
       let approvalLog = recorded(base, { key: `draft:${t.id}`, kind: 'email', title: draft.subject, choice: track ? 'Sent and tracked' : 'Sent', approved: true, thread: t.id });
@@ -484,8 +496,8 @@ function reducer(s: State, a: Action): State {
       let deals = base.deals;
       const notes: string[] = [];
 
-      // Tasks this email finishes.
-      const finished = (draft.completes ?? []).filter((id) => space.tasks[id] && space.tasks[id]!.status !== 'done');
+      // Tasks this email finishes (not when it only promises to do them later).
+      const finished = promise ? [] : (draft.completes ?? []).filter((id) => space.tasks[id] && space.tasks[id]!.status !== 'done');
       if (finished.length) space = applyOps(space, finished.map((id) => wsPatch('tasks', id, { status: 'done' })));
 
       // The CRM follows: last touch, and what you're now waiting for.
@@ -867,6 +879,7 @@ function reducer(s: State, a: Action): State {
       let threads = s.threads;
       let wsNext = s.ws;
       let compose = s.compose;
+      let deals = s.deals;
       for (const e of opt.effects) {
         if (e.do === 'note') wsNext = applyOps(wsNext, decisionOps(wsNext, e.project, e.text, 'Approvals'));
         else if (e.do === 'ws') wsNext = applyOps(wsNext, e.ops);
@@ -880,6 +893,7 @@ function reducer(s: State, a: Action): State {
         else if (e.do === 'steptext')
           threads = patch(threads, e.thread, (x) => ({ ...x, steps: x.steps?.map((st) => (st.id === e.step ? { ...st, text: e.text } : st)) }));
         else if (e.do === 'retext') wsNext = retext(wsNext, e.file, e.replace);
+        else if (e.do === 'dealHint') deals = deals[e.deal] ? { ...deals, [e.deal]: { ...deals[e.deal]!, suggestion: e.text } } : deals;
         else if (e.do === 'cell') {
           const sheet = wsNext.sheets[e.sheet];
           if (sheet?.rows[e.row])
@@ -898,6 +912,7 @@ function reducer(s: State, a: Action): State {
         ...s,
         threads,
         ws: wsNext,
+        deals,
         compose,
         decisions: s.decisions.map((x) => (x.id === dec.id ? { ...x, chosen: { option: opt.id, at: NOW } } : x)),
         activity: logged(s, a.via === 'send' ? `Your email settled “${dec.title}”: ${opt.label}` : `You decided “${dec.title}”: ${opt.label}`, 'approval', dec.thread),
@@ -940,7 +955,7 @@ function reducer(s: State, a: Action): State {
       const who = t.waiting.on;
       const body =
         t.id === 'acme-quote'
-          ? ['Hi Taylor,', 'Good news: our CFO approved the 120-seat quote at $58 per seat. Please send the order form so we can start on January 1.', 'Thanks,\nDana']
+          ? ['Hi Taylor,', `Good news: our CFO approved the 120-seat quote at $${acmeSeatPrice(s)} per seat. Please send the order form so we can start on January 1.`, 'Thanks,\nDana']
           : ['Hi Taylor,', `Here’s the ${lowerFirst(t.waiting.item)} you asked for.`, `Thanks,\n${firstName(who)}`];
       const next: Thread = {
         ...t,
@@ -983,10 +998,22 @@ function load(): State {
     const next = { ...initial };
     for (const key of PERSISTED) if (saved[key] !== undefined) (next as Record<string, unknown>)[key] = saved[key];
     // Collections added in later versions fall back to the seed.
-    next.ws = { ...initial.ws, ...next.ws };
+    next.ws = { ...initial.ws, ...next.ws, docs: { ...initial.ws.docs, ...next.ws.docs } };
+    // The Acme order form became a Timmy doc so decisions can rewrite it.
+    if (next.ws.files['acme-order-form']?.sample && initial.ws.files['acme-order-form']) next.ws = { ...next.ws, files: { ...next.ws.files, 'acme-order-form': initial.ws.files['acme-order-form'] } };
+    // Open decisions pick up the latest options and effects; your choices stay.
+    next.decisions = next.decisions.map((d) => {
+      const seed = initial.decisions.find((x) => x.id === d.id);
+      return seed ? { ...seed, chosen: d.chosen } : d;
+    });
     next.out = { ...initial.out, ...next.out };
+    // Built-in templates follow the offer now; older saved copies are replaced.
+    const templates = { ...next.out.templates };
+    for (const t of Object.values(initial.out.templates)) if (t.builtIn && (templates[t.id]?.v ?? 0) < (t.v ?? 0)) templates[t.id] = t;
+    next.out = { ...next.out, templates };
     for (const l of Object.values(next.out.leads)) if (next.ws.contacts[l.id] || l.status === 'meeting') registerPerson({ id: l.id, name: `${l.first} ${l.last}`, email: l.email, title: l.title, company: l.company });
     for (const c of Object.values(next.ws.contacts)) registerPerson({ id: c.id, name: c.name, email: c.email, title: c.title, company: c.company });
+    for (const t of next.threads) for (const p of t.participants) if (p.startsWith('mail:')) registerPerson(personFromMail(p)!);
     return next;
   } catch {
     return initial;
@@ -1020,6 +1047,9 @@ export function useStore() {
 }
 
 // ───────────── selectors ─────────────
+
+/** The Acme seat price you settled on: $62 if you kept it, else the $58 tier in the draft. */
+export const acmeSeatPrice = (s: Pick<State, 'decisions'>) => (s.decisions.find((x) => x.id === 'acme-price')?.chosen?.option === 'hold' ? 62 : 58);
 
 export const inBox = (threads: Thread[], id: Box | ProjectId) =>
   BOXES.some((b) => b.id === id)

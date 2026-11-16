@@ -58,7 +58,7 @@ const files: WFile[] = [
   { id: 'acme-msa', name: '2026-11-12 Acme — MSA redlines', kind: 'pdf', folder: 'f02-10', updated: d(12, 16, 28), owner: 'me', createdByTimmy: true, project: 'acme', format: 'pdf', sample: '/samples/acme-msa.pdf' },
   // [02] Work › [11] Northwind
   { id: 'northwind-sow', name: 'Northwind — Pilot SOW (final)', kind: 'doc', folder: 'f02-11', updated: d(9, 10, 2), owner: 'me', project: 'northwind' },
-  { id: 'acme-order-form', name: '2026-11-16 Acme — Order form (draft)', kind: 'doc', folder: 'f02-10', updated: d(16, 8, 4), owner: 'me', createdByTimmy: true, project: 'acme', format: 'docx', sample: '/samples/acme-order-form.docx', description: 'order form contract 120 seats signature' },
+  { id: 'acme-order-form', name: '2026-11-16 Acme — Order form (draft)', kind: 'doc', folder: 'f02-10', updated: d(16, 8, 4), owner: 'me', createdByTimmy: true, project: 'acme', description: 'order form contract 120 seats signature' },
   { id: 'northwind-budget', name: 'Northwind Pilot — Budget', kind: 'sheet', folder: 'f02-11', updated: d(9, 11, 20), owner: 'marcus', project: 'northwind', format: 'xlsx', sample: '/samples/northwind-budget.xlsx', description: 'pilot budget seats onboarding migration' },
   { id: 'hiring-loop', name: 'Platform Engineer — Interview loop', kind: 'slides', folder: 'f02-13', updated: d(10, 16, 5), owner: 'sofia', project: 'hiring', format: 'pptx', sample: '/samples/hiring-loop.pptx', description: 'interview loop scorecard criteria' },
   { id: 'northwind-notes', name: 'Northwind Pilot — Running notes', kind: 'doc', folder: 'f02-11', updated: d(10, 14, 0), owner: 'me', project: 'northwind' },
@@ -152,6 +152,24 @@ const docs: DocBody[] = [
       h2('Notes'),
       li('101–250 seat tier applies; SSO included at this tier.'),
       li('Ask for CFO approval by Friday, Nov 20 to keep the January 1 start.'),
+    ],
+  },
+  {
+    id: 'acme-order-form',
+    template: 'blank',
+    blocks: [
+      p('Order form between Northpeak, Inc. and Acme Corp for the 2027 renewal. Draft: goes to Dana for signature once her CFO approves the quote.'),
+      h2('Subscription'),
+      li('Plan: Northpeak Business, annual, starting January 1, 2027'),
+      li('Seats: 120'),
+      li('Price: $58 per seat per month (101–250 seat tier)'),
+      li('Annual total: $83,520, billed annually in advance'),
+      h2('Included'),
+      li('SSO with Okta SCIM at this tier'),
+      li('Onboarding for up to 3 admins'),
+      h2('Signatures'),
+      p('Acme Corp: Dana Whitfield, VP Operations'),
+      p('Northpeak, Inc.: Taylor Brooks'),
     ],
   },
   {

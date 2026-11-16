@@ -58,6 +58,11 @@ export interface Lead {
   firstReplyAt?: Date;
   /** Columns from the CSV that don't map to a field, kept as-is. */
   extra?: Record<string, string>;
+  /** A callback you set on a call, and what it's about. */
+  callbackAt?: Date;
+  callbackNote?: string;
+  /** Your running notes from calls and meetings. */
+  notes?: string;
 }
 
 export interface LeadList {
@@ -92,6 +97,8 @@ export interface Template {
   subject?: string;
   body: string;
   builtIn?: boolean;
+  /** Version of a built-in template; a newer seed replaces older saved copies. */
+  v?: number;
 }
 
 export interface Variant {

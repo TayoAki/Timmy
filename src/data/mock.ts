@@ -259,7 +259,7 @@ export const THREADS: Thread[] = [
       kind: 'reply',
       to: ['sofia'],
       subject: 'Re: Feedback for Jordan Kim by end of day?',
-      body: 'Hi Sofia,\n\nMy scorecard is in. Short version: strong hire on systems design and solid on debugging. I’d like a second read on collaboration from the team lunch.\n\nTaylor',
+      body: 'Hi Sofia,\n\nMy scorecard will be in before the debrief. Short version: strong hire on systems design and solid on debugging. I’d like a second read on collaboration from the team lunch.\n\nTaylor',
       sources: ['jordan-notes'],
     },
     steps: [

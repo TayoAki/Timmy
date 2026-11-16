@@ -23,6 +23,7 @@ import type { Plan, WidgetCall } from './plan';
 import type { Campaign } from '../data/outbound-types';
 import { fitOf, liveNow, pct, project, statsOf, writeSequence } from '../lib/outbound';
 import { coldToday, ctxOf } from '../state/outbound';
+import { callLead, callList, findLead, logCallNotes, textLead } from './outboundIntents';
 
 /* ───────────── Reading the request ───────────── */
 
@@ -132,15 +133,16 @@ const lateBy = (d: Date) => {
 
 /* ───────────── Handlers ───────────── */
 
-/** Texting, calling and social posts aren't connected; say so and offer email. */
+/** Social posts and other apps aren't connected; say so and offer what does work. */
 function cantReach(_s: State, l: string): Plan | null {
   const social = l.match(/\b(instagram|facebook|linkedin|twitter|tiktok|tweet|social media|slack|whatsapp)\b/);
-  const phone = l.match(/^(?:please\s+)?(text|sms|call|phone|ring)\b/);
-  if (!social && !phone) return null;
-  const what = social ? (social[1] === 'tweet' ? 'post to Twitter' : `use ${social[1]![0]!.toUpperCase()}${social[1]!.slice(1)}`) : phone![1] === 'call' || phone![1] === 'ring' || phone![1] === 'phone' ? 'make calls' : 'send texts';
+  if (!social) return null;
+  if (social[1] === 'slack')
+    return { steps: ['Checked what Timmy is connected to'], text: 'Timmy posts new form leads to your Slack channel (Outbound › Speed to lead), but it can’t send other Slack messages from the chat yet. I can draft an email instead.', calls: [] };
+  const what = social[1] === 'tweet' ? 'post to Twitter' : `use ${social[1]![0]!.toUpperCase()}${social[1]!.slice(1)}`;
   return {
     steps: ['Checked what Timmy is connected to'],
-    text: `I can’t ${what} yet. Timmy works with your email, calendar, files and CRM. If an email would do, tell me who it’s to and what to say, and I’ll draft it for your approval.`,
+    text: `I can’t ${what} yet; social posting is coming soon. Timmy can email anyone, and text or call leads who agreed to it in Outbound. Tell me who and what to say.`,
     calls: [],
   };
 }
@@ -241,6 +243,13 @@ function owedToMe(s: State, l: string): Plan | null {
   };
 }
 
+/** Whether what you asked about is the thing they owe ("scorecard" vs "mockups for the onboarding flow"). */
+const topicMatches = (topic: string, item: string) => {
+  const want = [...words(topic)].filter((w) => !['the', 'his', 'her', 'their', 'and', 'for', 'about'].includes(w));
+  const have = words(item);
+  return want.length === 0 || want.some((w) => have.has(w) || [...have].some((h) => h.startsWith(w.slice(0, 5)) && w.length > 4));
+};
+
 /** "Nudge Kenji", "chase Hannah about the redlines". */
 function nudgePerson(s: State, l: string): Plan | null {
   const m = l.match(/\b(nudge|chase|ping|follow up with|follow-up with|remind)\s+(\w+)/);
@@ -248,6 +257,25 @@ function nudgePerson(s: State, l: string): Plan | null {
   const who = personIn(m[2]!) ?? personIn(l);
   if (!who) return { steps: ['Looked for that person'], text: `I don’t know anyone called “${m[2]}”. Try their first name as it appears in your mail.`, calls: [] };
   const t = s.threads.find((x) => x.box === 'waiting' && x.waiting?.on === who);
+  // What you asked about: "remind Kenji to submit his scorecard", "chase Hannah about the redlines".
+  const topic = l.match(/\b(?:about|to (?:send|submit|share|finish|file|do|add|get)|for)\s+(?:his |her |their |the |my |our )?(.+?)(?:\s+by\b.*)?[?.!]*$/)?.[1]?.trim();
+  const unrelated = t && topic && !topicMatches(topic, t.waiting!.item);
+  if (t && unrelated) {
+    const what = topic!.replace(/^(a|an)\s+/, '');
+    return {
+      steps: ['Checked [02] Waiting', `${firstName(who)} owes you the ${midSentence(t.waiting!.item)}, not the ${what}`],
+      text: `${firstName(who)} isn’t on the hook for the ${what} in Waiting; what they owe you is the ${midSentence(t.waiting!.item)}. Want a new email about the ${what} instead?`,
+      calls: [
+        answer({
+          choices: [
+            { id: 'yes', label: `Write to ${firstName(who)} about the ${what}`, primary: true, actions: [{ type: 'compose', draft: { to: [who], subject: `Your ${what}?`, body: `Hi ${firstName(who)},\n\nQuick reminder about your ${what}. Could you send it over when you can?\n\nThanks,\nTaylor` } }], after: 'Your email is open. Nothing is sent until you press Send.' },
+            { id: 'nudge', label: `Nudge about the ${midSentence(t.waiting!.item)}`, actions: t.draft ? [] : [{ type: 'makeDraft', id: t.id }], after: 'The nudge is on the email.', open: `thread:${t.id}` },
+            no('Nothing sent.'),
+          ],
+        }),
+      ],
+    };
+  }
   if (!t) {
     return {
       steps: ['Checked [02] Waiting'],
@@ -632,17 +660,17 @@ function formLeads(s: State, l: string): Plan | null {
     text: waiting.length
       ? `${plural(waiting.length, 'form lead')} ${waiting.length === 1 ? 'is' : 'are'} waiting for a first reply: ${waiting.map((x) => `${x.first} (${Math.max(1, Math.round((liveNow().getTime() - x.receivedAt!.getTime()) / 60000))} min)`).join(', ')}. Answer inside a few minutes and you’re far more likely to reach them.`
       : `Nobody is waiting. ${plural(today.length, 'form lead')} came in today, and each got a first reply.`,
-    calls: [answer({ links: [...waiting.map((x) => ({ label: `${x.first} ${x.last}, ${x.company}`, href: 'outbound:speed', sub: 'Waiting' })), { label: 'Open Speed to lead', href: 'outbound:speed' }] })],
+    calls: [answer({ links: [...waiting.map((x) => ({ label: `${x.first} ${x.last}, ${x.company}`, href: `unibox:${x.id}`, sub: 'Waiting for a first reply' })), { label: 'Open Speed to lead', href: 'outbound:speed' }] })],
   };
 }
 
 /** "How many cold emails can I send today?" */
 function sendingLimits(s: State, l: string): Plan | null {
-  if (!/(sending limits?|daily limits?|cold emails? (today|left)|how many (cold )?emails|emails? left today)/.test(l)) return null;
+  if (!/(sending limits?|daily limits?|cold[- ]emails? (today|left|limit)|cold[- ]email limit|email limits?|how many (cold )?(emails|texts|calls)|(emails|texts|calls)? left today|text limits?|my limits?)/.test(l)) return null;
   const t = coldToday(s);
   return {
     steps: ['Checked your mailboxes'],
-    text: `${t.sent} of ${t.cap} cold emails sent today across ${plural(Object.keys(s.out.mailboxes).length, 'mailbox', 'mailboxes')}, so ${t.left} left. Each mailbox stays at or under ${s.out.limits.perMailbox} a day, and new ones warm up from ${s.out.limits.rampStart}.`,
+    text: `${t.sent} of ${t.cap} cold emails sent today across ${plural(Object.keys(s.out.mailboxes).length, 'mailbox', 'mailboxes')}, so ${t.left} left. Each mailbox stays at or under ${s.out.limits.perMailbox} a day, and new ones warm up from ${s.out.limits.rampStart}.${s.out.channels.sms ? ` Texts: ${s.out.channels.sms.sentToday ?? 0} of ${s.out.channels.sms.dailyLimit ?? 0}.` : ''}${s.out.channels.call ? ` Calls: ${s.out.channels.call.sentToday ?? 0} of ${s.out.channels.call.dailyLimit ?? 0}.` : ''}`,
     calls: [answer({ links: [{ label: 'Channels & limits', href: 'outbound:channels' }] })],
   };
 }
@@ -686,6 +714,10 @@ function writeCampaign(s: State, l: string): Plan | null {
 export function intents(s: State, text: string, thread?: Thread): Plan | null {
   const l = text.trim().toLowerCase();
   const handlers: ((s: State, l: string) => Plan | null)[] = [
+    (st, x) => textLead(st, x, text),
+    (st, x) => logCallNotes(st, x, text),
+    callList,
+    callLead,
     cantReach,
     overnight,
     (st, x) => editOpenDraft(st, x, text, thread),
@@ -695,6 +727,7 @@ export function intents(s: State, text: string, thread?: Thread): Plan | null {
     writeCampaign,
     formLeads,
     sendingLimits,
+    findLead,
     (st, x) => replyToSomething(st, x, thread),
     cantSense,
     nudgePerson,

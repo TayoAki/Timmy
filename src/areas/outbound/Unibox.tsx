@@ -3,11 +3,12 @@
  * channels (email, texts, call logs). Timmy labels each reply and suggests the
  * next message; you send it, book the meeting, or add the lead to People.
  */
-import { CalendarPlus, Inbox, Mail, MessageSquare, Phone, Send, Sparkles, UserPlus } from 'lucide-react';
+import { CalendarCheck, CalendarPlus, Inbox, Mail, MessageSquare, Phone, Send, Sparkles, UserPlus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { Channel, Lead, ReplyLabel } from '../../data/outbound-types';
 import { fmtListDate, fmtStamp } from '../../lib/format';
 import { canText, fill } from '../../state/outbound';
+import { otherQuestionsLine, pendingAcceptance, questionsIn, referral, whenWords } from '../../state/leads';
 import { useStore } from '../../state/store';
 import { EmptyState, Menu } from '../../components/kit';
 import { BookDialog, CallDialog } from './LeadPanel';
@@ -107,7 +108,7 @@ export function UniboxTab() {
             );
           })}
         </ul>
-        {selected ? <Conversation lead={selected} onBack={() => go({ id: undefined })} /> : <div className="ubx-empty">Pick a conversation.</div>}
+        {selected ? <Conversation key={selected.id} lead={selected} onBack={() => go({ id: undefined })} /> : <div className="ubx-empty">Pick a conversation.</div>}
       </div>
     </>
   );
@@ -132,7 +133,21 @@ function Conversation({ lead, onBack }: { lead: Lead; onBack: () => void }) {
   const [body, setBody] = useState('');
   const [calling, setCalling] = useState(false);
   const [booking, setBooking] = useState(false);
-  const sugg = SUGGEST[lead.label ?? (lead.source === 'form' && !lead.firstReplyAt ? 'form' : 'interested')];
+  const yes = pendingAcceptance(state, lead);
+  const asked = lastIn ? questionsIn(lastIn.body) : { price: false, times: false, other: [] as string[] };
+  const pointed = lastIn && lead.label === 'wrong-person' ? referral(lastIn.body) : null;
+  const base = SUGGEST[lead.label ?? (lead.source === 'form' && !lead.firstReplyAt ? 'form' : 'interested')];
+  // Read the reply before suggesting one: a time they agreed to is booked, not re-offered;
+  // a price question uses your offer's price; anything else they asked is acknowledged, not ignored.
+  const sugg: typeof base = yes
+    ? { label: `Confirm ${whenWords(yes.at)}`, text: `Hi {{firstName}},\n\nYou’re booked for ${whenWords(yes.at)}. The invite is on its way; reply here if anything changes.\n\nBest,\n{{senderFirstName}}` }
+    : pointed
+      ? { label: `Thank them; contact ${pointed.name ?? pointed.email}`, text: `Thanks, {{firstName}}. I’ll reach out to ${pointed.name ?? pointed.email} directly and mention you pointed me their way.\n\nBest,\n{{senderFirstName}}` }
+      : asked.price
+        ? { label: asked.other.length ? 'Answer the price and note the rest' : 'Answer the price question', template: 'tpl-reply-price' }
+        : asked.other.length && !asked.times
+          ? { label: 'Answer honestly', text: `Hi {{firstName}},\n\nThanks for asking.` }
+          : base;
   const subject = (() => {
     const s = [...msgs].reverse().find((m) => m.subject)?.subject;
     return s ? (s.startsWith('Re:') ? s : `Re: ${s}`) : `Re: ${lead.company}`;
@@ -141,7 +156,11 @@ function Conversation({ lead, onBack }: { lead: Lead; onBack: () => void }) {
     if (!sugg) return;
     const t = sugg.template ? state.out.templates[sugg.template] : undefined;
     const text = t ? (channel === 'sms' ? state.out.templates['tpl-speed-sms']?.body ?? t.body : t.body) : sugg.text ?? '';
-    setBody(fill(state, text, lead).text);
+    let filled = fill(state, text, lead).text;
+    // Questions the template doesn't answer get an honest line instead of silence.
+    const extra = otherQuestionsLine(asked.other);
+    if (extra && channel === 'email' && !yes && !pointed) filled = filled.replace(/\n\n(Best,\n|Thanks,\n)?[^\n]*$/, (end) => `${extra}${end}`);
+    setBody(filled);
   };
   const send = () => {
     dispatch({ type: 'out', op: { op: 'send', lead: lead.id, channel, subject: channel === 'email' ? subject : undefined, body } });
@@ -167,6 +186,16 @@ function Conversation({ lead, onBack }: { lead: Lead; onBack: () => void }) {
           trigger={<>{lead.label ? LABEL[lead.label].label : 'Label'}</>}
           items={[...(Object.keys(LABEL) as ReplyLabel[]).map((k) => ({ label: LABEL[k].label, onSelect: () => dispatch({ type: 'out', op: { op: 'label', lead: lead.id, label: k } }) })), { label: 'Clear label', onSelect: () => dispatch({ type: 'out', op: { op: 'label', lead: lead.id, label: null } }) }]}
         />
+        {yes && (
+          <button
+            className="btn btn-sm btn-primary ubx-book-yes"
+            onClick={() => dispatch({ type: 'out', op: { op: 'book', lead: lead.id, start: yes.at, end: new Date(yes.at.getTime() + 30 * 60000) } })}
+            title={`${lead.first} wrote: “${yes.quote}”`}
+          >
+            <CalendarCheck size={14} />
+            Book {whenWords(yes.at)}
+          </button>
+        )}
         <button className="icon-btn sm" aria-label="Book a meeting" title="Book a meeting" onClick={() => setBooking(true)}>
           <CalendarPlus size={16} />
         </button>
@@ -178,6 +207,11 @@ function Conversation({ lead, onBack }: { lead: Lead; onBack: () => void }) {
         </button>
       </header>
 
+      {yes && (
+        <p className="ubx-yes" role="status">
+          <CalendarCheck size={14} aria-hidden /> {lead.first} agreed to <strong>{whenWords(yes.at)}</strong> (“{yes.quote}”). It isn’t on your calendar yet.
+        </p>
+      )}
       <ol className="ubx-msgs">
         {lead.message && lead.receivedAt && (
           <li className="ubx-msg in form">

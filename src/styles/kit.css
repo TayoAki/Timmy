@@ -1,6 +1,8 @@
 /* ───────────── Shared kit: modal, fields, menu, people picker ───────────── */
 
 .modal-overlay {
+  /* Above the Ask Timmy workspace (80), so a dialog opened from the chat shows on top. */
+  z-index: 90;
   align-items: flex-start;
   padding-top: 12vh;
 }
@@ -485,4 +487,61 @@ select.input {
 
 .btn-danger:hover {
   background: color-mix(in srgb, var(--danger) 88%, var(--text));
+}
+
+.people-picker-hint {
+  margin: 6px 0 0;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.people-picker-new {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+.compose-why {
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+
+/* Check before sending a prepared draft */
+.send-check {
+  display: grid;
+  gap: 12px;
+}
+.send-check-subject {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.send-check-subject .muted {
+  margin-right: 6px;
+  font-weight: 400;
+}
+.send-check-body {
+  max-height: 320px;
+  overflow: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface-2);
+  font-size: 13.5px;
+  line-height: 1.55;
+  white-space: pre-line;
+}
+.send-check-body p {
+  margin: 0 0 10px;
+}
+.send-check-body p:last-child {
+  margin-bottom: 0;
+}
+.send-check .ap-notes {
+  margin: 0;
 }

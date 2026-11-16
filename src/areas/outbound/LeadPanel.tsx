@@ -8,8 +8,9 @@ import { CalendarPlus, Check, Globe, Briefcase, Mail, MessageSquare, Phone, Spar
 import { Fragment, useState } from 'react';
 import type { Channel, Lead } from '../../data/outbound-types';
 import { fmtDay, fmtStamp, fmtTime, plural } from '../../lib/format';
-import { fitOf } from '../../lib/outbound';
+import { fitOf, liveNow } from '../../lib/outbound';
 import { canText, coldToday, fill, freeTimes } from '../../state/outbound';
+import { pendingAcceptance, whenWords } from '../../state/leads';
 import { useStore } from '../../state/store';
 import { Field, Modal } from '../../components/kit';
 import { RpSection } from '../files/pickers';
@@ -347,9 +348,48 @@ export function CallDialog({ lead, onClose }: { lead: Lead; onClose: () => void 
 
 export function BookDialog({ lead, onClose }: { lead: Lead; onClose: () => void }) {
   const { state, dispatch } = useStore();
+  const yes = pendingAcceptance(state, lead);
+  const today = freeTimes(state.ws, 3, 30, 3, true).filter((t) => t.start.getDate() === liveNow().getDate());
   const times = freeTimes(state.ws, 6, 30, 2);
+  const [date, setDate] = useState(() => isoDay(yes?.at ?? liveNow()));
+  const [time, setTime] = useState(() => (yes ? `${String(yes.at.getHours()).padStart(2, '0')}:${String(yes.at.getMinutes()).padStart(2, '0')}` : '10:00'));
+  const [mins, setMins] = useState(30);
+  const book = (start: Date, length = 30) => {
+    dispatch({ type: 'out', op: { op: 'book', lead: lead.id, start, end: new Date(start.getTime() + length * 60000) } });
+    onClose();
+  };
+  const custom = (() => {
+    const [y, m, d] = date.split('-').map(Number);
+    const [hh, mm] = time.split(':').map(Number);
+    return y && m && d && hh !== undefined && mm !== undefined ? new Date(y, m - 1, d, hh, mm) : null;
+  })();
+  const clash = custom ? Object.values(state.ws.events).find((e) => e.start < new Date(custom.getTime() + mins * 60000) && e.end > custom) : undefined;
   return (
-    <Modal open onClose={onClose} title={`Book a call with ${lead.first}`} description="Free half hours on your calendar. Timmy sends the invite and moves the lead to Meeting booked." width={480}>
+    <Modal open onClose={onClose} title={`Book a call with ${lead.first}`} description="Timmy sends the invite and moves the lead to Meeting booked." width={500}>
+      {yes && (
+        <button className="book-yes" onClick={() => book(yes.at)}>
+          <strong>Book {whenWords(yes.at)}</strong>
+          <span>
+            {lead.first} wrote: “{yes.quote}”
+          </span>
+        </button>
+      )}
+      {today.length > 0 && (
+        <>
+          <span className="field-label">Today</span>
+          <div className="book-times">
+            {today.map((t) => (
+              <button key={t.start.toISOString()} className="book-time" onClick={() => book(t.start)}>
+                <strong>Today</strong>
+                <span>
+                  {fmtTime(t.start)}–{fmtTime(t.end)}
+                </span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      <span className="field-label">Next free half hours</span>
       <div className="book-times">
         {times.map((t) => (
           <button
@@ -367,6 +407,24 @@ export function BookDialog({ lead, onClose }: { lead: Lead; onClose: () => void 
           </button>
         ))}
       </div>
+      <fieldset className="book-custom">
+        <legend className="field-label">Or pick any time</legend>
+        <input className="input" type="date" aria-label="Date" value={date} onChange={(e) => setDate(e.target.value)} />
+        <input className="input" type="time" aria-label="Time" step={300} value={time} onChange={(e) => setTime(e.target.value)} />
+        <select className="input" aria-label="Length" value={mins} onChange={(e) => setMins(Number(e.target.value))}>
+          {[15, 30, 45, 60, 90].map((m) => (
+            <option key={m} value={m}>
+              {m} min
+            </option>
+          ))}
+        </select>
+        <button className="btn btn-sm btn-primary" disabled={!custom} onClick={() => custom && book(custom, mins)}>
+          Book
+        </button>
+        {clash && <span className="book-clash">Overlaps “{clash.title}”. You can still book it.</span>}
+      </fieldset>
     </Modal>
   );
 }
+
+const isoDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

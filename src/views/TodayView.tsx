@@ -9,7 +9,6 @@ import {
   Hourglass,
   Pencil,
   Reply,
-  Send,
   Sparkles,
   FilePlus2,
   ListPlus,
@@ -41,6 +40,12 @@ import { Avatar, EffortChip, Kbd, tint } from '../components/common';
 import { DocIcon } from '../components/DocBits';
 import { Frame } from '../components/Frame';
 import { PHONE, useMedia } from '../lib/useMedia';
+import { useTick } from '../lib/useTick';
+import { SendDraftButton } from '../components/SendDraft';
+import { liveNow } from '../lib/outbound';
+import { leadAlerts, whenWords, type LeadAlert } from '../state/leads';
+import { LeadMark } from '../areas/outbound/shared';
+import { speed } from '../areas/outbound/LeadPanel';
 
 export function TodayView({ tab }: { tab: TodayTab }) {
   const { state, dispatch } = useStore();
@@ -74,13 +79,14 @@ function Brief() {
   const waiting = scopedThreads(state, inBox(state.threads, 'waiting'));
   const triage = inBox(state.threads, 'inbox');
   const ranked = rank(scopedThreads(state, openThreads(state.threads)));
-  const urgent = ranked.filter((x) => x.u.level === 'urgent').length;
+  const alerts = state.scope ? [] : leadAlerts(state);
+  const urgent = ranked.filter((x) => x.u.level === 'urgent').length + alerts.length;
   const approvals = scopedApprovals(state);
   const focus = state.focus;
   const scopeProject = state.scope ? state.ws.projects[state.scope] : undefined;
   const phone = useMedia(PHONE);
 
-  if (state.calm) return <CalmBrief ranked={ranked} approvals={approvals.length} />;
+  if (state.calm) return <CalmBrief ranked={ranked} alerts={alerts} approvals={approvals.length} />;
 
   return (
     <>
@@ -97,13 +103,13 @@ function Brief() {
       <ScopeNote />
 
       {/* On a phone, what needs you comes first; quick actions live in Ask and More. */}
-      {phone && <UrgentSection ranked={ranked} limit={4} />}
+      {phone && <UrgentSection ranked={ranked} alerts={alerts} limit={4} />}
 
       {!focus && !phone && <QuickActions />}
 
       <Highlight />
 
-      {!phone && <UrgentSection ranked={ranked} />}
+      {!phone && <UrgentSection ranked={ranked} alerts={alerts} />}
 
       <ApprovalsSection approvals={focus ? approvals.slice(0, 3) : approvals} total={approvals.length} />
 
@@ -180,7 +186,7 @@ function RunControl() {
 }
 
 /** The urgent list: only what needs you today, or everything open ranked. */
-function UrgentSection({ ranked, limit }: { ranked: { t: Thread; u: UrgencyInfo }[]; limit?: number }) {
+function UrgentSection({ ranked, alerts = [], limit }: { ranked: { t: Thread; u: UrgencyInfo }[]; alerts?: LeadAlert[]; limit?: number }) {
   const { state, dispatch } = useStore();
   const [all, setAll] = useState(false);
   const mode = state.schedule.brief;
@@ -188,7 +194,10 @@ function UrgentSection({ ranked, limit }: { ranked: { t: Thread; u: UrgencyInfo 
   const soon = ranked.filter((x) => x.u.level === 'soon').length;
   const later = ranked.length - urgent.length - soon;
   const full = mode === 'urgent' ? urgent : ranked;
-  const rows = limit && !all ? full.slice(0, limit) : full;
+  // Leads come first: a lead waiting minutes, or a meeting they confirmed for today, can't wait for the inbox.
+  const leadRows = limit && !all ? alerts.slice(0, limit) : alerts;
+  const room = limit && !all ? Math.max(0, limit - leadRows.length) : Infinity;
+  const rows = full.slice(0, room);
   const setMode = (brief: 'urgent' | 'all') => dispatch({ type: 'setSchedule', schedule: { brief } });
 
   return (
@@ -205,14 +214,18 @@ function UrgentSection({ ranked, limit }: { ranked: { t: Thread; u: UrgencyInfo 
           value={mode}
           onChange={setMode}
           options={[
-            { id: 'urgent', label: `Urgent · ${urgent.length}` },
-            { id: 'all', label: `Everything · ${ranked.length}` },
+            { id: 'urgent', label: `Urgent · ${urgent.length + alerts.length}` },
+            { id: 'all', label: `Everything · ${ranked.length + alerts.length}` },
           ]}
         />
       </div>
-      {rows.length > 0 ? (
+      {rows.length + leadRows.length > 0 ? (
         <ol className="card urg-list">
-          {rows.map(({ t, u }, i) => {
+          {leadRows.map((a, i) => (
+            <LeadAlertRow key={a.lead.id} alert={a} n={i + 1} />
+          ))}
+          {rows.map(({ t, u }, j) => {
+            const i = j + leadRows.length;
             const who = t.box === 'waiting' && t.waiting ? t.waiting.on : counterpart(t);
             return (
               <li key={t.id} className="urg-row">
@@ -247,14 +260,14 @@ function UrgentSection({ ranked, limit }: { ranked: { t: Thread; u: UrgencyInfo 
           <span>Everything open can wait until later in the week.</span>
         </div>
       )}
-      {rows.length < full.length && (
+      {rows.length + leadRows.length < full.length + alerts.length && (
         <p className="urg-more">
           <button className="link-btn" onClick={() => setAll(true)}>
-            Show {full.length - rows.length} more
+            Show {full.length + alerts.length - rows.length - leadRows.length} more
           </button>
         </p>
       )}
-      {mode === 'urgent' && rows.length === full.length && (soon > 0 || later > 0) && (
+      {mode === 'urgent' && rows.length === full.length && leadRows.length === alerts.length && (soon > 0 || later > 0) && (
         <p className="urg-more">
           {soon > 0 && `${plural(soon, 'more thing')} for this week`}
           {soon > 0 && later > 0 && ' and '}
@@ -317,10 +330,62 @@ function CalmToggle() {
  * the few things that need you, one line for approvals and your next meeting.
  * In focus mode it goes quieter still: the highlight and what's next.
  */
-function CalmBrief({ ranked, approvals }: { ranked: { t: Thread; u: UrgencyInfo }[]; approvals: number }) {
+/** A form lead waiting for its first reply (with a live clock), or a time a lead agreed to that isn't booked. */
+function LeadAlertRow({ alert: a, n }: { alert: LeadAlert; n: number }) {
+  const { state, dispatch } = useStore();
+  useTick(a.kind === 'waiting');
+  const lead = a.lead;
+  const who = `${lead.first} ${lead.last}`.trim();
+  const open = () => dispatch({ type: 'navigate', route: { view: 'outbound', tab: 'unibox', filter: a.kind === 'waiting' ? 'forms' : 'replies', id: lead.id } });
+  const waited = liveNow().getTime() - a.at.getTime();
+  const late = a.kind === 'waiting' && !!a.sla && waited > a.sla * 60000;
+  const form = state.out.forms[lead.form ?? '']?.name;
+  return (
+    <li className="urg-row urg-lead">
+      <span className="urg-rank" aria-hidden>
+        {n}
+      </span>
+      <LeadMark lead={lead} size={30} />
+      <div className="urg-row-text">
+        <button className="urg-row-title" onClick={open}>
+          {a.kind === 'waiting' ? `${who} is waiting for a first reply` : `${who} confirmed ${whenWords(a.at)}`}
+        </button>
+        <span className="urg-row-sub">
+          {a.kind === 'waiting' ? (
+            <>
+              {form ?? 'Form lead'} · {lead.company} · waiting <strong className={late ? 'urg-late' : undefined}>{speed(a.at, liveNow(), true)}</strong>
+              {a.sla ? ` · answer within ${a.sla} min` : ''}
+            </>
+          ) : (
+            <>
+              “{a.quote}” · not on your calendar yet
+            </>
+          )}
+        </span>
+      </div>
+      <div className="urg-row-side">
+        <span className="urg urg-urgent">
+          <span className="urg-dot" aria-hidden />
+          {a.kind === 'waiting' ? 'New lead' : 'Book it'}
+        </span>
+        {a.kind === 'confirmed' ? (
+          <button className="btn btn-sm btn-primary" onClick={() => dispatch({ type: 'out', op: { op: 'book', lead: lead.id, start: a.at, end: new Date(a.at.getTime() + 30 * 60000) } })}>
+            Book {whenWords(a.at).replace(/^today at /, '')}
+          </button>
+        ) : (
+          <button className="btn btn-sm" onClick={open}>
+            Reply
+          </button>
+        )}
+      </div>
+    </li>
+  );
+}
+
+function CalmBrief({ ranked, alerts, approvals }: { ranked: { t: Thread; u: UrgencyInfo }[]; alerts: LeadAlert[]; approvals: number }) {
   const { state, dispatch } = useStore();
   const [showUrgent, setShowUrgent] = useState(false);
-  const urgent = ranked.filter((x) => x.u.level === 'urgent');
+  const urgent = [...alerts, ...ranked.filter((x) => x.u.level === 'urgent')];
   const quiet = state.focus;
   const next = todaysEvents(state.ws).find((e) => e.end > NOW && e.kind !== 'personal' && eventInScope(state, e));
   return (
@@ -363,7 +428,7 @@ function CalmBrief({ ranked, approvals }: { ranked: { t: Thread; u: UrgencyInfo 
           )}
         </p>
       ) : (
-        <UrgentSection ranked={ranked} limit={3} />
+        <UrgentSection ranked={ranked} alerts={alerts} limit={3} />
       )}
 
       {!quiet && approvals > 0 && (
@@ -782,10 +847,7 @@ function Drafts({ threads }: { threads: Thread[] }) {
                   <Pencil size={14} />
                   Review
                 </button>
-                <button className="btn btn-sm btn-primary" onClick={() => dispatch({ type: 'sendDraft', id: t.id, track: true })}>
-                  <Send size={14} />
-                  {d.trackAs ? 'Send & track' : 'Send'}
-                </button>
+                <SendDraftButton t={t} />
               </footer>
             </article>
           );

@@ -59,8 +59,35 @@ export const registerPerson = (p: Person) => {
   PEOPLE[p.id] = { ...PEOPLE[p.id], ...p };
 };
 
-export const personName = (id: string) => (id === 'me' ? 'You' : PEOPLE[id]?.name ?? id);
-export const firstName = (id: string) => personName(id).split(' ')[0]!;
+export const personName = (id: string) => (id === 'me' ? 'You' : PEOPLE[id]?.name ?? personFromMail(id)?.name ?? id);
+/** First name for a greeting; an address with no name in it stays whole. */
+export const firstName = (id: string) => {
+  const n = personName(id);
+  return n.includes('@') ? n : n.split(' ')[0]!;
+};
+
+/* ───────────── People who aren't in your contacts ───────────── */
+
+export const EMAIL = /^[^\s@,;<>]+@[^\s@,;<>]+\.[a-z]{2,}$/i;
+/** Someone you email who isn't in People: the id carries the address, so it survives a reload. */
+export const mailId = (email: string) => `mail:${email.trim().toLowerCase()}`;
+const GENERIC = /^(info|hello|hi|contact|sales|support|team|admin|office|billing|accounts?|no-?reply|enquiries|inquiries)$/i;
+const cap = (x: string) => x.charAt(0).toUpperCase() + x.slice(1).toLowerCase();
+/** "jane.doe@acme.com" → Jane Doe; "info@acme.com" stays the address. */
+export function personFromMail(id: string): Person | null {
+  if (!id.startsWith('mail:')) return null;
+  const email = id.slice(5);
+  const local = email.split('@')[0] ?? '';
+  const parts = local.split(/[._-]+/).filter((p) => /^[a-z]{2,}$/i.test(p));
+  const name = !GENERIC.test(local) && parts.length >= 1 && parts.length <= 3 && parts.join('').length === local.replace(/[._-]+/g, '').length ? parts.map(cap).join(' ') : email;
+  return { id, name, email };
+}
+/** Adds a new address as a recipient and returns its id. */
+export const registerMail = (email: string) => {
+  const p = personFromMail(mailId(email))!;
+  registerPerson(p);
+  return p.id;
+};
 
 const PROPER = /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|Q[1-4]|I)\b/;
 /**

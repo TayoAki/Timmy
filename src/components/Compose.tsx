@@ -60,7 +60,7 @@ export function Compose() {
     const due = draft.track?.due ? fmtDay(parseIsoDay(draft.track.due)) : null;
     const ask = draft.subject.trim() ? `could you ${draft.subject.trim().replace(/^[A-Z]/, (c) => c.toLowerCase()).replace(/\?$/, '')}` : 'could you take a look at the note below';
     const lines = [
-      `Hi ${to ? firstName(to) : 'there'},`,
+      `Hi ${to && !firstName(to).includes('@') ? firstName(to) : 'there'},`,
       `${ask.charAt(0).toUpperCase()}${ask.slice(1)}${due ? ` by ${due}` : ''}?`,
       project?.goal ? `For context: ${project.goal}` : '',
       'Best,\nTaylor',
@@ -195,6 +195,11 @@ export function Compose() {
           Discard
         </button>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {!canSend && (
+            <span className="compose-why" role="status">
+              {!draft.to.length ? 'Add a recipient: someone in People or any email address.' : 'Add a subject or a message.'}
+            </span>
+          )}
           <MicButton onText={dictate} label="Dictate the message" />
           <button className="btn btn-sm" onClick={askTimmy} disabled={!draft.to.length}>
             <TimmyMark size={16} muted />

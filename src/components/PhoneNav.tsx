@@ -13,6 +13,7 @@ import { sectionOf, useStore } from '../state/store';
 import { useTheme } from '../state/theme';
 import { openThreads, useUrgency } from '../state/urgency';
 import { TimmyMark } from './common';
+import { leadAlerts } from '../state/leads';
 import { useSections } from './LeftRail';
 
 export function PhoneTabs() {
@@ -20,7 +21,7 @@ export function PhoneTabs() {
   const { rank } = useUrgency();
   const [more, setMore] = useState(false);
   const section = state.searchOpen ? 'search' : sectionOf(state.route);
-  const urgent = rank(scopedThreads(state, openThreads(state.threads))).filter((x) => x.u.level === 'urgent').length;
+  const urgent = rank(scopedThreads(state, openThreads(state.threads))).filter((x) => x.u.level === 'urgent').length + (state.scope ? 0 : leadAlerts(state).length);
   const approvals = scopedApprovals(state).length;
   const sections = useSections();
   const elsewhere = sections.filter((x) => !['mail', 'approvals', 'calendar', 'search'].includes(x.section)).reduce((n, x) => n + (x.badge ?? 0), 0);

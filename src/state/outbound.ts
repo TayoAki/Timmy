@@ -11,7 +11,7 @@ import type { Activity } from '../data/types';
 import type { Campaign, Channel, ChannelConn, FormSource, Lead, LeadList, Limits, Mailbox, Offer, OutMessage, ReplyLabel, SocialPost, Template } from '../data/outbound-types';
 import type { WS } from '../data/ws-types';
 import { fmtDay, fmtTime, plural } from '../lib/format';
-import { addDays, atClock, liveNow, mailboxCap, project, qualify, render, values } from '../lib/outbound';
+import { addDays, atClock, hash, liveNow, mailboxCap, project, qualify, render, values } from '../lib/outbound';
 import { SENDER } from '../data/outbound-mock';
 import { applyOps, eventsOn, put, registerPerson } from './ws';
 import type { State, Toast } from './store';
@@ -34,7 +34,7 @@ export type OutOp =
   | { op: 'pause'; id: string }
   | { op: 'removeCampaign'; id: string }
   | { op: 'send'; lead: string; channel: Channel; subject?: string; body: string }
-  | { op: 'logCall'; lead: string; outcome: string }
+  | { op: 'logCall'; lead: string; outcome: string; notes?: string; callbackAt?: Date; callbackNote?: string }
   | { op: 'label'; lead: string; label: ReplyLabel | null }
   | { op: 'read'; lead: string }
   | { op: 'mailbox'; mailbox: Mailbox }
@@ -60,12 +60,18 @@ export const fullName = (l: Pick<Lead, 'first' | 'last'>) => `${l.first} ${l.las
 /* ───────────── Free times for {{slot1}} / {{slot2}} ───────────── */
 
 /** The next free stretches on your calendar on working days, from tomorrow. */
-export function freeTimes(ws: WS, count = 2, mins = 30, perDay = 1): { start: Date; end: Date; label: string }[] {
+export function freeTimes(ws: WS, count = 2, mins = 30, perDay = 1, today = false): { start: Date; end: Date; label: string }[] {
   const out: { start: Date; end: Date; label: string }[] = [];
-  for (let i = 1; out.length < count && i < 14; i++) {
+  for (let i = today ? 0 : 1; out.length < count && i < 14; i++) {
     const day = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() + i);
     if (day.getDay() === 0 || day.getDay() === 6) continue;
     let cursor = atClock(day, '09:15');
+    if (i === 0) {
+      // Today: from the next quarter hour that's at least 30 minutes away.
+      const soon = new Date(liveNow().getTime() + 30 * 60000);
+      soon.setMinutes(Math.ceil(soon.getMinutes() / 15) * 15, 0, 0);
+      if (soon > cursor) cursor = soon;
+    }
     const close = atClock(day, '17:00');
     let found = 0;
     const busy = eventsOn(ws, day).sort((a, b) => a.start.getTime() - b.start.getTime());
@@ -75,7 +81,7 @@ export function freeTimes(ws: WS, count = 2, mins = 30, perDay = 1): { start: Da
         cursor = clash.end;
         continue;
       }
-      const word = i === 1 ? 'tomorrow' : day.toLocaleDateString('en-US', { weekday: 'long' });
+      const word = i === 0 ? 'today' : i === 1 ? 'tomorrow' : day.toLocaleDateString('en-US', { weekday: 'long' });
       out.push({ start: cursor, end: new Date(cursor.getTime() + mins * 60000), label: `${word} at ${fmtTime(cursor)}` });
       found++;
       cursor = new Date(cursor.getTime() + 2 * 3_600_000);
@@ -87,7 +93,15 @@ export function freeTimes(ws: WS, count = 2, mins = 30, perDay = 1): { start: Da
 /** The next free half hours in words, for {{slot1}} and {{slot2}}: "tomorrow at 9:15 AM". */
 export const nextSlots = (ws: WS, count = 2) => freeTimes(ws, count).map((x) => x.label);
 
-export const fill = (s: State, text: string, lead: Partial<Lead>) => render(text, values(lead, s.out.offer, SENDER, nextSlots(s.ws)));
+const PAIRS = [[0, 2], [1, 3], [2, 4]] as const;
+/** Two free times for this lead; different leads get different pairs so drafts don't collide. */
+export const slotsFor = (ws: WS, leadId?: string) => {
+  const all = freeTimes(ws, 6, 30, 2).map((x) => x.label);
+  const [a, b] = PAIRS[leadId ? hash(leadId) % PAIRS.length : 0]!;
+  return [all[a] ?? all[0]!, all[b] ?? all[1]!].filter(Boolean);
+};
+
+export const fill = (s: State, text: string, lead: Partial<Lead>) => render(text, values(lead, s.out.offer, SENDER, slotsFor(s.ws, lead.id)));
 
 /* ───────────── Limits ───────────── */
 
@@ -308,18 +322,33 @@ export function outbound(s: State, a: OutOp, h: OutHelpers): State {
     case 'logCall': {
       const lead = out.leads[a.lead];
       if (!lead) return s;
-      const msg: OutMessage = { id: mid('call'), lead: lead.id, channel: 'call', dir: 'out', at: liveNow(), body: a.outcome, outcome: a.outcome, status: 'sent' };
+      const at = liveNow();
+      const msg: OutMessage = { id: mid('call'), lead: lead.id, channel: 'call', dir: 'out', at, body: a.notes ? `${a.outcome}. ${a.notes}` : a.outcome, outcome: a.outcome, status: 'sent' };
       const calls = out.channels.call;
+      // A logged call ticks the campaign's call step, so the sequence moves on to the next one.
+      const c = lead.campaign ? out.campaigns[lead.campaign] : undefined;
+      const onCallStep = c && lead.step !== undefined && c.steps[lead.step]?.channel === 'call';
+      const nextStep = onCallStep ? c!.steps[lead.step! + 1] : undefined;
+      const stepped: Partial<Lead> = onCallStep ? { step: lead.step! + 1, nextAt: nextStep ? atClock(addDays(at, Math.max(1, nextStep.wait)), c!.schedule.start) : undefined } : {};
+      const next: Lead = {
+        ...lead,
+        ...stepped,
+        status: lead.status === 'new' || lead.status === 'queued' ? 'contacted' : lead.status,
+        firstReplyAt: lead.receivedAt && !lead.firstReplyAt ? at : lead.firstReplyAt,
+        notes: a.notes ? `${lead.notes ? `${lead.notes}\n` : ''}${fmtDay(at)} call: ${a.notes}` : lead.notes,
+        callbackAt: a.callbackAt ?? (lead.callbackAt && lead.callbackAt <= at ? undefined : lead.callbackAt),
+        callbackNote: a.callbackAt ? a.callbackNote : lead.callbackAt && lead.callbackAt <= at ? undefined : lead.callbackNote,
+      };
       return {
         ...s,
         out: {
           ...out,
           messages: [...out.messages, msg],
           channels: calls ? { ...out.channels, call: { ...calls, sentToday: (calls.sentToday ?? 0) + 1 } } : out.channels,
-          leads: { ...out.leads, [lead.id]: { ...lead, status: lead.status === 'new' || lead.status === 'queued' ? 'contacted' : lead.status, firstReplyAt: lead.receivedAt && !lead.firstReplyAt ? msg.at : lead.firstReplyAt } },
+          leads: { ...out.leads, [lead.id]: next },
         },
-        activity: h.log(s, `Called ${fullName(lead)}: ${a.outcome}`, 'send'),
-        toasts: h.toast(s, `Call logged: ${a.outcome}`, { undo: true }),
+        activity: h.log(s, `Called ${fullName(lead)}: ${a.outcome}${a.notes ? ` (${a.notes})` : ''}`, 'send'),
+        toasts: h.toast(s, `Call logged: ${a.outcome}${onCallStep ? ` · ${c!.name} moves to ${nextStep ? `step ${lead.step! + 2}` : 'done'}` : ''}${a.callbackAt ? ` · callback ${fmtDay(a.callbackAt)} ${fmtTime(a.callbackAt)}` : ''}`, { undo: true }),
       };
     }
 
@@ -395,7 +424,7 @@ export function outbound(s: State, a: OutOp, h: OutHelpers): State {
         ...s,
         out: { ...out, leads: { ...out.leads, [lead.id]: lead }, messages: [...out.messages, ...messages] },
         activity: h.log(s, `New lead from ${f.name}: ${fullName(lead)}, ${lead.company}`, 'triage'),
-        toasts: h.toast(s, `New lead from ${f.name}: ${fullName(lead)}. ${said.length ? `${said.join(', ')}.` : `Answer within ${f.sla} minutes.`}`),
+        toasts: h.toast(s, `New lead from ${f.name}: ${fullName(lead)}. ${said.length ? `${said.join(', ')}. ` : ''}${f.autoReply ? '' : `Answer within ${f.sla} minutes.`}`.trim()),
       };
     }
 

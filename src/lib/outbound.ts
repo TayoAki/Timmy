@@ -52,6 +52,9 @@ export const VARIABLES: { key: string; label: string }[] = [
   { key: 'offerOutcome', label: 'Offer: outcome' },
   { key: 'offerProof', label: 'Offer: proof' },
   { key: 'offerCta', label: 'Offer: call to action' },
+  { key: 'offerName', label: 'Offer: name' },
+  { key: 'offerPrice', label: 'Offer: price' },
+  { key: 'productName', label: 'Offer: product name' },
   { key: 'slot1', label: 'Next free time' },
   { key: 'slot2', label: 'Second free time' },
 ];
@@ -73,6 +76,9 @@ export function values(lead: Partial<Lead>, offer: Offer, sender: Sender, slots:
     offerOutcome: offer.outcome,
     offerProof: offer.proof,
     offerCta: offer.cta,
+    offerName: offer.name,
+    offerPrice: offer.price,
+    productName: offer.product.split(/,|\(|:| [–—-] /)[0]!.trim(),
     slot1: slots[0],
     slot2: slots[1],
   };

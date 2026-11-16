@@ -2250,3 +2250,79 @@ td.lead-sub {
     flex-basis: 100%;
   }
 }
+
+/* ───────────── Leads on Today, accepted times, booking ───────────── */
+
+.urg-late {
+  color: var(--danger);
+}
+.ubx-yes {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 16px 8px;
+  padding: 8px 12px;
+  border-radius: var(--r);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.ubx-yes svg {
+  flex: none;
+  color: var(--accent-text);
+}
+.ubx-book-yes {
+  white-space: nowrap;
+}
+.book-yes {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r);
+  background: var(--accent-soft);
+  text-align: left;
+  font-size: 13px;
+}
+.book-yes span {
+  color: var(--text-2);
+}
+.book-yes:hover {
+  background: color-mix(in oklab, var(--accent-soft) 70%, var(--accent) 12%);
+}
+.modal .field-label + .book-times,
+.book-times + .field-label {
+  margin-top: 6px;
+}
+.book-times + .field-label,
+.book-times + .book-custom {
+  margin-top: 14px;
+}
+.book-custom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 0;
+  border: 0;
+}
+.book-custom legend {
+  margin-bottom: 6px;
+}
+.book-custom .input {
+  width: auto;
+}
+.book-clash {
+  flex-basis: 100%;
+  color: var(--warn);
+  font-size: 12.5px;
+}
+.soc-assist {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}

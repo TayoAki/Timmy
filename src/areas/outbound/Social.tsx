@@ -6,6 +6,7 @@
  */
 import { BarChart3, CalendarClock, Megaphone, PenLine, Sparkles, Trash2, TrendingUp } from 'lucide-react';
 import { useState } from 'react';
+import { polishPost } from '../../lib/polish';
 import type { SocialPost } from '../../data/outbound-types';
 import { NOW } from '../../data/mock';
 import { fmtDay, fmtTime } from '../../lib/format';
@@ -172,6 +173,8 @@ function Composer({ post, onDone }: { post?: SocialPost; onDone?: () => void }) 
   const [nets, setNets] = useState<string[]>(post?.networks ?? ['linkedin']);
   const [text, setText] = useState(post?.text ?? '');
   const [n, setN] = useState(0);
+  // Your words before Timmy polished them, so you can go back.
+  const [before, setBefore] = useState<string | null>(null);
   const days = Array.from({ length: 14 }, (_, i) => new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() + i + 1));
   const [day, setDay] = useState(post?.at ? new Date(post.at.getFullYear(), post.at.getMonth(), post.at.getDate()).toISOString() : days[1]!.toISOString());
   const [time, setTime] = useState(post?.at ? `${String(post.at.getHours()).padStart(2, '0')}:${String(post.at.getMinutes()).padStart(2, '0')}` : '09:00');
@@ -206,15 +209,29 @@ function Composer({ post, onDone }: { post?: SocialPost; onDone?: () => void }) 
             {text.length} / {Number.isFinite(tight) ? tight : '—'}
             {over.length ? ` · too long for ${over.map((x) => net(x).name).join(', ')}` : ''}
           </span>
-          <button
-            className="btn btn-sm"
-            onClick={() => {
-              setText(IDEAS(state.out.offer.proof, state.out.offer.hook || 'spreadsheets')[n % 3]!);
-              setN(n + 1);
-            }}
-          >
-            <Sparkles size={14} /> Write with Timmy
-          </button>
+          <span className="soc-assist">
+            {before !== null && (
+              <button className="link-btn" onClick={() => (setText(before), setBefore(null))}>
+                Back to your version
+              </button>
+            )}
+            <button
+              className="btn btn-sm"
+              title={text.trim() ? 'Tightens what you wrote and keeps your topic' : 'Suggests a post from your offer'}
+              onClick={() => {
+                if (text.trim()) {
+                  // Your text is the post: Timmy tightens it, never swaps it for another.
+                  setBefore(before ?? text);
+                  setText(polishPost(text, Number.isFinite(tight) ? tight : Infinity));
+                } else {
+                  setText(IDEAS(state.out.offer.proof, state.out.offer.hook || 'spreadsheets')[n % 3]!);
+                  setN(n + 1);
+                }
+              }}
+            >
+              <Sparkles size={14} /> {text.trim() ? 'Polish with Timmy' : 'Write with Timmy'}
+            </button>
+          </span>
         </div>
         <div className="soc-when">
           <Field label="Day">

@@ -3,7 +3,7 @@
  * tools.ts. Widgets read live app state, so they stay current after you act,
  * and they change things only when you press a button.
  */
-import { ArrowRight, BadgeDollarSign, CalendarDays, Check, CircleCheck, FilePenLine, Flame, Hourglass, Mail, Send, Sparkles, Stamp, type LucideIcon } from 'lucide-react';
+import { ArrowRight, BadgeDollarSign, CalendarDays, Check, CircleCheck, FilePenLine, Flame, Hourglass, Mail, Sparkles, Stamp, type LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { NOW } from '../data/mock';
 import { dayDiff, dueInfo, fmtDay, fmtTime, money } from '../lib/format';
@@ -15,6 +15,7 @@ import { openThreads, useUrgency } from '../state/urgency';
 import { eventsOn, firstName, midSentence, parseIsoDay, personName, put, routeFromHref, uid } from '../state/ws';
 import { ApprovalRow } from '../areas/approvals/ApprovalCard';
 import { Avatar } from '../components/common';
+import { SendDraftButton } from '../components/SendDraft';
 import { UrgencyReasons, UrgencyTag } from '../components/Urgency';
 import { assistant } from './conversations';
 import type { WidgetName } from './tools';
@@ -81,10 +82,7 @@ function UrgentWidget({ limit = 6, level = 'urgent' }: { limit?: number; level?:
                 <div className="aw-actions">
                   <UrgencyTag info={u} />
                   {t.draft ? (
-                    <button className="btn btn-xs btn-primary" onClick={() => dispatch({ type: 'sendDraft', id: t.id, track: true })}>
-                      <Send size={12} />
-                      {t.draft.trackAs ? 'Send & track' : t.draft.kind === 'nudge' ? 'Send nudge' : 'Send'}
-                    </button>
+                    <SendDraftButton t={t} size="xs" preview />
                   ) : t.box !== 'waiting' ? (
                     <button className="btn btn-xs" onClick={() => dispatch({ type: 'makeDraft', id: t.id })}>
                       <FilePenLine size={12} />
@@ -281,10 +279,7 @@ function ThreadWidget({ id }: { id: string }) {
             <button className="btn btn-sm btn-ghost" onClick={() => dispatch({ type: 'openThread', id: t.id })}>
               Edit
             </button>
-            <button className="btn btn-sm btn-primary" onClick={() => dispatch({ type: 'sendDraft', id: t.id, track: true })}>
-              <Send size={13} />
-              {t.draft.trackAs ? 'Send & track' : 'Send'}
-            </button>
+            <SendDraftButton t={t} />
           </div>
         </div>
       ) : (
@@ -331,10 +326,7 @@ function WaitingWidget() {
                       <button className="btn btn-xs btn-ghost" onClick={() => dispatch({ type: 'openThread', id: t.id })}>
                         Review nudge
                       </button>
-                      <button className="btn btn-xs btn-primary" onClick={() => dispatch({ type: 'sendDraft', id: t.id, track: true })}>
-                        <Send size={12} />
-                        Send & track
-                      </button>
+                      <SendDraftButton t={t} size="xs" label="Send & track" preview />
                     </>
                   ) : (
                     <button className={`btn btn-xs${late ? ' btn-primary' : ''}`} onClick={() => dispatch({ type: 'makeDraft', id: t.id })}>

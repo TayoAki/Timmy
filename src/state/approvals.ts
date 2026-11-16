@@ -83,6 +83,10 @@ export function draftNotes(s: State, t: Thread): ApprovalNote[] {
   const out: ApprovalNote[] = [];
   const stale = staleBasis(s, t);
   if (stale) out.push({ tone: 'warn', text: stale });
+  const gap = d.body.match(/\[[A-Z][^\]\n]{2,160}\]/)?.[0];
+  if (gap) out.push({ tone: 'warn', text: `Fill in ${gap.length > 40 ? `${gap.slice(0, 38)}…]` : gap} before you send. Timmy left it for you rather than guess.` });
+  if (/\b(attached|i'?ve attached|please find attached|attaching)\b/i.test(d.body.replace(/’/g, "'")) && !d.attachments?.length)
+    out.push({ tone: 'warn', text: 'This says something is attached, but nothing is. Attach it, or change the sentence.' });
   for (const dec of s.decisions) {
     if (!dec.whileDraft || dec.thread !== t.id || dec.chosen) continue;
     const o = dec.options.find((x) => x.primary);

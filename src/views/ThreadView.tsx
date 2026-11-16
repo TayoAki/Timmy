@@ -28,7 +28,7 @@ import { TaskDialog } from '../areas/tasks/TaskDialog';
 import { AutoTextarea, Field, Modal } from '../components/kit';
 import type { Box, Draft, Thread } from '../data/types';
 import { fmtDay, fmtStamp } from '../lib/format';
-import { counterpart, labelOf, useStore, ws, type ThreadTab } from '../state/store';
+import { acmeSeatPrice, counterpart, labelOf, useStore, ws, type ThreadTab } from '../state/store';
 import { Avatar, Kbd, ThreadChips, TimmyMark } from '../components/common';
 import { DocIcon, DocPath, DocThumb } from '../components/DocBits';
 import { Frame } from '../components/Frame';
@@ -335,7 +335,7 @@ function DecisionDialog({ open, onClose, t, projectName, archive }: { open: bool
   const { state, dispatch } = useStore();
   const last = t.messages[t.messages.length - 1]!;
   const suggested =
-    t.id === 'acme-quote' && last.from !== 'me' ? 'CFO approved 120 seats at $58 per seat; order form next' : last.body.find((p) => !/^(hi|hello|thanks)/i.test(p))?.slice(0, 120) ?? '';
+    t.id === 'acme-quote' && last.from !== 'me' ? `CFO approved 120 seats at $${acmeSeatPrice(state)} per seat; order form next` : last.body.find((p) => !/^(hi|hello|thanks)/i.test(p))?.slice(0, 120) ?? '';
   const [text, setText] = useState(suggested);
   useEffect(() => setText(suggested), [open]); // eslint-disable-line react-hooks/exhaustive-deps
   const save = () => {

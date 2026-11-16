@@ -24,6 +24,8 @@ export type Effect =
   | { do: 'compose'; draft: ComposeDraft }
   /** Rewrite text in a deck or doc (slide titles, bullets, paragraphs) so the file matches the choice. */
   | { do: 'retext'; file: string; replace: [string, string][] }
+  /** Change the hint on a CRM deal so it matches the choice. */
+  | { do: 'dealHint'; deal: string; text: string }
   /** Set one cell in a sheet. */
   | { do: 'cell'; sheet: string; row: number; col: string; value: string | number }
   /** Reword a next action on a thread. */
@@ -66,6 +68,8 @@ const d = (day: number, h = 9, m = 0, month = 10) => new Date(2026, month, day, 
 const scorecardDone: Effect[] = [
   { do: 'step', thread: 'interview-feedback', step: 's1' },
   { do: 'ws', ops: [patch('tasks', 't-scorecard', { status: 'done' })] },
+  // Only now is it true that the scorecard is in.
+  { do: 'redraft', thread: 'interview-feedback', replace: [['My scorecard will be in before the debrief.', 'My scorecard is in.']] },
 ];
 
 const JORDAN_DRAFT = 'Short version: strong hire on systems design and solid on debugging. I’d like a second read on collaboration from the team lunch.';
@@ -93,7 +97,10 @@ export const DECISIONS: Decision[] = [
         id: 'approve',
         label: 'Approve $58',
         primary: true,
-        effects: [{ do: 'note', project: 'acme', text: 'Approved $58 per seat for 120 seats ($83,520 a year)' }],
+        effects: [
+          { do: 'note', project: 'acme', text: 'Approved $58 per seat for 120 seats ($83,520 a year)' },
+          { do: 'dealHint', deal: 'acme', text: 'After you send the quote, update the value to $83,520 and the stage to Proposal sent.' },
+        ],
         result: 'Approved $58 per seat. Added to the Acme running notes.',
       },
       {
@@ -117,10 +124,19 @@ export const DECISIONS: Decision[] = [
               ['$4 less per seat than v3', 'Same $62 per seat as v3, now for 120 seats'],
             ],
           },
+          {
+            do: 'retext',
+            file: 'acme-order-form',
+            replace: [
+              ['Price: $58 per seat per month (101–250 seat tier)', 'Price: $62 per seat per month'],
+              ['Annual total: $83,520', 'Annual total: $89,280'],
+            ],
+          },
+          { do: 'dealHint', deal: 'acme', text: 'After you send the quote, update the value to $89,280 and the stage to Proposal sent.' },
           { do: 'cell', sheet: 'acme-quote', row: 1, col: 'price', value: 62 },
           { do: 'steptext', thread: 'acme-quote', step: 's5', text: 'Update deal value to $89,280' },
         ],
-        result: 'Kept $62. Timmy updated the reply to Dana, proposal v4 and the quote tracker; review the reply before you send.',
+        result: 'Kept $62. Timmy updated the reply to Dana, proposal v4, the order form, the quote tracker and the CRM hint; review the reply before you send.',
       },
     ],
   },
@@ -157,10 +173,10 @@ export const DECISIONS: Decision[] = [
         id: 'no',
         label: 'No hire',
         effects: [
-          { do: 'redraft', thread: 'interview-feedback', replace: [[JORDAN_DRAFT, 'Short version: no hire for this role. Solid on debugging, but systems design wasn’t at the level the team needs.']] },
+          { do: 'redraft', thread: 'interview-feedback', replace: [[JORDAN_DRAFT, 'Short version: no hire for this role. [Your reason: your Friday notes say strong on systems design, solid on debugging, collaboration not yet tested]']] },
           ...scorecardDone,
         ],
-        result: 'Scorecard filled in: no hire. Timmy updated your reply to Sofia.',
+        result: 'Scorecard filled in: no hire. Your notes don’t say why, so the reply to Sofia has a gap for your reason; fill it in before you send.',
       },
     ],
   },
