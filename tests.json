@@ -179,6 +179,13 @@
    "status": "pass"
   },
   {
+   "id": "api-hardening",
+   "file": "server/test/hardening.test.ts",
+   "covers": "inputs that lean on how JavaScript objects work: a record id or collection named after something every object has (“__proto__”, “constructor”, “toString”…) is refused for put, patch and remove, and nothing is saved; a “__proto__” key inside a record changes nothing; ordinary ids with dots, colons and @ still work",
+   "tests": 5,
+   "status": "pass"
+  },
+  {
    "id": "demo-e2e",
    "file": "e2e/run-all.sh",
    "covers": "the 17 demo-mode Playwright suites (483 checks), including the frontend branch’s five: round4, story, intro, pages and uis",
@@ -276,6 +283,13 @@
    "file": "e2e/live/live-decisions.cjs",
    "covers": "in the browser: a question in the mail becomes a card with the answers and the real figure; choosing drafts a reply with a Send button and sends nothing; the same question asked again says what was decided; People suggests the people who wrote, with their company; Ask says who someone is and what they promised",
    "checks": 13,
+   "status": "pass"
+  },
+  {
+   "id": "live-outside",
+   "file": "e2e/live/live-outside.cjs",
+   "covers": "the app as an outsider sees it, by requests alone: every API address refuses a caller with no session; the health check and error answers give nothing away (no stack traces, no provider state on a deployed server); no server file or source map is served; oversized bodies refused; webhooks need a real signature; the test endpoints answer “not found” without the token (deployed servers); writes from another site with the person’s cookies are refused and change nothing; no cross-origin read permission; session cookie flags; built-in object names, script links and disguised pictures refused; naming another workspace in a request changes nothing; a made-up connect callback connects nothing; a wrong password and an unknown address get the same answer; a sign-in link to another site is refused; a copied session dies at sign-out; repeated wrong passwords are slowed down (deployed servers)",
+   "checks": 50,
    "status": "pass"
   },
   {

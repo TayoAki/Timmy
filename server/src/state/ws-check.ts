@@ -18,6 +18,12 @@ import { WS_COLLECTIONS } from '../../../src/live/patches';
 const COLLECTIONS: ReadonlySet<string> = new Set(WS_COLLECTIONS);
 /** Ids made here and by the screens. An id taken from an email address may carry a plus sign. */
 const ID = /^[\w.:@+-]{1,200}$/;
+/**
+ * Names every object already answers to (“constructor”, “toString”, “__proto__”…). Records are kept in plain objects
+ * keyed by id, so an id with one of these names would read as there when it is not, or replace the object's own workings.
+ */
+const BUILT_IN = new Set(Object.getOwnPropertyNames(Object.prototype));
+const okId = (id: string) => ID.test(id) && !BUILT_IN.has(id);
 const plain = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype;
 const text = (v: unknown, max: number) => typeof v === 'string' && v.length <= max;
 
@@ -206,6 +212,9 @@ const CHAT_FLAGS = new Set(['unread', 'starred']);
 
 const CHECKS: Partial<Record<string, (item: Record<string, unknown>) => string | null>> = { docs: docProblem, automations: automationProblem, chat: chatProblem };
 
+/** The record a collection really holds under an id: its own, never something every object has. */
+const ownRecord = (col: Record<string, unknown> | undefined, id: string) => (col && Object.hasOwn(col, id) ? (col[id] as Record<string, unknown>) : null);
+
 /**
  * Looks at a batch of workspace operations before the reducer applies them.
  * Returns why they are refused, in words for the person, or null when they are fine.
@@ -215,7 +224,7 @@ export function checkWsOps(state: State, ops: unknown): string | null {
   if (!Array.isArray(ops) || ops.length > 400) return refused;
   // Later operations in a batch see what earlier ones did.
   const staged = new Map<string, Record<string, unknown> | null>();
-  const current = (col: string, id: string) => (staged.has(`${col}/${id}`) ? staged.get(`${col}/${id}`)! : (((state.ws as unknown as Record<string, Record<string, unknown>>)[col]?.[id] as Record<string, unknown> | undefined) ?? null));
+  const current = (col: string, id: string) => (staged.has(`${col}/${id}`) ? staged.get(`${col}/${id}`)! : (ownRecord((state.ws as unknown as Record<string, Record<string, unknown>>)[col], id)));
   for (const o of ops) {
     if (!plain(o) || typeof o.col !== 'string' || !COLLECTIONS.has(o.col)) return refused;
     const col = o.col;
@@ -233,6 +242,8 @@ export function checkWsOps(state: State, ops: unknown): string | null {
     } else if (o.op === 'patch') {
       if (typeof o.id !== 'string' || !plain(o.patch)) return refused;
       id = o.id;
+      // Checked here as well as below: the reducer would act on a built-in name even though no record has it.
+      if (!okId(id)) return refused;
       const before = current(col, id);
       // A patch to something that isn't there changes nothing; the reducer skips it too.
       if (!before) continue;
@@ -243,7 +254,7 @@ export function checkWsOps(state: State, ops: unknown): string | null {
       id = o.id;
       item = null;
     } else return refused;
-    if (!ID.test(id)) return refused;
+    if (!okId(id)) return refused;
 
     if (col === 'chat' && o.op === 'remove') return 'The website chat’s settings can be changed, not removed.';
     if (item) {
