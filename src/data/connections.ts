@@ -26,6 +26,8 @@ export interface AppDef {
   /** Enrichment: credits per lead. */
   credits?: number;
   soon?: boolean;
+  /** Reached with a token instead of a Composio connect page. */
+  token?: boolean;
 }
 
 export interface AppConn {
@@ -83,6 +85,18 @@ export const APPS: AppDef[] = [
   },
   { id: 'realtor', name: 'Realtor.com', group: 'Lead sources', mark: 'Rc', color: 'var(--c-red)', reads: 'New leads from your listings', source: 'realtor', note: 'Realtor.com sends leads through its Lead Delivery API. It needs a Connections Plus subscription.', account: 'Lead Delivery API' },
   { id: 'fbleads', name: 'Facebook Lead Ads', group: 'Lead sources', mark: 'Fb', color: 'var(--c-indigo)', reads: 'Leads from your lead forms', source: 'facebook', account: 'Northpeak page' },
+  {
+    id: 'treg',
+    name: 'Treg',
+    group: 'Enrichment',
+    mark: 'Tr',
+    color: 'var(--c-teal)',
+    reads: 'Work emails, phones, people and company data. Timmy picks the best of more than 100 data providers for each lookup',
+    credits: 1,
+    token: true,
+    note: 'Treg is a pay-per-call marketplace of data and tools for AI agents, with Hunter, Lusha, Apollo, People Data Labs, Crunchbase and more behind one token. Timmy sees each call’s price before it makes it, and every call counts against your enrichment budget. Timmy uses Treg only to look things up. Connect one of the providers below to use your own account instead.',
+    account: 'Timmy’s Treg account',
+  },
   { id: 'apollo', name: 'Apollo', group: 'Enrichment', mark: 'Ap', color: 'var(--c-amber)', reads: 'Titles, phones, company size and industry for your leads', credits: 1, account: 'Northpeak (Apollo)' },
   { id: 'clay', name: 'Clay', group: 'Enrichment', mark: 'Cl', color: 'var(--c-violet)', reads: 'Waterfall enrichment across providers', credits: 2, account: 'Northpeak workspace' },
   { id: 'pdl', name: 'People Data Labs', group: 'Enrichment', mark: 'PD', color: 'var(--c-teal)', reads: 'Person and company records', credits: 1, account: 'API key' },
@@ -100,6 +114,7 @@ export const GROUPS: AppGroup[] = ['Mail and calendar', 'CRM', 'Lead sources', '
 const d = (day: number, h = 9, m = 0) => new Date(2026, 10, day, h, m);
 
 export const APPS_SEED: Record<string, AppConn> = {
+  treg: { connected: true, account: 'Timmy’s Treg account', at: d(2) },
   gmail: { connected: true, account: APP.gmail!.account, at: d(2) },
   gcal: { connected: true, account: APP.gcal!.account, at: d(2) },
   gdrive: { connected: true, account: APP.gdrive!.account, at: d(2) },

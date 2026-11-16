@@ -7,6 +7,7 @@
 import { strToU8, zipSync } from 'fflate';
 import type { Block, Deck, DocBody, Sheet, SheetColumn, WFile, WS } from '../data/ws-types';
 import { cellValue, fmtCell } from '../state/ws';
+import { listNumbers, numberLabel } from './blocks';
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
@@ -53,18 +54,35 @@ const DOCX_STYLES = `${XML}<w:styles ${W}>
 <w:style w:type="table" w:styleId="TableGrid"><w:name w:val="Table Grid"/><w:tblPr><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="BFBFBF"/><w:left w:val="single" w:sz="4" w:space="0" w:color="BFBFBF"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="BFBFBF"/><w:right w:val="single" w:sz="4" w:space="0" w:color="BFBFBF"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="BFBFBF"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="BFBFBF"/></w:tblBorders><w:tblCellMar><w:left w:w="100" w:type="dxa"/><w:right w:w="100" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style>
 </w:styles>`;
 
-function blockXml(b: Block, ws: WS): string {
+function blockXml(b: Block, ws: WS, n = 0): string {
+  const pad = '    '.repeat(b.indent ?? 0);
   switch (b.type) {
+    case 'h1':
     case 'h2':
       return para(b.text, 'Heading1');
     case 'h3':
       return para(b.text, 'Heading2');
     case 'p':
-      return para(b.text);
+    case 'code':
+      return para(pad + b.text);
+    case 'quote':
+      return para(`${pad}“${b.text}”`);
+    case 'callout':
+      return para(`${pad}${b.icon ?? '💡'}  ${b.text}`);
+    case 'toggle':
+      return para(`${pad}▸  ${b.text}`);
     case 'bullet':
-      return para(`•  ${b.text}`, 'ListBullet');
+      return para(`${pad}•  ${b.text}`, 'ListBullet');
+    case 'numbered':
+      return para(`${pad}${numberLabel(n || 1, b.indent ?? 0)}  ${b.text}`, 'ListBullet');
     case 'todo':
-      return para(`${b.checked ? '☑' : '☐'}  ${b.text}`, 'ListBullet');
+      return para(`${pad}${b.checked ? '☑' : '☐'}  ${b.text}`, 'ListBullet');
+    case 'divider':
+      return para('―――');
+    case 'image':
+      return para(b.caption ? `(Image: ${b.caption})` : '(Image)');
+    case 'page':
+      return para(`Page: ${ws.files[b.file]?.name ?? 'Untitled'}`);
     case 'table':
       return table(b.columns, b.rows);
     case 'linked-table': {
@@ -84,7 +102,7 @@ function blockXml(b: Block, ws: WS): string {
 }
 
 export function docxFromDoc(file: WFile, body: DocBody, ws: WS): Uint8Array {
-  const xml = `${XML}<w:document ${W}><w:body>${para(file.name, 'Title')}${body.blocks.map((b) => blockXml(b, ws)).join('')}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr></w:body></w:document>`;
+  const xml = `${XML}<w:document ${W}><w:body>${para(file.name, 'Title')}${(() => { const nums = listNumbers(body.blocks); return body.blocks.map((b, i) => blockXml(b, ws, nums[i])).join(''); })()}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr></w:body></w:document>`;
   return zip({
     '[Content_Types].xml': `${XML}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`,
     '_rels/.rels': PKG_RELS('word/document.xml', OFFICE_DOC),

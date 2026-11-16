@@ -1,6 +1,7 @@
 import { initial, type State } from '../state/store';
 import { DEFAULT_SCHEDULE } from '../state/schedule';
 import { WS_COLLECTIONS } from './patches';
+import { chatWidgetFor } from '../data/ws-mock';
 
 /** Rules every new workspace starts with. The demo's own rules about its sample folders and deals are left out. */
 const STARTER_RULES = ['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'u1', 'u2', 'u3', 'u4', 'u6', 'u7', 'p1', 'p2', 'p3', 'p4', 'p5', 'w1', 'w2', 'w3', 's1', 's2', 's4'];
@@ -32,7 +33,7 @@ export function blankState({ first, company }: BlankOptions): State {
     highlightDone: false,
     dismissed: [],
     toasts: [],
-    ws: Object.fromEntries(WS_COLLECTIONS.map((c) => [c, {}])) as unknown as State['ws'],
+    ws: { ...Object.fromEntries(WS_COLLECTIONS.map((c) => [c, {}])), chat: { site: chatWidgetFor(company) } } as unknown as State['ws'],
     decisions: [],
     approvalLog: [],
     schedule: DEFAULT_SCHEDULE,

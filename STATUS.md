@@ -31,6 +31,29 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 | Frontend live mode (`VITE_TIMMY_LIVE=1`) | Built: sign-in, onboarding, state from the API, Connect buttons, model picker, monthly limit, approvals for writes Timmy proposes. The demo is unchanged and still the default build. |
 | Railway | `app` (API + live app), `pgvector` and the bucket `timmy-files` exist in `production` and `staging`. Both `app` services have the OpenRouter and Composio keys. |
 
+## Merged in: the Notion-style editor, automations and website chat (Nov 16, 2026)
+
+The UI branch `claude/modest-meitner-59cqpr` was merged into this one, with the owner's OK. It brings four things:
+
+- the block editor for docs, with pages, a page tree and a trash;
+- Automations in the AI library;
+- Website chat in Outbound;
+- the pipeline-style Tasks board.
+
+Its design notes are in `docs/ui-additions-backend.md`.
+
+What changed to make it work on the API:
+
+- **New collections.** `trash`, `automations`, `chat` and `chats` were added to `WS_COLLECTIONS` (`src/live/patches.ts`), so the server keeps them. The new doc fields (icon, cover, and each block's indent, colour and formatting) ride inside `ws.docs`, as before.
+- **Chat for new workspaces.** A new workspace starts with the website chat switched off, named after the workspace (`chatWidgetFor` in `src/data/ws-mock.ts`, used by `src/live/blank.ts`).
+- **Tab sync.** In live mode the editor no longer passes saved docs between tabs itself, because the stream already does. It still shares cursors.
+- **Picture size.** Pictures added in the live app are made smaller (1,000 px JPEG; 1,400 px for covers), so a doc stays under the API's 1 MB limit per command. A page with many pictures can still go over it. Uploads to the `timmy-files` bucket are the fix (see the design notes).
+- **Nothing sends.** Automations and website chat save their settings only: nothing runs or sends yet. The chat's code snippet points to a script that doesn't exist yet.
+- **New tests.**
+  - `server/test/pages.test.ts`: the new state survives a reload from the database.
+  - `e2e/live/live-pages.cjs`: type in a doc, icon and cover, trash and restore, draw and save an automation, and change the chat's settings, all through the API.
+  - `e2e/e2e-pages.cjs` and `e2e/e2e-uis.cjs` in demo mode.
+
 ## What is deployed
 
 Railway project `timmy`. Production:

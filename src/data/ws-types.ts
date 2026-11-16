@@ -30,6 +30,12 @@ export interface WFile {
   starred?: boolean;
   /** Searchable keywords, for files whose title you can't change. */
   description?: string;
+  /** A sub-page: the doc it lives inside. */
+  parent?: string;
+  /** In the trash since then; restorable until deleted for good. */
+  trashed?: Date;
+  /** Went to the trash with this page (a sub-page of it); comes back with it. */
+  trashRoot?: string;
   /** Set on a shortcut: the file it points to. */
   shortcutOf?: string;
   /** Someone shared this with you and you haven't decided what to do with it. */
@@ -50,15 +56,52 @@ export interface WFile {
 
 export type DocTemplate = 'blank' | 'private-notes' | 'team-meeting' | 'one-on-one' | 'project-recap' | 'running-notes';
 
-export type Block =
-  | { id: string; type: 'h2' | 'h3' | 'p' | 'bullet'; text: string }
-  | { id: string; type: 'todo'; text: string; checked: boolean }
-  /** A table you type into, e.g. a 1:1's Date / Agenda / Notes / Action items. */
-  | { id: string; type: 'table'; columns: string[]; rows: string[][] }
-  /** Live figures from a sheet; refreshes when the sheet changes. */
-  | { id: string; type: 'linked-table'; sheet: string; columns?: string[] }
-  /** A link to another file, shown as a chip. */
-  | { id: string; type: 'file'; file: string };
+/** Notion-style block colours: text colour, or a background with `-bg`. */
+export type BlockColor =
+  | 'gray' | 'brown' | 'orange' | 'yellow' | 'green' | 'blue' | 'purple' | 'pink' | 'red'
+  | 'gray-bg' | 'brown-bg' | 'orange-bg' | 'yellow-bg' | 'green-bg' | 'blue-bg' | 'purple-bg' | 'pink-bg' | 'red-bg';
+
+/** Formatted inline content (bold, links, colours…), kept beside the plain `text` that Timmy reads. */
+export type InlineNode =
+  | { type: 'text'; text: string; marks?: { type: string; attrs?: Record<string, unknown> }[] }
+  | { type: 'hardBreak' };
+
+interface BlockBase {
+  id: string;
+  /** Nesting under the block above: list levels, and the contents of a toggle. */
+  indent?: number;
+  color?: BlockColor;
+  /** Only set when the text has formatting; ignored if it no longer matches `text`. */
+  rich?: InlineNode[];
+}
+
+export type Block = BlockBase &
+  (
+    | { type: 'h1' | 'h2' | 'h3' | 'p' | 'bullet' | 'numbered' | 'quote'; text: string }
+    | { type: 'todo'; text: string; checked: boolean }
+    /** Blocks indented under a toggle are its contents; they hide when it's closed. */
+    | { type: 'toggle'; text: string; open?: boolean }
+    | { type: 'callout'; text: string; icon?: string }
+    | { type: 'code'; text: string; lang?: string }
+    | { type: 'divider' }
+    | { type: 'image'; src: string; width?: number; caption?: string }
+    /** A table you type into, e.g. a 1:1's Date / Agenda / Notes / Action items. */
+    | { type: 'table'; columns: string[]; rows: string[][] }
+    /** Live figures from a sheet; refreshes when the sheet changes. */
+    | { type: 'linked-table'; sheet: string; columns?: string[] }
+    /** A link to another file, shown as a chip. */
+    | { type: 'file'; file: string }
+    /** A page inside this one (a sub-page). */
+    | { type: 'page'; file: string }
+  );
+
+export interface DocCover {
+  /** A built-in gradient id, or an image (an uploaded data URL or a web address). */
+  kind: 'gradient' | 'image';
+  value: string;
+  /** Vertical focus of an image cover, 0–100. */
+  y?: number;
+}
 
 export interface DocBody {
   id: string;
@@ -66,6 +109,9 @@ export interface DocBody {
   blocks: Block[];
   /** Calendar event this doc is the running record for. */
   event?: string;
+  /** The page's emoji. */
+  icon?: string;
+  cover?: DocCover;
 }
 
 /* ───────────── Sheets ───────────── */
@@ -235,6 +281,81 @@ export interface Routine {
   links: { label: string; href: string }[];
 }
 
+/** One step on an automation's canvas. `kind` is a block from the automation catalog. */
+export interface AutoNode {
+  id: string;
+  kind: string;
+  x: number;
+  y: number;
+  /** The step's settings: field id → value. Text can hold {{fields}} from the trigger. */
+  config: Record<string, string>;
+}
+
+export interface AutoEdge {
+  id: string;
+  from: string;
+  to: string;
+  /** A condition's branch. */
+  branch?: 'yes' | 'no';
+}
+
+/** A workflow you draw: a trigger, then the steps Timmy takes. */
+export interface Automation {
+  id: string;
+  name: string;
+  description: string;
+  on: boolean;
+  nodes: AutoNode[];
+  edges: AutoEdge[];
+  updated: Date;
+  /** Test runs so far (with sample data; nothing is sent). */
+  tests?: number;
+}
+
+/** The chat on your website: how it looks, what it asks and what it knows. */
+export interface ChatWidget {
+  id: string;
+  on: boolean;
+  domain: string;
+  name: string;
+  /** An uploaded picture for the launcher and header; Timmy's mark when empty. */
+  icon?: string;
+  color: string;
+  greeting: string;
+  /** Asked one at a time once the visitor leaves an email. */
+  questions: { id: string; text: string }[];
+  faq: { id: string; q: string; a: string }[];
+  /** When someone asks for a person. */
+  handoff: 'notify' | 'book' | 'email';
+  booking: boolean;
+}
+
+export interface ChatMsg {
+  id: string;
+  from: 'visitor' | 'timmy' | 'you';
+  text: string;
+  at: Date;
+  image?: string;
+}
+
+/** One visitor's chat from the website. */
+export interface ChatConvo {
+  id: string;
+  name?: string;
+  email?: string;
+  company?: string;
+  messages: ChatMsg[];
+  /** You took over: Timmy stops answering. */
+  live: boolean;
+  unread: boolean;
+  starred?: boolean;
+  /** Asked for a person and is waiting. */
+  urgent?: boolean;
+  answers?: Record<string, string>;
+  booked?: string;
+  page?: string;
+}
+
 /** A rule Timmy proposes after noticing how you edit its drafts. */
 export interface LearnedRule {
   id: string;
@@ -258,6 +379,11 @@ export interface WS {
   prompts: Record<string, Prompt>;
   routines: Record<string, Routine>;
   learned: Record<string, LearnedRule>;
+  /** Pages in the trash: out of every list until restored or deleted for good. */
+  trash: Record<string, WFile>;
+  automations: Record<string, Automation>;
+  chat: Record<string, ChatWidget>;
+  chats: Record<string, ChatConvo>;
 }
 
 export type Col = keyof WS;

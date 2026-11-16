@@ -8,6 +8,14 @@ This is the frontend only: everything runs in the browser on sample data, and yo
 
 Live preview: https://web-production-c4bbfc9c.up.railway.app (Railway, redeploys on every push to this branch).
 
+**The story demo:** https://web-production-c4bbfc9c.up.railway.app/?story plays "Monday, 8:12", a short story (about two and a half minutes) of one morning with Timmy, inside the real app (or press **Watch the story** on the daily brief). It follows the StoryBrand (SB7) outline: Taylor (the hero) starts Monday buried, Timmy (the guide) has already sorted the mail, and the story walks through Dana's quote, the $58-or-$62 decision, Send & track, booking a form lead, a campaign saved as drafts, triage and the plan, then ends on the call to action. Each scene points at one thing and a cursor presses the real buttons, on fresh demo data. Space pauses, → skips, Esc stops; closing puts back the demo data you had, and **Explore from here** keeps what the story did. `?story=play` starts it without the title card, for screen recordings. The script is `src/story/script.ts`.
+
+**The cinematic intro:** https://web-production-c4bbfc9c.up.railway.app/?intro is a 17-second opening that films the real app in 3D, in the style of a product launch. The urgent list settles onto the tilted brief row by row, the camera swings to the $58 decision while the cursor presses Keep $62, then it pulls back to the whole app and the title racks into focus. It's plain CSS 3D, with no 3D library: real components on surfaces in one scene, a camera rig that moves while the UI stays still, depth of field from per-layer blur plus a masked lens blur, and one slow-in, flat-landing motion curve. It's cut to the music in `docs/story-music.md` and plays on demo data that is never saved. `?intro=frames` waits for `window.__intro.seek(t)`, so a 30 fps video can be rendered frame by frame. The voiceover script is `docs/story-voiceover.md`, and `?story=play&sync=vo` plays the story to that take's timings for recording.
+
+**The product film (`?film`):** a two-minute Demo2Win film of the real app, in the Sizzle "Product Film" format. It opens on the problem with no app on screen, swings the app in at "This is Timmy", then walks six parts (what needs you, the files, the deals, new customers, the emails, speed to lead), each told on a card, shown with real clicks and recapped, and ends on the 3D close (`?intro&close&from=11.05`). A virtual camera pushes in and holds on each action, a cursor arcs in and clicks the real controls (the recorder performs the clicks, keys and typing for real), non-subjects are dimmed, and words get their own type cards. Every beat is timed from the narration's word timings (`src/film/vo_words.json`). The recorder (`scripts/film/render.cjs`) steps the page clock one frame at a time, so toasts, timers and Ask Timmy's answer run on film time. The soundtrack is mixed by `scripts/film/mix.py` and the captions are written by `scripts/film/srt.py`. See `src/film/BRIEF.md`, `src/film/STORYBOARD.md` and `docs/film-script-v2.md`.
+
+**The cinematic outro:** `?outro` (15 seconds) films the end of Taylor's day on the same engine. What everyone owes Taylor settles onto the "I'm waiting on" card, the camera swings to today's calendar with the 9:15 call booked that morning, then it pulls back and "Never drop a ball." lands on the music's final hit, followed by Connect your Gmail. The engine is `src/cinema/engine.ts`. The `cinematic-3d` skill (`.claude/skills/cinematic-3d`) packages the whole method: the rules, the workflow, an engine copy, music analysis, voiceover timestamps, frame rendering and encoding.
+
 ```bash
 npm install
 npm run dev      # http://localhost:5173
@@ -20,7 +28,7 @@ The shell follows the wireframe: **left rail · sidebar · tabs + main content �
 
 | Area | What it holds |
 | --- | --- |
-| Left rail | Today & mail, Approvals, Search (⌘K), Tasks, Calendar, Docs, Projects, People, Drive, AI library, Timmy's activity, Settings |
+| Left rail | Today & mail, Approvals, Search (⌘K), Tasks, Calendar, Docs, Projects, People, Drive, AI library (with Automations), Timmy's activity, Settings |
 | Sidebar | A **project picker** on top, then the section's own navigation. For mail: numbered labels, project folders, Starred (max 5) and `[99] Archived` |
 | Tabs | Views inside the current page (e.g. Daily brief / Triage / Drafts) |
 | Main content | The page itself |
@@ -63,19 +71,21 @@ Files follow a numbered folder structure (`[02] Work › [10] Acme`, at most 5 l
 Find and reach new customers from the same app (rocket in the left rail):
 
 - **Leads:** import a CSV from Apollo, Clay, HubSpot or a sheet (or paste rows). Timmy maps the columns, skips duplicates by email, and keeps unknown columns as custom fields. Every lead gets a **fit score** against your offer's ideal customer, with the reasons; **Qualify account** runs Timmy's check on the account. Filter by list, net new, saved, in campaigns or replied; select leads to qualify, save, delete or add to a campaign.
-- **Campaigns:** Timmy writes the sequence from your offer: an A/B first email, a bump, a call, a case study and a break-up. Edit each step (email, call, text, LinkedIn, WhatsApp) with variants, the wait before it, `{{variables}}`, a preview for any lead, Rewrite, and checks for spam words, length, links and shouting. Schedule sets the days, window and time zone, with a day-by-day plan; Options picks mailboxes, the daily limit, stop on reply, plain text and the unsubscribe line. Analytics shows sends per day against the limit, opens, replies, interested, meetings, bounces and results by step. Launching shows the plan first; a campaign Timmy prepared waits in **Approvals**.
+- **Campaigns:** Timmy writes the sequence from your offer: an A/B first email, a bump, a call, a case study and a break-up. Edit each step (email, call, text, LinkedIn, WhatsApp) with variants, the wait before it, `{{variables}}`, a preview for any lead, Rewrite, and checks for spam words, length, links and shouting. Schedule sets the days, window and time zone, with a day-by-day plan; Options picks mailboxes, the daily limit, stop on reply, plain text and the unsubscribe line. Analytics shows sends per day against the limit, opens, replies, interested, meetings, bounces and results by step. Launching shows the plan first. When Timmy writes a campaign, its first emails wait in **Drafts** for you to send.
 - **Limits built in:** at most **30 cold emails a mailbox a day** (Timmy never goes above 50), new mailboxes warm up from 10 a day, sends spread out through the window, follow-ups go before new leads, a reply stops the sequence, bounces over 3% pause it, and one-off cold emails count toward the same limit (past it, they're queued for tomorrow). Texts only go to people who agreed to them, inside quiet hours, with "Reply STOP".
+- **Drafts:** when you ask Timmy for a campaign, it saves each cold email as a draft in the Gmail or Outlook account it sends from (connected through Composio, your main account included). Review, edit and send them here, one at a time or all at once; nothing goes out until you do. The Unibox **Sent** view then lists everyone you wrote to who hasn't replied, with the whole history.
 - **Unibox:** every reply from every campaign and form, on email, text and calls, labelled (interested, question, meeting, out of office, not interested, wrong person, unsubscribe). Timmy suggests the next message with real free times from your calendar; book the meeting (it lands on your calendar) or add the lead to People.
 - **Speed to lead:** connect your website form, Typeform, Webflow, HubSpot, Facebook Lead Ads or any form by webhook. Each new lead gets a live clock against the form's target (5 minutes for a demo request). Timmy can send the first reply in under a minute, text them if they asked, and post to Slack; the page tracks median first reply and the share answered inside the target. "Simulate a form lead" shows it working.
 - **Templates & offer:** the offer Timmy writes from (product, audience, pain, hook, outcome, proof, the ask, price, ideal customer) and a library of email, call and text templates.
 - **Channels & limits:** sending mailboxes with health, warm-up and daily limits; texts, phone, Slack, LinkedIn, WhatsApp and calendar connections; the guardrails above.
 
-Ask Timmy knows outbound too: "How's my campaign doing?", "Who replied?", "Any new form leads?", "How many cold emails can I send today?", "Write a campaign for my best leads" (it prepares the campaign and leaves the launch to you in Approvals).
+Ask Timmy knows outbound too: "How's my campaign doing?", "Who replied?", "Any new form leads?", "How many cold emails can I send today?", "Write a campaign for my best leads" (it saves the first emails as drafts; nothing goes out until you send them).
 
 ## Connections, calls, delegate mode and agencies
 
-- **Connections** (plug icon): one button per app, the way the product will use Composio: Gmail, Calendar and Drive; **Outlook and Microsoft 365** (waits for your Microsoft admin to approve, then connects); **HubSpot, Salesforce, Pipedrive**; lead sources **Follow Up Boss, Zillow (Tech Connect), Realtor.com, Facebook Lead Ads**, which then show up in Speed to lead; enrichment from **Apollo, Clay, People Data Labs, Hunter** or any API; Slack, Twilio and Notion. Each card says what Timmy reads and what it may write. Connecting is simulated in this preview.
+- **Connections** (plug icon): one button per app, the way the product will use Composio: Gmail, Calendar and Drive; **Outlook and Microsoft 365** (waits for your Microsoft admin to approve, then connects); **HubSpot, Salesforce, Pipedrive**; lead sources **Follow Up Boss, Zillow (Tech Connect), Realtor.com, Facebook Lead Ads**, which then show up in Speed to lead; enrichment through **Treg** by default, or your own **Apollo, Clay, People Data Labs, Hunter** or any API; Slack, Twilio and Notion. Each card says what Timmy reads and what it may write. Connecting is simulated in this preview.
 - **CRM changes wait for RevOps:** with a CRM connected, deal and stage changes (from Approvals, Ask or the deal card) wait for the RevOps approver you name. They show under Approvals › Waiting on someone else and run once approved; the Decided log says who approved.
+- **Treg** is on for every workspace: Timmy picks the best of 100+ data providers for each lookup, through one token, with each call capped by your enrichment budget. Connect Apollo, Clay, People Data Labs or Hunter to use your own account instead.
 - **Enrichment and leads Timmy finds:** select leads › **Enrich** fills empty fields only and spends credits. **Find leads** (or Ask "find 15 dental practices in Austin") adds leads that fit your offer to "Found by Timmy", enriched, within a daily limit and a monthly credit budget. Nothing is sent; contacting them still waits for you.
 - **Calls:** Outbound › Calls is today's call list: form leads still waiting, callbacks you set, and call steps due in running campaigns. **Start calling** opens one call after another with the campaign's own script; log notes, a callback, a gatekeeper or a yes to texts, and the campaign step moves on.
 - **Delegate mode** (Connections): an assistant works on the exec's inbox. External emails and decisions wait for the exec, and the log records who asked and who approved.
@@ -117,6 +127,45 @@ Talk instead of typing, as in [OpenWhispr](https://github.com/OpenWhispr/openwhi
 - **Dictionary:** names and companies from your contacts are corrected after transcription ("dana whitefield at north peak" → "Dana Whitfield at Northpeak").
 
 The microphone needs HTTPS (Railway serves it).
+
+## Docs: the Notion-style editor
+
+Timmy's own docs are block pages, built on [TipTap](https://tiptap.dev) (ProseMirror) with Timmy's own UI. They're still saved as Timmy blocks (with an optional formatted copy of each line), so drafts, “Email the notes”, Ask Timmy and the .docx export read them as before.
+
+- **Blocks:** type `/` for the block menu (text, three heading sizes, to-do, bulleted and numbered lists, toggle, quote, callout, code, divider, page, image, table, linked sheet table, file link, and Summarize with Timmy). Markdown shortcuts work at the start of a line: `#`, `##`, `###`, `-`, `1.`, `[]`, `>` (toggle), `"` (quote), ```` ``` ```` and `---`.
+- **Nesting:** Tab and Shift+Tab indent. Lists number per level (1. a. i.) and a toggle's contents are the indented blocks under it.
+- **Handle:** hover a block for **+** (add below; Alt-click adds above) and **⋮⋮** (drag to move, with a drop line; click for Turn into, Colour, Duplicate, Move up/down and Delete). Ctrl+Shift+↑/↓ move a block, Ctrl+D duplicates it, Ctrl+Alt+0–8 turn it into another kind. Blocks nested under one move with it.
+- **Formatting:** select text for the bar: Turn into, bold, italic, underline, strikethrough, code, link, and text or background colour.
+- **Pages:** each doc has an emoji icon and a cover (gallery, upload or link; images can be repositioned), a big title, and breadcrumbs through the pages above it. The Docs sidebar has a page tree (hover a row to add a page inside or move it to the trash; double-click to rename) and the **Trash**. A trashed page and its sub-pages leave every list, show a red banner, are read-only, and can be restored or deleted for good.
+- **Saving:** edits save 850 ms after you stop typing, with a “Saving… / Saved” badge.
+- **Who's here:** Timmy, while it writes a summary into the page (with its own named cursor; one Ctrl+Z takes it out), and the same doc open in another tab of the browser (kept in sync, with that tab's cursor). Other people's cursors need a server and will come with the backend.
+
+Code: `src/areas/docs/editor/` (extensions.ts: the block nodes, keys, shortcuts and decorations; convert.ts: blocks ⇄ editor; nodeviews.tsx: images, tables, linked tables, file and page links; menus.tsx: “/” menu, formatting bar, block menu; presence.ts: cursors, tab sync and Timmy writing), `PageHeader.tsx`, `PagesTree.tsx`, `pages.ts` (sub-pages and the trash) and `summary.ts`.
+
+## Automations
+
+Library › **Automations**: draw what happens when an email, a form, a file, a meeting, a deal change or a schedule fires. Each card shows the apps it uses and an On/Off switch; **New automation** opens a bottom sheet, then the canvas.
+
+- **Canvas** ([React Flow](https://reactflow.dev), loaded only when an automation opens): drag blocks in from the panel or click them (a clicked block is wired under the selected step), connect handles, pan, zoom, fit, lock, and a mini map. One trigger per automation; If / else has a Yes and a No branch.
+- **Settings:** the selected step's account (connected or not) and settings. Text settings take `{{fields}}` from the trigger: click a chip to insert one and see a preview filled from sample data.
+- **Test run** walks the flow with the trigger's sample data, ticks each step, greys out the branch not taken and logs what each step would do. Nothing is sent. **Save** stores the steps; the switch turns it on once a step is connected to the trigger.
+
+Code: `src/areas/automations/` (catalog.ts: the blocks; Editor.tsx; List.tsx).
+
+## Website chat
+
+Outbound › **Website chat** is the chat bubble for your site.
+
+- **Set up:** turn it on, set the website, copy the code snippet, pick a picture, name, colour and greeting, the questions Timmy asks once a visitor leaves an email, help desk answers (used word for word), what happens when someone asks for a person, and whether to offer a call. A live preview on a mock page answers from these settings: help desk answers, the email, your questions one at a time, three times to book. Nothing in the preview is saved.
+- **Chats:** Unread, All and Starred, with search. A chat shows the visitor's answers and booking; **Take over** stops Timmy so you can reply yourself, and Email starts a follow-up.
+
+Code: `src/areas/outbound/Chat.tsx`.
+
+## Tasks board
+
+The board's lanes now sum up what's late or due this week, each lane has quick add (type, Enter), cards carry tags (from email, meeting or time blocked, notes) and a contact chip with a hover card, and a dragged card shows where it will land. Ask Timmy's Pipeline view also shows deals by stage, sized by value.
+
+How to build the backend for the editor, automations and website chat: [docs/ui-additions-backend.md](docs/ui-additions-backend.md).
 
 ## Files: the full editors
 

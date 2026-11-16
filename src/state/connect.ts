@@ -92,7 +92,13 @@ export interface ConnHelpers {
 
 export const isOn = (s: Pick<State, 'conn'>, id: string) => !!s.conn.apps[id]?.connected;
 export const crmApp = (s: Pick<State, 'conn'>) => ['hubspot', 'salesforce', 'pipedrive'].find((id) => isOn(s, id));
-export const enrichApp = (s: Pick<State, 'conn'>) => APPS.find((a) => a.group === 'Enrichment' && isOn(s, a.id));
+/** The product film (?film) names no data partner: the deal isn't public. */
+const FILM = typeof window !== 'undefined' && /[?&]film(=|&|$)/.test(window.location.search);
+/** The enrichment provider Timmy uses: one you connected yourself, or else Treg, which is on for every workspace. */
+export const enrichApp = (s: Pick<State, 'conn'>) => {
+  const app = APPS.find((a) => a.group === 'Enrichment' && a.id !== 'treg' && isOn(s, a.id)) ?? APPS.find((a) => a.id === 'treg' && isOn(s, a.id));
+  return app && FILM ? { ...app, name: 'your data provider' } : app;
+};
 export const heldKeys = (s: Pick<State, 'conn'>) => new Set(s.conn.held.map((h) => h.key));
 const execFirst = (s: State) => s.conn.delegate.exec.split(' ')[0]!;
 

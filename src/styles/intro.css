@@ -1,0 +1,267 @@
+/* ───────────── The cinematic intro (?intro) ───────────── */
+.intro {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: radial-gradient(120% 90% at 50% 38%, #1b1e29 0%, #0c0d12 55%, #050507 100%);
+}
+/* The filmed UI keeps the app's own colours. */
+.intro-layer {
+  color: var(--text);
+}
+.intro-frame {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1440px;
+  height: 900px;
+  overflow: hidden;
+}
+.intro-stage {
+  position: absolute;
+  inset: 0;
+  perspective: 1500px;
+  perspective-origin: 50% 50%;
+  pointer-events: none;
+}
+.intro-rig {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+.intro-layer {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  will-change: transform, filter, opacity;
+}
+
+/* The whole app, as a plane behind everything. */
+.intro-plane {
+  width: 1440px;
+  height: 900px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--bg);
+  box-shadow: 0 50px 140px rgba(0, 0, 0, 0.65);
+}
+.intro-plane .app {
+  height: 900px;
+}
+
+/* The urgent list, lifted off the brief. Its rows fly in from depth. */
+.intro-urgent {
+  width: 780px;
+  padding: 2px 22px 22px;
+  border-radius: 20px;
+  background: var(--bg);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.5);
+  transform-style: preserve-3d;
+}
+.intro-urgent .section,
+.intro-urgent .urg-list {
+  transform-style: preserve-3d;
+}
+.intro-urgent .urg-row {
+  background: var(--surface);
+  border-radius: 10px;
+}
+
+.intro-card {
+  width: 720px;
+}
+.intro-card .ap-card {
+  margin: 0;
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.55);
+}
+.intro-press {
+  transform: scale(0.95);
+  box-shadow: 0 0 0 4px var(--accent-soft) !important;
+}
+
+.intro-toast-layer {
+  width: 560px;
+}
+.intro-toast {
+  font-size: 14px;
+  line-height: 1.45;
+  padding: 12px 16px;
+  animation: none;
+}
+
+/* The lens: masked backdrop blurs, sharp at the centre of the frame. */
+.intro-lens {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.intro-lens.a {
+  backdrop-filter: blur(2.5px);
+  -webkit-backdrop-filter: blur(2.5px);
+}
+.intro-lens.b {
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+}
+
+.intro-cursor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  margin: -4px 0 0 -5px;
+  opacity: 0;
+  pointer-events: none;
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.4));
+}
+.intro-cursor::after {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: -12px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  opacity: 0;
+}
+.intro-cursor.click::after {
+  animation: intro-ripple 0.5s ease-out;
+}
+@keyframes intro-ripple {
+  from {
+    opacity: 0.9;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.7);
+  }
+}
+
+.intro-dim {
+  position: absolute;
+  inset: 0;
+  background: #050507;
+  opacity: 0;
+  pointer-events: none;
+}
+.intro-title {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  display: grid;
+  justify-items: center;
+  gap: 18px;
+  opacity: 0;
+  pointer-events: none;
+}
+.intro-word {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  margin: 0;
+  font-size: 128px;
+  font-weight: 650;
+  letter-spacing: -0.045em;
+  line-height: 1;
+  color: #f4f3ef;
+}
+.intro-sub {
+  margin: 0;
+  font-size: 30px;
+  letter-spacing: 0.01em;
+  color: rgba(244, 243, 239, 0.72);
+  opacity: 0;
+}
+.intro-sub.intro-close {
+  display: grid;
+  justify-items: center;
+  gap: 26px;
+}
+.intro-tag {
+  font-size: 44px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #f4f3ef;
+}
+.intro-fade {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  pointer-events: none;
+}
+.intro-end {
+  position: fixed;
+  left: 50%;
+  bottom: 32px;
+  display: flex;
+  gap: 10px;
+  transform: translateX(-50%);
+}
+
+/* ───────────── The outro (?outro) ───────────── */
+.outro-card {
+  width: 440px;
+  transform-style: preserve-3d;
+}
+.outro-card .tri-card,
+.outro-card .tc-list {
+  transform-style: preserve-3d;
+}
+.outro-card .tri-card {
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.5);
+}
+.outro-card .tc-list li {
+  background: var(--surface);
+  border-radius: 8px;
+}
+/* The morning's confirmations stay out of the shot. */
+.intro-plane .toasts {
+  display: none;
+}
+.outro-title {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 34px;
+  pointer-events: none;
+}
+.outro-line {
+  margin: 0;
+  font-size: 96px;
+  font-weight: 650;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+  color: #f4f3ef;
+  opacity: 0;
+}
+.outro-sign {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  opacity: 0;
+}
+.outro-word {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 34px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  color: #f4f3ef;
+}
+.outro-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 24px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 20px;
+  font-weight: 600;
+}

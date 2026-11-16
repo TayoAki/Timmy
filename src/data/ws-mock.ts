@@ -1,5 +1,8 @@
 import { PEOPLE } from './mock';
 import type {
+  Automation,
+  ChatConvo,
+  ChatWidget,
   Contact,
   Deck,
   DocBody,
@@ -113,6 +116,7 @@ const todo = (text: string, checked = false) => ({ id: id(), type: 'todo' as con
 const docs: DocBody[] = [
   {
     id: 'acme-call-notes',
+    icon: '📞',
     template: 'team-meeting',
     blocks: [
       p('Nov 13 renewal call with Dana Whitfield and Raj Patel.'),
@@ -130,6 +134,8 @@ const docs: DocBody[] = [
   },
   {
     id: 'acme-running-notes',
+    icon: '🏢',
+    cover: { kind: 'gradient', value: 'indigo' },
     template: 'running-notes',
     blocks: [
       p('Decisions and status for the Acme renewal, newest first. Linked from the project page.'),
@@ -145,6 +151,7 @@ const docs: DocBody[] = [
   },
   {
     id: 'acme-quote-summary',
+    icon: '💰',
     template: 'blank',
     blocks: [
       p('Revised quote for 120 seats, for Dana to take to her CFO on Wednesday. Figures are linked to the quote tracker and refresh when it changes.'),
@@ -156,6 +163,7 @@ const docs: DocBody[] = [
   },
   {
     id: 'acme-order-form',
+    icon: '🧾',
     template: 'blank',
     blocks: [
       p('Order form between Northpeak, Inc. and Acme Corp for the 2027 renewal. Draft: goes to Dana for signature once her CFO approves the quote.'),
@@ -174,6 +182,7 @@ const docs: DocBody[] = [
   },
   {
     id: 'northwind-sow',
+    icon: '📑',
     template: 'blank',
     blocks: [
       h2('Scope'),
@@ -187,6 +196,8 @@ const docs: DocBody[] = [
   },
   {
     id: 'northwind-notes',
+    icon: '🧭',
+    cover: { kind: 'gradient', value: 'lagoon' },
     template: 'running-notes',
     blocks: [
       { id: id(), type: 'table', columns: ['Date', 'Decision or update', 'Source'], rows: [
@@ -197,6 +208,7 @@ const docs: DocBody[] = [
   },
   {
     id: 'jordan-notes',
+    icon: '🎓',
     template: 'private-notes',
     blocks: [
       p('Onsite, Friday Nov 13. Platform Engineer.'),
@@ -209,6 +221,7 @@ const docs: DocBody[] = [
   },
   {
     id: 'priya-1on1',
+    icon: '🤝',
     template: 'one-on-one',
     event: 'priya-1on1',
     blocks: [
@@ -222,6 +235,8 @@ const docs: DocBody[] = [
   },
   {
     id: 'offsite-agenda',
+    icon: '🏖️',
+    cover: { kind: 'gradient', value: 'dawn' },
     template: 'blank',
     blocks: [h2('Day 1 — Jan 12'), li('Company priorities for 2027'), li('Team planning sessions'), h2('Day 2 — Jan 13'), li('Customer panel'), li('Retro and commitments')],
   },
@@ -232,6 +247,7 @@ const docs: DocBody[] = [
   },
   {
     id: 'weekly-template',
+    icon: '🗓️',
     template: 'private-notes',
     blocks: [
       h2('Process'),
@@ -503,6 +519,161 @@ const learned: LearnedRule[] = [
   { id: 'l-receipts', text: 'File Harbor Grill receipts under [02] Work › [99] Receipts without asking.', evidence: 'You moved the last 2 by hand.', group: 'files' },
 ];
 
+const automations: Automation[] = [
+  {
+    id: 'auto-speed',
+    name: 'Reply to new leads in 5 minutes',
+    description: 'A form lead gets a reply draft you approve, and lands in the CRM. Small budgets go to nurture.',
+    on: true,
+    updated: d(12, 16, 20),
+    tests: 3,
+    nodes: [
+      { id: 'n1', kind: 'form', x: 240, y: 0, config: { form: 'Website: Book a demo' } },
+      { id: 'n2', kind: 'condition', x: 240, y: 150, config: { field: 'budget', op: 'more than', value: '5000' } },
+      { id: 'n3', kind: 'draft', x: 60, y: 320, config: { message: 'Hi {{name}}, thanks for reaching out about {{company}}. Do you have 20 minutes this week?', tone: 'Like my emails' } },
+      { id: 'n4', kind: 'approve', x: 60, y: 470, config: { note: 'Check the timing before it goes' } },
+      { id: 'n5', kind: 'crm', x: 60, y: 620, config: { stage: 'New lead', value: '{{budget}}' } },
+      { id: 'n6', kind: 'campaign', x: 420, y: 320, config: { campaign: 'Nurture: monthly tips' } },
+    ],
+    edges: [
+      { id: 'e1', from: 'n1', to: 'n2' },
+      { id: 'e2', from: 'n2', to: 'n3', branch: 'yes' },
+      { id: 'e3', from: 'n3', to: 'n4' },
+      { id: 'e4', from: 'n4', to: 'n5' },
+      { id: 'e5', from: 'n2', to: 'n6', branch: 'no' },
+    ],
+  },
+  {
+    id: 'auto-receipts',
+    name: 'File receipts and log them',
+    description: 'Receipts in your inbox are saved to [99] Receipts with a clear name, and you get a weekly nudge.',
+    on: true,
+    updated: d(9, 11, 5),
+    tests: 1,
+    nodes: [
+      { id: 'n1', kind: 'email', x: 120, y: 0, config: { subject: 'receipt' } },
+      { id: 'n2', kind: 'file', x: 120, y: 150, config: { folder: '[02] Work › [99] Receipts', name: '{{company}} — Receipt' } },
+      { id: 'n3', kind: 'task', x: 120, y: 300, config: { title: 'Submit expenses for {{company}}', due: 'Next week' } },
+    ],
+    edges: [
+      { id: 'e1', from: 'n1', to: 'n2' },
+      { id: 'e2', from: 'n2', to: 'n3' },
+    ],
+  },
+  {
+    id: 'auto-recap',
+    name: 'After a client call',
+    description: 'Notes go into the running notes, a recap is drafted, and a follow-up task is set.',
+    on: false,
+    updated: d(14, 10, 40),
+    nodes: [
+      { id: 'n1', kind: 'meeting', x: 120, y: 0, config: { with: 'Clients only' } },
+      { id: 'n2', kind: 'doc', x: 120, y: 150, config: { doc: 'Acme Renewal — Running notes', line: '{{title}} with {{name}}' } },
+      { id: 'n3', kind: 'draft', x: 120, y: 300, config: { message: 'Hi {{name}}, thanks for the time today. Here’s what we agreed:', tone: 'Brief' } },
+      { id: 'n4', kind: 'wait', x: 120, y: 450, config: { for: '3 days' } },
+      { id: 'n5', kind: 'task', x: 120, y: 600, config: { title: 'Check {{company}} replied to the recap', due: 'Today' } },
+    ],
+    edges: [
+      { id: 'e1', from: 'n1', to: 'n2' },
+      { id: 'e2', from: 'n2', to: 'n3' },
+      { id: 'e3', from: 'n3', to: 'n4' },
+      { id: 'e4', from: 'n4', to: 'n5' },
+    ],
+  },
+];
+
+/** The website chat a new workspace starts with: off, Timmy's picture, three starter questions. */
+export const chatWidgetFor = (company: string, domain = ''): ChatWidget => ({
+  id: 'site',
+  on: false,
+  domain,
+  name: company,
+  color: '#3f51d9',
+  greeting: `Hi! I’m Timmy, ${company}’s assistant. Ask me anything, or leave your email and we’ll follow up.`,
+  questions: [
+    { id: 'q1', text: 'What’s your company called?' },
+    { id: 'q2', text: 'How many people would use it?' },
+    { id: 'q3', text: 'When would you like to start?' },
+  ],
+  faq: [],
+  handoff: 'notify',
+  booking: true,
+});
+
+const chatWidget: ChatWidget = {
+  id: 'site',
+  on: true,
+  domain: 'northpeak.io',
+  name: 'Northpeak',
+  color: '#3f51d9',
+  greeting: 'Hi! I’m Timmy, Northpeak’s assistant. Ask me anything about plans and pricing, or leave your email and Taylor will follow up.',
+  questions: [
+    { id: 'q1', text: 'What’s your company called?' },
+    { id: 'q2', text: 'How many people would use Northpeak?' },
+    { id: 'q3', text: 'When would you like to start?' },
+  ],
+  faq: [
+    { id: 'f1', q: 'How much does it cost?', a: 'Team is $29 per seat a month, billed yearly. Over 100 seats, Taylor can quote a volume price.' },
+    { id: 'f2', q: 'Do you support SSO?', a: 'Yes. SAML SSO with Okta, Google and Microsoft is included on Business and up. SCIM is on the roadmap.' },
+    { id: 'f3', q: 'Is there a free trial?', a: 'Yes, 14 days with everything on. No card needed.' },
+  ],
+  handoff: 'notify',
+  booking: true,
+};
+
+const at = (h: number, m: number) => d(16, h, m);
+const chats: ChatConvo[] = [
+  {
+    id: 'chat-1',
+    name: 'Priya Nair',
+    email: 'priya@lumenlabs.io',
+    company: 'Lumen Labs',
+    unread: true,
+    urgent: true,
+    live: false,
+    page: '/pricing',
+    answers: { q1: 'Lumen Labs', q2: 'About 60', q3: 'January' },
+    messages: [
+      { id: 'm1', from: 'timmy', text: 'Hi! I’m Timmy, Northpeak’s assistant. Ask me anything about plans and pricing, or leave your email and Taylor will follow up.', at: at(7, 41) },
+      { id: 'm2', from: 'visitor', text: 'Hi, do you have volume pricing for 60 seats?', at: at(7, 42) },
+      { id: 'm3', from: 'timmy', text: 'Team is $29 per seat a month, billed yearly. Over 100 seats, Taylor can quote a volume price. What’s the best email to reach you?', at: at(7, 42) },
+      { id: 'm4', from: 'visitor', text: 'priya@lumenlabs.io', at: at(7, 43) },
+      { id: 'm5', from: 'timmy', text: 'Thanks, Priya! What’s your company called?', at: at(7, 43) },
+      { id: 'm6', from: 'visitor', text: 'Lumen Labs. About 60 people, starting in January. Can I talk to someone about a discount?', at: at(7, 44) },
+      { id: 'm7', from: 'timmy', text: 'I’ve let Taylor know. They’ll reply here, or by email at priya@lumenlabs.io.', at: at(7, 44) },
+    ],
+  },
+  {
+    id: 'chat-2',
+    name: 'Leo Martins',
+    email: 'leo@harborfit.com',
+    company: 'Harbor Fitness',
+    unread: true,
+    live: false,
+    page: '/features/sso',
+    booked: 'Tue, Nov 17 at 10:00 AM',
+    answers: { q1: 'Harbor Fitness', q2: '25', q3: 'Next month' },
+    messages: [
+      { id: 'm1', from: 'timmy', text: 'Hi! I’m Timmy, Northpeak’s assistant. Ask me anything about plans and pricing, or leave your email and Taylor will follow up.', at: at(6, 58) },
+      { id: 'm2', from: 'visitor', text: 'Do you support SSO with Google?', at: at(6, 59) },
+      { id: 'm3', from: 'timmy', text: 'Yes. SAML SSO with Okta, Google and Microsoft is included on Business and up. SCIM is on the roadmap.', at: at(6, 59) },
+      { id: 'm4', from: 'visitor', text: 'Great, I’d like a demo. leo@harborfit.com', at: at(7, 1) },
+      { id: 'm5', from: 'timmy', text: 'Booked: Tue, Nov 17 at 10:00 AM with Taylor. The invite is on its way to leo@harborfit.com.', at: at(7, 4) },
+    ],
+  },
+  {
+    id: 'chat-3',
+    unread: false,
+    live: false,
+    page: '/',
+    messages: [
+      { id: 'm1', from: 'timmy', text: 'Hi! I’m Timmy, Northpeak’s assistant. Ask me anything about plans and pricing, or leave your email and Taylor will follow up.', at: d(15, 18, 2) },
+      { id: 'm2', from: 'visitor', text: 'is there a free trial', at: d(15, 18, 3) },
+      { id: 'm3', from: 'timmy', text: 'Yes, 14 days with everything on. No card needed.', at: d(15, 18, 3) },
+    ],
+  },
+];
+
 export const WS_SEED: WS = {
   folders: byId(folders),
   files: byId(files),
@@ -518,4 +689,8 @@ export const WS_SEED: WS = {
   prompts: byId(prompts),
   routines: byId(routines),
   learned: byId(learned),
+  trash: {},
+  automations: byId(automations),
+  chat: { site: chatWidget },
+  chats: byId(chats),
 };

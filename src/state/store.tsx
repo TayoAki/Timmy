@@ -36,14 +36,15 @@ export type Route =
   | { view: 'projects'; tab: 'active' | 'archived' }
   | { view: 'project'; id: string; tab: 'overview' | 'tasks' | 'notes' | 'mail' | 'files' | 'ai' }
   | { view: 'contact'; id: string; tab: 'overview' | 'activity'; filter?: string }
-  | { view: 'library'; tab: 'prompts' | 'captured' | 'routines' | 'learned' }
+  | { view: 'library'; tab: 'prompts' | 'captured' | 'routines' | 'learned' | 'automations' }
+  | { view: 'automation'; id: string }
   | { view: 'approvals'; tab: 'open' | 'history'; filter?: ApprovalKind }
   | { view: 'outbound'; tab: OutboundTab; list?: string; id?: string; filter?: string }
   | { view: 'campaign'; id: string; tab: 'analytics' | 'leads' | 'sequence' | 'schedule' | 'options' }
   | { view: 'social'; tab: 'overview' | 'create' | 'calendar' | 'trends' }
   | { view: 'connections'; group?: string };
 
-export type OutboundTab = 'leads' | 'campaigns' | 'unibox' | 'speed' | 'calls' | 'templates' | 'channels';
+export type OutboundTab = 'leads' | 'campaigns' | 'drafts' | 'unibox' | 'speed' | 'chat' | 'calls' | 'templates' | 'channels';
 
 export type Section = 'mail' | 'approvals' | 'activity' | 'people' | 'files' | 'rules' | 'tasks' | 'calendar' | 'docs' | 'projects' | 'library' | 'outbound' | 'social' | 'connections';
 
@@ -71,6 +72,7 @@ export const sectionOf = (r: Route): Section => {
     case 'project':
       return 'projects';
     case 'library':
+    case 'automation':
       return 'library';
     case 'approvals':
       return 'approvals';
@@ -202,7 +204,9 @@ export type Action =
   | { type: 'simulateReply'; id: string }
   /** Timmy drafts a nudge or reply; with `note`, the reply says what you asked it to. */
   | { type: 'makeDraft'; id: string; note?: string }
-  | { type: 'reset' }
+  | { type: 'reset'; quiet?: boolean }
+  /** Reads the saved state again (the story puts back what you had before it played). */
+  | { type: 'reload'; toast?: string }
   | { type: 'capture'; open: boolean }
   | { type: 'setSchedule'; schedule: Partial<Schedule> }
   | { type: 'setUrgency'; id: string; level: 'urgent' | 'later' | null }
@@ -1045,7 +1049,12 @@ export function reducer(s: State, a: Action): State {
       } catch {
         /* storage unavailable */
       }
-      return { ...initial, toasts: withToast(initial, 'Demo data reset') };
+      return { ...initial, toasts: a.quiet ? [] : withToast(initial, 'Demo data reset') };
+
+    case 'reload': {
+      const next = load();
+      return { ...next, toasts: a.toast ? withToast(next, a.toast) : [] };
+    }
 
     case 'makeDraft': {
       const t = s.threads.find((x) => x.id === a.id);
@@ -1143,10 +1152,12 @@ function load(): State {
   }
 }
 
-export function StoreProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, undefined, load);
+/** `ephemeral`: start from the demo seed and save nothing (the cinematic intro). */
+export function StoreProvider({ children, ephemeral = false }: { children: ReactNode; ephemeral?: boolean }) {
+  const [state, dispatch] = useReducer(reducer, undefined, ephemeral ? () => initial : load);
 
   useEffect(() => {
+    if (ephemeral) return;
     const timer = window.setTimeout(() => {
       try {
         const out: Record<string, unknown> = {};
@@ -1157,7 +1168,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [state]);
+  }, [state, ephemeral]);
 
   const value = useMemo(() => ({ state, dispatch }), [state]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

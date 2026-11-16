@@ -17,7 +17,7 @@ import {
   Trash2,
   Zap,
 } from 'lucide-react';
-import { useCallback, useState, type ReactNode } from 'react';
+import { useCallback, useState, type CSSProperties, type ReactNode } from 'react';
 import { Avatar, DueChip, Folder, Kbd } from '../../components/common';
 import { Frame } from '../../components/Frame';
 import { Menu, SideHead } from '../../components/kit';
@@ -26,7 +26,7 @@ import type { Thread } from '../../data/types';
 import type { Priority, Task, TaskStatus } from '../../data/ws-types';
 import { dueInfo, fmtDay, plural } from '../../lib/format';
 import { useStore, ws, type Route } from '../../state/store';
-import { patch, remove, type WsOp } from '../../state/ws';
+import { patch, put, remove, uid, type WsOp } from '../../state/ws';
 import { BlockTimeDialog } from '../calendar/BlockTimeDialog';
 import { fmtRange, showEvent } from '../calendar/shared';
 import { activeProjects, byDue, byPriority, isDueNow, openTasks, PRIORITIES, PriorityChip, reviewQueue, statusMeta, StatusIcon, STATUSES } from './bits';
@@ -198,6 +198,8 @@ function Board({
   const { move } = useTaskActions();
   const [dragId, setDragId] = useState<string | null>(null);
   const [over, setOver] = useState<TaskStatus | null>(null);
+  const [adding, setAdding] = useState<TaskStatus | null>(null);
+  void onNew;
 
   return (
     <div className="tk-board">
@@ -228,18 +230,19 @@ function Board({
               setDragId(null);
             }}
           >
-            <header className="tk-col-head">
-              <s.icon size={16} style={{ color: s.color }} aria-hidden />
+            <header className="tk-col-head" style={{ '--lane': s.color } as CSSProperties}>
+              <span className="tk-lane-dot" aria-hidden />
               <h2 className="tk-col-title" id={`tk-col-${s.id}`}>
                 {s.label}
               </h2>
               <span className="tk-count mono">{items.length}</span>
-              {s.id === 'todo' && (
-                <button className="icon-btn sm tk-col-add" aria-label="Add a task" onClick={onNew}>
+              {s.id !== 'done' && (
+                <button className="icon-btn sm tk-col-add" aria-label={`Add a task to ${s.label}`} title={`Add to ${s.label}`} onClick={() => setAdding(s.id)}>
                   <Plus size={15} />
                 </button>
               )}
             </header>
+            {s.id !== 'done' && <LaneSummary items={items} />}
             <div className="tk-col-body">
               {!collapsed &&
                 items.map((t) => (
@@ -263,12 +266,89 @@ function Board({
                   )}
                 </div>
               )}
-              {!collapsed && items.length === 0 && <div className="tk-drop">{s.id === 'doing' ? 'Drag what you’re working on here.' : 'Nothing here.'}</div>}
+              {!collapsed && items.length === 0 && adding !== s.id && <div className="tk-drop">{s.id === 'doing' ? 'Drag what you’re working on here.' : 'Nothing here.'}</div>}
+              {dragId && over === s.id && state.ws.tasks[dragId]?.status !== s.id && <div className="tk-ghost" aria-hidden>Drop to move to {s.label}</div>}
+              {s.id !== 'done' &&
+                (adding === s.id ? (
+                  <QuickAdd status={s.id} onDone={() => setAdding(null)} />
+                ) : (
+                  <button className="tk-add-row" onClick={() => setAdding(s.id)}>
+                    <Plus size={14} aria-hidden />
+                    Add a task
+                  </button>
+                ))}
             </div>
           </section>
         );
       })}
     </div>
+  );
+}
+
+/** What a lane holds, at a glance: what's late and what's due soon. */
+function LaneSummary({ items }: { items: Task[] }) {
+  const now = NOW.getTime();
+  const late = items.filter((t) => t.due && t.due.getTime() < now - 12 * 3600e3).length;
+  const week = items.filter((t) => t.due && t.due.getTime() >= now - 12 * 3600e3 && t.due.getTime() < now + 7 * 864e5).length;
+  const high = items.filter((t) => t.priority === 'high').length;
+  const parts = [late && `${late} late`, week && `${week} due this week`, high && `${high} high priority`].filter(Boolean);
+  return <p className={`tk-lane-sum${late ? ' late' : ''}`}>{parts.length ? parts.join(' · ') : items.length ? 'Nothing due soon' : 'Empty'}</p>;
+}
+
+/** Type a title, press Enter: the task lands in this lane. Enter again for the next. */
+function QuickAdd({ status, onDone }: { status: TaskStatus; onDone: () => void }) {
+  const { state, dispatch } = useStore();
+  const [title, setTitle] = useState('');
+  const proj = state.scope ?? undefined;
+  const add = () => {
+    const t = title.trim();
+    if (!t) return onDone();
+    const task: Task = { id: uid('t'), title: t, status, priority: 'normal', created: NOW, ...(typeof proj === 'string' && state.ws.projects[proj] ? { project: proj } : {}) };
+    dispatch(ws([put('tasks', task)], { toast: `Added “${t}”`, undo: true }));
+    setTitle('');
+  };
+  return (
+    <form
+      className="tk-quick"
+      onSubmit={(e) => {
+        e.preventDefault();
+        add();
+      }}
+    >
+      <input
+        autoFocus
+        className="input input-sm"
+        placeholder="Task name, then Enter"
+        value={title}
+        aria-label="New task"
+        onChange={(e) => setTitle(e.target.value)}
+        onBlur={() => !title.trim() && onDone()}
+        onKeyDown={(e) => e.key === 'Escape' && onDone()}
+      />
+    </form>
+  );
+}
+
+/** A linked person, with a card on hover: who they are and how to reach them. */
+function ContactChip({ id }: { id: string }) {
+  const { dispatch } = useStore();
+  const p = PEOPLE[id];
+  if (!p) return null;
+  return (
+    <span className="tk-contact" onClick={(e) => e.stopPropagation()}>
+      <button className="chip tk-contact-chip" onClick={() => dispatch({ type: 'navigate', route: { view: 'contact', id, tab: 'overview' } })}>
+        <Avatar id={id} size={16} />
+        {p.name.split(' ')[0]}
+      </button>
+      <span className="tk-hovercard" role="tooltip">
+        <Avatar id={id} size={34} />
+        <span>
+          <strong>{p.name}</strong>
+          <span className="muted">{[p.title, p.company].filter(Boolean).join(', ')}</span>
+          <span className="muted">{p.email}</span>
+        </span>
+      </span>
+    </span>
   );
 }
 
@@ -343,6 +423,13 @@ function TaskCard({
           <span className="muted">No project</span>
         )}
       </div>
+      {(thread || ev || t.notes) && !done && (
+        <div className="tk-tags">
+          {thread && <span className="tk-tag" style={{ '--tag': 'var(--c-red)' } as CSSProperties}>From email</span>}
+          {ev && <span className="tk-tag" style={{ '--tag': 'var(--c-violet)' } as CSSProperties}>{ev.kind === 'focus' ? 'Time blocked' : 'Meeting'}</span>}
+          {t.notes && <span className="tk-tag" style={{ '--tag': 'var(--c-sky)' } as CSSProperties}>Notes</span>}
+        </div>
+      )}
       {(t.due || ev || people.length > 0 || thread) && (
         <div className="tk-card-foot">
           <div className="chips">
@@ -355,9 +442,10 @@ function TaskCard({
             )}
           </div>
           <div className="tk-card-links">
-            {people.length > 0 && (
-              <span className="tk-avatars" aria-label={`Linked: ${people.map((p) => PEOPLE[p]?.name ?? p).join(', ')}`}>
-                {people.map((p) => (
+            {people.length > 0 && <ContactChip id={people[0]!} />}
+            {people.length > 1 && (
+              <span className="tk-avatars" aria-label={`Also linked: ${people.slice(1).map((p) => PEOPLE[p]?.name ?? p).join(', ')}`}>
+                {people.slice(1).map((p) => (
                   <Avatar key={p} id={p} size={22} />
                 ))}
               </span>

@@ -998,3 +998,41 @@
 .aw-plain .aw-preview {
   margin: 0 0 10px;
 }
+
+/* Pipeline: deals by stage, each segment sized by its value. */
+.aw-stages {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.aw-stage {
+  flex-basis: 0;
+  min-width: 92px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  border-top: 3px solid var(--accent);
+  font-size: 11.5px;
+}
+
+.aw-stage.won {
+  background: var(--ok-soft);
+  border-top-color: var(--ok);
+}
+
+.aw-stage-name {
+  font-weight: 650;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.aw-stage-num {
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}

@@ -1,8 +1,9 @@
 /*
  * Enrichment and lead finding for the preview. In the product these calls go
- * to the connected provider (Apollo, Clay, People Data Labs, Hunter or your
- * own API) through Composio; here they return sample data, deterministically,
- * so nothing leaves the browser. Enrichment only fills fields that are empty.
+ * to the connected provider: Treg (one token for many data providers), or
+ * Apollo, Clay, People Data Labs, Hunter or your own API through Composio.
+ * Here they return sample data, deterministically, so nothing leaves the
+ * browser. Enrichment only fills fields that are empty.
  */
 import type { Lead, Offer } from '../data/outbound-types';
 import { hash } from './outbound';

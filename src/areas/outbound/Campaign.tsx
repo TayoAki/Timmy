@@ -79,7 +79,15 @@ export function CampaignView() {
             />
           </span>
         </div>
-        {c.status === 'review' && <p className="camp-banner">Timmy prepared this campaign. It waits in Approvals until you launch it; review each step first.</p>}
+        {c.status === 'review' && (
+          <p className="camp-banner">
+            Timmy wrote this campaign and saved each first email as a draft in your sending account. Review and send them in{' '}
+            <button className="link-btn" onClick={() => dispatch({ type: 'navigate', route: { view: 'outbound', tab: 'drafts' } })}>
+              Outbound › Drafts
+            </button>
+            ; nothing goes out until you send it.
+          </p>
+        )}
         {c.status !== 'active' && c.status !== 'completed' && problem && (
           <p className="camp-banner warn">
             <TriangleAlert size={14} aria-hidden /> Before launch: {problem}

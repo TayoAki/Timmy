@@ -1,0 +1,188 @@
+/* ───────────── The product film (?film) ───────────── */
+.film {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+/* One virtual camera over the whole app. */
+.film.void {
+  background: #0c0d12;
+}
+/* The stage carries the reveal's 3D swing; the camera inside it frames the app. */
+.film-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  transform-origin: 50% 50%;
+  background: var(--bg);
+}
+.film-stage.swinging {
+  box-shadow: 0 60px 160px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.film-cam {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+}
+.film-cam .app {
+  height: 100vh;
+}
+/* Scrolls are driven frame by frame, so the browser mustn't smooth them on its own clock. */
+.film,
+.film * {
+  scroll-behavior: auto !important;
+}
+/* Everything but the subject sits under a soft dim. */
+.film-dim {
+  position: fixed;
+  border-radius: 12px;
+  box-shadow: 0 0 0 9999px rgba(12, 14, 20, 0.4);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 300;
+}
+/* Kinetic type: the words get the frame to themselves. */
+.film-card {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 310;
+  pointer-events: none;
+  opacity: 0;
+}
+.film-card.light {
+  background: #f4f3ef;
+  color: #1c1b19;
+}
+.film-card.dark {
+  background: #0c0d12;
+  color: #eef0f5;
+}
+.film-card-body {
+  width: min(1240px, 82vw);
+  display: grid;
+  gap: 22px;
+}
+.film-line {
+  margin: 0;
+  font-family: var(--font);
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+  opacity: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 22px;
+}
+.film-line.xl {
+  font-size: 84px;
+  font-weight: 650;
+  line-height: 1.06;
+}
+.film-line.l {
+  font-size: 62px;
+  font-weight: 650;
+  line-height: 1.08;
+}
+.film-line.m {
+  font-size: 44px;
+  font-weight: 600;
+  line-height: 1.15;
+}
+.film-line.n {
+  font-size: 28px;
+  font-weight: 450;
+  line-height: 1.3;
+  margin-top: -14px;
+  padding-left: 76px;
+  color: #5b5850;
+}
+/* A small label above a chapter's line. */
+.film-line.eye {
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #3f51d9;
+  margin-bottom: -6px;
+}
+.film-card.dark .film-line.eye {
+  color: #8f9bff;
+}
+/* A quiet lead-in to the line that follows. */
+.film-line.lede {
+  font-size: 36px;
+  font-weight: 500;
+  color: #5b5850;
+  margin-bottom: -10px;
+}
+.film-card.dark .film-line.lede {
+  color: #a5acba;
+}
+.film-line .timmy-mark {
+  align-self: center;
+}
+.film-card.dark .film-line.n {
+  color: #a5acba;
+}
+.film-num {
+  flex: none;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0;
+  background: #3f51d9;
+  color: #fff;
+  transform: translateY(-4px);
+}
+.film-line.numbered + .film-line.n {
+  margin-top: -12px;
+}
+/* The cursor: drawn in screen space at a constant size. */
+.film-cursor {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 320;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35));
+}
+.film-cursor svg {
+  position: absolute;
+  left: -5px;
+  top: -3px;
+  transition: none;
+}
+.film-cursor .pointer {
+  left: -9px;
+  top: -2px;
+  display: none;
+}
+.film-cursor.hand .arrow {
+  display: none;
+}
+.film-cursor.hand .pointer {
+  display: block;
+}
+.film-cursor.down svg {
+  transform: scale(0.86);
+}
+.film-cursor::after {
+  content: '';
+  position: absolute;
+  left: -14px;
+  top: -14px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid rgba(63, 81, 217, 0.85);
+  opacity: 0;
+}
+.film-cursor.down::after {
+  opacity: 0.9;
+}

@@ -22,7 +22,7 @@ import { eventsOn, firstName, isoDay, midSentence, patch, personName, put, uid }
 import type { Plan, WidgetCall } from './plan';
 import type { Campaign } from '../data/outbound-types';
 import { fitOf, liveNow, pct, project, statsOf, writeSequence } from '../lib/outbound';
-import { coldToday, ctxOf } from '../state/outbound';
+import { coldToday } from '../state/outbound';
 import { callLead, callList, findLead, findNewLeads, logCallNotes, textLead } from './outboundIntents';
 
 /* ───────────── Reading the request ───────────── */
@@ -675,7 +675,7 @@ function sendingLimits(s: State, l: string): Plan | null {
   };
 }
 
-/** "Write a cold campaign for my best leads": Timmy prepares it; you launch it from Approvals. */
+/** "Write a cold campaign for my best leads": Timmy writes it and saves each first email as a draft in your sending account. */
 function writeCampaign(s: State, l: string): Plan | null {
   if (!/(write|draft|start|create|set up|build|launch|prepare)\b.*\b(cold (email|campaign|outreach)|outreach|campaign|sequence|outbound|emails? (to|for) (my )?(best |new )?leads)/.test(l)) return null;
   const pool = Object.values(s.out.leads)
@@ -698,15 +698,16 @@ function writeCampaign(s: State, l: string): Plan | null {
     options: { dailyLimit: Math.min(s.out.limits.perMailbox, 30), mailboxes: (boxes.length ? boxes : Object.values(s.out.mailboxes)).slice(0, 1).map((m) => m.id), stopOnReply: true, trackOpens: false, unsubscribe: true, plainText: true },
   };
   const ids = pool.map(({ x }) => x.id);
-  const plan = project({ ...c, leads: ids }, s.out.leads, ctxOf(s));
+  const box = s.out.mailboxes[c.options.mailboxes[0] ?? '']?.address ?? 'your sending account';
   return {
-    steps: [`Picked ${plural(ids.length, 'net-new lead')} that fit “${s.out.offer.name}”`, `Wrote a ${c.steps.length}-step sequence from your offer`, 'Checked it against your sending limits'],
-    text: `I wrote “${c.name}” for ${plural(ids.length, 'lead')}: ${c.steps.map((x) => (x.channel === 'call' ? 'a call' : 'an email')).join(', ')}. At ${c.options.dailyLimit} a day it finishes ${plan.finish ? fmtDay(plan.finish) : 'within two weeks'}. Nothing goes out until you launch it from Approvals.`,
+    steps: [`Picked ${plural(ids.length, 'net-new lead')} that fit “${s.out.offer.name}”`, `Wrote a ${c.steps.length}-step sequence from your offer`, `Saved each first email as a draft in ${box}`],
+    text: `I wrote “${c.name}” for ${plural(ids.length, 'lead')}: ${c.steps.map((x) => (x.channel === 'call' ? 'a call' : 'an email')).join(', ')}. I saved each first email as a draft in ${box}. Review and send them in Outbound › Drafts, or from your mailbox; nothing goes out until you send it. Follow-ups are drafted the same way when they’re due, unless the lead replies.`,
     effects: [
       { type: 'out', op: { op: 'campaign', campaign: c, quiet: true } },
       { type: 'out', op: { op: 'addToCampaign', id, leads: ids } },
+      { type: 'out', op: { op: 'draftCampaign', id } },
     ],
-    calls: [answer({ bullets: pool.slice(0, 5).map(({ x, fit }) => `${x.first} ${x.last}, ${x.title} at ${x.company} (fit ${fit.score})`), links: [{ label: 'Review the sequence', href: `campaign:${id}` }, { label: 'Approvals', href: 'approvals:campaign' }] })],
+    calls: [answer({ bullets: pool.slice(0, 5).map(({ x, fit }) => `${x.first} ${x.last}, ${x.title} at ${x.company} (fit ${fit.score})`), links: [{ label: 'Open the drafts', href: 'outbound:drafts' }, { label: 'Review the sequence', href: `campaign:${id}` }] })],
   };
 }
 

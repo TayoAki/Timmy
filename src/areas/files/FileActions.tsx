@@ -28,6 +28,7 @@ import {
   targetOf,
 } from './drive';
 import { FolderTreePicker, NameHelper } from './pickers';
+import { descendants, isPage, trashOps } from '../docs/pages';
 
 type Dialog = 'rename' | 'move' | 'describe' | 'shortcut' | 'copy' | null;
 
@@ -101,7 +102,15 @@ export function FileActionsMenu({ fileId }: { fileId: string }) {
       hint: archived ? 'Already there' : undefined,
       onSelect: () => dispatch(ws(moveOps(state.ws, f, ARCHIVE), { toast: 'Moved to [99] Archived. Still searchable.', undo: true })),
     },
-    {
+    isPage(f)
+      ? {
+          label: 'Move to trash',
+          icon: Trash2,
+          danger: true,
+          hint: descendants(state.ws, f.id).length ? `With ${descendants(state.ws, f.id).length} page${descendants(state.ws, f.id).length === 1 ? '' : 's'} inside` : undefined,
+          onSelect: () => dispatch(ws(trashOps(state.ws, f.id), { toast: `Moved “${f.name}” to the trash`, undo: true, log: `Moved the page “${f.name}” to the trash` })),
+        }
+      : {
       label: 'Delete',
       icon: Trash2,
       danger: true,

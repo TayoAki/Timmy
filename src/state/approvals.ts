@@ -243,9 +243,9 @@ function buildApprovals(s: State): Approval[] {
     });
   }
 
-  // Campaigns Timmy prepared wait here until you launch them.
+  // Campaigns Timmy writes don't wait here: their emails are drafts in Outbound › Drafts.
   for (const c of Object.values(s.out.campaigns)) {
-    if (c.status !== 'review') continue;
+    if (c.status !== 'review' || c.byTimmy) continue;
     const plan = project(c, s.out.leads, ctxOf(s));
     const channels = [...new Set(c.steps.map((st) => (st.channel === 'email' ? 'emails' : st.channel === 'call' ? 'calls' : st.channel === 'sms' ? 'texts' : st.channel)))];
     list.push({
