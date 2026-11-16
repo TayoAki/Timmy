@@ -48,7 +48,9 @@ export class InlineJobs implements Jobs {
   /** Runs everything queued (and whatever those jobs queue), whatever their start time. */
   async drain(only?: string): Promise<number> {
     let ran = 0;
-    for (let guard = 0; guard < 200; guard++) {
+    // The limit only stops a job that keeps queueing itself for ever. It has to sit well above the longest honest
+    // queue: the nightly mail check alone queues one job for every connected mailbox there is.
+    for (let guard = 0; guard < 2000; guard++) {
       const i = this.queue.findIndex((j) => !only || j.name === only);
       if (i < 0) break;
       const [job] = this.queue.splice(i, 1);
