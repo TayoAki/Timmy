@@ -62,16 +62,16 @@ Composio events become items in the store, and plain code decides which of them 
 
 - TypeScript end to end, to match the frontend.
 - Hono on Node for the API and the agent service.
-- Postgres with row-level security, plus pgvector. Runs, checkpoints and effect records live there too.
+- Postgres on Railway with row-level security, plus pgvector (Railway's pgvector template, since its default Postgres has no extensions). Backups on. Runs, checkpoints and effect records live there too.
 - Better Auth inside the API.
 - One job system: pg-boss in Postgres, for schedules and as the crash backup for runs. Runs start immediately, not from the queue. Inngest is the upgrade if per-tenant fairness needs it.
 - A sandbox interface over E2B or Daytona.
-- Object storage for files and sandbox homes.
+- Railway Buckets (S3-compatible) for files and sandbox homes.
 - The frontend's reducer actions become API commands, and state comes back as patches over SSE.
 
 ## Accounts, workspaces and roles
 
-Login runs on **Better Auth**, inside our own API and backed by our own Postgres. Its [organization plugin](https://www.better-auth.com/docs/plugins/organization) is the workspace. Signing in only proves who someone is. Access to mail, calendar and files is a separate step done through Composio connect buttons (see Connections). Google [separates](https://developers.google.com/identity/gsi/web/guides/overview) the sign-in moment from the data-access moment in the same way. So the sign-in screen never asks for restricted Gmail scopes.
+Login runs on **Better Auth**, inside our own API and backed by our own Postgres. Its [organization plugin](https://www.better-auth.com/docs/plugins/organization) is the workspace. Signing in only proves who someone is. Access to mail, calendar and files is a separate step done through Composio connect buttons (see Connections). Google [separates](https://developers.google.com/identity/gsi/web/guides/overview) the sign-in moment from the data-access moment in the same way. So the sign-in screen never asks for restricted Gmail scopes. Sign in with Google uses a small login-only Google client (name, email, photo). It needs Google's brand check, not the Gmail review. Composio can't do this part: it connects apps, it doesn't log people in.
 
 **Sign-up, start to finish**
 
@@ -113,11 +113,11 @@ Each workspace's assistant is one agent loop on our servers. It reads every new 
 
 | Work | How it runs | Why |
 | --- | --- | --- |
-| Read each new email, event or file: triage, summary, urgency, ontology facts | Plain code goes first: rules, known senders, and whether anything changed. Only what's left gets one structured Messages API call. The first 30 days go through the regular API, so the first brief is ready in minutes. The rest of the 90-day backfill goes through the Message Batches API at half price. | Most mail never needs a model, and the rest has a fixed shape |
+| Read each new email, event or file: triage, summary, urgency, ontology facts | Plain code goes first: rules, known senders, and whether anything changed. Only what's left gets one structured Messages API call. The first 30 days go through the regular API, so the first brief is ready in minutes. The rest of the 90-day backfill goes through OpenRouter's Batch API at the model's batch price. | Most mail never needs a model, and the rest has a fixed shape |
 | Drafts, decisions, Ask Timmy, nudges, routines | The agent loop in our agent service, streaming AG-UI events over SSE. Each run is a Postgres row with a lease and a fence. It starts the moment the message arrives, survives a crash, and saves a checkpoint when it stops for approval. Routines start runs the same way. Unattended runs can read and draft. They send only what a rule you turned on covers, like a speed-to-lead auto-reply. | One code path for every request, and one approval path |
 | Computer jobs: research a lead, fill a portal, build a file | The same loop. Shell, browser and desktop tools run in a per-workspace E2B or Daytona sandbox behind a sandbox interface, at about $0.17 an hour for 2 vCPU and 4 GB ([E2B](https://e2b.dev/pricing), [Daytona](https://www.daytona.io/pricing)). The home folder is saved to object storage between runs. The sandbox pauses after 10 minutes idle, and its network is allowlisted. It never holds a real credential: each turn gets a short-lived token, and our servers add the keys. | Headless jobs and the desktop both arrive in phase 3. Until then, the agent works through APIs only. A box left on around the clock costs about $120 a month per workspace. |
 
-**Model.** Claude Opus 5.5 is the default: $4 input and $20 output per million tokens, $0.20 cached input. It runs with adaptive thinking, an effort level set per route, and server-side refusal fallbacks. Other models plug in through the same driver interface, one route at a time, once they pass the eval (see GLM-5.2 below). Every route keeps its system prompt and tool list stable so prompt caching keeps working. Claude Managed Agents remains an option for long headless jobs later, but only if its tools go through our gateway.
+**Model.** Every model call goes through [OpenRouter](https://openrouter.ai/docs), so each workspace can choose the model that powers Timmy from a list we have tested. Claude Opus 5.5 is the default: $4 input and $20 output per million tokens, $0.20 cached input. It runs with adaptive thinking and an effort level set per route, with a fallback model list for outages. OpenRouter passes Claude's prompt caching through ([OpenRouter](https://openrouter.ai/docs/features/prompt-caching)). The account enforces zero data retention, so mail only reaches endpoints that keep nothing ([OpenRouter](https://openrouter.ai/docs/features/zdr)). OpenRouter adds 5.5% when credits are bought ([FAQ](https://openrouter.ai/docs/faq)). A model joins the list only after it passes our eval for tool calling, drafting and refusals. Two routes are not the user's choice. The auto-mode judge is pinned to a model we test, because a weaker judge weakens every approval. Computer jobs need a model trained for computer use, and Anthropic's native computer-use tool may not pass through OpenRouter; phase 3 tests that, with a direct Anthropic driver as the fallback. Every route keeps its system prompt and tool list stable so prompt caching keeps working.
 
 **What a user costs us in model calls** (our estimate, for a user who gets 100 emails a day)
 
@@ -133,7 +133,7 @@ Choosing a model per route is your call. We'd measure Haiku 5.5 on the read rout
 
 Checking with plain code first lowers the read route further: receipts, newsletters and unchanged threads never reach a model. Phase 0 measures how much mail that removes.
 
-**Using GLM-5.2.** [Z.ai's GLM-5.2](https://docs.z.ai/guides/llm/glm-5.2) has a 1M-token context and 128K output, supports function calling, and works with the OpenAI SDK. It is listed at $1.40 input and $4.40 output per million tokens, and US hosts on [OpenRouter](https://openrouter.ai/z-ai/glm-5.2) charge as little as $0.45 and $1.44. Third-party sources say the weights are open under MIT; Z.ai's page doesn't say. It would plug in through a model router in the agent service. Each route names a provider and model, and the rest of the stack (tools, the Action gateway, AG-UI) stays the same.
+**Using GLM-5.2.** [Z.ai's GLM-5.2](https://docs.z.ai/guides/llm/glm-5.2) has a 1M-token context and 128K output, supports function calling, and works with the OpenAI SDK. It is listed at $1.40 input and $4.40 output per million tokens, and US hosts on [OpenRouter](https://openrouter.ai/z-ai/glm-5.2) charge as little as $0.45 and $1.44. Third-party sources say the weights are open under MIT; Z.ai's page doesn't say. Through OpenRouter it becomes one more choice on the model list once it passes the eval. Tools, the Action gateway and AG-UI stay the same.
 
 | Route | GLM-5.2 fit | Why |
 | --- | --- | --- |
@@ -191,7 +191,7 @@ It is Apache-2.0, at version 1.2.0 with 13.1k stars, and it doesn't accept outsi
 **How it is built and kept current**
 
 1. **Seed at sign-up.** The trade the user picks loads a starter schema, sample fields and templates. This also fixes the "built for someone else" complaint from the simulation.
-2. **Backfill.** The last 90 days of mail, calendar events, Drive titles and CRM records go through extraction. This runs on the Message Batches API at half price. Every fact carries evidence: the source item's id and the quote it came from.
+2. **Backfill.** The last 90 days of mail, calendar events, Drive titles and CRM records go through extraction. This runs on OpenRouter's Batch API at the model's batch price. Every fact carries evidence: the source item's id and the quote it came from.
 3. **Discover.** Entity types and fields that don't fit the schema are grouped together and proposed to the user. For example: "You track properties with an address, a price and a showing date. Add them?"
 4. **Certify.** The user accepts, renames or rejects each proposal in one review screen. Only certified types drive fields, templates and CRM mapping.
 5. **Stay current.** Each new email, event or file is extracted within a minute of sync. Entities are matched on email address, then domain, then name plus embedding similarity. When two sources disagree, the conflict is shown to the user and the assistant doesn't pick a side.
@@ -229,10 +229,10 @@ Every app connection is a Composio connect button. That covers Gmail, Google Cal
 
 **What we decide before launch**
 
-- **Our own OAuth apps for Google and Microsoft.** Composio's default app puts Composio's name on the consent screen. We register our own client IDs as Composio auth configs. Google's restricted-scope verification and the yearly CASA assessment then apply to Timmy ([Google](https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification)).
+- **Composio's own Google and Microsoft apps to start.** Connect buttons use Composio's managed OAuth apps, so at launch we register no OAuth app for mail, calendar or files. Google's restricted-scope review and the yearly CASA assessment fall on whoever owns the app. The trade-offs: the consent screen says Composio, not Timmy, and Composio's default app shares quota across all its customers. Composio recommends your own app for production ([Composio](https://docs.composio.dev/docs/custom-auth-configs)). When we switch, each user reconnects once, and the review and CASA then apply to Timmy ([Google](https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification)).
 - **Least scope.** We ask for `gmail.modify` (restricted) only when the user turns on triage. Sending alone needs `gmail.send`, which is only sensitive. For Drive we use `drive.file` where it is enough.
 - **Microsoft tenants.** Under Microsoft's default consent policy (as documented in Aug 2026; tenants can differ), admins must consent to mail and calendar access ([Entra](https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/manage-app-consent-policies)). The connect button explains this and sends a consent link to the admin.
-- **Call volume and cost.** Composio Standard is $18 per seat with 10k calls, then $5 per 1,000 calls. A user who gets 100 emails a day makes about 3,000 fetches a month, plus calendar, files and sends. At list price that is roughly $15–20 a month per user (our estimate), which would be the largest cost after models. Phase 0 measures real calls per user. If sync costs more than $3 per user a month, we negotiate volume pricing or move bulk mail and calendar sync to a native lane: direct Gmail and Graph calls with the same OAuth apps. Composio keeps the buttons, the long tail of apps and the agent's tools. Whether Composio exposes tokens for our own auth configs is still to verify.
+- **Call volume and cost.** Composio Standard is $18 per seat with 10k calls, then $5 per 1,000 calls. A user who gets 100 emails a day makes about 3,000 fetches a month, plus calendar, files and sends. At list price that is roughly $15–20 a month per user (our estimate), which would be the largest cost after models. Phase 0 measures real calls per user. If sync costs more than $3 per user a month, we negotiate volume pricing or move bulk mail and calendar sync to a native lane: direct Gmail and Graph calls with our own OAuth apps, which means leaving Composio's managed apps first. Composio keeps the buttons, the long tail of apps and the agent's tools. Whether Composio exposes tokens for our own auth configs is still to verify.
 
 ## Sales stack: CRM, sending, calls, lead sources, enrichment
 
@@ -264,7 +264,7 @@ Timmy reads people's mail and can act for them. The trust testers gave it ("noth
 | Microsoft | Publisher verification through the Microsoft partner program. Each customer tenant's admin consents to mail and calendar access. |
 | Email law and sender rules | CAN-SPAM: a postal address, and opt-outs honored within 10 business days. Gmail and Yahoo: SPF, DKIM, DMARC, one-click unsubscribe and spam under 0.3%. |
 | Texts and calls | TCPA consent ledger per lead. The revised opt-out rules apply from Nov 25, 2026. Call recording is off by default, and all-party consent applies in the states that require it. |
-| Privacy | Export and delete per workspace. Disconnecting an app deletes its cached content within 30 days. Data processing agreement, published subprocessors (Anthropic, Composio, Twilio, sandbox provider, hosting), a US region at launch, and an EU region once that open question is decided. |
+| Privacy | Export and delete per workspace. Disconnecting an app deletes its cached content within 30 days. Data processing agreement, published subprocessors (OpenRouter and the model providers it routes to, Composio, Twilio, the sandbox provider, Railway), a US region at launch, and an EU region once that open question is decided. |
 | Audit | An append-only log of every effect record: who asked, who approved, on whose behalf, what ran, and its undo. Delegate mode and RevOps approvals depend on it. |
 | Certification | SOC 2 Type I by the paid launch, and a Type II observation window in phase 3. |
 
@@ -346,7 +346,7 @@ All four keep the agent loop in their own server process and send only tool exec
 | --- | --- | --- | --- |
 | Login and workspaces | Better Auth (your call) | WorkOS | Runs in our own stack, organizations built in, and no per-user fees |
 | App connections | Composio (your call) | Nango | 1,700+ apps, MCP and triggers. Watch the per-call price. |
-| Models | Claude by default, through our own agent loop | n/a | Strong tool use and computer use. A driver per provider keeps other models possible per route, and Managed Agents stays an option for headless jobs. |
+| Models | OpenRouter, with Claude Opus 5.5 by default, through our own agent loop | n/a | Strong tool use and computer use. One key for every model, so each workspace can choose. Only models that pass our eval are offered, and the auto-mode judge stays pinned. |
 | Desktop computer | E2B or Daytona | Fly Machines | Pause and resume, noVNC desktops, SOC 2 Type II, about $0.17 an hour |
 | Jobs | pg-boss in Postgres | Inngest | One system fewer: runs, schedules and the crash backup in the same database. Inngest if per-tenant fairness needs it. |
 | Database | Postgres + pgvector | Neo4j later | One store with row-level security. A graph database only if traversal needs it. |
@@ -392,7 +392,7 @@ The biggest risk is cost, not technology. Model and Composio calls together come
 | Cost per user is too high (models + Composio calls) | High | High | Measure in phase 0. Choose models per route after evals (Option B). Get Composio volume pricing or use the native mail lane. |
 | Google verification or CASA takes longer, or is refused | Medium | High | Start in week 5. Use the narrowest scopes. Keep cold email off Gmail's API. Budget 4 to 10 weeks. |
 | Cold email burns domains or breaks Google's rules | Medium | High | Secondary domains only, 30 a day per mailbox, no warm-up network, verification before send, complaint monitoring, and a kill switch per workspace |
-| Composio pricing, outages or token access | Medium | Medium | Our own OAuth apps. A connector interface inside our code. The native lane for mail and calendar. |
+| Composio pricing, outages or token access | Medium | Medium | Our own OAuth apps once we outgrow Composio's. A connector interface inside our code. The native lane for mail and calendar. |
 | A wrong or injected send | Low with the gateway | High | Nothing sends without approval by default, a preview before every send, a 30-second undo, scoped tools, sandbox allowlists |
 | Scope is bigger than the team | High | Medium | Hard gates. Social, the desktop computer and the warehouse ontology wait for phase 3. |
 | Partner access: Zillow, HubSpot listing, Salesforce | Medium | Medium | Email parsing for Zillow until a partnership exists. Three design partners install HubSpot early. |
