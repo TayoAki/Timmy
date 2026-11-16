@@ -31,8 +31,8 @@ export default function brief(): Film {
     cards: [],
     cams: [
       { t: 0, d: 0.01, target: 'full' },
-      { t: eight + 1.5, d: 0.8, target: css('.brief-head'), zoom: 1.55, dx: 120, dy: 40 },
-      { t: ranks - 0.2, d: 0.7, target: css('.urg-list'), zoom: 1.3 },
+      { t: eight + 1.0, d: 0.6, target: css('.brief-head'), zoom: 1.6, dx: 120, dy: 50 },
+      { t: ranks + 0.15, d: 0.6, target: css('.urg-list'), zoom: 1.3 },
       { t: reason - 0.2, d: 0.6, target: marcusRow, zoom: 1.6, dx: 80 },
       { t: jamie - 0.3, d: 0.6, target: jamieRow, zoom: 1.6, dx: 100 },
       { t: click + 0.25, d: 0.45, target: css('.toasts .toast:last-child'), zoom: 1.6 },
@@ -49,8 +49,8 @@ export default function brief(): Film {
     ],
     scrolls: [{ t: drafted - 0.3, d: 0.45, target: draft, offset: 60 }],
     moves: [
-      { t: eight + 1.6, d: 0.8, to: css('.run-control'), ox: 40, oy: 4, bow: 60 },
-      { t: ranks, d: 0.7, to: css('.urg-list .urg-row'), ox: 260, oy: 10 },
+      { t: eight + 1.1, d: 0.7, to: css('.run-control'), ox: 40, oy: 4, bow: 60 },
+      { t: ranks + 0.25, d: 0.6, to: css('.urg-list .urg-row'), ox: 260, oy: 10 },
       { t: reason - 0.1, d: 0.6, to: marcusRow, ox: 40, oy: 16 },
       { t: jamie + 0.4, d: 0.6, to: book, bow: 50 },
       { t: click + 0.35, d: 0.5, to: jamieRow, ox: -160, oy: 50 },
