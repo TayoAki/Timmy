@@ -111,6 +111,13 @@ function docProblem(doc: Record<string, unknown>): string | null {
 export const MAX_STEPS = 60;
 
 /**
+ * Settings whose choices are the workspace's own records, as "step.setting". The names the demo's canvas
+ * lists for them mean nothing on a real workspace, so they are not checked against that list here; whether
+ * the record exists is checked where the workspace is known (automations/canrun.ts).
+ */
+const OWN_RECORDS = new Set(['doc.doc']);
+
+/**
  * What is wrong with an automation's graph, in the words the person sees. `strict` is asked when it is
  * being switched on: a drawing in progress may be unfinished, but one that runs may not.
  */
@@ -170,7 +177,7 @@ export function automationProblems(a: Pick<Automation, 'nodes' | 'edges'>, stric
     const k = KIND[n.kind]!;
     for (const f of k.fields) {
       if (f.type === 'select' && !n.config[f.id]) out.push(`“${k.label}” needs its “${f.label}” set.`);
-      if (f.type === 'select' && n.config[f.id] && f.options && !f.options.includes(n.config[f.id]!)) out.push(`“${k.label}” has a “${f.label}” that isn’t one of the choices.`);
+      if (f.type === 'select' && n.config[f.id] && f.options && !OWN_RECORDS.has(`${k.id}.${f.id}`) && !f.options.includes(n.config[f.id]!)) out.push(`“${k.label}” has a “${f.label}” that isn’t one of the choices.`);
     }
     if (k.id === 'condition') {
       if (!n.config.value) out.push('“If / else” needs a value to compare with.');
@@ -184,6 +191,7 @@ export function automationProblems(a: Pick<Automation, 'nodes' | 'edges'>, stric
 function automationProblem(a: Record<string, unknown>): string | null {
   if (!text(a.name, 200) || (a.description !== undefined && !text(a.description, 2000))) return 'That automation’s name or description is too long.';
   if (a.on !== undefined && typeof a.on !== 'boolean') return 'The automation isn’t in a form Timmy can save.';
+  if (a.note !== undefined && !text(a.note, 600)) return 'The automation isn’t in a form Timmy can save.';
   const problems = automationProblems(a as unknown as Automation, a.on === true);
   return problems.length ? problems.join(' ') : null;
 }

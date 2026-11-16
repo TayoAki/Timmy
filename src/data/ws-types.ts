@@ -312,6 +312,8 @@ export interface Automation {
   updated: Date;
   /** Test runs so far (with sample data; nothing is sent). */
   tests?: number;
+  /** On a real workspace: why Timmy switched it off (it ran too often, or kept failing). Cleared when it is switched back on. */
+  note?: string;
 }
 
 /** The chat on your website: how it looks, what it asks and what it knows. */

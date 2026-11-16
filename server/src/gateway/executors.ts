@@ -45,6 +45,8 @@ export const EXECUTORS: Partial<Record<EffectKind, Executor>> = {
   'mail.modify': fileMail,
   'calendar.create': createEvent,
   'chat.reply': sendChatReply,
+  // “Ask me first” reaches nobody: once a person has said yes there is nothing to carry out, only to record.
+  'automation.ask': async () => ({ status: 'completed', result: { answered: 'yes' } }),
 };
 
 /** Whether the mailbox already shows the filing an effect asked for. */

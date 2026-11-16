@@ -70,6 +70,7 @@ export function Automations() {
                   <span className="au-text">
                     <span className="au-name">{a.name}</span>
                     <span className="au-desc">{a.description}</span>
+                    {a.note && <span className="au-note">{a.note}</span>}
                     <span className="au-meta">
                       {a.nodes.length} step{a.nodes.length === 1 ? '' : 's'} · {apps.map((k) => k.app).join(', ')} · edited {fmtStamp(a.updated)}
                       {a.tests ? ` · tested ${a.tests} time${a.tests === 1 ? '' : 's'}` : ''}

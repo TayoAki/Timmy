@@ -19,6 +19,7 @@ import { noteItems, pruneOntology } from '../ontology/ontology';
 import { projectPeople } from '../ontology/people';
 import { registerChatJobs } from '../chat/jobs';
 import { defineJob, enqueueSoon } from './jobs';
+import { isAutomationEffect, registerAutomationJobs } from '../automations/jobs';
 
 /** Registers every job and connects the gateway to the queue. Call once at boot. */
 /** Asks for the map to be brought up to date. One pass per workspace is queued at a time, however many items arrived. */
@@ -228,8 +229,12 @@ export function registerJobs() {
   registerChatJobs();
 
   onEffectApproved((e) => enqueueSoon('effect.execute', { workspaceId: e.workspace_id, effectId: e.id }, { startAfter: e.hold_until ? new Date(e.hold_until) : 0 }));
+  // [automations] The engine's own jobs (automations/jobs.ts).
+  registerAutomationJobs();
   onEffectSettled((e) => {
     if (e.run_id) enqueueSoon('run.resume', { workspaceId: e.workspace_id, runId: e.run_id });
+    // [automations] A step of an automation's run was waiting on this decision.
+    else if (isAutomationEffect(e)) enqueueSoon('automation.effect', { workspaceId: e.workspace_id, effectId: e.id });
   });
 }
 

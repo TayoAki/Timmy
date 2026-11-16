@@ -20,9 +20,9 @@ import type { Thread } from '../../../src/data/types';
 import type { RoleRules } from '../auth/roles';
 import { withWorkspace, type Tx } from '../db/pool';
 import { cancelHeld, decide, GatewayError, onReplay, propose, type EffectRow } from '../gateway/gateway';
-import type { WsOp } from '../../../src/state/ws';
 import { checkWsOps, withClearedFields } from './ws-check';
 import { LIVE_DECISION } from '../agent/read';
+import { gateAutomations } from '../automations/gate';
 import { prepareMailSend } from '../gateway/mail';
 import { SYNCED_PREFIX, eventProposal } from '../sync/calendar-write';
 import { filingProposal, isBox } from '../sync/labels';
@@ -91,28 +91,12 @@ export function emailOf(loaded: Loaded, state: State, id: string): string | null
 
 /* ───────────── What the server refuses in live mode ───────────── */
 
-/**
- * Switching on something that would not really run is refused, with the reason: a switch that says On while
- * nothing happens would be a false promise. Each entry leaves this list when its engine is built.
- */
-const NOT_RUNNING: Record<string, string> = {
-  automations: 'You can draw, save and test this automation here. Running automations on a real workspace isn’t switched on yet, so it stays off.',
-};
-function notRunningYet(state: State, ops: WsOp[]): string | null {
-  for (const o of ops) {
-    const why = NOT_RUNNING[o.col];
-    if (!why) continue;
-    const on = o.op === 'put' ? (o.item as { on?: boolean }).on : o.op === 'patch' ? (o.patch as { on?: boolean }).on : false;
-    const was = (state.ws[o.col as 'automations'] as Record<string, { on?: boolean }>)[o.op === 'put' ? o.item.id : o.id]?.on;
-    if (on === true && !was) return why;
-  }
-  return null;
-}
-
 const NOT_LIVE = 'That isn’t available on a real workspace yet.';
 
 /** Actions that exist only to drive the demo. */
-const DEMO_ONLY = new Set(['reset', 'simulateReply', 'client', 'release', 'restore', 'server']);
+// “reload” is here on purpose: in the demo it re-reads the browser's saved copy, and on the server there is none,
+// so it would put the demo's sample workspace in place of the real one.
+const DEMO_ONLY = new Set(['reset', 'reload', 'simulateReply', 'client', 'release', 'restore', 'server']);
 
 /** Outbound operations that would contact someone or pretend an account is connected. Each becomes real in the sales phase. */
 const OUT_NOT_LIVE: Record<string, string> = {
@@ -164,6 +148,12 @@ export async function runCommand(ctx: Ctx, cmd: { id: string; action: Action }):
       if (!handled.reject) {
         const chat = await chatChecked(tx, loaded, ctx, cmd.action, handled.state);
         handled = 'state' in chat ? { ...handled, state: chat.state, ...(chat.toast ? { toast: { text: chat.toast } } : {}) } : { state: loaded.state, reject: chat.reject };
+      }
+      // [automations] Switching one on, or changing one that is on, has to pass the engine's gate (automations/gate.ts).
+      // It looks at the command's result, like the checks above, so Undo and any other route to "on" pass through it too.
+      if (!handled.reject) {
+        const gated = await gateAutomations(tx, loaded, ctx, handled.state);
+        handled = gated.reject ? { state: loaded.state, reject: gated.reject } : { ...handled, state: gated.state, ...(gated.toast ? { toast: gated.toast } : {}) };
       }
     } catch (err) {
       if (!(err instanceof GatewayError)) throw err;
@@ -240,7 +230,7 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
   if (a.type === 'ws') {
     // Docs, pages, tasks, automations and chat settings arrive as plain put / patch / remove operations.
     // What is acceptable is decided here, before the reducer applies them and before anything is saved.
-    const bad = checkWsOps(state, a.ops) ?? notRunningYet(state, a.ops);
+    const bad = checkWsOps(state, a.ops);
     if (bad) return { state, reject: bad };
   }
   // Rules are instructions Timmy follows for everyone (writing rules go into every drafting prompt), and the schedule

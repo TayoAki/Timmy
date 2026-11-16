@@ -115,3 +115,18 @@ describe('a task every screen can draw', () => {
   });
 });
 
+describe('actions that only make sense in the demo', () => {
+  it('“reload” is refused on a real workspace, and the workspace keeps its own state', async () => {
+    expect((await ws([{ op: 'put', col: 'files', item: { id: 'mine', name: 'Mine', kind: 'doc' } }])).ok).toBe(true);
+    for (const type of ['reload', 'reset', 'restore']) {
+      const out = await w.cmd({ type } as never);
+      expect(out.ok, type).toBe(false);
+      expect(out.error).toMatch(/isn’t available on a real workspace/);
+    }
+    const state = await w.state();
+    expect(Object.keys(state.ws.files)).toEqual(['mine']);
+    // None of the demo's sample mail arrived with it.
+    expect(state.threads).toEqual([]);
+  });
+});
+

@@ -387,6 +387,8 @@ async function settle(workspaceId: string, claimed: EffectRow, outcome: Outcome)
 
 /** What the screens show once a send has gone out, failed, or is unconfirmed. */
 function afterEffect(loaded: Loaded, state0: State, e: EffectRow, outcome: Outcome): State {
+  // An automation's question changes nothing on the screens by being answered; its run carries on by itself.
+  if (e.kind === 'automation.ask') return state0;
   // Filing that Timmy proposed (from the chat) moves the thread on the screens once the mailbox has it.
   // A move the person made themselves is already on the screens; it is what proposed the filing.
   if (e.kind === 'mail.modify') {
