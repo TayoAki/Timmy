@@ -36,6 +36,14 @@ Draft, Nov 16, 2026. This is Annex 2 of the data processing agreement, and the p
 - The step that decides whether an action may run without asking (Auto mode, off by default) sees only the user's own words, never the content of mail.
 - Text from mail is shown as text. HTML email is converted to plain words before it is stored.
 
+## The website chat (visitors with no account)
+
+- A visitor's request names no workspace. The workspace comes from the site key in the customer's code snippet, and the conversation from a token the server signed for that one conversation; a token is worth nothing on another site or another conversation.
+- The chat's frame can be shown only on the website the customer named. It runs with a content policy that allows its own script and nothing else.
+- Visitors are answered from rules the customer wrote, by plain code. What a visitor types is never given to a model, and is stored and shown as text.
+- Each reply is recorded before it is shown, and is shown only while an owner or admin has the chat switched on. The database itself refuses a reply without that record.
+- Limits apply per visitor, per network address, per conversation and per day, and the number of open connections is bounded.
+
 ## Secrets
 
 - API keys for Composio, OpenRouter and Resend are environment variables on the server. They are not in the code repository, not in prompts and not in logs; log lines pass through a filter that removes anything shaped like a key or token, and a test greps the logs of a full run for the keys in use.
@@ -56,9 +64,9 @@ Draft, Nov 16, 2026. This is Annex 2 of the data processing agreement, and the p
 | --- | --- |
 | Synced mail, events and file names | While the account is connected. Disconnecting removes them from the screens and from Ask at once; the stored copy is deleted by a background job. |
 | A workspace | Until deleted by its owner. It is closed at once and every row is deleted 30 days later. |
-| Pages in the trash | 30 days, then deleted for good (being merged, Nov 16). |
-| Earlier versions of a page | The newest 100 per page, none older than 90 days (being merged, Nov 16). |
-| Website chat conversations | 12 months (being merged, Nov 16). |
+| Pages in the trash | 30 days, then deleted for good. |
+| Earlier versions of a page | The newest 100 per page, none older than 90 days. They go when the page is deleted for good. |
+| Website chat conversations | 12 months by default; the owner can choose 1, 3, 6, 12 or 24. A visitor's network address is never stored. |
 | The audit log | For the life of the workspace. |
 | Server logs | Railway's retention for the plan. **[CONFIRM]** |
 | Backups | **Not enabled yet.** |

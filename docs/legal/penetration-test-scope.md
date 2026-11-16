@@ -33,8 +33,8 @@ One Node service (Hono, TypeScript) serves the API and the web app on one origin
 - **The generic state operations** (`POST /api/v1/commands` with `{type:'ws', ops:[…]}`): the server checks each operation (`server/src/state/ws-check.ts`); look for a record or field it lets through that it should not, stored script, oversized or deeply nested input.
 - **The document editor**: stored cross-site scripting through blocks, links, embeds, picture addresses and page names.
 - **Uploads** (when merged): content type and extension handling, serving an uploaded file as active content on the app's origin, another workspace's files, the signing of upload addresses.
-- **The website chat** (when merged): the public endpoints (`/api/public/chat/…`), the loader script and frame, which sites may embed it, forging or reusing a conversation token, reading another visitor's conversation, using the chat to reach workspace data, limits against flooding.
-- **Automations** (when merged): making one run that an owner or admin did not switch on, loops, a step acting with more authority than the person who built it.
+- **The website chat**: the public endpoints (`/api/public/chat/…`), the loader script and frame, which sites may embed it, forging or reusing a conversation token, reading another visitor's conversation, using the chat to reach workspace data, limits against flooding.
+- **Automations**: making one run that an owner or admin did not switch on, loops, a step acting with more authority than the person who built it.
 - **The event stream** (`/api/v1/stream`): events for another person or workspace, resuming from a forged position.
 - **Server-side requests**: anywhere the server fetches an address a user supplied.
 - **Headers and browser protections**: content security policy, framing, cross-site request forgery on state-changing routes, cross-origin rules.
