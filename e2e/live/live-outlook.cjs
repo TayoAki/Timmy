@@ -21,7 +21,7 @@ run('live-outlook', async (browser) => {
   const card = page.locator('li.conn-card', { has: page.getByText('Outlook and Microsoft 365', { exact: true }) }).first();
   await card.waitFor();
   const before = await card.innerText();
-  ok(/Reads\s+Outlook mail/.test(before) && !/OneDrive/.test(before), 'the Outlook card says it reads Outlook mail, and does not promise the calendar or OneDrive');
+  ok(/Reads\s+Outlook mail and calendar/.test(before) && /events you add, change or delete in Timmy/.test(before) && !/OneDrive/.test(before), 'the Outlook card says it reads Outlook mail and the calendar, and does not promise OneDrive');
 
   await connectApp(page, 'Outlook and Microsoft 365', 'katherine@contoso.test');
   await page.click('button[aria-label="Connections"]');
@@ -30,6 +30,19 @@ run('live-outlook', async (browser) => {
   ok((await sentMail(page)).length === 0, 'connecting sent nothing');
   const second = await api(page, 'POST', '/api/v1/connections/gmail/connect', {});
   ok(second.status === 409 && /katherine@contoso\.test/.test(JSON.stringify(second.body)), 'Gmail cannot be added beside it: a workspace has one mailbox');
+
+  // The same account is a calendar. An event made in Outlook is announced, read, and shown on Timmy's calendar.
+  const events = async () => Object.values((await api(page, 'GET', '/api/v1/state')).body.slices['ws.events']);
+  const noon = new Date();
+  noon.setHours(13, 0, 0, 0);
+  const made = await api(page, 'POST', '/api/test/fake', { op: 'calendar-event', event: { id: 'AAMkAGNhbGVuZGFyLWV2ZW50LTE_AAA=', summary: 'Launch readiness review', start: noon.toISOString(), end: new Date(noon.getTime() + 3600000).toISOString(), attendees: ['john@nasa.test'] } });
+  ok(made.body.ok && (await until(async () => (await events()).some((e) => e.title === 'Launch readiness review'))), 'an event made in Outlook’s calendar appears on Timmy’s calendar');
+  const review = (await events()).find((e) => e.title === 'Launch readiness review');
+  ok(/^ocal-[a-z0-9]{6}-[0-9a-f]{24}$/.test(review.id) && review.with.join() === 'mail:john@nasa.test', 'as an Outlook event, with its guest');
+  await page.click('button[aria-label="Calendar"]');
+  await page.getByRole('tab', { name: 'Day' }).click();
+  await page.locator('.cal-ev', { hasText: 'Launch readiness review' }).first().waitFor({ timeout: 10000 });
+  ok(true, 'and it is on the calendar screen');
 
   await page.click('button[aria-label="Rules & settings"]');
   const side = page.locator('.side-group', { has: page.locator('.side-title', { hasText: 'Connected' }) }).first();
@@ -108,6 +121,7 @@ run('live-outlook', async (browser) => {
   await card.getByRole('button', { name: 'Disconnect' }).click();
   await card.getByRole('button', { name: 'Connect' }).waitFor({ timeout: 10000 });
   ok(await until(async () => !(await threads()).some((t) => t.subject === 'Trajectory check')), 'after disconnecting Outlook its thread is gone from Timmy');
+  ok(!(await events()).some((e) => e.title === 'Launch readiness review'), 'and so is its calendar event');
 
   // The one 409 above is this test's doing; nothing else should be reported.
   ok(errors.filter((e) => !/409/.test(e)).length === 0, `no page errors (${errors.join(' | ')})`);

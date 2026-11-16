@@ -63,9 +63,9 @@ export const APPS: AppDef[] = [
     note: 'Most Microsoft 365 companies require an admin to approve mail and calendar access. Timmy sends your admin a one-click consent link.',
     account: 'taylor@northpeak-group.example',
     live: {
-      reads: 'Outlook mail',
-      writes: 'Sends you approve, and categories and archiving for the threads you file',
-      note: 'If your company requires an admin to approve new apps, Microsoft’s sign-in page will say so: ask your admin to approve it there, then connect again. Outlook’s calendar and OneDrive are not read yet. A workspace has one mailbox, so disconnect Gmail first if it is connected.',
+      reads: 'Outlook mail and calendar',
+      writes: 'Sends you approve, categories and archiving for the threads you file, and the events you add, change or delete in Timmy',
+      note: 'If your company requires an admin to approve new apps, Microsoft’s sign-in page will say so: ask your admin to approve it there, then connect again. If you connected Outlook before Timmy read its calendar, disconnect it and connect again, so Microsoft can ask you for the calendar. OneDrive is not read yet. A workspace has one mailbox, so disconnect Gmail first if it is connected.',
     },
   },
   { id: 'hubspot', name: 'HubSpot', group: 'CRM', mark: 'Hs', color: 'var(--c-amber)', reads: 'Contacts, companies, deals and activity', writes: 'Deal and stage changes, call and email activity, after approval', account: 'Northpeak portal' },
