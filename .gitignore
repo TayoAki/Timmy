@@ -9,3 +9,4 @@ dist
 .craft-build/
 
 e2e/shots/
+e2e/undefined/
