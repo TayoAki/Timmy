@@ -2,13 +2,13 @@
  * One item waiting for your OK. The full card shows the numbers or the email
  * that will go out; the compact row is for the daily brief and threads.
  */
-import { ArrowRight, ChevronDown, ChevronUp, Hourglass, Paperclip } from 'lucide-react';
+import { ArrowRight, ChevronDown, ChevronUp, Hourglass, Info, Paperclip, TriangleAlert } from 'lucide-react';
 import { useId, useState } from 'react';
 import { PEOPLE } from '../../data/mock';
 import { dueInfo } from '../../lib/format';
-import { APPROVAL_KINDS, type Approval } from '../../state/approvals';
+import { APPROVAL_KINDS, type Approval, type ApprovalNote } from '../../state/approvals';
 import { useStore } from '../../state/store';
-import { firstName, personName } from '../../state/ws';
+import { firstName, midSentence, personName } from '../../state/ws';
 import { Avatar, ProjectChip, tint } from '../../components/common';
 import { UrgencyReasons, UrgencyTag } from '../../components/Urgency';
 
@@ -78,7 +78,7 @@ export function ApprovalCard({ a, inThread }: { a: Approval; inThread?: boolean 
               {a.email.trackAs && (
                 <span className="chip">
                   <Hourglass size={12} />
-                  Tracks: {a.email.trackAs.item.charAt(0).toLowerCase() + a.email.trackAs.item.slice(1)} from {firstName(a.email.trackAs.on)}
+                  Tracks: {midSentence(a.email.trackAs.item)} from {firstName(a.email.trackAs.on)}
                 </span>
               )}
               {a.email.attachments?.map((id) => (
@@ -91,6 +91,8 @@ export function ApprovalCard({ a, inThread }: { a: Approval; inThread?: boolean 
           )}
         </div>
       )}
+
+      <ApprovalNotes notes={a.notes} />
 
       <div className="ap-foot">
         <div className="ap-context">
@@ -122,6 +124,21 @@ export function ApprovalCard({ a, inThread }: { a: Approval; inThread?: boolean 
         </div>
       </div>
     </article>
+  );
+}
+
+/** What approving also does, and anything to check first. */
+export function ApprovalNotes({ notes }: { notes?: ApprovalNote[] }) {
+  if (!notes?.length) return null;
+  return (
+    <ul className="ap-notes">
+      {notes.map((n) => (
+        <li key={n.text} className={`ap-note ${n.tone}`}>
+          {n.tone === 'warn' ? <TriangleAlert size={14} aria-label="Check first" /> : <Info size={14} aria-hidden />}
+          <span>{n.text}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

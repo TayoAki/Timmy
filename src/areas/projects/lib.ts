@@ -6,7 +6,7 @@ import { NOW } from '../../data/mock';
 import type { Deal, Thread } from '../../data/types';
 import type { Block, DocBody, Project, Task, WFile, WS } from '../../data/ws-types';
 import { fmtDay, money } from '../../lib/format';
-import { firstName, patch, put, uid, type WsOp } from '../../state/ws';
+import { firstName, midSentence, patch, put, uid, type WsOp } from '../../state/ws';
 
 export const WORK_FOLDER = 'f02';
 export const ARCHIVE_FOLDER = 'f99';
@@ -185,7 +185,7 @@ export const slugify = (s: string) =>
 
 /* ───────────── Project update ───────────── */
 
-const lowerFirst = (s: string) => (/^[A-Z]{2}/.test(s) ? s : s.charAt(0).toLowerCase() + s.slice(1));
+const lowerFirst = midSentence;
 
 /** A five-line update (progress, numbers, risks, asks, next week) from the running notes and tasks. */
 export const projectUpdate = (ws: WS, threads: Thread[], deals: Record<string, Deal>, p: Project) => {

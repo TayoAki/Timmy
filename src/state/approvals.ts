@@ -6,9 +6,10 @@
  *   dispatch({ type: 'resolve', key: a.key, option: 'send' })
  */
 import { BadgeDollarSign, CalendarCheck, Scale, Send, type LucideIcon } from 'lucide-react';
-import type { Draft } from '../data/types';
+import type { Draft, Thread } from '../data/types';
 import { money } from '../lib/format';
 import type { State } from './store';
+import { firstName, midSentence } from './ws';
 import { URGENCY, urgencyOf, urgencyRank, type Urgency, type UrgencyContext, type UrgencyInfo } from './urgency';
 
 export type ApprovalKind = 'email' | 'decision' | 'crm' | 'calendar';
@@ -43,6 +44,53 @@ export interface Approval {
   /** For CRM updates: the change that will be made. */
   change?: { deal: string; stage: string; value: number };
   options: ApprovalOption[];
+  /** What else approving this does, or a reason to look twice. */
+  notes?: ApprovalNote[];
+}
+
+export interface ApprovalNote {
+  tone: 'info' | 'warn';
+  text: string;
+}
+
+const escapeRe = (x: string) => x.replace(/[$.*+?^{}()|[\]\\]/g, '\\$&');
+
+/** The sheet a draft quotes from has changed under it: "The quote tracker now has…". */
+export function staleBasis(s: State, t: Thread): string | null {
+  const b = t.draft?.basis;
+  if (!b) return null;
+  const sheet = s.ws.sheets[b.sheet];
+  const v = sheet?.rows[b.row]?.[b.col];
+  if (v === undefined || v === '') return null;
+  const col = sheet!.columns.find((c) => c.key === b.col);
+  const shown = col?.type === 'currency' ? `$${v}` : String(v);
+  if (new RegExp(`${escapeRe(shown)}(?![\\d,.])`).test(t.draft!.body)) return null;
+  const name = s.ws.files[b.sheet]?.name.split('—').pop()?.trim() ?? 'sheet';
+  return `The ${midSentence(name)} now has a ${b.label} of ${shown}, but this email doesn’t. Check the numbers before you send.`;
+}
+
+/** What else sending a thread's draft does, and anything to check first. */
+export function draftNotes(s: State, t: Thread): ApprovalNote[] {
+  const d = t.draft;
+  if (!d) return [];
+  const out: ApprovalNote[] = [];
+  const stale = staleBasis(s, t);
+  if (stale) out.push({ tone: 'warn', text: stale });
+  for (const dec of s.decisions) {
+    if (!dec.whileDraft || dec.thread !== t.id || dec.chosen) continue;
+    const o = dec.options.find((x) => x.primary);
+    if (o) out.push({ tone: 'info', text: `Sending this also settles “${dec.title}” as ${o.label}. To choose differently, decide first.` });
+  }
+  const sib = d.alsoAsks ? s.threads.find((x) => x.id === d.alsoAsks!.thread) : undefined;
+  if (sib?.waiting && sib.draft?.kind === 'nudge') {
+    out.push({ tone: 'info', text: `This also asks ${firstName(sib.waiting.on)} for the ${midSentence(sib.waiting.item)}, so sending it drops the separate nudge.` });
+  }
+  const twin = s.threads.find((x) => x.id !== t.id && x.draft?.alsoAsks?.thread === t.id);
+  if (twin && t.waiting) {
+    const who = firstName(t.waiting.on);
+    out.push({ tone: 'warn', text: `Your reply “${twin.draft!.subject}” asks ${who} for the same thing. Send either one and Timmy drops or trims the other, so ${who} isn’t asked twice.` });
+  }
+  return out;
 }
 
 export interface ApprovalRecord {
@@ -59,6 +107,14 @@ export interface ApprovalRecord {
 }
 
 const fixed = (level: Urgency, reason: string): UrgencyInfo => ({ level, score: URGENCY[level].rank * 30, reasons: [reason] });
+
+/** A decision whose numbers came from a sheet that has since changed. */
+function decisionNotes(s: State, thread?: string): ApprovalNote[] | undefined {
+  const t = thread ? s.threads.find((x) => x.id === thread) : undefined;
+  const stale = t ? staleBasis(s, t) : null;
+  if (!stale) return undefined;
+  return [{ tone: 'warn', text: `${stale.replace(/ Check the numbers before you send\.$/, '')} The numbers below were worked out before the change.` }];
+}
 
 export function openApprovals(s: State): Approval[] {
   const ctx: UrgencyContext = { ws: s.ws, deals: s.deals, rules: s.rules };
@@ -78,6 +134,7 @@ export function openApprovals(s: State): Approval[] {
       due: t.box === 'waiting' ? t.waiting?.due : t.due,
       urgency: urgencyOf(t, ctx),
       email: d,
+      notes: draftNotes(s, t),
       options: [
         { id: 'send', label: d.trackAs ? 'Send & track' : 'Send', primary: true },
         { id: 'discard', label: 'Discard', danger: true },
@@ -100,6 +157,7 @@ export function openApprovals(s: State): Approval[] {
       due: dec.due,
       urgency: fixed(dec.urgency, dec.reason),
       options: dec.options.map((o) => ({ id: o.id, label: o.label, primary: o.primary })),
+      notes: decisionNotes(s, dec.thread),
     });
   }
 

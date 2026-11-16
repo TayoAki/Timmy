@@ -3,16 +3,16 @@
  * tools.ts. Widgets read live app state, so they stay current after you act,
  * and they change things only when you press a button.
  */
-import { ArrowRight, BadgeDollarSign, CalendarDays, Check, CircleCheck, FilePenLine, Flame, Mail, Send, Sparkles, Stamp, type LucideIcon } from 'lucide-react';
+import { ArrowRight, BadgeDollarSign, CalendarDays, Check, CircleCheck, FilePenLine, Flame, Hourglass, Mail, Send, Sparkles, Stamp, type LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { NOW } from '../data/mock';
-import { dueInfo, fmtTime, money } from '../lib/format';
+import { dayDiff, dueInfo, fmtDay, fmtTime, money } from '../lib/format';
 import { type ApprovalKind } from '../state/approvals';
 import { scopedApprovals, scopedThreads } from '../state/scope';
 import { routeForHref, type ChatChoice, type ChatLink } from '../state/assistant';
 import { counterpart, useStore, ws, type Action } from '../state/store';
 import { openThreads, useUrgency } from '../state/urgency';
-import { eventsOn, firstName, parseIsoDay, personName, put, routeFromHref, uid } from '../state/ws';
+import { eventsOn, firstName, midSentence, parseIsoDay, personName, put, routeFromHref, uid } from '../state/ws';
 import { ApprovalRow } from '../areas/approvals/ApprovalCard';
 import { Avatar } from '../components/common';
 import { UrgencyReasons, UrgencyTag } from '../components/Urgency';
@@ -299,9 +299,62 @@ function ThreadWidget({ id }: { id: string }) {
   );
 }
 
+/* ───────────── Waiting: what others owe you ───────────── */
+
+function WaitingWidget() {
+  const { state, dispatch } = useStore();
+  const rows = scopedThreads(state, state.threads.filter((t) => t.box === 'waiting' && t.waiting)).sort(
+    (a, b) => (a.waiting!.due?.getTime() ?? Infinity) - (b.waiting!.due?.getTime() ?? Infinity),
+  );
+  return (
+    <Widget icon={Hourglass} title="Waiting on others" action={<GoTo label="[02] Waiting" onClick={() => dispatch({ type: 'navigate', route: { view: 'box', box: 'waiting', tab: 'all' } })} />}>
+      {rows.length === 0 ? (
+        <p className="aw-empty">Nobody owes you anything right now.</p>
+      ) : (
+        <ul className="aw-list aw-waiting">
+          {rows.map((t) => {
+            const w = t.waiting!;
+            const late = w.due ? w.due < NOW : -dayDiff(w.since) >= 5;
+            const when = w.due ? (w.due < NOW ? `${-dayDiff(w.due)} days late` : `promised ${fmtDay(w.due)}`) : `no date · asked ${-dayDiff(w.since)} days ago`;
+            return (
+              <li key={t.id} className="aw-row">
+                <Avatar id={w.on} size={24} />
+                <div className="aw-text">
+                  <button className="aw-link" onClick={() => dispatch({ type: 'openThread', id: t.id })}>
+                    {firstName(w.on)}: {midSentence(w.item)}
+                  </button>
+                  <span className={`aw-sub${late ? ' tone-overdue' : ''}`}>{when}</span>
+                </div>
+                <div className="aw-actions">
+                  {t.draft ? (
+                    <>
+                      <button className="btn btn-xs btn-ghost" onClick={() => dispatch({ type: 'openThread', id: t.id })}>
+                        Review nudge
+                      </button>
+                      <button className="btn btn-xs btn-primary" onClick={() => dispatch({ type: 'sendDraft', id: t.id, track: true })}>
+                        <Send size={12} />
+                        Send & track
+                      </button>
+                    </>
+                  ) : (
+                    <button className={`btn btn-xs${late ? ' btn-primary' : ''}`} onClick={() => dispatch({ type: 'makeDraft', id: t.id })}>
+                      <FilePenLine size={12} />
+                      Draft nudge
+                    </button>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Widget>
+  );
+}
+
 /* ───────────── Answer: bullets, links and choices ───────────── */
 
-function AnswerWidget({ bullets = [], links = [], choices = [], convo, callId, chosen }: { bullets?: string[]; links?: ChatLink[]; choices?: ChatChoice[]; convo: string; callId: string; chosen?: string }) {
+function AnswerWidget({ bullets = [], links = [], choices = [], preview, convo, callId, chosen }: { bullets?: string[]; links?: ChatLink[]; choices?: ChatChoice[]; preview?: string; convo: string; callId: string; chosen?: string }) {
   const { dispatch } = useStore();
   const go = (href: string) => dispatch({ type: 'navigate', route: routeForHref(href) ?? routeFromHref(href) });
   const pick = (c: ChatChoice) => {
@@ -311,6 +364,13 @@ function AnswerWidget({ bullets = [], links = [], choices = [], convo, callId, c
   };
   return (
     <div className="aw aw-plain">
+      {preview && (
+        <div className="aw-draft aw-preview">
+          {preview.split(/\n\n+/).map((p, i) => (
+            <p key={i}>{p}</p>
+          ))}
+        </div>
+      )}
       {bullets.length > 0 && (
         <ul className="aw-bullets">
           {bullets.map((b, i) => (
@@ -359,12 +419,15 @@ export function WidgetFor({ name, args, convo, callId, chosen }: { name: WidgetN
       return <PipelineWidget />;
     case 'show_thread':
       return <ThreadWidget id={String(args.id ?? '')} />;
+    case 'show_waiting':
+      return <WaitingWidget />;
     case 'show_answer':
       return (
         <AnswerWidget
           bullets={args.bullets as string[] | undefined}
           links={args.links as ChatLink[] | undefined}
           choices={args.choices as ChatChoice[] | undefined}
+          preview={typeof args.preview === 'string' ? args.preview : undefined}
           convo={convo}
           callId={callId}
           chosen={chosen}

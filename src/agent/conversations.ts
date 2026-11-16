@@ -90,6 +90,7 @@ export const assistant = {
   open: () => set({ open: true }),
   close: () => set({ open: false }),
   toggle: () => set({ open: !store.open }),
+  isOpen: () => store.open,
   newChat: () => set({ active: null, error: null }),
   select: (id: string) => set({ active: id, error: null }),
   remove: (id: string) => {

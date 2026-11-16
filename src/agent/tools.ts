@@ -7,7 +7,7 @@
  */
 import type { Tool } from '@ag-ui/core';
 
-export type WidgetName = 'show_urgent' | 'show_approvals' | 'show_day' | 'show_pipeline' | 'show_thread' | 'show_answer';
+export type WidgetName = 'show_urgent' | 'show_approvals' | 'show_day' | 'show_pipeline' | 'show_thread' | 'show_answer' | 'show_waiting';
 
 const obj = (properties: Record<string, unknown>, required: string[] = []) => ({ type: 'object', properties, required });
 
@@ -38,9 +38,14 @@ export const TOOLS: Tool[] = [
     parameters: obj({ id: { type: 'string' } }, ['id']),
   },
   {
+    name: 'show_waiting',
+    description: 'Show what other people owe the user ([02] Waiting): the item, who, the promised date and whether it is late, with a nudge to draft or send for each.',
+    parameters: obj({}),
+  },
+  {
     name: 'show_answer',
     description:
       'Show bullet points, links into the app, and choices. A choice carries Timmy app actions (a focus block, a task, a schedule change, a new doc) that run only when the user presses it.',
-    parameters: obj({ bullets: { type: 'array' }, links: { type: 'array' }, choices: { type: 'array' } }),
+    parameters: obj({ bullets: { type: 'array' }, links: { type: 'array' }, choices: { type: 'array' }, preview: { type: 'string', description: 'An email or text to show as written, e.g. a draft before it is used' } }),
   },
 ];

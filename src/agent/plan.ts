@@ -11,6 +11,7 @@ import { contextOf, freeSlot, reply } from '../state/assistant';
 import type { Action, Route, State } from '../state/store';
 import { openThreads, rankThreads } from '../state/urgency';
 import { todaysEvents } from '../state/ws';
+import { intents } from './intents';
 import type { WidgetName } from './tools';
 
 export interface WidgetCall {
@@ -43,6 +44,10 @@ export function plan(s: State, text: string, route: Route | null): Plan {
 
   // "Move my morning brief to 7:30" changes the schedule; the engine below proposes it.
   const scheduleChange = /\b(run|brief|triage|morning)\b/.test(l) && /\b(at|to|for)\s*\d/.test(l);
+
+  // Everyday asks: who owes me, nudge X, what's late, one deal, a meeting, time, edits.
+  const specific = scheduleChange ? null : intents(s, text, thread);
+  if (specific) return specific;
 
   /* Plan my day: the morning brief as live widgets. */
   if (!scheduleChange && /(plan (my|the) day|my day|start (my|the) day|morning brief|daily brief|what should i do today|brief me$|catch me up|what did i miss)/.test(l)) {

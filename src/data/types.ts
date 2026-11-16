@@ -35,6 +35,16 @@ export interface Draft {
   /** When sent, the thread moves to Waiting for this item. */
   trackAs?: { on: string; item: string; due: Date };
   kind?: 'reply' | 'nudge';
+  /** Tasks that sending this email finishes. */
+  completes?: string[];
+  /**
+   * This email also asks for what another thread is waiting on. Sending it makes
+   * that thread's separate nudge unnecessary; if the nudge goes first, `without`
+   * takes the repeat ask out of this draft.
+   */
+  alsoAsks?: { thread: string; due?: Date; without: [string, string][] };
+  /** A number the email quotes from a sheet, so a later change to the sheet is flagged. */
+  basis?: { sheet: string; row: number; col: string; label: string };
 }
 
 /** What clicking a next action does. */

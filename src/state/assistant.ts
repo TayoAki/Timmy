@@ -15,7 +15,8 @@ import { APPROVAL_KINDS, openApprovals } from './approvals';
 import { fmtClock, nextRun, whenLabel } from './schedule';
 import { counterpart, ws, type Action, type Route, type State } from './store';
 import { URGENCY, openThreads, rankThreads, type UrgencyContext } from './urgency';
-import { firstName, personName, put, todaysEvents, uid } from './ws';
+import { firstName, midSentence, personName, put, todaysEvents, uid } from './ws';
+import { parseDue } from '../lib/when';
 
 /* ───────────── Messages ───────────── */
 
@@ -116,7 +117,12 @@ export function promptsFor(r: Route | null): string[] {
 /* ───────────── Engine ───────────── */
 
 const HELP = [
-  'What’s urgent, and why',
+  'What’s urgent, and why; what’s late',
+  'Who owes you what, and nudges for the late ones (“nudge Kenji”)',
+  'A brief on one deal or project (“brief me on Acme”), or prep for a meeting',
+  'Finding time (“find 30 min with Priya Thursday”), blocking focus time, moving a meeting',
+  'Changing a deal’s stage or value, after you confirm',
+  'Writing a reply in your words (“say yes, Thursday works”) or making a draft shorter',
   'What needs your approval, with the choices to make',
   'Summarize or draft a reply to the email you have open',
   'A pipeline brief from your deals',
@@ -128,29 +134,11 @@ const HELP = [
 ];
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-const lower = (s: string) => (/^[A-Z]{2}/.test(s) ? s : s.charAt(0).toLowerCase() + s.slice(1));
+const lower = midSentence;
 const threadLink = (t: Thread, sub?: string): ChatLink => ({ label: t.subject, href: `thread:${t.id}`, sub });
 const day = (d: Date, h = 17, m = 0) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m);
 
-const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-
-/** "tomorrow", "friday", "by wed", "today", "next week" → a due date at 5 PM. */
-export function parseDue(text: string): Date | undefined {
-  const t = text.toLowerCase();
-  if (/\btoday\b|\btonight\b|end of (the )?day/.test(t)) return day(NOW);
-  if (/\btomorrow\b/.test(t)) return day(new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() + 1));
-  if (/\bnext week\b/.test(t)) {
-    const d = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() + ((8 - NOW.getDay()) % 7 || 7));
-    return day(d);
-  }
-  const m = t.match(/\b(sun|mon|tue|wed|thu|fri|sat)[a-z]*\b/);
-  if (m) {
-    const target = WEEKDAYS.findIndex((w) => w.startsWith(m[1]!));
-    const ahead = (target - NOW.getDay() + 7) % 7 || 7;
-    return day(new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() + ahead));
-  }
-  return undefined;
-}
+export { parseDue };
 
 /** Strips the date words from a task title. */
 export const tidyTitle = (s: string) =>

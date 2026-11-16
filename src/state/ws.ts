@@ -62,6 +62,19 @@ export const registerPerson = (p: Person) => {
 export const personName = (id: string) => (id === 'me' ? 'You' : PEOPLE[id]?.name ?? id);
 export const firstName = (id: string) => personName(id).split(' ')[0]!;
 
+const PROPER = /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|Q[1-4]|I)\b/;
+/**
+ * The phrase as it reads mid-sentence: "Revised quote" becomes "revised quote",
+ * but names, companies, days and acronyms keep their capitals ("Priya owes you…",
+ * "CFO approval", "Acme MSA").
+ */
+export const midSentence = (s: string) => {
+  const word = s.match(/^[\p{L}\p{N}’'-]+/u)?.[0] ?? '';
+  if (!word || /^[A-Z]{2}/.test(word) || PROPER.test(word)) return s;
+  const proper = Object.values(PEOPLE).some((p) => p.name.split(' ').includes(word) || p.company?.split(' ')[0] === word);
+  return proper ? s : s.charAt(0).toLowerCase() + s.slice(1);
+};
+
 /* ───────────── Drive ───────────── */
 
 export const folderLabel = (f: Folder) => `[${f.num}] ${f.name}`;
@@ -199,6 +212,8 @@ export const routeFromHref = (href: string): Route => {
       return { view: 'library', tab: 'prompts' };
     case 'docs':
       return { view: 'docs', tab: 'recent' };
+    case 'activity':
+      return { view: 'activity', tab: 'all' };
     default:
       return { view: 'today', tab: 'brief' };
   }

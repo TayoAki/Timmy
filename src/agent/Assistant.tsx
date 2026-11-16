@@ -91,17 +91,47 @@ export function Assistant() {
   const convo = a.convos.find((c) => c.id === a.active) ?? null;
   const running = a.running && a.running.convo === convo?.id ? a.running : null;
 
-  // ⌘I anywhere opens or closes the chat.
+  // ⌘I anywhere opens the chat. While it's open, ⌘I puts you back in the box;
+  // pressed from the box itself, it closes the chat.
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'i') {
         e.preventDefault();
-        assistant.toggle();
+        const box = input.current;
+        if (assistant.isOpen() && box && document.activeElement !== box) {
+          box.focus();
+          box.setSelectionRange(box.value.length, box.value.length);
+        } else assistant.toggle();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  // While the chat is open, what you type goes into it. Letters never reach the
+  // single-key shortcuts behind it (archive, star, compose…).
+  useEffect(() => {
+    if (!a.open) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing || e.key.length !== 1 || e.key === ' ') return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) {
+        // Typing in a field inside the chat is fine; anywhere else, stop the page's shortcuts.
+        if (!el.closest('.ai-shell')) e.stopImmediatePropagation();
+        return;
+      }
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const box = input.current;
+      if (!box) return;
+      const key = e.key;
+      setText((v) => v + key);
+      box.focus();
+      window.setTimeout(() => box.setSelectionRange(box.value.length, box.value.length), 0);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [a.open]);
 
   // Push-to-talk with no text field focused sends the words to Timmy.
   useEffect(() => {
@@ -143,6 +173,13 @@ export function Assistant() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [a.open]);
+
+  // Back to the box after an answer, or when the first question moves it to the bottom.
+  useEffect(() => {
+    if (!a.open || a.running) return;
+    const el = document.activeElement;
+    if (!el || el === document.body || !el.isConnected || !el.closest('.ai-shell')) input.current?.focus();
+  }, [a.open, !!a.running, convo?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keep the newest message in view.
   useEffect(() => {

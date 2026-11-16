@@ -1,13 +1,14 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, type Dispatch, type ReactNode } from 'react';
-import { ACTIVITY, BOXES, DEALS, NOW, PEOPLE, PROJECTS, RULES, THREADS } from '../data/mock';
+import { ACTIVITY, BOXES, DEALS, NOW, PROJECTS, RULES, THREADS } from '../data/mock';
 import type { Activity, Box, Deal, Label, ProjectId, Rule, RuleGroup, Thread } from '../data/types';
 import { DECISIONS, type Decision } from '../data/decisions';
 import { WS_SEED } from '../data/ws-mock';
 import type { WS } from '../data/ws-types';
-import { fmtDay, fmtTime, money } from '../lib/format';
+import { fmtDate, fmtDay, fmtTime, money } from '../lib/format';
 import type { ApprovalKind, ApprovalRecord } from './approvals';
+import { draftFor } from './drafting';
 import { DEFAULT_SCHEDULE, fmtClock, nextRun, scheduleRule, whenLabel, daysLabel, type Schedule } from './schedule';
-import { applyOps, decisionOps, firstName, personName, put, registerPerson, type WsOp, type WsOptions } from './ws';
+import { applyOps, decisionOps, firstName, midSentence, patch as wsPatch, personName, put, registerPerson, type WsOp, type WsOptions } from './ws';
 
 export type TodayTab = 'brief' | 'triage' | 'drafts';
 export type ThreadTab = 'conversation' | 'links' | 'history';
@@ -143,6 +144,8 @@ export type Action =
   /** Do what a next action says (send, update the deal, decide, block time), then tick it. */
   | { type: 'runStep'; id: string; step: string }
   | { type: 'applyDeal'; id: string }
+  /** Change a deal's stage or value (from Ask Timmy, after you press Update). */
+  | { type: 'editDeal'; id: string; stage?: string; value?: number }
   | { type: 'toggleRule'; id: string }
   | { type: 'addRule'; group: RuleGroup; text: string }
   | { type: 'dismiss'; key: string }
@@ -158,7 +161,8 @@ export type Action =
   | { type: 'sendNew'; draft: ComposeDraft }
   | { type: 'reply'; id: string; body: string; track?: { on: string; item: string; due?: string } | null }
   | { type: 'simulateReply'; id: string }
-  | { type: 'makeDraft'; id: string }
+  /** Timmy drafts a nudge or reply; with `note`, the reply says what you asked it to. */
+  | { type: 'makeDraft'; id: string; note?: string }
   | { type: 'reset' }
   | { type: 'capture'; open: boolean }
   | { type: 'setSchedule'; schedule: Partial<Schedule> }
@@ -166,7 +170,7 @@ export type Action =
   | { type: 'setFocus'; on?: boolean }
   | { type: 'setScope'; project: string | null }
   /** Approve or turn down an item in the Approvals queue. */
-  | { type: 'resolve'; key: string; option: string; change?: { deal: string; stage: string; value: number } };
+  | { type: 'resolve'; key: string; option: string; change?: { deal: string; stage: string; value: number }; via?: 'send' };
 
 /** Builds a workspace change: dispatch(ws([put('tasks', task)], { toast: 'Task added', undo: true })). */
 export const ws = (ops: WsOp[], options: WsOptions = {}): Action => ({ type: 'ws', ops, ...options });
@@ -209,8 +213,7 @@ const initial: State = {
 let toastSeq = 1;
 let activitySeq = 1;
 
-/** Lower-cases the first letter unless the word is an acronym ("CFO approval" stays). */
-const lowerFirst = (s: string) => (/^[A-Z]{2}/.test(s) ? s : s.charAt(0).toLowerCase() + s.slice(1));
+const lowerFirst = midSentence;
 
 const snap = (s: State): Snapshot => ({
   threads: s.threads,
@@ -226,10 +229,52 @@ const fmtShortClock = (d: Date) => fmtTime(d).replace(':00', '');
 
 let recordSeq = 1;
 /** Adds a line to the Approvals history. */
-const recorded = (s: State, r: Omit<ApprovalRecord, 'id' | 'at'>): ApprovalRecord[] => [
+const recorded = (s: Pick<State, 'approvalLog'>, r: Omit<ApprovalRecord, 'id' | 'at'>): ApprovalRecord[] => [
   { id: `ap-${recordSeq++}-${Date.now().toString(36)}`, at: new Date(NOW.getTime() + activitySeq * 60000), ...r },
   ...s.approvalLog,
 ];
+
+/**
+ * Keeps the CRM in step with what you just did: the deal's last touch and, when
+ * you're now waiting on someone, its next step, owner and date. The contact's
+ * record follows the deal.
+ */
+const followDeal = (
+  deals: Record<string, Deal>,
+  space: WS,
+  id: string,
+  change: { touch?: string; next?: { item: string; on: string; due?: Date } },
+): { deals: Record<string, Deal>; ws: WS } => {
+  const deal = deals[id];
+  if (!deal) return { deals, ws: space };
+  const next: Deal = {
+    ...deal,
+    lastTouch: change.touch ? `${fmtDate(NOW)} · ${change.touch}` : deal.lastTouch,
+    ...(change.next ? { next: change.next.item, owner: change.next.on, due: change.next.due } : {}),
+  };
+  const c = space.contacts[deal.contact];
+  const ops: WsOp[] = c ? [wsPatch('contacts', c.id, { last: NOW, ...(change.next ? { next: change.next.item, owner: change.next.on, due: change.next.due } : {}) })] : [];
+  return { deals: { ...deals, [id]: next }, ws: ops.length ? applyOps(space, ops) : space };
+};
+
+/** Rewrites text across a deck's slides or a doc's blocks, so a file matches a decision. */
+const retext = (space: WS, file: string, replace: [string, string][]): WS => {
+  const rep = (x: string) => replace.reduce((acc, [from, to]) => acc.split(from).join(to), x);
+  const deck = space.decks[file];
+  const doc = space.docs[file];
+  const ops: WsOp[] = [];
+  if (deck) ops.push(wsPatch('decks', file, { slides: deck.slides.map((sl) => ({ ...sl, title: rep(sl.title), bullets: sl.bullets?.map(rep) })) }));
+  if (doc) ops.push(wsPatch('docs', file, { blocks: doc.blocks.map((b) => ('text' in b && typeof b.text === 'string' ? { ...b, text: rep(b.text) } : b)) }));
+  if (space.files[file]) ops.push(wsPatch('files', file, { updated: NOW }));
+  return ops.length ? applyOps(space, ops) : space;
+};
+
+/** Ticks the "update the deal" next action on every thread about this deal. */
+const tickDealSteps = (threads: Thread[], deal: string) =>
+  threads.map((t) => (t.deal === deal && t.steps?.some((x) => x.run?.do === 'deal' && !x.done) ? { ...t, steps: t.steps.map((x) => (x.run?.do === 'deal' ? { ...x, done: true } : x)) } : t));
+
+/** Only the next actions that mean "send this reply" are done when it goes out. */
+const isSendStep = (st: { text: string; run?: { do: string } }) => (st.run ? st.run.do === 'send' : /^(send|reply)\b(?!.*\b(invite|receipt|file|deck)\b)/i.test(st.text));
 
 const dueDate = (iso?: string) => {
   if (!iso) return undefined;
@@ -247,6 +292,14 @@ const logged = (s: State, text: string, kind: Activity['kind'], threadId?: strin
 
 const withToast = (s: State, text: string, undo?: Snapshot, tone?: Toast['tone']): Toast[] =>
   [...s.toasts, { id: toastSeq++, text, undo, tone }].slice(-3);
+
+/** The deal change a sorted email points to, if it's waiting in Approvals: "Brightwave → Closed won". */
+const crmWaiting = (s: State, t: Thread): string | null => {
+  const deal = t.deal ? s.deals[t.deal] : undefined;
+  if (!deal || !t.suggestion?.extra || t.deal !== 'brightwave') return null;
+  if (deal.stage === 'Closed won' || s.dismissed.includes(`crm:${deal.id}`)) return null;
+  return `Moving ${deal.company} to Closed won`;
+};
 
 /** Applies a box change, keeping the data each box needs consistent. */
 const moveThread = (t: Thread, box: Box): Thread => {
@@ -297,18 +350,13 @@ function reducer(s: State, a: Action): State {
       const t = s.threads.find((x) => x.id === a.id);
       if (!t?.suggestion) return s;
       const sug = t.suggestion;
-      let deals = s.deals;
-      let activity = logged(s, `Sorted “${t.subject}” to ${boxTag(sug.box)}`, 'triage', t.id);
-      if (sug.extra && t.deal && deals[t.deal]) {
-        deals = { ...deals, [t.deal]: { ...deals[t.deal]!, stage: 'Closed won', suggestion: undefined, lastTouch: 'Nov 15 · Countersigned order form' } };
-        activity = [{ id: `live-${activitySeq++}`, at: NOW, kind: 'crm', text: `Moved ${deals[t.deal]!.company} to Closed won and linked the signed form`, threadId: t.id }, ...activity];
-      }
+      // Sorting files the email; it never changes a deal. A stage change it points to waits in Approvals.
+      const crm = crmWaiting(s, t);
       return {
         ...s,
-        deals,
         threads: patch(s.threads, a.id, (x) => moveThread(x, sug.box)),
-        activity,
-        toasts: withToast(s, `Sorted to ${boxTag(sug.box)}${sug.extra ? ' · deal updated' : ''}`, snap(s)),
+        activity: logged(s, `Sorted “${t.subject}” to ${boxTag(sug.box)}`, 'triage', t.id),
+        toasts: withToast(s, `Sorted to ${boxTag(sug.box)}${crm ? `. ${crm} is waiting for your OK in Approvals` : ''}`, snap(s)),
       };
     }
 
@@ -317,7 +365,12 @@ function reducer(s: State, a: Action): State {
       for (const id of a.ids) next = reducer({ ...next, toasts: [] }, { type: 'acceptSuggestion', id });
       const left = next.threads.filter((t) => t.box === 'inbox').length;
       const tail = left === 0 ? 'Inbox zero.' : `${left} left for you.`;
-      return { ...next, toasts: withToast(s, `Sorted ${a.ids.length} emails. ${tail}`, snap(s)) };
+      const crm = a.ids
+        .map((id) => s.threads.find((t) => t.id === id))
+        .map((t) => (t ? crmWaiting(s, t) : null))
+        .filter(Boolean);
+      const held = crm.length ? ` ${crm.join(' and ')} ${crm.length === 1 ? 'is' : 'are'} waiting for your OK in Approvals.` : '';
+      return { ...next, toasts: withToast(s, `Sorted ${a.ids.length} emails. ${tail}${held}`, snap(s)) };
     }
 
     case 'toggleStar': {
@@ -353,9 +406,21 @@ function reducer(s: State, a: Action): State {
     }
 
     case 'sendDraft': {
-      const t = s.threads.find((x) => x.id === a.id);
-      if (!t?.draft) return s;
-      const draft = t.draft;
+      const t0 = s.threads.find((x) => x.id === a.id);
+      if (!t0?.draft) return s;
+      // A decision the email makes for you (the price it quotes, the hiring call
+      // it states) is logged as decided, not dropped.
+      let base = s;
+      const settled: string[] = [];
+      for (const dec of s.decisions) {
+        if (!dec.whileDraft || dec.thread !== t0.id || dec.chosen) continue;
+        const opt = dec.options.find((o) => o.primary);
+        if (!opt) continue;
+        base = reducer(base, { type: 'resolve', key: `dec:${dec.id}`, option: opt.id, via: 'send' });
+        settled.push(opt.label);
+      }
+      const t = base.threads.find((x) => x.id === a.id)!;
+      const draft = t.draft!;
       const msg = {
         id: `sent-${Date.now()}`,
         from: 'me',
@@ -367,7 +432,7 @@ function reducer(s: State, a: Action): State {
       };
       const track = a.track && draft.trackAs;
       const box: Box = track ? 'waiting' : t.box === 'waiting' ? 'waiting' : 'archived';
-      const steps = t.steps?.map((st) => (/send/i.test(st.text) ? { ...st, done: true } : st));
+      const steps = t.steps?.map((st) => (isSendStep(st) ? { ...st, done: true } : st));
       const updated: Thread = {
         ...t,
         box,
@@ -378,22 +443,81 @@ function reducer(s: State, a: Action): State {
           ? { on: draft.trackAs!.on, item: draft.trackAs!.item, due: draft.trackAs!.due, since: NOW }
           : t.waiting,
         ask: track
-          ? `${PEOPLE[draft.trackAs!.on]!.name.split(' ')[0]} owes you: ${lowerFirst(draft.trackAs!.item)} by ${fmtDay(draft.trackAs!.due)}`
+          ? `${firstName(draft.trackAs!.on)} owes you: ${lowerFirst(draft.trackAs!.item)} by ${fmtDay(draft.trackAs!.due)}`
           : t.ask,
         context: track ? 'Timmy will draft a nudge if the date slips.' : t.context,
         history: [...(t.history ?? []), { at: NOW, text: track ? `Sent. Moved to [02] Waiting until ${fmtDay(draft.trackAs!.due)}` : 'Sent' }],
       };
+      let threads = patch(base.threads, a.id, () => updated);
+      let approvalLog = recorded(base, { key: `draft:${t.id}`, kind: 'email', title: draft.subject, choice: track ? 'Sent and tracked' : 'Sent', approved: true, thread: t.id });
+      let space = base.ws;
+      let deals = base.deals;
+      const notes: string[] = [];
+
+      // Tasks this email finishes.
+      const finished = (draft.completes ?? []).filter((id) => space.tasks[id] && space.tasks[id]!.status !== 'done');
+      if (finished.length) space = applyOps(space, finished.map((id) => wsPatch('tasks', id, { status: 'done' })));
+
+      // The CRM follows: last touch, and what you're now waiting for.
+      if (t.deal && deals[t.deal]) {
+        const deal = deals[t.deal]!;
+        const next = track
+          ? { item: draft.trackAs!.item, on: draft.trackAs!.on, due: draft.trackAs!.due }
+          : deal.owner === 'me' && t.box !== 'waiting'
+            ? { item: `Reply from ${firstName(draft.to[0]!)}`, on: draft.to[0]!, due: undefined }
+            : undefined;
+        ({ deals, ws: space } = followDeal(deals, space, t.deal, { touch: `You sent “${draft.subject.replace(/^Re:\s*/, '')}”`, next }));
+      }
+
+      // This email also asks for what another thread is waiting on, so that thread's nudge isn't needed.
+      const also = draft.alsoAsks;
+      const sib = also ? threads.find((x) => x.id === also.thread) : undefined;
+      if (also && sib?.waiting) {
+        const w = sib.waiting;
+        const due = also.due ?? w.due;
+        const dropped = sib.draft?.kind === 'nudge' ? sib.draft : undefined;
+        threads = patch(threads, sib.id, (x) => ({
+          ...x,
+          draft: dropped ? undefined : x.draft,
+          waiting: { ...w, due, since: NOW },
+          ask: `${firstName(w.on)} owes you: ${lowerFirst(w.item)}${due ? ` by ${fmtDay(due)}` : ''}`,
+          context: `You asked again in “${draft.subject}”. Timmy will draft a nudge if the date slips.`,
+          history: [...(x.history ?? []), { at: NOW, text: `Asked again in your reply “${draft.subject}”${dropped ? '; the separate nudge was dropped' : ''}` }],
+        }));
+        if (dropped) {
+          approvalLog = recorded({ approvalLog }, { key: `draft:${sib.id}`, kind: 'email', title: dropped.subject, choice: 'Not needed: your reply asked', approved: false, thread: sib.id });
+          notes.push(`dropped the separate nudge to ${firstName(w.on)}`);
+        }
+        if (sib.deal) ({ deals, ws: space } = followDeal(deals, space, sib.deal, { next: { item: w.item, on: w.on, due } }));
+      }
+
+      // Another draft repeats the ask this email just made: take the repeat out.
+      for (const other of threads) {
+        const al = other.draft?.alsoAsks;
+        if (!al || al.thread !== t.id) continue;
+        const body = al.without.reduce((b, [from, to]) => b.replace(from, to), other.draft!.body);
+        threads = patch(threads, other.id, (x) => ({
+          ...x,
+          draft: { ...x.draft!, body, alsoAsks: undefined },
+          history: [...(x.history ?? []), { at: NOW, text: `Took the repeat ask out of the draft: “${draft.subject}” already asked` }],
+        }));
+        if (body !== other.draft!.body) notes.push(`took the repeat ask out of “${other.draft!.subject}”`);
+      }
+
       const where = track
         ? `Sent · tracking in [02] Waiting until ${fmtDay(draft.trackAs!.due)}`
         : box === 'archived'
           ? 'Sent · label cleared and archived'
           : 'Sent';
+      const extra = [settled.length ? `Logged your call: ${settled.join(', ')}` : '', notes.length ? `Timmy ${notes.join(' and ')}` : ''].filter(Boolean).join('. ');
       return {
-        ...s,
-        threads: patch(s.threads, a.id, () => updated),
-        activity: logged(s, `You sent “${draft.subject}”${track ? ' and Timmy started tracking the reply' : ''}`, 'send', t.id),
-        approvalLog: recorded(s, { key: `draft:${t.id}`, kind: 'email', title: draft.subject, choice: track ? 'Sent and tracked' : 'Sent', approved: true, thread: t.id }),
-        toasts: withToast(s, where, snap(s)),
+        ...base,
+        threads,
+        deals,
+        ws: space,
+        activity: logged(base, `You sent “${draft.subject}”${track ? ' and Timmy started tracking the reply' : ''}`, 'send', t.id),
+        approvalLog,
+        toasts: withToast(s, extra ? `${where}. ${extra}.` : where, snap(s)),
       };
     }
 
@@ -418,9 +542,25 @@ function reducer(s: State, a: Action): State {
       return {
         ...s,
         deals: { ...s.deals, [a.id]: nextDeal },
+        threads: tickDealSteps(s.threads, a.id),
         activity: logged(s, `Updated ${deal.company}: ${nextDeal.stage}, ${money(nextDeal.value)}`, 'crm'),
         approvalLog: recorded(s, { key: `crm:${a.id}`, kind: 'crm', title: `Update ${deal.company} to ${nextDeal.stage}, ${money(nextDeal.value)}`, choice: 'Updated', approved: true }),
         toasts: withToast(s, `${deal.company} updated · ${nextDeal.stage}, ${money(nextDeal.value)}`, snap(s)),
+      };
+    }
+
+    case 'editDeal': {
+      const deal = s.deals[a.id];
+      if (!deal) return s;
+      const next: Deal = { ...deal, stage: a.stage ?? deal.stage, value: a.value ?? deal.value, suggestion: a.stage ? undefined : deal.suggestion };
+      const what = [a.stage && a.stage !== deal.stage ? next.stage : '', a.value !== undefined && a.value !== deal.value ? money(next.value) : ''].filter(Boolean).join(', ');
+      return {
+        ...s,
+        deals: { ...s.deals, [a.id]: next },
+        threads: tickDealSteps(s.threads, a.id),
+        activity: logged(s, `Updated ${deal.company}: ${what}`, 'crm'),
+        approvalLog: recorded(s, { key: `crm:${a.id}`, kind: 'crm', title: `Update ${deal.company} to ${what}`, choice: 'Updated from Ask Timmy', approved: true }),
+        toasts: withToast(s, `${deal.company} updated · ${what}`, snap(s)),
       };
     }
 
@@ -658,6 +798,7 @@ function reducer(s: State, a: Action): State {
         return {
           ...s,
           deals: { ...s.deals, [id]: next },
+          threads: tickDealSteps(s.threads, id),
           activity: logged(s, `Updated ${deal.company}: ${next.stage}, ${money(next.value)}`, 'crm'),
           approvalLog: recorded(s, { key: a.key, kind: 'crm', title: `Update ${deal.company} to ${next.stage}, ${money(next.value)}`, choice: 'Updated', approved: true }),
           toasts: withToast(s, `${deal.company} updated · ${next.stage}, ${money(next.value)}`, snap(s)),
@@ -680,7 +821,17 @@ function reducer(s: State, a: Action): State {
           threads = patch(threads, e.thread, (x) =>
             x.draft ? { ...x, draft: { ...x.draft, body: e.replace.reduce((b, [from, to]) => b.replace(from, to), x.draft.body) } } : x,
           );
-        else if (e.do === 'draft')
+        else if (e.do === 'steptext')
+          threads = patch(threads, e.thread, (x) => ({ ...x, steps: x.steps?.map((st) => (st.id === e.step ? { ...st, text: e.text } : st)) }));
+        else if (e.do === 'retext') wsNext = retext(wsNext, e.file, e.replace);
+        else if (e.do === 'cell') {
+          const sheet = wsNext.sheets[e.sheet];
+          if (sheet?.rows[e.row])
+            wsNext = applyOps(wsNext, [
+              wsPatch('sheets', e.sheet, { rows: sheet.rows.map((r, i) => (i === e.row ? { ...r, [e.col]: e.value } : r)) }),
+              wsPatch('files', e.sheet, { updated: NOW }),
+            ]);
+        } else if (e.do === 'draft')
           threads = patch(threads, e.thread, (x) => ({
             ...(x.box === 'inbox' ? moveThread(x, 'follow-up') : x),
             draft: e.draft,
@@ -693,9 +844,10 @@ function reducer(s: State, a: Action): State {
         ws: wsNext,
         compose,
         decisions: s.decisions.map((x) => (x.id === dec.id ? { ...x, chosen: { option: opt.id, at: NOW } } : x)),
-        activity: logged(s, `You decided “${dec.title}”: ${opt.label}`, 'approval', dec.thread),
-        approvalLog: recorded(s, { key: a.key, kind: dec.kind, title: dec.title, choice: opt.label, approved: !opt.holds, thread: dec.thread }),
-        toasts: withToast(s, opt.result, snap(s)),
+        activity: logged(s, a.via === 'send' ? `Your email settled “${dec.title}”: ${opt.label}` : `You decided “${dec.title}”: ${opt.label}`, 'approval', dec.thread),
+        approvalLog: recorded(s, { key: a.key, kind: dec.kind, title: dec.title, choice: a.via === 'send' ? `${opt.label}, by sending the email` : opt.label, approved: !opt.holds, thread: dec.thread }),
+        // When the email made the call, the send notice says so; no second notice.
+        toasts: a.via === 'send' ? s.toasts : withToast(s, opt.result, snap(s)),
       };
     }
 
@@ -709,20 +861,14 @@ function reducer(s: State, a: Action): State {
 
     case 'makeDraft': {
       const t = s.threads.find((x) => x.id === a.id);
-      if (!t || t.draft) return s;
-      const who = [...t.messages].reverse().find((m) => m.from !== 'me')?.from ?? t.participants.find((p) => p !== 'me') ?? 'me';
-      const ask = t.ask.replace(/^[A-Z]/, (c) => c.toLowerCase());
-      const draft = {
-        kind: 'reply' as const,
-        to: [who],
-        subject: t.subject.startsWith('Re:') ? t.subject : `Re: ${t.subject}`,
-        body: `Hi ${firstName(who)},\n\nThanks for this. On your note (${ask}): here is where things stand, and what I need from you to keep it moving.\n\nBest,\nTaylor`,
-        sources: (t.docs ?? []).slice(0, 2),
-      };
+      if (!t || (t.draft && !a.note)) return s;
+      const draft = draftFor(t, a.note);
+      const nudge = draft.kind === 'nudge';
+      const what = a.note ? `Drafted a reply from your words: “${a.note.trim()}”` : nudge ? 'Drafted a nudge on request' : 'Drafted a reply on request';
       return {
         ...s,
-        threads: patch(s.threads, a.id, (x) => ({ ...x, draft, history: [...(x.history ?? []), { at: NOW, text: 'Drafted a reply on request' }] })),
-        toasts: withToast(s, 'Timmy drafted a reply'),
+        threads: patch(s.threads, a.id, (x) => ({ ...x, draft, history: [...(x.history ?? []), { at: NOW, text: what }] })),
+        toasts: withToast(s, `Timmy drafted a ${nudge ? 'nudge' : 'reply'} to ${firstName(draft.to[0]!)}. Nothing is sent until you approve it.`),
       };
     }
 
@@ -763,7 +909,7 @@ const Ctx = createContext<{ state: State; dispatch: Dispatch<Action> } | null>(n
 
 /* ───────────── Saved in this browser ───────────── */
 
-const STORAGE_KEY = 'timmy-state-v2';
+const STORAGE_KEY = 'timmy-state-v3';
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 const PERSISTED = ['threads', 'deals', 'activity', 'rules', 'ws', 'highlight', 'highlightDone', 'dismissed', 'route', 'back', 'decisions', 'approvalLog', 'schedule', 'focus', 'scope'] as const;
 

@@ -182,6 +182,8 @@ export const THREADS: Thread[] = [
       sources: ['proposal-v3', 'pricing-tiers', 'acme-call-notes'],
       attachments: ['proposal-v4'],
       trackAs: { on: 'dana', item: 'CFO approval on the 120-seat quote', due: d(20, 17) },
+      completes: ['t-acme-quote'],
+      basis: { sheet: 'acme-quote', row: 1, col: 'price', label: 'per-seat price' },
     },
     steps: [
       { id: 's1', text: 'Create task: revise quote to 120 seats', done: true, byTimmy: true, href: 'tasks' },
@@ -223,6 +225,11 @@ export const THREADS: Thread[] = [
       subject: 'Re: Quick one: still good for a Dec 1 pilot start?',
       body: 'Hi Marcus,\n\nYes, December 1 still works on our side. The signed SOW is the last thing we need to lock it in. Could you send it by Wednesday?\n\nKickoff invite to follow.\n\nTaylor',
       sources: ['northwind-sow'],
+      alsoAsks: {
+        thread: 'northwind-sow',
+        due: d(18, 17),
+        without: [['The signed SOW is the last thing we need to lock it in. Could you send it by Wednesday?', 'We’ll lock it in as soon as the signed SOW is back.']],
+      },
     },
     steps: [
       { id: 's1', text: 'Send the reply', done: false, run: { do: 'send' } },
@@ -284,6 +291,7 @@ export const THREADS: Thread[] = [
       body: 'Hi Ben,\n\nThe receipt for the Oct 21 client dinner ($186.40) is attached.\n\nThanks,\nTaylor',
       sources: ['harbor-receipt'],
       attachments: ['harbor-receipt'],
+      completes: ['t-receipt'],
     },
     history: [{ at: d(16, 8, 5), text: 'Found the Oct 21 receipt and attached it to a draft' }],
   },
@@ -486,7 +494,7 @@ export const THREADS: Thread[] = [
     suggestion: {
       box: 'archived', confidence: 'high',
       reason: 'This is the item you were waiting on.',
-      extra: 'Link to the Brightwave deal and move it to Closed won ($36,000)',
+      extra: 'Moving the Brightwave deal to Closed won ($36,000) waits for your OK in Approvals',
     },
   },
   {

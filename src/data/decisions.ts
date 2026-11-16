@@ -21,7 +21,13 @@ export type Effect =
   /** Change workspace items: tasks, events, files. */
   | { do: 'ws'; ops: WsOp[] }
   /** Open a new email for you to finish and send. */
-  | { do: 'compose'; draft: ComposeDraft };
+  | { do: 'compose'; draft: ComposeDraft }
+  /** Rewrite text in a deck or doc (slide titles, bullets, paragraphs) so the file matches the choice. */
+  | { do: 'retext'; file: string; replace: [string, string][] }
+  /** Set one cell in a sheet. */
+  | { do: 'cell'; sheet: string; row: number; col: string; value: string | number }
+  /** Reword a next action on a thread. */
+  | { do: 'steptext'; thread: string; step: string; text: string };
 
 export interface DecisionOption {
   id: string;
@@ -103,8 +109,18 @@ export const DECISIONS: Decision[] = [
             ],
           },
           { do: 'note', project: 'acme', text: 'Kept $62 per seat for 120 seats ($89,280 a year)' },
+          {
+            do: 'retext',
+            file: 'proposal-v4',
+            replace: [
+              ['Pricing: 120 seats at $58', 'Pricing: 120 seats at $62'],
+              ['$4 less per seat than v3', 'Same $62 per seat as v3, now for 120 seats'],
+            ],
+          },
+          { do: 'cell', sheet: 'acme-quote', row: 1, col: 'price', value: 62 },
+          { do: 'steptext', thread: 'acme-quote', step: 's5', text: 'Update deal value to $89,280' },
         ],
-        result: 'Kept $62. Timmy rewrote the reply to Dana; review it before you send.',
+        result: 'Kept $62. Timmy updated the reply to Dana, proposal v4 and the quote tracker; review the reply before you send.',
       },
     ],
   },

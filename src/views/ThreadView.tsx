@@ -35,8 +35,8 @@ import { Frame } from '../components/Frame';
 import { UrgencyLine } from '../components/Urgency';
 import { MicButton } from '../components/Dictation';
 import { joinAt } from '../lib/dictation';
-import { ApprovalCard } from '../areas/approvals/ApprovalCard';
-import { openApprovals } from '../state/approvals';
+import { ApprovalCard, ApprovalNotes } from '../areas/approvals/ApprovalCard';
+import { draftNotes, openApprovals } from '../state/approvals';
 
 const MOVES: { box: Box; key: string; label: string; icon: ReactNode }[] = [
   { box: 'follow-up', key: 'f', label: 'Follow Up', icon: <Reply size={15} /> },
@@ -568,6 +568,8 @@ function DraftCard({ t, draft }: { t: Thread; draft: Draft }) {
           ))}
         </div>
       )}
+
+      <ApprovalNotes notes={draftNotes(state, t)} />
 
       <div className="draft-checks">
         {checks(draft).map((c) => (

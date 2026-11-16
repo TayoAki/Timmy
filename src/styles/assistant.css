@@ -701,6 +701,14 @@
   grid-template-columns: 64px minmax(0, 1fr) auto;
 }
 
+.aw-waiting {
+  margin: 0;
+}
+
+.aw-waiting .aw-row {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
 .aw-time {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
@@ -984,4 +992,9 @@
     flex: 1;
     justify-content: center;
   }
+}
+
+/* A draft or update shown as written, before you use it. */
+.aw-plain .aw-preview {
+  margin: 0 0 10px;
 }
