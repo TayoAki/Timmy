@@ -24,7 +24,8 @@ import type { WsOp } from '../../../src/state/ws';
 import { checkWsOps } from './ws-check';
 import { LIVE_DECISION } from '../agent/read';
 import { prepareMailSend } from '../gateway/mail';
-import { SYNCED_PREFIX, eventProposal } from '../sync/calendar-write';
+import { eventProposal } from '../sync/calendar-write';
+import { CALENDAR_TOOLKITS, isSynced } from '../sync/calendars';
 import { filingProposal, isBox } from '../sync/labels';
 import { draftHash } from '../../../src/live/hash';
 import type { Actor } from '../gateway/policy';
@@ -33,6 +34,7 @@ import { enqueueSoon } from '../jobs/jobs';
 import { log } from '../lib/log';
 import { modelReady } from '../providers/model';
 import { commitState, loadState, remember, type Commit, type Loaded, type PreImage } from './docs';
+import { changeEvents } from './event-changes';
 
 enterLive();
 // Someone the workspace only knows by address still has a name when the reducer asks.
@@ -154,6 +156,8 @@ export async function runCommand(ctx: Ctx, cmd: { id: string; action: Action }):
         else handled = { ...handled, state: await fileMoves(tx, loaded, ctx, cmd.id, handled.state) };
       }
       if (!handled.reject) handled = await addEvents(tx, loaded, ctx, cmd.id, handled);
+      // A synced event the command changed or removed is written to its calendar too (see event-changes.ts).
+      if (!handled.reject) handled = await changeEvents(tx, loaded, actorOf(ctx), cmd, handled, (id) => emailOf(loaded, handled.state, id));
     } catch (err) {
       if (!(err instanceof GatewayError)) throw err;
       handled = { state: loaded.state, reject: err.message };
@@ -425,26 +429,28 @@ async function fileMoves(tx: Tx, loaded: Loaded, ctx: Ctx, commandId: string, ne
 /* ───────────── Calendar ───────────── */
 
 /**
- * When a command adds an event to Timmy's calendar and a Google Calendar is connected, the event is written there
- * too, through the gateway. With guests that sends invitations, so it gets the undo window, and whoever must
- * approve an invitation approves it. Changing or removing an event that already exists is not written back yet.
+ * When a command adds an event to Timmy's calendar and a calendar is connected (Google Calendar or Outlook), the
+ * event is written there too, through the gateway. With guests that sends invitations, so it gets the undo window,
+ * and whoever must approve an invitation approves it. Changing or removing an event that is already on the calendar
+ * is handled in event-changes.ts.
  */
 async function addEvents(tx: Tx, loaded: Loaded, ctx: Ctx, commandId: string, handled: Handled): Promise<Handled> {
   const prev = loaded.state;
   const next = handled.state;
   if (prev.ws.events === next.ws.events) return handled;
-  const fresh = Object.values(next.ws.events).filter((ev) => !prev.ws.events[ev.id] && !ev.id.startsWith(SYNCED_PREFIX));
+  const fresh = Object.values(next.ws.events).filter((ev) => !prev.ws.events[ev.id] && !isSynced(ev.id));
   if (!fresh.length) return handled;
   // Each new event is a write to the calendar, and with guests an invitation. One command may not ask for an unbounded number.
   if (fresh.length > config.maxEventsPerCommand) return { state: prev, reject: `That would add ${fresh.length} events at once. Timmy adds up to ${config.maxEventsPerCommand} at a time.` };
   // The person's own calendar if they connected one, otherwise the workspace's first (whose owner then approves).
-  const cal = (await tx.query(`select id from connection where workspace_id = $1 and status = 'active' and toolkit = 'googlecalendar' order by (user_id = $2) desc, created_at limit 1`, [ctx.workspaceId, ctx.user.id])).rows[0] as { id: string } | undefined;
+  // With more than one to choose from (Google Calendar and Outlook, say), it is the one that was connected first.
+  const cal = (await tx.query(`select id, toolkit from connection where workspace_id = $1 and status = 'active' and toolkit = any($3::text[]) order by (user_id = $2) desc, created_at limit 1`, [ctx.workspaceId, ctx.user.id, CALENDAR_TOOLKITS])).rows[0] as { id: string; toolkit: string } | undefined;
   if (!cal) return handled;
 
   let state = next;
   const effects = [...(handled.effects ?? [])];
   for (const ev of fresh) {
-    const made = eventProposal(ev, cal.id, (id) => emailOf(loaded, next, id));
+    const made = eventProposal(ev, cal, (id) => emailOf(loaded, next, id), loaded.workspace.timezone);
     if (!made.ok) return { state: prev, reject: made.reason };
     const p = await propose(tx, loaded, state, actorOf(ctx), { ...made.proposal, why: 'You added it in Timmy.', idempotencyKey: `cmd:${commandId}:event:${ev.id}`, source: 'user', commandId });
     // Refused at the gateway (sending is switched off): the event stays on Timmy's calendar only.

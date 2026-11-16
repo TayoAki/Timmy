@@ -1,3 +1,4 @@
+import { changeEvent, isEventChange, reconcileChange } from '../sync/calendar-change';
 import { createEvent, reconcileEvent } from '../sync/calendar-write';
 import { mailboxFor, type FilePayload, type MailPayload } from '../sync/mailbox';
 import { connectionById } from '../sync/tools';
@@ -43,6 +44,8 @@ export const EXECUTORS: Partial<Record<EffectKind, Executor>> = {
   'email.reply': sendMail,
   'mail.modify': fileMail,
   'calendar.create': createEvent,
+  'calendar.update': changeEvent,
+  'calendar.delete': changeEvent,
 };
 
 /** Whether the mailbox already shows the filing an effect asked for. */
@@ -63,6 +66,7 @@ async function reconcileFiling(e: EffectRow): Promise<Outcome> {
 export async function reconcile(e: EffectRow): Promise<Outcome> {
   if (e.kind === 'mail.modify') return reconcileFiling(e);
   if (e.kind === 'calendar.create') return reconcileEvent(e);
+  if (isEventChange(e.kind)) return reconcileChange(e);
   const unknown: Outcome = { status: 'uncertain', error: e.error ?? 'unknown' };
   if (e.kind !== 'email.send' && e.kind !== 'email.reply') return unknown;
   const p = e.payload as unknown as MailPayload;

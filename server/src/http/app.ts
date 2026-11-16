@@ -18,6 +18,7 @@ import { runCommand } from '../state/engine';
 import { MAX_STREAMS_PER_PERSON, stillAllowed, streamsOf, subscribe, type Subscriber } from '../state/hub';
 import { rulesFor } from '../auth/roles';
 import { loadState } from '../state/docs';
+import { calendarFor } from '../sync/calendars';
 import { ConnectError, TOOLKITS, closeConnections, disconnect, finishConnect, startConnect } from '../sync/connect';
 import { mailboxFor } from '../sync/mailbox';
 import { summarizePage } from '../agent/pages';
@@ -83,7 +84,8 @@ export function buildApp(): Hono<Env> {
     const threadKey = box?.threadKeyOf(event.data) ?? '';
     if (box && threadKey) enqueueSoon('mail.ingest', { workspaceId: conn.workspace_id, connectionId: conn.id, threadKey, seed: event.data });
     // Any calendar event means the window may have changed; one sync per connection covers a burst of them.
-    if (conn.toolkit === 'googlecalendar') enqueueSoon('calendar.sync', { workspaceId: conn.workspace_id, connectionId: conn.id }, { singletonKey: `cal:${conn.id}` });
+    // An Outlook account announces mail and calendar events alike, so its calendar is asked which this one is.
+    if (calendarFor(conn.toolkit)?.announces(event.triggerSlug)) enqueueSoon('calendar.sync', { workspaceId: conn.workspace_id, connectionId: conn.id }, { singletonKey: `cal:${conn.id}` });
     if (conn.toolkit === 'googledrive') {
       // A file thrown away leaves the list at once. Anything else means "the list changed": one pass per connection covers a burst.
       const gone = event.triggerSlug === 'GOOGLEDRIVE_FILE_DELETED_OR_TRASHED_TRIGGER' ? String(event.data.file_id ?? '') : '';
@@ -222,7 +224,8 @@ export function buildApp(): Hono<Env> {
     // The first sync is queued once, when the connection has just become active; opening the link again queues nothing.
     if (!conn.justConnected) return c.redirect(`/?connect=ok&app=${conn.app_id}`);
     if (TOOLKITS[conn.app_id]?.kind === 'mail') enqueueSoon('mail.backfill', { workspaceId: ctx.workspaceId, connectionId: conn.id, days: config.backfillFastDays }, { singletonKey: `bf:${conn.id}` });
-    if (TOOLKITS[conn.app_id]?.kind === 'calendar') enqueueSoon('calendar.sync', { workspaceId: ctx.workspaceId, connectionId: conn.id }, { singletonKey: `cal:${conn.id}` });
+    // An Outlook account is a mailbox and a calendar at once: both are read.
+    if (calendarFor(conn.toolkit)) enqueueSoon('calendar.sync', { workspaceId: ctx.workspaceId, connectionId: conn.id }, { singletonKey: `cal:${conn.id}` });
     if (TOOLKITS[conn.app_id]?.kind === 'files') enqueueSoon('files.sync', { workspaceId: ctx.workspaceId, connectionId: conn.id }, { singletonKey: `files:${conn.id}` });
     return c.redirect(`/?connect=ok&app=${conn.app_id}`);
   });

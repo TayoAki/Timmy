@@ -186,14 +186,36 @@ export interface FakeFile {
   rows?: (string | number)[][];
 }
 
+/** An event on a stand-in calendar. Google Calendar and Outlook accounts keep the same list and show it in their own shapes. */
+export interface FakeEvent {
+  id: string;
+  summary: string;
+  /** ISO instants. */
+  start: string;
+  end: string;
+  /** Everyone on the event by address. The account's own address may be among them. */
+  attendees: string[];
+  /** Set on events Timmy created with invitations sent. */
+  invited?: boolean;
+  /** Who organizes it. Left out, the account itself does. */
+  organizer?: string;
+  description?: string;
+  location?: string;
+  /** One time of a repeating event. */
+  recurring?: boolean;
+}
+
 export interface FakeMailbox {
   address: string;
   status: 'INITIATED' | 'ACTIVE';
   toolkit: string;
   userId: string;
   messages: FakeMessage[];
-  /** `invited` is set on events Timmy created with invitations sent. */
-  events: { id: string; summary: string; start: string; end: string; attendees: string[]; invited?: boolean }[];
+  events: FakeEvent[];
+  /** What the stand-in calendar told guests because of a write: who heard what, about which event. */
+  notices: { about: 'invited' | 'changed' | 'cancelled'; event: string; to: string[] }[];
+  /** Ids of events that were deleted. Google still shows such an event, as cancelled, when asked for it by id. */
+  cancelled: string[];
   /** Labels the person or Timmy made: name → id. */
   labels: Map<string, string>;
   /** Drive only: the files in the account. */
@@ -227,7 +249,7 @@ export class FakeComposio implements ComposioProvider {
 
   async link({ userId, toolkit, callbackUrl }: { userId: string; toolkit: string; callbackUrl: string }) {
     const connectedAccountId = newId('ca_fake');
-    this.accounts.set(connectedAccountId, { address: this.nextAddress || `${userId.slice(0, 8)}@example.test`, status: 'INITIATED', toolkit, userId, messages: [], events: [], labels: new Map(), files: [] });
+    this.accounts.set(connectedAccountId, { address: this.nextAddress || `${userId.slice(0, 8)}@example.test`, status: 'INITIATED', toolkit, userId, messages: [], events: [], notices: [], cancelled: [], labels: new Map(), files: [] });
     const redirectUrl = `${config.publicUrl}/api/test/fake-connect?account=${connectedAccountId}&to=${encodeURIComponent(callbackUrl)}`;
     return { redirectUrl, connectedAccountId, authConfigId: `ac_fake_${toolkit}` };
   }
@@ -343,6 +365,54 @@ export class FakeComposio implements ComposioProvider {
     };
   }
 
+  /** An event as Google Calendar returns it. The organizer and the account's own entry are marked "self", as Google marks them. */
+  private googleEvent(box: FakeMailbox, e: FakeEvent) {
+    const organizer = e.organizer ?? box.address;
+    return {
+      id: e.id,
+      status: 'confirmed',
+      summary: e.summary,
+      start: { dateTime: e.start },
+      end: { dateTime: e.end },
+      organizer: { email: organizer, ...(organizer === box.address ? { self: true } : {}) },
+      ...(e.attendees.length ? { attendees: e.attendees.map((email) => ({ email, responseStatus: 'needsAction', ...(email === box.address ? { self: true } : {}), ...(email === organizer ? { organizer: true } : {}) })) } : {}),
+      ...(e.description ? { description: e.description } : {}),
+      ...(e.location ? { location: e.location } : {}),
+      ...(e.recurring ? { recurringEventId: e.id.split('_')[0] } : {}),
+    };
+  }
+
+  /**
+   * An event as Microsoft Graph returns it: times as a wall clock in UTC, the organizer named apart from the people
+   * invited, and only a preview of the body. Like Graph, it returns just the properties `select` names.
+   */
+  private graphEvent(box: FakeMailbox, e: FakeEvent, select?: string[]) {
+    const organizer = e.organizer ?? box.address;
+    const clock = (iso: string) => ({ dateTime: `${new Date(iso).toISOString().slice(0, 23)}0000`, timeZone: 'UTC' });
+    const full: Record<string, unknown> = {
+      id: e.id,
+      subject: e.summary,
+      start: clock(e.start),
+      end: clock(e.end),
+      isAllDay: false,
+      isCancelled: false,
+      isOrganizer: organizer === box.address,
+      organizer: { emailAddress: { name: '', address: organizer } },
+      attendees: e.attendees.filter((a) => a !== organizer).map((address) => ({ type: 'required', status: { response: 'none', time: '0001-01-01T00:00:00Z' }, emailAddress: { name: '', address } })),
+      location: { displayName: e.location ?? '' },
+      bodyPreview: (e.description ?? '').replace(/\n/g, '\r\n').slice(0, 255),
+      type: e.recurring ? 'occurrence' : 'singleInstance',
+      seriesMasterId: e.recurring ? `series-${e.id.slice(-12)}` : null,
+      showAs: 'busy',
+      importance: 'normal',
+      sensitivity: 'normal',
+      categories: [],
+      responseStatus: { response: organizer === box.address ? 'organizer' : 'notResponded', time: '0001-01-01T00:00:00Z' },
+      webLink: `https://outlook.office365.com/owa/?itemid=${encodeURIComponent(e.id)}`,
+    };
+    return select ? Object.fromEntries(['id', ...select].filter((k) => k in full).map((k) => [k, full[k]])) : full;
+  }
+
   async execute(slug: string, args: Record<string, unknown>, who: { userId: string; connectedAccountId: string }): Promise<ToolResult> {
     this.calls.push({ slug, args, connectedAccountId: who.connectedAccountId });
     const box = this.accounts.get(who.connectedAccountId);
@@ -358,6 +428,12 @@ export class FakeComposio implements ComposioProvider {
       throw new Error('ETIMEDOUT (fake)');
     }
     const ok = (data: Record<string, unknown>): ToolResult => ({ successful: true, data, error: null });
+    const refuse = (error: string): ToolResult => ({ successful: false, data: {}, error });
+    /** The other people on an event: who a calendar tells about it. */
+    const guestsOf = (e: FakeEvent) => e.attendees.filter((a) => a !== box.address);
+    const WHO_IS_TOLD = ['all', 'externalOnly', 'none'];
+    /** The wall-clock form Outlook's calendar tools take: no zone, no offset. */
+    const WALL_CLOCK = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,7})?$/;
     switch (slug) {
       case 'GMAIL_GET_PROFILE':
         return ok({ response_data: { emailAddress: box.address, messagesTotal: box.messages.length, threadsTotal: new Set(box.messages.map((m) => m.threadId)).size, historyId: '1' } });
@@ -437,14 +513,74 @@ export class FakeComposio implements ComposioProvider {
         if (!['all', 'externalOnly', 'none'].includes(args.send_updates as string)) return { successful: false, data: {}, error: 'Invalid send_updates' };
         const event = { id: newId('gev'), summary: String(args.summary ?? ''), start: start.toISOString(), end: new Date(start.getTime() + minutes * 60_000).toISOString(), attendees: (args.attendees as string[] | undefined) ?? [], invited: args.send_updates === 'all' };
         box.events.push(event);
+        if (event.invited && event.attendees.length) box.notices.push({ about: 'invited', event: event.id, to: [...event.attendees] });
         if (fail === 'sent-then-timeout') {
           this.failNext.delete(slug);
           throw new Error('ETIMEDOUT after the event was created (fake)');
         }
         return ok({ response_data: { id: event.id, summary: event.summary, start: { dateTime: event.start }, end: { dateTime: event.end } } });
       }
-      case 'GOOGLECALENDAR_EVENTS_LIST':
-        return ok({ items: box.events.map((e) => ({ id: e.id, summary: e.summary, start: { dateTime: e.start }, end: { dateTime: e.end }, attendees: e.attendees.map((email) => ({ email })) })), nextPageToken: null });
+      case 'GOOGLECALENDAR_EVENTS_LIST': {
+        // Like Google: the events that overlap the span asked for, earliest first, a page at a time.
+        const from = args.timeMin ? new Date(String(args.timeMin)).getTime() : -Infinity;
+        const to = args.timeMax ? new Date(String(args.timeMax)).getTime() : Infinity;
+        if (Number.isNaN(from) || Number.isNaN(to)) return refuse('Bad Request: timeMin and timeMax must be RFC3339 timestamps');
+        const max = Number(args.maxResults ?? 250);
+        const start = Number(args.pageToken ?? 0);
+        const list = box.events.filter((e) => new Date(e.end).getTime() > from && new Date(e.start).getTime() < to).sort((a, b) => a.start.localeCompare(b.start));
+        return ok({ items: list.slice(start, start + max).map((e) => this.googleEvent(box, e)), nextPageToken: start + max < list.length ? String(start + max) : null });
+      }
+      case 'GOOGLECALENDAR_EVENTS_GET': {
+        if (typeof args.event_id !== 'string') return refuse('Invalid request data provided: event_id is required');
+        const e = box.events.find((x) => x.id === args.event_id);
+        // A deleted event is still shown for a while, as cancelled.
+        if (!e) return box.cancelled.includes(args.event_id) ? ok({ id: args.event_id, status: 'cancelled' }) : refuse('Not Found');
+        return ok(this.googleEvent(box, e));
+      }
+      case 'GOOGLECALENDAR_PATCH_EVENT': {
+        if (typeof args.calendar_id !== 'string' || typeof args.event_id !== 'string') return refuse('Invalid request data provided: calendar_id and event_id are required');
+        if (args.send_updates !== undefined && !WHO_IS_TOLD.includes(args.send_updates as string)) return refuse('Invalid send_updates');
+        if (args.attendees !== undefined && !(Array.isArray(args.attendees) && args.attendees.every((a) => typeof a === 'string'))) return refuse('Invalid attendees: a list of email addresses is expected');
+        const e = box.events.find((x) => x.id === args.event_id);
+        if (!e) return refuse('Not Found');
+        // What everyone on an event sees can only be changed by its organizer.
+        if ((e.organizer ?? box.address) !== box.address) return refuse('Shared properties can only be changed by the organizer of the event (forbiddenForNonOrganizer)');
+        // A time with no zone of its own is read as UTC, as the tool does when no `timezone` is given.
+        const at = (v: unknown) => new Date(/(z|[+-]\d{2}:?\d{2})$/i.test(String(v)) ? String(v) : `${String(v)}Z`);
+        const length = new Date(e.end).getTime() - new Date(e.start).getTime();
+        const starts = args.start_time !== undefined ? at(args.start_time) : new Date(e.start);
+        const ends = args.end_time !== undefined ? at(args.end_time) : args.start_time !== undefined ? new Date(starts.getTime() + length) : new Date(e.end);
+        if (Number.isNaN(starts.getTime()) || Number.isNaN(ends.getTime()) || ends <= starts) return refuse('The specified time range is empty (timeRangeEmpty)');
+        const before = guestsOf(e);
+        if (typeof args.summary === 'string') e.summary = args.summary;
+        if (typeof args.description === 'string') e.description = args.description || undefined;
+        if (typeof args.location === 'string') e.location = args.location || undefined;
+        if (args.attendees !== undefined) e.attendees = (args.attendees as string[]).map((a) => a.toLowerCase());
+        e.start = starts.toISOString();
+        e.end = ends.toISOString();
+        // Google tells the guests only when asked to: those who stay, those who were added and those who were taken off.
+        const told = [...new Set([...before, ...guestsOf(e)])];
+        if (args.send_updates === 'all' && told.length) box.notices.push({ about: 'changed', event: e.id, to: told });
+        if (fail === 'sent-then-timeout') {
+          this.failNext.delete(slug);
+          throw new Error('ETIMEDOUT after the event was changed (fake)');
+        }
+        return ok(this.googleEvent(box, e));
+      }
+      case 'GOOGLECALENDAR_DELETE_EVENT': {
+        if (typeof args.event_id !== 'string') return refuse('Invalid request data provided: event_id is required');
+        if (args.send_updates !== undefined && !WHO_IS_TOLD.includes(args.send_updates as string)) return refuse('Invalid send_updates');
+        const i = box.events.findIndex((x) => x.id === args.event_id);
+        if (i < 0) return refuse(box.cancelled.includes(args.event_id) ? 'Resource has been deleted' : 'Not Found');
+        const [e] = box.events.splice(i, 1);
+        box.cancelled.push(e!.id);
+        if ((e!.organizer ?? box.address) === box.address && args.send_updates === 'all' && guestsOf(e!).length) box.notices.push({ about: 'cancelled', event: e!.id, to: guestsOf(e!) });
+        if (fail === 'sent-then-timeout') {
+          this.failNext.delete(slug);
+          throw new Error('ETIMEDOUT after the event was deleted (fake)');
+        }
+        return ok({ response_data: { status: 'success' } });
+      }
       /* ───── Outlook ───── */
       case 'OUTLOOK_GET_PROFILE':
         return ok({ id: 'user-1', mail: box.address, userPrincipalName: box.address, displayName: 'Stand-in person' });
@@ -536,6 +672,99 @@ export class FakeComposio implements ComposioProvider {
           throw new Error('ETIMEDOUT after the change (fake)');
         }
         return ok({ results, total_requested: items.length, total_succeeded: done, total_failed: items.length - done });
+      }
+      /* ───── Outlook's calendar ───── */
+      case 'OUTLOOK_GET_CALENDAR_VIEW': {
+        const from = new Date(String(args.start_datetime ?? ''));
+        const to = new Date(String(args.end_datetime ?? ''));
+        if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return refuse('Invalid request data provided: start_datetime and end_datetime are required ISO 8601 date-times');
+        const top = Number(args.top ?? 20);
+        if (!(Number.isInteger(top) && top >= 1 && top <= 1000)) return refuse('Invalid request data provided: top must be between 1 and 1000');
+        if (args.timezone !== undefined && args.timezone !== 'UTC') return refuse('The stand-in calendar only answers in UTC');
+        const start = Number(args.page_token ?? 0);
+        // What comes back when nothing is selected. `isOrganizer` is not on Outlook's own default list.
+        const select = Array.isArray(args.select) ? (args.select as string[]) : ['id', 'subject', 'start', 'end', 'location', 'attendees', 'organizer', 'isAllDay', 'isCancelled', 'showAs', 'importance', 'responseStatus', 'webLink', 'bodyPreview', 'categories', 'sensitivity'];
+        const list = box.events.filter((e) => new Date(e.end) > from && new Date(e.start) < to).sort((a, b) => a.start.localeCompare(b.start));
+        return ok({ value: list.slice(start, start + top).map((e) => this.graphEvent(box, e, select)), ...(start + top < list.length ? { next_page_token: String(start + top) } : {}) });
+      }
+      case 'OUTLOOK_GET_EVENT': {
+        if (typeof args.event_id !== 'string') return refuse('Invalid request data provided: event_id is required');
+        const e = box.events.find((x) => x.id === args.event_id);
+        return e ? ok(this.graphEvent(box, e)) : refuse('The specified object was not found in the store. (ErrorItemNotFound)');
+      }
+      case 'OUTLOOK_CALENDAR_CREATE_EVENT': {
+        if (typeof args.subject !== 'string' || typeof args.time_zone !== 'string' || !WALL_CLOCK.test(String(args.start_datetime ?? '')) || !WALL_CLOCK.test(String(args.end_datetime ?? ''))) return refuse('Invalid request data provided: subject, start_datetime, end_datetime and time_zone are required, and the times are wall-clock times with no zone');
+        if (args.time_zone !== 'UTC') return refuse('The stand-in calendar only keeps UTC');
+        const starts = new Date(`${String(args.start_datetime)}Z`);
+        const ends = new Date(`${String(args.end_datetime)}Z`);
+        if (!(starts < ends)) return refuse('The start time must be before the end time');
+        // Each attendee is an object of text fields with an address in `email`.
+        const info = (args.attendees_info ?? []) as unknown;
+        const person = (a: unknown): a is { email: string } => typeof a === 'object' && a !== null && typeof (a as { email?: unknown }).email === 'string' && Object.values(a).every((v) => typeof v === 'string');
+        if (!Array.isArray(info) || !info.every(person)) return refuse('Invalid request data provided: attendees_info is a list of attendees, each with an email');
+        const attendees = (info as { email: string }[]).map((a) => a.email.toLowerCase());
+        // Outlook's ids are long and carry characters ("=", "-", "_") that Timmy's own ids do not.
+        const event: FakeEvent = { id: `AAMkAG${randomBytes(48).toString('base64url')}AAA=`, summary: args.subject, start: starts.toISOString(), end: ends.toISOString(), attendees, ...(args.body ? { description: String(args.body) } : {}), ...(args.location ? { location: String(args.location) } : {}), invited: attendees.length > 0 };
+        box.events.push(event);
+        // Outlook sends the invitations itself whenever a new event has attendees.
+        if (attendees.length) box.notices.push({ about: 'invited', event: event.id, to: [...attendees] });
+        if (fail === 'sent-then-timeout') {
+          this.failNext.delete(slug);
+          throw new Error('ETIMEDOUT after the event was created (fake)');
+        }
+        return ok(this.graphEvent(box, event));
+      }
+      case 'OUTLOOK_UPDATE_CALENDAR_EVENT': {
+        if (typeof args.event_id !== 'string') return refuse('Invalid request data provided: event_id is required');
+        for (const k of ['start_datetime', 'end_datetime']) if (args[k] !== undefined && !WALL_CLOCK.test(String(args[k]))) return refuse(`Invalid request data provided: ${k} is a wall-clock time with no zone`);
+        if (args.time_zone !== undefined && args.time_zone !== 'UTC') return refuse('The stand-in calendar only keeps UTC');
+        const listed = (a: unknown): a is { emailAddress: { address: string; name?: string }; type: string } => typeof a === 'object' && a !== null && typeof (a as { type?: unknown }).type === 'string' && typeof (a as { emailAddress?: { address?: unknown } }).emailAddress?.address === 'string';
+        if (args.attendees !== undefined && !(Array.isArray(args.attendees) && args.attendees.every(listed))) return refuse('Invalid request data provided: each attendee needs an emailAddress with an address, and a type');
+        const body = args.body as { contentType?: unknown; content?: unknown } | undefined;
+        if (body !== undefined && !(typeof body === 'object' && body !== null && ['text', 'html'].includes(String(body.contentType).toLowerCase()) && typeof body.content === 'string')) return refuse('Invalid request data provided: body needs a contentType of Text or HTML, and content');
+        const e = box.events.find((x) => x.id === args.event_id);
+        if (!e) return refuse('The specified object was not found in the store. (ErrorItemNotFound)');
+        // A meeting can only be changed by its organizer.
+        if ((e.organizer ?? box.address) !== box.address) return refuse('You can’t change this meeting because you are not its organizer. (ErrorAccessDenied)');
+        const starts = args.start_datetime !== undefined ? new Date(`${String(args.start_datetime)}Z`) : new Date(e.start);
+        const ends = args.end_datetime !== undefined ? new Date(`${String(args.end_datetime)}Z`) : new Date(e.end);
+        if (!(starts < ends)) return refuse('The start time must be before the end time');
+        const before = guestsOf(e);
+        if (typeof args.subject === 'string') e.summary = args.subject;
+        if (body) e.description = (String(body.contentType).toLowerCase() === 'html' ? htmlToText(body.content as string) : (body.content as string)) || undefined;
+        if (typeof args.location === 'string') e.location = args.location || undefined;
+        if (args.attendees !== undefined) e.attendees = (args.attendees as { emailAddress: { address: string } }[]).map((a) => a.emailAddress.address.toLowerCase());
+        e.start = starts.toISOString();
+        e.end = ends.toISOString();
+        // Outlook tells everyone on a meeting when its organizer changes it. Nobody asks it to, and nobody can ask it not to.
+        const told = [...new Set([...before, ...guestsOf(e)])];
+        if (told.length) box.notices.push({ about: 'changed', event: e.id, to: told });
+        if (fail === 'sent-then-timeout') {
+          this.failNext.delete(slug);
+          throw new Error('ETIMEDOUT after the event was changed (fake)');
+        }
+        return ok(this.graphEvent(box, e));
+      }
+      case 'OUTLOOK_DELETE_CALENDAR_EVENT':
+      case 'OUTLOOK_CANCEL_EVENT': {
+        const cancel = slug === 'OUTLOOK_CANCEL_EVENT';
+        if (typeof args.event_id !== 'string' || (cancel && typeof args.user_id !== 'string')) return refuse(`Invalid request data provided: ${cancel ? 'user_id and event_id are' : 'event_id is'} required`);
+        const i = box.events.findIndex((x) => x.id === args.event_id);
+        if (i < 0) return refuse('The specified object was not found in the store. (ErrorItemNotFound)');
+        const e = box.events[i]!;
+        const organizes = (e.organizer ?? box.address) === box.address;
+        // Cancelling is for a meeting, by its organizer: it is what tells the attendees.
+        if (cancel && !organizes) return refuse('Your request can’t be completed. You need to be an organizer to cancel a meeting.');
+        if (cancel && !guestsOf(e).length) return refuse('Your request can’t be completed. Only a meeting with attendees can be cancelled.');
+        box.events.splice(i, 1);
+        box.cancelled.push(e.id);
+        // Deleting a meeting from its organizer's calendar tells the attendees too.
+        if (organizes && guestsOf(e).length) box.notices.push({ about: 'cancelled', event: e.id, to: guestsOf(e) });
+        if (fail === 'sent-then-timeout') {
+          this.failNext.delete(slug);
+          throw new Error('ETIMEDOUT after the event was deleted (fake)');
+        }
+        return ok(cancel ? { message: 'Event canceled successfully.', success: true, user_id: args.user_id, event_id: args.event_id } : {});
       }
       /* ───── Google Drive ───── */
       case 'GOOGLEDRIVE_GET_ABOUT':
