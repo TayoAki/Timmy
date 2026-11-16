@@ -17,5 +17,6 @@ Playwright scripts that drive the real app in Chromium, desktop (1440×900) and 
 | `e2e-round3b.cjs` | Connections, RevOps approvals, Outlook, lead sources, enrichment and finding leads, calls, delegate mode, client workspaces, mailboxes, import checks, showings |
 | `e2e-round4.cjs` | Treg on by default, cold email as drafts in the connected account, the Unibox Sent view, the conversation banner and form-card layout |
 | `e2e-story.cjs` | The story demo ("Monday, 8:12"): plays on fresh data, keeps $62, sends Dana's reply, books the lead, drafts and sends the campaign, sorts triage, ends on the call to action, and puts your own demo back when closed |
+| `e2e-intro.cjs` | The cinematic intro: films the real app, rows settle from depth, Keep $62 is pressed for real, the title racks in, it ends on black, saved demo data is untouched; and the story's voiceover-sync mode |
 
 Run everything with `bash e2e/run-all.sh` (local dev server) or with `BASE=<url>` for a deployed build. When the backend lands, keep these passing in demo mode and add suites that run against a seeded test workspace.

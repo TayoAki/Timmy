@@ -1115,10 +1115,12 @@ function load(): State {
   }
 }
 
-export function StoreProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, undefined, load);
+/** `ephemeral`: start from the demo seed and save nothing (the cinematic intro). */
+export function StoreProvider({ children, ephemeral = false }: { children: ReactNode; ephemeral?: boolean }) {
+  const [state, dispatch] = useReducer(reducer, undefined, ephemeral ? () => initial : load);
 
   useEffect(() => {
+    if (ephemeral) return;
     const timer = window.setTimeout(() => {
       try {
         const out: Record<string, unknown> = {};
@@ -1129,7 +1131,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [state]);
+  }, [state, ephemeral]);
 
   const value = useMemo(() => ({ state, dispatch }), [state]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

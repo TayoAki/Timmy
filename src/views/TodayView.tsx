@@ -189,6 +189,14 @@ function RunControl() {
   );
 }
 
+/** The "Needs you today" list on its own, for the cinematic intro. */
+export function UrgentNow({ limit = 5 }: { limit?: number }) {
+  const { state } = useStore();
+  const { rank } = useUrgency();
+  const ranked = rank(scopedThreads(state, openThreads(state.threads)));
+  return <UrgentSection ranked={ranked} alerts={state.scope ? [] : leadAlerts(state)} limit={limit} />;
+}
+
 /** The urgent list: only what needs you today, or everything open ranked. */
 function UrgentSection({ ranked, alerts = [], limit }: { ranked: { t: Thread; u: UrgencyInfo }[]; alerts?: LeadAlert[]; limit?: number }) {
   const { state, dispatch } = useStore();

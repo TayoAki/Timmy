@@ -248,5 +248,38 @@ export const BEATS: Beat[] = [
   },
 ];
 
+/**
+ * Where each scene starts in the ElevenLabs voiceover (docs/story-voiceover.md, the
+ * 3:21 take), and when its button is pressed or its question asked. ?story=play&sync=vo
+ * plays to these times so a recording lines up with the voice.
+ */
+export const VO_SYNC: Record<string, { at: number; press?: number }> = {
+  pile: { at: 0 },
+  hum: { at: 7.8 },
+  cost: { at: 17.6 },
+  brief: { at: 27.5 },
+  urgent: { at: 35.1 },
+  'open-dana': { at: 41.5, press: 42.7 },
+  draft: { at: 43.9 },
+  steps: { at: 51.9 },
+  catch: { at: 58.1 },
+  decide: { at: 69.1, press: 83.2 },
+  carried: { at: 85.4 },
+  'reply-62': { at: 92.5 },
+  send: { at: 96.8, press: 98.4 },
+  waiting: { at: 103.7 },
+  book: { at: 110.3, press: 117.8 },
+  booked: { at: 119.1 },
+  ask: { at: 123.3, press: 125.3 },
+  drafted: { at: 128.0 },
+  triage: { at: 136.1, press: 141.2 },
+  sorted: { at: 143.5 },
+  lunch: { at: 152.1, press: 156.6 },
+  plan: { at: 158.8 },
+  failure: { at: 180.3 },
+  success: { at: 191.7 },
+  end: { at: 202.6 },
+};
+
 /** Words read at about 4 a second, with a floor and a ceiling. */
 export const readTime = (text: string) => Math.min(8000, Math.max(3000, text.split(/\s+/).length * 250 + 1000));

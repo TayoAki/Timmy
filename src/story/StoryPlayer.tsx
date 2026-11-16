@@ -10,12 +10,16 @@ import { ArrowRight, Pause, Play, Plug, RotateCcw, SkipForward, X } from 'lucide
 import { useEffect, useRef, useState } from 'react';
 import { assistant } from '../agent/conversations';
 import { useStore } from '../state/store';
-import { BEATS, readTime, type Find, type Helpers } from './script';
+import { BEATS, readTime, VO_SYNC, type Find, type Helpers } from './script';
 import '../styles/story.css';
 
 const STATE_KEY = 'timmy-state-v3';
 const STASH_KEY = 'timmy-story-stash';
 const EVENT = 'timmy:story';
+/** ?story=play&sync=vo: scenes follow the voiceover's timings (for recording the video). */
+const SYNC = new URLSearchParams(window.location.search).get('sync') === 'vo';
+/** In sync mode, the voice starts this long after the story does, so scene 1 is ready. */
+const VOICE_LEAD = 1.2;
 
 /** Opens the story's first card. */
 export const playStory = () => window.dispatchEvent(new CustomEvent(EVENT));
@@ -195,13 +199,31 @@ export function StoryPlayer() {
       }
     };
 
+    // Sync mode: a clock that reads 0 when the voice starts.
+    const t0 = performance.now() + VOICE_LEAD * 1000;
+    if (SYNC) (window as unknown as { __storyVoiceAt: number }).__storyVoiceAt = Date.now() + VOICE_LEAD * 1000;
+    const clock = () => (performance.now() - t0) / 1000;
+    const untilT = async (sec: number) => {
+      while (alive() && clock() < sec) await sleep(Math.min(100, Math.max(5, (sec - clock()) * 1000)));
+    };
+
     for (let i = from; i < BEATS.length; i++) {
       if (!alive()) return;
       const b = BEATS[i]!;
-      setIndex(i);
-      setProgress(0);
-      if (b.card || !b.spot) target.current = null;
+      const v = SYNC ? VO_SYNC[b.id] : undefined;
+      if (v) {
+        // Set the screen up just before the line, then show the caption as the voice starts it.
+        await untilT(v.at - (b.setup ? 1.2 : 0.05));
+      } else {
+        setIndex(i);
+        setProgress(0);
+        if (b.card || !b.spot) target.current = null;
+      }
       if (b.card === 'end') {
+        if (v) {
+          target.current = null;
+          setIndex(i);
+        }
         setCursor((c) => ({ ...c, show: false }));
         return;
       }
@@ -212,6 +234,11 @@ export function StoryPlayer() {
       if (!alive()) return;
       const el = await find(b.spot, 2500);
       if (!alive()) return;
+      if (v) {
+        await untilT(v.at);
+        setIndex(i);
+        setProgress(0);
+      }
       target.current = el;
       if (el) {
         const r = el.getBoundingClientRect();
@@ -222,8 +249,19 @@ export function StoryPlayer() {
         target.current = el;
       }
 
+      if (v) {
+        // Hold until this scene's button is due (the cursor takes about a second to get there),
+        // or until the next scene is about to be set up.
+        const next = BEATS.slice(i + 1).find((x) => VO_SYNC[x.id]);
+        const nextAt = next ? VO_SYNC[next.id]!.at : v.at + 6;
+        const end = v.press !== undefined ? v.press - (b.press ? 0.98 : 0) : nextAt - (next?.setup ? 1.2 : 0.05);
+        while (alive() && clock() < end) {
+          await sleep(100);
+          setProgress(Math.min(1, (clock() - v.at) / Math.max(1, nextAt - v.at)));
+        }
+      }
       // Read, unless paused or skipped.
-      const total = b.card === 'plan' ? 8000 : readTime(b.text);
+      const total = v ? 0 : b.card === 'plan' ? 8000 : readTime(b.text);
       let spent = 0;
       while (spent < total) {
         if (!alive()) return;
@@ -301,7 +339,7 @@ export function StoryPlayer() {
   if (!open) return null;
 
   const total = BEATS.length - 2; // scenes between the intro and the end
-  const controls = (
+  const controls = SYNC ? null : (
     <div className="story-controls">
       <span className="story-count mono" aria-label={`Scene ${index} of ${total}`}>
         {index}/{total}

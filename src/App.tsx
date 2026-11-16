@@ -22,6 +22,7 @@ import { SearchPalette } from './components/SearchPalette';
 import { Sidebar } from './components/Sidebar';
 import { StoreProvider, useStore, type Toast } from './state/store';
 import { StoryPlayer } from './story/StoryPlayer';
+import { Intro } from './intro/Intro';
 import { ThemeProvider } from './state/theme';
 import { AppearanceView } from './views/AppearanceView';
 import { MailboxView } from './views/MailboxView';
@@ -30,11 +31,20 @@ import { ThreadView } from './views/ThreadView';
 import { TodayView } from './views/TodayView';
 import { VoiceView } from './views/VoiceView';
 
+/** ?intro plays the cinematic intro: the real app, filmed in 3D, on demo data that isn't saved. */
+const INTRO = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('intro');
+
 export default function App() {
   return (
     <ThemeProvider>
-      <StoreProvider>
-        <Shell />
+      <StoreProvider ephemeral={INTRO}>
+        {INTRO ? (
+          <Intro>
+            <Shell />
+          </Intro>
+        ) : (
+          <Shell />
+        )}
       </StoreProvider>
     </ThemeProvider>
   );
