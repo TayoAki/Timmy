@@ -22,6 +22,7 @@ import { withWorkspace, type Tx } from '../db/pool';
 import { cancelHeld, decide, GatewayError, onReplay, propose, type EffectRow } from '../gateway/gateway';
 import type { WsOp } from '../../../src/state/ws';
 import { checkWsOps } from './ws-check';
+import { LIVE_DECISION } from '../agent/read';
 import { prepareMailSend } from '../gateway/mail';
 import { SYNCED_PREFIX, eventProposal } from '../sync/calendar-write';
 import { filingProposal, isBox } from '../sync/labels';
@@ -269,7 +270,35 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
   }
   // The reducer has no default case: an action it doesn't know returns nothing.
   if (!next) return { state, reject: 'That isn’t a command.' };
+  next = afterDeciding(loaded, ctx, a, state, next);
   return gateSends(tx, loaded, ctx, cmd, state, next);
+}
+
+/**
+ * Decisions Timmy brought from the mail (see agent/read.ts). Two things follow from what the person does:
+ *   - they pick an answer on the card: Timmy drafts the reply that says so. It is a draft; it waits for Send.
+ *   - they answer the thread themselves instead: the card has nothing left to ask, and goes.
+ */
+function afterDeciding(loaded: Loaded, ctx: Ctx, a: Action, prev: State, next: State): State {
+  if (a.type === 'resolve' && a.key.startsWith(`dec:${LIVE_DECISION}`)) {
+    const id = a.key.slice(4);
+    const was = prev.decisions.find((d) => d.id === id);
+    const now = next.decisions.find((d) => d.id === id);
+    const picked = now?.chosen ? now.options.find((o) => o.id === now.chosen!.option) : undefined;
+    if (was && !was.chosen && now?.thread && picked && !picked.holds && modelReady()) {
+      // The answer is one the person chose from the card, so it goes to the drafting step as their own words.
+      const note = `I have decided: ${picked.label}. The question was: ${now.title} Write the reply that tells them my decision.`;
+      enqueueSoon('draft.make', { workspaceId: ctx.workspaceId, threadId: now.thread, note, userName: ctx.user.name }, { singletonKey: `draft:${ctx.workspaceId}:${now.thread}` });
+    }
+    return next;
+  }
+  const answered = newOutgoing(prev, next)
+    .map((o) => next.decisions.find((d) => d.id === `${LIVE_DECISION}${o.thread.id}` && !d.chosen))
+    .filter((d): d is NonNullable<typeof d> => !!d);
+  if (!answered.length) return next;
+  const gone = new Set(answered.map((d) => d.id));
+  const kept = { ...next, decisions: next.decisions.filter((d) => !gone.has(d.id)) };
+  return reduce(loaded, kept, { type: 'ws', ops: [], log: `Your reply answered “${answered[0]!.title}”, so the card for it was closed` }) ?? kept;
 }
 
 /** The two ways the screen says yes or no to a waiting action: the Approvals row, and the card in the chat. */

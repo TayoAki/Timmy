@@ -226,6 +226,8 @@ export interface Contact {
   about?: string;
   /** Emails exchanged in the last 30 days; used to suggest who to track. */
   emails?: number;
+  /** Timmy added this person from your mail. They leave again if that mail goes, unless you track them. */
+  auto?: boolean;
 }
 
 export type InteractionKind = 'note' | 'email' | 'meeting' | 'call' | 'reminder' | 'file';

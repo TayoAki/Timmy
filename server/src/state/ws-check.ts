@@ -16,7 +16,8 @@ import { KIND } from '../../../src/areas/automations/catalog';
 import { WS_COLLECTIONS } from '../../../src/live/patches';
 
 const COLLECTIONS: ReadonlySet<string> = new Set(WS_COLLECTIONS);
-const ID = /^[\w.:@-]{1,200}$/;
+/** Ids made here and by the screens. An id taken from an email address may carry a plus sign. */
+const ID = /^[\w.:@+-]{1,200}$/;
 const plain = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype;
 const text = (v: unknown, max: number) => typeof v === 'string' && v.length <= max;
 

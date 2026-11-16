@@ -13,6 +13,7 @@ import { ADDRESS, prepareMailSend, type MailSend } from '../gateway/mail';
 import type { ToolDef } from '../providers/model';
 import { actorOf, emailOf, type Ctx } from '../state/engine';
 import { mutate, readState } from '../state/mutate';
+import { findPeople, openCommitments } from '../ontology/ontology';
 import { BOX_WORDS, filingProposal, isBox } from '../sync/labels';
 import { LostLease } from './errors';
 import { untrusted } from './prompts';
@@ -158,6 +159,37 @@ const searchFiles: AgentTool = {
     const results = rows.map((r) => ({ name: r.subject, kind: r.snippet, owner: r.owner_name || r.sender || undefined, changed: new Date(r.occurred_at).toISOString(), link: r.link ?? undefined }));
     // File names are written by whoever made or shared the file, so they are outside content like mail is.
     return { result: untrusted('files', { query, results }), outside: true };
+  },
+};
+
+const lookupPerson: AgentTool = {
+  kind: 'read',
+  step: 'Looking up who that is',
+  def: {
+    name: 'lookup_person',
+    description:
+      'Look up a person or a company the user has been in touch with: who they are, where they work, the latest threads with them, and what they and the user have promised each other. It is built from the user’s own mail, calendar and files, and every promise comes with the sentence it rests on. Takes a name, an email address or a company name.',
+    parameters: { type: 'object', properties: { query: { type: 'string', description: 'A name, an email address or a company' } }, required: ['query'] },
+  },
+  async run(args, t) {
+    const query = str(args.query, 200).trim();
+    const people = await findPeople(t.ctx.workspaceId, query);
+    // Names, subjects and quotes all come from other people's mail, so they are outside content.
+    return { result: untrusted('people', { query, people }), outside: true };
+  },
+};
+
+const listCommitments: AgentTool = {
+  kind: 'read',
+  step: 'Checking what has been promised',
+  def: {
+    name: 'list_commitments',
+    description:
+      'List the open promises in the user’s mail: what other people said they would send or do for the user (who: "them"), and what the user said they would do for others (who: "me"), with the date when one was named and the sentence each rests on. Use it for "what am I waiting on" and "what do I owe people".',
+    parameters: { type: 'object', properties: {} },
+  },
+  async run(_args, t) {
+    return { result: untrusted('people', { commitments: await openCommitments(t.ctx.workspaceId) }), outside: true };
   },
 };
 
@@ -316,5 +348,5 @@ const fileThread: AgentTool = {
   },
 };
 
-export const TOOLS: AgentTool[] = [searchMail, readThread, listInbox, searchFiles, draftReply, sendEmail, sendReply, fileThread];
+export const TOOLS: AgentTool[] = [searchMail, readThread, listInbox, searchFiles, lookupPerson, listCommitments, draftReply, sendEmail, sendReply, fileThread];
 export const TOOL_BY_NAME: Record<string, AgentTool> = Object.fromEntries(TOOLS.map((t) => [t.def.name, t]));

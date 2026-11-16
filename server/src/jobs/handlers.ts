@@ -15,9 +15,14 @@ import { closeOrphanedConnections, purgeConnection, revokeAtProvider } from '../
 import { removeFile, syncFiles } from '../sync/files';
 import { backfillMail, ingestThread, reconcileMail } from '../sync/ingest';
 import { MAIL_TOOLKITS } from '../sync/mailbox';
+import { noteItems, pruneOntology } from '../ontology/ontology';
+import { projectPeople } from '../ontology/people';
 import { defineJob, enqueueSoon } from './jobs';
 
 /** Registers every job and connects the gateway to the queue. Call once at boot. */
+/** Asks for the map to be brought up to date. One pass per workspace is queued at a time, however many items arrived. */
+const learn = (workspaceId: string) => enqueueSoon('ontology.note', { workspaceId }, { singletonKey: `ontology:${workspaceId}` });
+
 export function registerJobs() {
   defineJob('effect.execute', async (d) => {
     await executeEffect(String(d.workspaceId), String(d.effectId));
@@ -51,6 +56,7 @@ export function registerJobs() {
   defineJob('mail.backfill', async (d) => {
     const days = Number(d.days ?? config.backfillFastDays);
     const p = await backfillMail(String(d.workspaceId), String(d.connectionId), { days, maxPages: 20 });
+    if (p.messages) learn(String(d.workspaceId));
     if (!p.done) enqueueSoon('mail.backfill', d);
     // The first pass covers the recent weeks so the first brief is quick; the rest follows.
     else if (days < config.backfillFullDays) {
@@ -66,6 +72,7 @@ export function registerJobs() {
   defineJob('mail.ingest', async (d) => {
     const workspaceId = String(d.workspaceId);
     const fresh = await ingestThread(workspaceId, String(d.connectionId), String(d.threadKey), 'sync', d.seed as Record<string, unknown> | undefined);
+    if (fresh) learn(workspaceId);
     // Plain code went first. What it couldn't settle (mail from a person) gets one read by the model.
     if (fresh && modelReady()) {
       const { state } = await readState(workspaceId);
@@ -87,6 +94,7 @@ export function registerJobs() {
   defineJob('mail.reconcile', async (d) => {
     const workspaceId = String(d.workspaceId);
     const found = await reconcileMail(workspaceId, String(d.connectionId));
+    if (found.fresh) learn(workspaceId);
     if (found.fresh) {
       log.info('the nightly check found mail the triggers missed', { workspaceId, ...found });
       if (modelReady()) await readNewest(workspaceId, 2, 20);
@@ -110,13 +118,33 @@ export function registerJobs() {
     if (!out.ok) log.warn('no draft written', { workspaceId, reason: out.reason });
   });
 
+  // The map of people, companies, meetings and files: every stored item is looked at once, in batches, by plain code.
+  defineJob('ontology.note', async (d) => {
+    const workspaceId = String(d.workspaceId);
+    const out = await noteItems(workspaceId);
+    if (out.more) enqueueSoon('ontology.note', { workspaceId });
+    else if (out.items) await projectPeople(workspaceId);
+  });
+
+  // Items whose pass was missed (a job lost, a server restarted) are picked up within the hour.
+  defineJob(
+    'ontology.sweep',
+    async () => {
+      const { rows } = await sysPool.query(`select distinct i.workspace_id from item i join connection c on c.id = i.connection_id where i.ontology_at is null and c.status = 'active' limit 500`);
+      for (const r of rows) learn(r.workspace_id as string);
+    },
+    '23 * * * *',
+  );
+
   defineJob('calendar.sync', async (d) => {
-    await syncCalendar(String(d.workspaceId), String(d.connectionId));
+    const out = await syncCalendar(String(d.workspaceId), String(d.connectionId));
+    if (out.events) learn(String(d.workspaceId));
   });
 
   // The list of Drive files: a pass that didn't finish carries on in a new job from where it stopped.
   defineJob('files.sync', async (d) => {
     const p = await syncFiles(String(d.workspaceId), String(d.connectionId));
+    if (p.files) learn(String(d.workspaceId));
     if (!p.done) enqueueSoon('files.sync', d);
   });
 
@@ -165,6 +193,9 @@ export function registerJobs() {
   defineJob('connection.purge', async (d) => {
     const gone = await purgeConnection(String(d.workspaceId), String(d.connectionId));
     if (gone) log.info('deleted what a disconnected account had synced', { workspaceId: d.workspaceId, connectionId: d.connectionId, items: gone });
+    // What Timmy had learned from that account goes with it: the map keeps only what a stored item still supports.
+    await pruneOntology(String(d.workspaceId));
+    await projectPeople(String(d.workspaceId));
   });
 
   // A connection belongs to a member. If the membership ended some way the hooks did not see, it is closed here.

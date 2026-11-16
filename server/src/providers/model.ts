@@ -229,11 +229,40 @@ export class FakeModel implements ModelProvider {
       const clear = /^archive thread \S+$/i.test((words[words.length - 1] ?? '').trim());
       return { content: clear ? '{"decision":"approve","reason":"The user asked for exactly this."}' : '{"decision":"ask","reason":"The stand-in judge asks unless the request is exact."}' };
     }
-    if (req.route === 'read') return { content: JSON.stringify({ box: 'follow-up', confidence: 'medium', effort: 'quick', ask: 'They wrote to you and are waiting for an answer.', reason: 'A person asked a question.', due: null }) };
+    if (req.route === 'read') {
+      // The stand-in reads two plain patterns out of the thread: "should we A or B?" and "I'll send X by <date>".
+      const content = req.messages[req.messages.length - 1]!.content;
+      const mail = content.slice(content.indexOf('<untrusted'));
+      const choice = /[Ss]hould (?:we|I) ([^?."\\]{3,60}?) or ([^?."\\]{3,60}?)\?/.exec(mail);
+      const promise = /((?:I will|I'll|We will|We'll) (?:send|share|deliver) [^."\\]{3,80}? by (\d{4}-\d{2}-\d{2}))/.exec(mail);
+      const question = choice ? `Should we ${choice[1]} or ${choice[2]}?` : '';
+      const made = [...content.slice(0, content.indexOf('<untrusted')).matchAll(/^(\d+)\. “([^”]+)”/gm)];
+      const same = made.find((m) => m[2] === question);
+      const price = /(\$\d[\d,.]*) per seat/.exec(mail);
+      const cap = (t: string) => t[0]!.toUpperCase() + t.slice(1);
+      return {
+        content: JSON.stringify({
+          box: 'follow-up',
+          confidence: 'medium',
+          effort: 'quick',
+          ask: 'They wrote to you and are waiting for an answer.',
+          reason: 'A person asked a question.',
+          due: null,
+          commitments: promise ? [{ who: 'them', what: promise[1]!.replace(/^(I will|I'll|We will|We'll) /, '').replace(/ by \d{4}-\d{2}-\d{2}$/, ''), due: promise[2], quote: promise[1] }] : [],
+          decision: choice ? { question, options: [cap(choice[1]!), cap(choice[2]!)], facts: [...(price ? [['Price', price[1], price[0]]] : []), ['Made up', '$1', 'a sentence that is not in the thread at all']], same_as: same ? Number(same[1]) : null } : null,
+        }),
+      };
+    }
     if (req.route === 'draft') return { content: JSON.stringify({ body: 'Thanks for your message. I will come back to you on this shortly.\n\nBest' }) };
     const last = req.messages[req.messages.length - 1]!;
     const has = (name: string) => req.tools?.some((t) => t.name === name);
     if (last.role === 'tool') {
+      if (last.content.includes('<untrusted source="people">')) {
+        const person = /"name":"([^"]+)","email":"([^"]+)"(?:,"also":\[[^\]]*\])?(?:,"company":"([^"]+)")?/.exec(last.content);
+        const owed = /"what":"([^"]+)","due":(?:"([^"]+)"|null)/.exec(last.content);
+        if (last.content.includes('"commitments":[') && !person) return { content: owed ? `Open: ${owed[1]}${owed[2] ? `, due ${owed[2]}` : ''}.` : 'Nothing is open.' };
+        return { content: person ? `${person[1]} (${person[2]})${person[3] ? ` works at ${person[3]}` : ''}.${owed ? ` Open: ${owed[1]}.` : ''}` : 'I don’t know anyone by that name.' };
+      }
       if (last.content.includes('<untrusted source="files">')) {
         const file = /"name":"([^"]+)","kind":"([^"]+)"/.exec(last.content);
         return { content: file ? `I found a file: “${file[1]}” (${file[2]}).` : 'I couldn’t find a file with that name.' };
@@ -246,6 +275,9 @@ export class FakeModel implements ModelProvider {
     const text = asked.toLowerCase();
     const send = /^send (?:an email )?to (\S+@\S+) saying (.+)$/i.exec(asked);
     const file = /^(archive|file) thread (\S+)$/i.exec(asked);
+    const who = /^who is (.+?)[?.!]*$/i.exec(asked);
+    if (who && has('lookup_person')) return { toolCalls: [{ name: 'lookup_person', arguments: { query: who[1] } }] };
+    if (/^what am i waiting on[?.!]*$/i.test(asked) && has('list_commitments')) return { toolCalls: [{ name: 'list_commitments', arguments: {} }] };
     const lookFor = /^find (?:the |my )?(?:file|doc|document) (?:called |named |about )?(.+?)[?.!]*$/i.exec(asked);
     if (lookFor && has('search_files')) return { toolCalls: [{ name: 'search_files', arguments: { query: lookFor[1] } }] };
     if (file && has('file_thread')) return { toolCalls: [{ name: 'file_thread', arguments: { id: file[2], box: file[1]!.toLowerCase() === 'archive' ? 'archived' : 'follow-up' } }] };
