@@ -6,12 +6,14 @@
       "server/test/gateway.test.ts",
       "server/test/agent.test.ts",
       "server/test/audit.test.ts",
-      "server/test/filing.test.ts"
+      "server/test/filing.test.ts",
+      "server/test/calendar-write.test.ts"
     ],
     "no action runs twice": [
       "server/test/gateway.test.ts",
       "server/test/agent.test.ts",
-      "server/test/filing.test.ts"
+      "server/test/filing.test.ts",
+      "server/test/calendar-write.test.ts"
     ],
     "no cross-workspace reads": [
       "server/test/isolation.test.ts",
@@ -75,6 +77,13 @@
       "file": "server/test/calendar.test.ts",
       "covers": "calendar sync on connect, re-sync on a provider event, cancelled events, isolation",
       "tests": 3,
+      "status": "pass"
+    },
+    {
+      "id": "api-calendar-write",
+      "file": "server/test/calendar-write.test.ts",
+      "covers": "an event added in Timmy is created in Google Calendar after the undo window, once; guests are invited only after approval; Undo; an assistant's invitation waits for the exec; a guest with no address; no calendar connected; a refusal; a timeout confirmed from the calendar; the kill switch",
+      "tests": 11,
       "status": "pass"
     },
     {
@@ -187,6 +196,13 @@
       "file": "e2e/live/live-filing.cjs",
       "covers": "filing asked for in the chat shows the change and waits; with the setting on Timmy files it itself and the audit log says so; an email still needs Send",
       "tests": 11,
+      "status": "pass"
+    },
+    {
+      "id": "live-calendar",
+      "file": "e2e/live/live-calendar.cjs",
+      "covers": "connect Google Calendar; an event with a guest waits out the undo window, then is created with the guest invited, once, and shows once in Timmy; Undo means nobody is invited",
+      "tests": 12,
       "status": "pass"
     },
     {

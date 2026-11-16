@@ -1,4 +1,5 @@
 import type { Box } from '../../../src/data/types';
+import { createEvent, reconcileEvent } from '../sync/calendar-write';
 import { labelPlan, timmyLabels } from '../sync/labels';
 import { callTool, connectionById } from '../sync/tools';
 import type { EffectRow, Outcome } from './gateway';
@@ -74,6 +75,7 @@ export const EXECUTORS: Partial<Record<EffectKind, Executor>> = {
   'email.send': sendMail,
   'email.reply': sendMail,
   'mail.modify': fileMail,
+  'calendar.create': createEvent,
 };
 
 /** Whether the mailbox already shows the filing an effect asked for. */
@@ -99,6 +101,7 @@ async function reconcileFiling(e: EffectRow): Promise<Outcome> {
  */
 export async function reconcile(e: EffectRow): Promise<Outcome> {
   if (e.kind === 'mail.modify') return reconcileFiling(e);
+  if (e.kind === 'calendar.create') return reconcileEvent(e);
   if (e.kind !== 'email.send' && e.kind !== 'email.reply') return { status: 'uncertain', error: e.error ?? 'unknown' };
   const p = e.payload as unknown as MailPayload;
   const started = e.executing_at ? new Date(e.executing_at) : new Date(e.created_at);

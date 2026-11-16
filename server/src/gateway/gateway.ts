@@ -13,6 +13,7 @@ import { withWorkspace, type Tx } from '../db/pool';
 import { hashOf, newId } from '../lib/ids';
 import { log } from '../lib/log';
 import { commitState, loadState, remember, type Loaded } from '../state/docs';
+import { shownId } from '../sync/calendar-write';
 import { EXECUTORS, reconcile } from './executors';
 import { KINDS, approverFor, mayDecide, neverAllowed, reachesSomeoneElse, ruleCovers, type Actor, type EffectKind, type PolicyRow, type Route } from './policy';
 
@@ -175,9 +176,9 @@ export async function propose(tx: Tx, loaded: Loaded, state: State, actor: Actor
   /** Where this goes for its OK when `actor` asks, and whether their own say is enough. */
   const routeFor = async (who: Actor) => {
     const a = approverFor(kind, who, { approver: state.conn.crm.approver });
-    // An email leaves under the name of whoever connected the mailbox. Someone else's send from it is theirs to
-    // approve (or an owner's or admin's), the same as a delegate's.
-    if (a.self && k.domain === 'mail' && k.outbound && !who.rules.policy && typeof p.payload.connectionId === 'string') {
+    // An email or an invitation leaves under the name of whoever connected the account. Someone else's send
+    // through it is theirs to approve (or an owner's or admin's), the same as a delegate's.
+    if (a.self && k.outbound && !who.rules.policy && typeof p.payload.connectionId === 'string') {
       const owner = (await tx.query('select user_id from connection where id = $1 and workspace_id = $2', [p.payload.connectionId, workspaceId])).rows[0]?.user_id as string | undefined;
       if (owner && owner !== who.userId) {
         onBehalfOf = onBehalfOf ?? owner;
@@ -392,6 +393,17 @@ function afterEffect(loaded: Loaded, state0: State, e: EffectRow, outcome: Outco
     if (outcome.status !== 'completed' || e.source === 'user' || !p.threadId || !state0.threads.some((t) => t.id === p.threadId && t.box !== p.box)) return state0;
     const moved = replay(loaded, state0, { type: 'move', id: p.threadId, box: p.box, quiet: true, by: 'timmy' });
     return moved ? { ...moved, toasts: state0.toasts, route: state0.route } : state0;
+  }
+  // An event made in Timmy now exists in Google Calendar: the Google copy takes its place, under the id the
+  // calendar sync uses, so the next sync updates it instead of adding a second one.
+  if (e.kind === 'calendar.create') {
+    const p = e.payload as { eventId?: string; connectionId?: string };
+    const local = p.eventId ? state0.ws.events[p.eventId] : undefined;
+    if (outcome.status !== 'completed' || !outcome.externalId || !local || !p.eventId || !p.connectionId) return state0;
+    const id = shownId(p.connectionId, outcome.externalId);
+    const events = Object.fromEntries(Object.entries(state0.ws.events).filter(([k]) => k !== p.eventId));
+    const tasks = Object.fromEntries(Object.entries(state0.ws.tasks).map(([k, t]) => [k, t.event === p.eventId ? { ...t, event: id } : t]));
+    return { ...state0, ws: { ...state0.ws, events: { ...events, [id]: { ...local, id } }, tasks } };
   }
   const threadId = e.preview.thread;
   if (!threadId) return state0;

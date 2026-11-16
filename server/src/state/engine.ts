@@ -21,6 +21,7 @@ import type { RoleRules } from '../auth/roles';
 import { withWorkspace, type Tx } from '../db/pool';
 import { cancelHeld, decide, GatewayError, onReplay, propose, type EffectRow } from '../gateway/gateway';
 import { prepareMailSend } from '../gateway/mail';
+import { SYNCED_PREFIX, eventProposal } from '../sync/calendar-write';
 import { filingProposal } from '../sync/labels';
 import { draftHash } from '../../../src/live/hash';
 import type { Actor } from '../gateway/policy';
@@ -123,6 +124,7 @@ export async function runCommand(ctx: Ctx, cmd: { id: string; action: Action }):
     try {
       handled = await handle(tx, loaded, ctx, cmd);
       if (!handled.reject) handled = { ...handled, state: await fileMoves(tx, loaded, ctx, cmd.id, handled.state) };
+      if (!handled.reject) handled = await addEvents(tx, loaded, ctx, cmd.id, handled);
     } catch (err) {
       if (!(err instanceof GatewayError)) throw err;
       handled = { state: loaded.state, reject: err.message };
@@ -336,6 +338,37 @@ async function fileMoves(tx: Tx, loaded: Loaded, ctx: Ctx, commandId: string, ne
     if (p.outcome !== 'blocked') state = p.state;
   }
   return state;
+}
+
+/* ───────────── Calendar ───────────── */
+
+/**
+ * When a command adds an event to Timmy's calendar and a Google Calendar is connected, the event is written there
+ * too, through the gateway. With guests that sends invitations, so it gets the undo window, and whoever must
+ * approve an invitation approves it. Changing or removing an event that already exists is not written back yet.
+ */
+async function addEvents(tx: Tx, loaded: Loaded, ctx: Ctx, commandId: string, handled: Handled): Promise<Handled> {
+  const prev = loaded.state;
+  const next = handled.state;
+  if (prev.ws.events === next.ws.events) return handled;
+  const fresh = Object.values(next.ws.events).filter((ev) => !prev.ws.events[ev.id] && !ev.id.startsWith(SYNCED_PREFIX));
+  if (!fresh.length) return handled;
+  // The person's own calendar if they connected one, otherwise the workspace's first (whose owner then approves).
+  const cal = (await tx.query(`select id from connection where workspace_id = $1 and status = 'active' and toolkit = 'googlecalendar' order by (user_id = $2) desc, created_at limit 1`, [ctx.workspaceId, ctx.user.id])).rows[0] as { id: string } | undefined;
+  if (!cal) return handled;
+
+  let state = next;
+  const effects = [...(handled.effects ?? [])];
+  for (const ev of fresh) {
+    const made = eventProposal(ev, cal.id, (id) => emailOf(loaded, next, id));
+    if (!made.ok) return { state: prev, reject: made.reason };
+    const p = await propose(tx, loaded, state, actorOf(ctx), { ...made.proposal, why: 'You added it in Timmy.', idempotencyKey: `cmd:${commandId}:event:${ev.id}`, source: 'user', commandId });
+    // Refused at the gateway (sending is switched off): the event stays on Timmy's calendar only.
+    if (p.outcome === 'blocked' || !p.effect) continue;
+    state = p.state;
+    effects.push(p.effect);
+  }
+  return { ...handled, state, effects };
 }
 
 /* ───────────── Undo ───────────── */

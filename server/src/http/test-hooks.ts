@@ -47,6 +47,11 @@ export function testRoutes(app: Hono<Env>): void {
       fake.nextAddress = String(body.address);
       return c.json({ ok: true });
     }
+    // What the stand-in Google Calendar holds for this workspace, so a test can see what was created and who was invited.
+    if (body.op === 'calendar') {
+      const cal = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => (await tx.query(`select connected_account_id from connection where workspace_id = $1 and status = 'active' and app_id = 'gcal' order by created_at limit 1`, [ctx.workspaceId])).rows[0]);
+      return c.json({ events: cal ? (fake.accounts.get(cal.connected_account_id)?.events ?? []) : [] });
+    }
     if (!conn) return c.json({ error: 'no connected mailbox' }, 409);
     if (body.op === 'deliver') {
       const d = fake.deliver(conn.connected_account_id, body.message as { from: string; subject: string; body: string });

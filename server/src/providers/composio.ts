@@ -155,7 +155,8 @@ export interface FakeMailbox {
   toolkit: string;
   userId: string;
   messages: FakeMessage[];
-  events: { id: string; summary: string; start: string; end: string; attendees: string[] }[];
+  /** `invited` is set on events Timmy created with invitations sent. */
+  events: { id: string; summary: string; start: string; end: string; attendees: string[]; invited?: boolean }[];
   /** Labels the person or Timmy made: name → id. */
   labels: Map<string, string>;
 }
@@ -347,6 +348,18 @@ export class FakeComposio implements ComposioProvider {
           throw new Error('ETIMEDOUT after the change (fake)');
         }
         return ok({ success: true, response_dict: { id: args.thread_id } });
+      }
+      case 'GOOGLECALENDAR_CREATE_EVENT': {
+        const start = new Date(`${String(args.start_datetime)}${args.timezone === 'UTC' ? 'Z' : ''}`);
+        const minutes = Number(args.event_duration_hour ?? 0) * 60 + Number(args.event_duration_minutes ?? 0);
+        if (Number.isNaN(start.getTime()) || minutes <= 0 || Number(args.event_duration_minutes ?? 0) > 59) return { successful: false, data: {}, error: 'Invalid start or duration' };
+        const event = { id: newId('gev'), summary: String(args.summary ?? ''), start: start.toISOString(), end: new Date(start.getTime() + minutes * 60_000).toISOString(), attendees: (args.attendees as string[] | undefined) ?? [], invited: args.send_updates === true };
+        box.events.push(event);
+        if (fail === 'sent-then-timeout') {
+          this.failNext.delete(slug);
+          throw new Error('ETIMEDOUT after the event was created (fake)');
+        }
+        return ok({ response_data: { id: event.id, summary: event.summary, start: { dateTime: event.start }, end: { dateTime: event.end } } });
       }
       case 'GOOGLECALENDAR_EVENTS_LIST':
         return ok({ items: box.events.map((e) => ({ id: e.id, summary: e.summary, start: { dateTime: e.start }, end: { dateTime: e.end }, attendees: e.attendees.map((email) => ({ email })) })), nextPageToken: null });

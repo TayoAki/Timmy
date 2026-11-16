@@ -21,6 +21,7 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 | Filing written back to Gmail (phase 1) | Built. Sorting a thread in Timmy labels it in Gmail (“Timmy Follow Up”, “Timmy Waiting”, “Timmy Read Through”) and leaves it in Gmail's inbox; archiving takes it out of the inbox; Undo files it back. Each write is an effect record approved by the person's own action. Tested against the fake provider; the three Gmail calls were checked against Composio's tool list, not yet run on a real mailbox. |
 | Filing from the chat, and Auto mode (phase 1) | Built. Ask Timmy to file or archive a thread and it shows the change with “File it” and “Leave it”. With the setting in Settings › Approvals switched on, Timmy files what you clearly asked for and asks when unsure: a judge model decides from your own words and a fixed description of the action, never from the mail. The setting covers labels and archiving only; a send always waits for Send. |
 | Waiting (phase 1) | Built. A reply Timmy drafts that asks for something carries what the other person owes and by when (three working days when the email names no date), so “Send & track” moves the thread to Waiting. When the date passes with no answer, the morning run drafts a nudge (5 at most a day); the Draft button on such a thread writes a nudge too. Sending a nudge sets a new date. A reply ends the wait and drops a nudge that was drafted. Nothing is sent without Send. |
+| Events written to Google Calendar (phase 1) | Built for new events. An event added in Timmy goes onto the connected Google Calendar after the undo window; with guests Google sends the invitations, so it is approved like an email (an assistant's waits for the exec, and a member using someone else's calendar waits for that person). Undo inside the window means nobody is invited. Once Google has the event, that copy replaces the one made in Timmy, so it shows once. Changing or deleting an existing event is not written back yet. Tested against the fake provider; the Google call was checked against Composio's tool list, not yet run on a real calendar. |
 | The morning run (phase 1) | Built. At the time and on the days set in Settings › Schedule, in the workspace's own time zone, Timmy checks the mailbox for anything the triggers missed, reads what people wrote, and drafts replies to what needs an answer (10 at most). It moves nothing and sends nothing; the drafts wait in Approvals. Today and the activity log say what it did. It needs a connected mailbox, and no run time is shown without one. |
 | Cold email (phase 2, built early because the decision was made) | Built as decided: Timmy writes it and opens Gmail's compose window; nothing cold goes through an API. The lead is marked contacted when sync sees the email in Sent, and replies show in the Unibox. |
 | Frontend live mode (`VITE_TIMMY_LIVE=1`) | Built: sign-in, onboarding, state from the API, Connect buttons, model picker, monthly limit, approvals for writes Timmy proposes. The demo is unchanged and still the default build. |
@@ -53,7 +54,7 @@ BASE=https://app-staging-fcb4f05d.up.railway.app/ TEST_TOKEN=<the TIMMY_TEST_TOK
 bash scripts/dev.sh          # local Postgres with pgvector, then every suite
 bash scripts/dev.sh server   # the API's unit and integration tests
 bash scripts/dev.sh demo     # the 12 demo-mode Playwright suites
-bash scripts/dev.sh live     # the 9 live-mode Playwright suites (fake providers)
+bash scripts/dev.sh live     # the 10 live-mode Playwright suites (fake providers)
 ```
 
 Local Postgres stops when the cloud session's worker restarts; `bash scripts/dev.sh db` starts it again.
@@ -65,9 +66,9 @@ Cost measurement: `server/scripts/measure-cost.ts` (the header says how to run i
 
 | Suite | Result |
 | --- | --- |
-| API unit and integration (`server/test`, 13 files) | 216 of 216 pass |
+| API unit and integration (`server/test`, 14 files) | 227 of 227 pass |
 | Demo-mode Playwright (`e2e/`, 12 suites, 348 checks) | 12 of 12 pass |
-| Live-mode Playwright (`e2e/live/`, 9 suites, 156 checks) | 9 of 9 pass |
+| Live-mode Playwright (`e2e/live/`, 10 suites, 168 checks) | 10 of 10 pass |
 | Live-mode Playwright against **staging** (Railway) | 9 of 9 pass (156 checks) on the build with Waiting and the retry fix. On the build before it, `live-ask` failed once at sign-out because a request was lost on the way; the app now retries (see below). |
 | Demo suites against a deployed build of this branch | Not run: `web` deploys the older branch, and I won't change that service without your OK |
 | Real-provider smoke (real Gmail through Composio) | Not run: needs a test Gmail account connected by a person |
@@ -147,7 +148,7 @@ A second, separate audit ran Cloudflare's `security-audit` skill in full-audit m
 
 Also changed from its notes: a From header's comment is no longer read as the sender; the sign-in limiter uses the address Railway's edge reports (`X-Real-IP`), which a caller cannot forge; responses carry nosniff, frame, referrer and transport-security headers; a deployed server's health check says only that it is up; one person can hold at most 12 streams open; only whoever connected an app, or an owner or admin, can disconnect it; old sign-in links and commands are cleaned up; the build has a `.dockerignore`.
 
-**A rule I changed because the audit raised it, for you to confirm or reverse:** an email leaves under the name of whoever connected the mailbox. A send from that mailbox by anyone else who is not an owner or admin now waits for the mailbox's owner, the same way a delegate's send waits for the exec. Before, any member could send from the workspace's mailbox on their own approval.
+**A rule I changed because the audit raised it, for you to confirm or reverse:** an email or a calendar invitation leaves under the name of whoever connected the account. A send through it by anyone else who is not an owner or admin now waits for that person, the same way a delegate's send waits for the exec. Before, any member could send from the workspace's mailbox on their own approval.
 
 **Found by running the suites on staging:** a change made a moment before the page was reloaded or closed could be lost, because the request that saves it was cut off with the page. It showed up as the sign-up suite failing about half the time on staging and never on one machine. Saves now finish even after the page is gone. A tab also no longer shows its own change twice for a moment when the stream delivers it before the answer to its request. `e2e/live/live-signup.cjs` now reloads immediately after adding a rule, on purpose, and checks the rule is there once.
 
@@ -208,10 +209,10 @@ Test changes that came with this, so you can check them:
 ## What's next
 
 1. Finish phase 0: a real Gmail account end to end (connect, backfill, a real email in, a real send out), then repeat the cost measurement on it.
-2. Phase 1, in this order: calendar events written to Google Calendar, decisions, ontology v1, Outlook and Drive. Reading mail, the Draft button and the morning run are built.
+2. Phase 1, in this order: decisions, ontology v1, Outlook and Drive; then calendar changes and deletes, attachments, and reading back changes made in Gmail. Reading mail, the Draft button and the morning run are built.
 
 Known gaps to close in phase 1 (none of them lets anything be sent without approval):
-- Calendar: Google Calendar events are synced in, but events added in Timmy are not written to Google Calendar yet.
+- Calendar: a new event is written to Google Calendar, but a change to an existing event, or deleting one, is not. Event times are sent to Google as UTC instants, which is right for the moment in time but has not been checked on a real calendar for how Google displays them.
 - Filing is one-way: a thread sorted or archived in Timmy is labelled or archived in Gmail, but a thread archived or labelled in Gmail itself does not move in Timmy.
 - Attachments cannot be sent.
 - A few demo screens still show sample wording on a real workspace (the "undo anything for 7 days" line on Activity). The sample archive count, the sample "done without asking" list and the templates signed "Taylor" from "Northpeak" are fixed.

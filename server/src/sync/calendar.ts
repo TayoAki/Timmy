@@ -8,6 +8,7 @@ import type { WEvent } from '../../../src/data/ws-types';
 import { newId } from '../lib/ids';
 import { log } from '../lib/log';
 import { mutate } from '../state/mutate';
+import { shownId } from './calendar-write';
 import { callTool, connectionById, type Phase } from './tools';
 
 interface GoogleEvent {
@@ -31,8 +32,6 @@ export interface CalendarSync {
 
 const DAY = 86400_000;
 
-/** Ids of events this sync owns on Timmy's calendar. Events the user made in Timmy have other ids and are left alone. */
-const shownId = (connectionId: string, eventId: string) => `gcal-${connectionId.slice(-6)}-${eventId}`;
 
 /**
  * Brings the calendar window up to date: two weeks back, two months ahead.
