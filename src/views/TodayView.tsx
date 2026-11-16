@@ -12,6 +12,7 @@ import {
   Sparkles,
   FilePlus2,
   ListPlus,
+  Play,
   SquarePen,
   StickyNote,
   Target,
@@ -46,6 +47,7 @@ import { liveNow } from '../lib/outbound';
 import { leadAlerts, whenWords, type LeadAlert } from '../state/leads';
 import { LeadMark } from '../areas/outbound/shared';
 import { speed } from '../areas/outbound/LeadPanel';
+import { playStory } from '../story/StoryPlayer';
 
 export function TodayView({ tab }: { tab: TodayTab }) {
   const { state, dispatch } = useStore();
@@ -95,6 +97,7 @@ function Brief() {
         {state.conn.delegate.on && <span className="delegate-chip">Working for {state.conn.delegate.exec}</span>}
         <RunControl />
         <CalmToggle />
+        <StoryButton />
       </div>
       <p className="page-sub">
         {fmtLongDate(NOW)}. Timmy sorted {LAST_RUN_COUNT} emails this morning.{' '}
@@ -326,6 +329,16 @@ function CalmToggle() {
   );
 }
 
+/** Plays the short story of a Monday morning with Timmy, on fresh demo data. */
+function StoryButton() {
+  return (
+    <button className="btn btn-sm btn-ghost story-btn" onClick={playStory} title="A short story of one Monday morning with Timmy, played in the app">
+      <Play size={14} />
+      Watch the story
+    </button>
+  );
+}
+
 /**
  * The calm brief, for people who want a system, not a cockpit: your highlight,
  * the few things that need you, one line for approvals and your next meeting.
@@ -394,6 +407,7 @@ function CalmBrief({ ranked, alerts, approvals }: { ranked: { t: Thread; u: Urge
       <div className="brief-head">
         <h1 className="page-title">Good morning, Taylor.</h1>
         <CalmToggle />
+        <StoryButton />
       </div>
       <p className="page-sub">
         {fmtLongDate(NOW)}.{' '}

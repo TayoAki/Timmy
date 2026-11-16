@@ -21,6 +21,7 @@ import { RightPanel } from './components/RightPanel';
 import { SearchPalette } from './components/SearchPalette';
 import { Sidebar } from './components/Sidebar';
 import { StoreProvider, useStore, type Toast } from './state/store';
+import { StoryPlayer } from './story/StoryPlayer';
 import { ThemeProvider } from './state/theme';
 import { AppearanceView } from './views/AppearanceView';
 import { MailboxView } from './views/MailboxView';
@@ -108,6 +109,7 @@ function Shell() {
       <Assistant />
       <PushToTalk />
       <Toasts />
+      <StoryPlayer />
     </div>
   );
 }

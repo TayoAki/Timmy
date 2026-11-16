@@ -1,0 +1,290 @@
+/* ───────────── The story player ("Monday, 8:12") ───────────── */
+.story {
+  --story-dim: rgba(12, 14, 20, 0.58);
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: var(--story-dim);
+  transition: background 0.35s ease;
+}
+.story.spot:not(.carded) {
+  background: transparent;
+}
+.story.carded {
+  background: rgba(12, 14, 20, 0.72);
+  backdrop-filter: blur(3px);
+}
+
+.story-spot {
+  position: fixed;
+  border-radius: 12px;
+  box-shadow: 0 0 0 9999px var(--story-dim);
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+  pointer-events: none;
+  transition:
+    left 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
+    top 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
+    height 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* The cursor that presses the buttons. */
+.story-cursor {
+  position: fixed;
+  left: 0;
+  top: 0;
+  margin: -3px 0 0 -4px;
+  opacity: 0;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35));
+  transition:
+    transform 0.75s cubic-bezier(0.3, 0.7, 0.2, 1),
+    opacity 0.25s ease;
+  z-index: 2;
+}
+.story-cursor.on {
+  opacity: 1;
+}
+.story-cursor::after {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: -10px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  opacity: 0;
+  transform: scale(0.4);
+}
+.story-cursor.click::after {
+  animation: story-ripple 0.5s ease-out;
+}
+@keyframes story-ripple {
+  from {
+    opacity: 0.9;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+
+/* The caption over the app. */
+.story-caption {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  width: min(600px, calc(100vw - 32px));
+  transform: translateX(-50%);
+  padding: 18px 20px 12px;
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  animation: story-in 0.35s ease both;
+}
+.story-caption.top {
+  bottom: auto;
+  top: 24px;
+}
+.story-caption.alone {
+  bottom: auto;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(680px, calc(100vw - 32px));
+  padding: 28px 30px 14px;
+}
+@keyframes story-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.story-clock {
+  margin: 0 0 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--accent-text);
+}
+.story-text {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+.story-caption.alone .story-text {
+  font-size: 22px;
+  line-height: 1.45;
+}
+
+/* Reading progress for the current scene. */
+.story-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 3px;
+  background: var(--accent-soft);
+}
+.story-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transform-origin: left;
+  transition: transform 0.1s linear;
+}
+
+.story-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 10px;
+}
+.story-count {
+  margin-right: auto;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+/* Full cards: the opening, the plan and the ending. */
+.story-card {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: min(620px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  transform: translate(-50%, -50%);
+  padding: 34px 34px 22px;
+  border-radius: 18px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-lg);
+  animation: story-in 0.4s ease both;
+}
+.story-card .story-bar {
+  top: 0;
+}
+.story-kicker {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+}
+.story-title {
+  margin: 0 0 10px;
+  font-size: 40px;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+.story-title.sm {
+  font-size: 28px;
+}
+.story-lede {
+  margin: 0 0 6px;
+  font-size: 18px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.story-note {
+  margin: 10px 0 0;
+  font-size: 13.5px;
+  color: var(--text-3);
+}
+.story-end {
+  margin: 0 0 6px;
+  font-size: 26px;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+.story-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 22px;
+}
+.story-restore {
+  margin-top: 14px;
+  font-size: 13px;
+}
+
+.story-plan {
+  display: grid;
+  gap: 14px;
+  margin: 18px 0 8px;
+  padding: 0;
+  list-style: none;
+  counter-reset: story-step;
+}
+.story-plan li {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  column-gap: 12px;
+  counter-increment: story-step;
+}
+.story-plan li::before {
+  content: counter(story-step);
+  grid-row: span 2;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 700;
+  font-size: 14px;
+}
+.story-plan strong {
+  font-size: 16.5px;
+}
+.story-plan span {
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+@media (max-width: 640px) {
+  .story-caption,
+  .story-caption.top {
+    bottom: 16px;
+    top: auto;
+    padding: 16px 16px 10px;
+  }
+  .story-text {
+    font-size: 16px;
+  }
+  .story-caption.alone .story-text {
+    font-size: 19px;
+  }
+  .story-card {
+    padding: 26px 20px 18px;
+  }
+  .story-title {
+    font-size: 32px;
+  }
+  .story-end {
+    font-size: 21px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .story-spot,
+  .story-cursor {
+    transition: none;
+  }
+  .story-caption,
+  .story-card {
+    animation: none;
+  }
+}

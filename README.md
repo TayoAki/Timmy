@@ -8,6 +8,8 @@ This is the frontend only: everything runs in the browser on sample data, and yo
 
 Live preview: https://web-production-c4bbfc9c.up.railway.app (Railway, redeploys on every push to this branch).
 
+**The story demo:** https://web-production-c4bbfc9c.up.railway.app/?story plays "Monday, 8:12", a short story (about two and a half minutes) of one morning with Timmy, inside the real app (or press **Watch the story** on the daily brief). It follows the StoryBrand (SB7) outline: Taylor (the hero) starts Monday buried, Timmy (the guide) has already sorted the mail, and the story walks through Dana's quote, the $58-or-$62 decision, Send & track, booking a form lead, a campaign saved as drafts, triage and the plan, then ends on the call to action. Each scene points at one thing and a cursor presses the real buttons, on fresh demo data. Space pauses, → skips, Esc stops; closing puts back the demo data you had, and **Explore from here** keeps what the story did. `?story=play` starts it without the title card, for screen recordings. The script is `src/story/script.ts`.
+
 ```bash
 npm install
 npm run dev      # http://localhost:5173

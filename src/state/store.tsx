@@ -191,7 +191,9 @@ export type Action =
   | { type: 'simulateReply'; id: string }
   /** Timmy drafts a nudge or reply; with `note`, the reply says what you asked it to. */
   | { type: 'makeDraft'; id: string; note?: string }
-  | { type: 'reset' }
+  | { type: 'reset'; quiet?: boolean }
+  /** Reads the saved state again (the story puts back what you had before it played). */
+  | { type: 'reload'; toast?: string }
   | { type: 'capture'; open: boolean }
   | { type: 'setSchedule'; schedule: Partial<Schedule> }
   | { type: 'setUrgency'; id: string; level: 'urgent' | 'later' | null }
@@ -1021,7 +1023,12 @@ function reducer(s: State, a: Action): State {
       } catch {
         /* storage unavailable */
       }
-      return { ...initial, toasts: withToast(initial, 'Demo data reset') };
+      return { ...initial, toasts: a.quiet ? [] : withToast(initial, 'Demo data reset') };
+
+    case 'reload': {
+      const next = load();
+      return { ...next, toasts: a.toast ? withToast(next, a.toast) : [] };
+    }
 
     case 'makeDraft': {
       const t = s.threads.find((x) => x.id === a.id);
