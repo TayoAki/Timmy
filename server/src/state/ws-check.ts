@@ -184,6 +184,9 @@ function automationProblem(a: Record<string, unknown>): string | null {
 
 /* ───────────── Website chat ───────────── */
 
+/** How long visitors' conversations may be kept, in months. */
+export const CHAT_RETENTION_MONTHS = [1, 3, 6, 12, 24];
+
 function chatProblem(w: Record<string, unknown>): string | null {
   const c = w as Partial<ChatWidget> & Record<string, unknown>;
   if (c.id !== 'site') return 'A workspace has one website chat.';
@@ -195,6 +198,11 @@ function chatProblem(w: Record<string, unknown>): string | null {
   if (c.handoff !== 'notify' && c.handoff !== 'book' && c.handoff !== 'email') return 'Those chat settings aren’t in a form Timmy can save.';
   if (!Array.isArray(c.questions) || c.questions.length > 10 || !c.questions.every((q) => plain(q) && typeof q.id === 'string' && ID.test(q.id) && text(q.text, 300))) return 'The chat can ask up to 10 questions, each up to 300 characters.';
   if (!Array.isArray(c.faq) || c.faq.length > 60 || !c.faq.every((f) => plain(f) && typeof f.id === 'string' && ID.test(f.id) && text(f.q, 300) && text(f.a, 2000))) return 'The chat can hold up to 60 answers, each up to 2,000 characters.';
+  // The link is shown to every visitor, so it is a plain https address and nothing else.
+  if (c.privacyUrl !== undefined && c.privacyUrl !== '' && !(typeof c.privacyUrl === 'string' && /^https:\/\/[^\s"'<>\\]{1,500}$/.test(c.privacyUrl))) return 'The privacy policy link has to be a web address that starts with https://.';
+  if (c.retentionMonths !== undefined && !CHAT_RETENTION_MONTHS.includes(c.retentionMonths as number)) return 'Chats can be kept for 1, 3, 6, 12 or 24 months.';
+  // Whether this is the right key is the chat's own check (the server makes it); here it only has to look like one.
+  if (c.siteKey !== undefined && !(typeof c.siteKey === 'string' && /^[A-Za-z0-9_-]{20,64}$/.test(c.siteKey))) return 'The key in the code snippet is made by Timmy and can’t be changed.';
   return null;
 }
 

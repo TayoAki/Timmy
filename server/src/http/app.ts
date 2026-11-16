@@ -22,6 +22,7 @@ import { ConnectError, TOOLKITS, closeConnections, disconnect, finishConnect, st
 import { mailboxFor } from '../sync/mailbox';
 import { fromWire, pickSlices, toWire } from '../../../src/live/patches';
 import type { Action } from '../../../src/state/store';
+import { chatFrameRoutes, chatRoutes } from '../chat/routes';
 import { agentRoutes } from './agent';
 import { membership, workspacesOf } from '../auth/members';
 import { ctxOf, requireRead, requireSession, requireWorkspace, sameOrigin, sessionOf, type Env } from './session';
@@ -37,6 +38,10 @@ export function buildApp(): Hono<Env> {
     log.error('request failed', { path: c.req.path, error: err.message, stack: err.stack });
     return c.json({ error: 'Something went wrong on our side.' }, 500);
   });
+
+  // The website chat's loader and frame are loaded by other people's websites, so they set their own headers.
+  // They are registered first, which keeps the app's own headers below from being applied to them.
+  chatFrameRoutes(app);
 
   // Browser protections on every response. The app opens its own document viewers in frames, so framing is allowed
   // from this origin only. A full content-security policy for scripts is still to come (see STATUS.md).
@@ -271,6 +276,7 @@ export function buildApp(): Hono<Env> {
   });
 
   agentRoutes(app);
+  chatRoutes(app);
 
   if (config.testHooks) testRoutes(app);
 

@@ -15,6 +15,11 @@ export const KINDS = {
   'calendar.create': { domain: 'calendar', outbound: true, hold: true, autoEligible: false, label: 'Create a calendar event' },
   /** A change to a deal, contact or activity in the connected CRM. */
   'crm.write': { domain: 'crm', outbound: false, hold: false, autoEligible: false, label: 'Update the CRM' },
+  /**
+   * One message shown to a visitor in the website chat. Timmy's are covered by the rule "the chat is switched
+   * on"; a teammate's own typed reply is approved by sending it. There is no hold: a chat is a conversation.
+   */
+  'chat.reply': { domain: 'chat', outbound: true, hold: false, autoEligible: false, label: 'Reply in the website chat' },
 } as const;
 
 export type EffectKind = keyof typeof KINDS;
