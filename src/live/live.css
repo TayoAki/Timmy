@@ -71,7 +71,8 @@
 
 /* Controls that only make sense on sample data. */
 [data-live] .demo-only,
-[data-live] .demo-btn {
+[data-live] .demo-btn,
+[data-live] .preview-note {
   display: none !important;
 }
 

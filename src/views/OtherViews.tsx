@@ -77,7 +77,7 @@ export function ActivityView({ tab }: { tab: string }) {
       onTab={(id) => dispatch({ type: 'navigate', route: { view: 'activity', tab: id } })}
     >
       <h1 className="page-title">Timmy’s activity</h1>
-      <p className="page-sub">Everything Timmy did on your behalf, newest first. Undo anything for 7 days.</p>
+      <p className="page-sub">Everything Timmy did on your behalf, newest first.{isLive() ? ' Undo is on the notice that follows each change.' : ' Undo anything for 7 days.'}</p>
 
       {[...groups.entries()].map(([day, list]) => (
         <section key={day} className="section">
@@ -108,7 +108,7 @@ export function ActivityView({ tab }: { tab: string }) {
                         <ArrowRight size={13} />
                       </button>
                     )}
-                    {!a.id.startsWith('live') && !isUndone && (
+                    {!isLive() && !a.id.startsWith('live') && !isUndone && (
                       <button
                         className="btn btn-xs"
                         onClick={() => {

@@ -1,3 +1,4 @@
+import { isLive } from '../live/clock';
 import {
   ArrowUpRight,
   BadgeDollarSign,
@@ -572,7 +573,11 @@ function ActivityContext() {
         </div>
       </Section>
       <Section title="Undo">
-        <p className="rp-text">Anything Timmy did can be undone from this log for 7 days. Undoing also updates the rule that caused it.</p>
+        <p className="rp-text">
+          {isLive()
+            ? 'Undo is on the notice that follows each change. A send can be stopped until its undo window ends, from the notice or from Approvals.'
+            : 'Anything Timmy did can be undone from this log for 7 days. Undoing also updates the rule that caused it.'}
+        </p>
       </Section>
     </>
   );
