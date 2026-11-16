@@ -110,6 +110,9 @@ export const config = {
   morningReadLimit: Number(env.TIMMY_MORNING_READ_LIMIT ?? 30),
   morningDraftLimit: Number(env.TIMMY_MORNING_DRAFT_LIMIT ?? 10),
   morningDraftDays: Number(env.TIMMY_MORNING_DRAFT_DAYS ?? 14),
+  morningNudgeLimit: Number(env.TIMMY_MORNING_NUDGE_LIMIT ?? 5),
+  /** Working days someone has to deliver what they were asked for, when the email named no date. */
+  waitingDefaultDays: Number(env.TIMMY_WAITING_DEFAULT_DAYS ?? 3),
 };
 
 export const isProd = () => config.stage === 'production';

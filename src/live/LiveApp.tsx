@@ -65,7 +65,14 @@ export function LiveApp({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(() => {
     forgetConversations();
-    void api.signOut().finally(() => window.location.assign('/'));
+    // Signing out has to reach the server. If it can't (after the one retry every repeatable request gets), the
+    // person is told, instead of the page reloading with their session in fact still open.
+    void api
+      .signOut()
+      .then(
+        () => window.location.assign('/'),
+        () => setStage({ at: 'error', message: 'Timmy couldn’t sign you out: the request didn’t reach the server. Check your connection and try again.' }),
+      );
   }, []);
 
   if (stage.at === 'loading') return <Centered><p className="live-note" role="status">Opening your workspace…</p></Centered>;

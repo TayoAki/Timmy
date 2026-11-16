@@ -1,7 +1,8 @@
 /**
  * The morning run. Once a day, at the time the workspace chose, Timmy gets the
  * brief ready: it checks the mailbox for anything the triggers missed, reads
- * the threads people wrote, and drafts replies to the ones that need an answer.
+ * the threads people wrote, drafts replies to the ones that need an answer, and
+ * drafts a nudge where the person is still waiting for something past its date.
  *
  * It only prepares. Reading proposes where a thread belongs and the person
  * accepts it; a draft waits in Approvals until the person presses Send. The run
@@ -17,7 +18,7 @@ import { log } from '../lib/log';
 import { BudgetError, checkBudget, modelReady } from '../providers/model';
 import { mutate, readState } from '../state/mutate';
 import { reconcileMail } from '../sync/ingest';
-import { draftReply } from './draft';
+import { draftNudge, draftReply, wantsNudge } from './draft';
 import { needsReading, readThread } from './read';
 
 /* ───────────── When a run is due ───────────── */
@@ -142,12 +143,18 @@ export async function morningRun(workspaceId: string, now = new Date()): Promise
     const horizon = now.getTime() - config.morningDraftDays * 86400_000;
     const todo = state.threads.filter((t) => wantsDraft(t, horizon)).sort((a, b) => lastAt(b) - lastAt(a)).slice(0, config.morningDraftLimit);
     for (const t of todo) if ((await draftReply(workspaceId, t.id, { unattended: true })).ok) run.drafted++;
+
+    // 4. Nudges for what the person asked for and still hasn't received.
+    ({ state } = await readState(workspaceId));
+    const overdue = state.threads.filter((t) => wantsNudge(t, now)).slice(0, config.morningNudgeLimit);
+    for (const t of overdue) if ((await draftNudge(workspaceId, t.id, { unattended: true })).ok) run.nudged = (run.nudged ?? 0) + 1;
   }
 
-  // 4. Say what happened, on the brief and in the activity log.
+  // 5. Say what happened, on the brief and in the activity log.
   const threads = run.sorted === 1 ? '1 thread' : `${run.sorted} threads`;
   const replies = run.drafted === 1 ? '1 reply' : `${run.drafted} replies`;
-  const text = `Morning run: ${threads} with new mail, ${replies} drafted.${run.note ? ` ${run.note}` : ''}`;
+  const nudges = !run.nudged ? '' : run.nudged === 1 ? ', 1 nudge drafted' : `, ${run.nudged} nudges drafted`;
+  const text = `Morning run: ${threads} with new mail, ${replies} drafted${nudges}.${run.note ? ` ${run.note}` : ''}`;
   await mutate(workspaceId, 'morning', async (_tx, loaded) => ({
     state: { ...loaded.state, run, activity: [{ id: newId('act'), at: now, kind: 'triage' as const, text }, ...loaded.state.activity] },
     result: null,

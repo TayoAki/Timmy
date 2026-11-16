@@ -12,12 +12,16 @@ export class ApiError extends Error {
 }
 
 /** One request to Timmy's API. Same origin, so the sign-in cookie travels on its own. */
-async function call<T>(method: string, path: string, body?: unknown, opts: { outliveThePage?: boolean } = {}): Promise<T> {
+async function call<T>(method: string, path: string, body?: unknown, opts: { outliveThePage?: boolean; repeatable?: boolean } = {}): Promise<T> {
   const payload = body !== undefined ? toWire(body) : undefined;
   // A change made a moment before the tab is closed or reloaded must still reach the server. The browser finishes
   // such a request after the page is gone, as long as it is small (its limit is 64 KB across requests in flight).
   const keepalive = !!opts.outliveThePage && (payload?.length ?? 0) < 30_000;
-  const res = await fetch(path, { method, credentials: 'same-origin', headers: body !== undefined ? { 'content-type': 'application/json' } : undefined, body: payload, keepalive });
+  const once = () => fetch(path, { method, credentials: 'same-origin', headers: body !== undefined ? { 'content-type': 'application/json' } : undefined, body: payload, keepalive });
+  // A request can be lost on the way (a dropped connection) without the server ever seeing it. One that is safe to
+  // repeat is tried once more: a read, or a write the server recognises as the same one. An answer from the server,
+  // whatever it says, is never retried.
+  const res = await once().catch((e) => (method === 'GET' || opts.repeatable ? once() : Promise.reject(e)));
   const text = await res.text();
   let data: Record<string, unknown> = {};
   try {
@@ -58,14 +62,14 @@ export const api = {
   signUp: (name: string, email: string, password: string) => call('POST', '/api/auth/sign-up/email', { name, email, password }),
   signIn: (email: string, password: string) => call('POST', '/api/auth/sign-in/email', { email, password }),
   magicLink: (email: string) => call('POST', '/api/auth/sign-in/magic-link', { email, callbackURL: '/' }),
-  signOut: () => call('POST', '/api/auth/sign-out', {}),
+  signOut: () => call('POST', '/api/auth/sign-out', {}, { repeatable: true }),
   createWorkspace: (name: string, trade: string) => call<{ id: string }>('POST', '/api/auth/organization/create', { name, trade, slug: `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'workspace'}-${Math.random().toString(36).slice(2, 8)}` }),
   setActive: (organizationId: string) => call('POST', '/api/auth/organization/set-active', { organizationId }),
   /** What an invitation says, for the person it was sent to. Reading it joins nothing. */
   invitation: (id: string) => call<Invitation>('GET', `/api/auth/organization/get-invitation?id=${encodeURIComponent(id)}`),
   acceptInvitation: (invitationId: string) => call<{ invitation?: { organizationId?: string } }>('POST', '/api/auth/organization/accept-invitation', { invitationId }),
   state: () => call<Snapshot>('GET', '/api/v1/state'),
-  command: (id: string, action: Action) => call<CommandResult>('POST', '/api/v1/commands', { id, action }, { outliveThePage: true }),
+  command: (id: string, action: Action) => call<CommandResult>('POST', '/api/v1/commands', { id, action }, { outliveThePage: true, repeatable: true }),
   connect: (app: string) => call<{ redirectUrl: string }>('POST', `/api/v1/connections/${app}/connect`, {}),
   disconnect: (app: string) => call('POST', `/api/v1/connections/${app}/disconnect`, {}),
   settings: () =>

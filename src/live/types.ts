@@ -43,6 +43,8 @@ export interface MorningRun {
   sorted: number;
   /** Replies drafted and waiting in Approvals. */
   drafted: number;
+  /** Nudges drafted for things the person is still waiting for. */
+  nudged?: number;
   /** Set when the run stopped short, in words for the person. */
   note?: string;
 }

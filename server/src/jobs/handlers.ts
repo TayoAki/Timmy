@@ -1,7 +1,7 @@
 import { config } from '../config';
 import { sysPool } from '../db/pool';
 import { dueEffects, executeEffect, expireStaleApprovals, onEffectApproved, onEffectSettled, reconcileEffect, staleExecuting } from '../gateway/gateway';
-import { draftReply } from '../agent/draft';
+import { draftFor } from '../agent/draft';
 import { dueWorkspaces, morningRun } from '../agent/morning';
 import { needsReading, readThread } from '../agent/read';
 import { modelReady } from '../providers/model';
@@ -93,8 +93,11 @@ export function registerJobs() {
   });
 
   defineJob('draft.make', async (d) => {
-    const out = await draftReply(String(d.workspaceId), String(d.threadId), { note: d.note as string | undefined, userName: d.userName as string | undefined });
-    if (!out.ok) log.warn('no draft written', { workspaceId: d.workspaceId, reason: out.reason });
+    const workspaceId = String(d.workspaceId);
+    const thread = (await readState(workspaceId)).state.threads.find((t) => t.id === String(d.threadId));
+    if (!thread) return;
+    const out = await draftFor(workspaceId, thread, { note: d.note as string | undefined, userName: d.userName as string | undefined });
+    if (!out.ok) log.warn('no draft written', { workspaceId, reason: out.reason });
   });
 
   defineJob('calendar.sync', async (d) => {

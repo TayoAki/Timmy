@@ -109,7 +109,7 @@ function Brief() {
         {!isLive()
           ? `Timmy sorted ${LAST_RUN_COUNT} emails this morning.`
           : mailConnected
-            ? `${ranToday ? `Timmy’s morning run at ${fmtTime(ranToday.at)} found ${plural(ranToday.sorted, 'thread')} with new mail and drafted ${ranToday.drafted === 1 ? '1 reply' : `${ranToday.drafted} replies`}. ` : ''}${plural(state.threads.filter((t) => t.box === 'inbox').length, 'thread')} in your inbox.`
+            ? `${ranToday ? `Timmy’s morning run at ${fmtTime(ranToday.at)} found ${plural(ranToday.sorted, 'thread')} with new mail and drafted ${ranToday.drafted === 1 ? '1 reply' : `${ranToday.drafted} replies`}${ranToday.nudged ? ` and ${ranToday.nudged === 1 ? '1 nudge' : `${ranToday.nudged} nudges`}` : ''}. ` : ''}${plural(state.threads.filter((t) => t.box === 'inbox').length, 'thread')} in your inbox.`
             : 'Connect your mail in Connections and Timmy starts working on it.'}{' '}
         {urgent ? `${plural(urgent, 'thing')} ${urgent === 1 ? 'is' : 'are'} urgent` : 'Nothing is urgent'}
         {approvals.length ? `, and ${plural(approvals.length, 'item')} ${approvals.length === 1 ? 'needs' : 'need'} your approval.` : '.'}

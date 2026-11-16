@@ -56,6 +56,10 @@ run('live-signup', async (browser) => {
   // A change is saved on the server: it survives a reload and a new sign-in.
   await page.getByRole('tab', { name: 'Triage' }).click();
   const before = await page.locator('.rule').count();
+  // The first attempt to save it is lost on the way, as a dropped connection would lose it. The app sends it again,
+  // and because the server knows a command by its id, the rule is saved once.
+  const lost = { command: 0, signOut: 0 };
+  await page.route('**/api/v1/commands', (route) => (lost.command++ === 0 ? route.abort('connectionreset') : route.continue()));
   await page.locator('.rule-add input, input[placeholder*="rule" i]').first().fill('Always flag mail from my accountant.');
   await page.keyboard.press('Enter');
   // On a deployed server the answer takes longer than on one machine, so this waits for the settled state
@@ -69,6 +73,8 @@ run('live-signup', async (browser) => {
   }
   const notice = await page.locator('.toast').allInnerTexts();
   ok(seen[0] === before + 1 && seen[1] === 1, `a new rule appears, once (rules before ${before}, now ${seen[0]}, the new one ${seen[1]} time(s); notices: ${notice.join(' | ') || 'none'})`);
+  ok(lost.command === 2, `the save was sent again after the first attempt was lost (${lost.command} attempts)`);
+  await page.unroute('**/api/v1/commands');
   // Reloading straight away, before the server has answered: the change must not be lost with the old page.
   await page.reload();
   await page.locator('.main').waitFor();
@@ -79,9 +85,14 @@ run('live-signup', async (browser) => {
   ok((await page.locator('.rule', { hasText: 'Always flag mail from my accountant.' }).count()) === 1, 'and it is there once');
 
   await page.getByRole('tab', { name: 'Approvals' }).click();
+  // Signing out survives a lost request too: the person is not left signed in behind a sign-in page.
+  await page.route('**/api/auth/sign-out', (route) => (lost.signOut++ === 0 ? route.abort('connectionreset') : route.continue()));
   await page.locator('.live-settings').getByRole('button', { name: 'Sign out' }).click();
   await page.getByRole('heading', { name: 'Sign in to Timmy' }).waitFor();
-  ok((await api(page, 'GET', '/api/v1/state')).status === 401, 'after signing out the API refuses again');
+  await page.unroute('**/api/auth/sign-out');
+  ok(lost.signOut === 2 && (await api(page, 'GET', '/api/v1/state')).status === 401, 'after signing out the API refuses again, even though the first attempt was lost');
+  // The two lost requests were this test's doing; the browser reports each one, and nothing else should be reported.
+  errors.splice(0, errors.length, ...errors.filter((e) => !/ERR_CONNECTION_RESET/.test(e)));
 
   await page.getByLabel('Work email').fill(who.email);
   await page.getByLabel('Password').fill(who.password);

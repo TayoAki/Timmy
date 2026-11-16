@@ -113,6 +113,13 @@
       "status": "pass"
     },
     {
+      "id": "api-waiting",
+      "file": "server/test/waiting.test.ts",
+      "covers": "a draft that asks for something carries the item and a date; Send & track moves the thread to Waiting and labels it; the morning run drafts a nudge once the date passes; a nudge is never sent by itself; a reply ends the wait and drops the nudge",
+      "tests": 10,
+      "status": "pass"
+    },
+    {
       "id": "demo-e2e",
       "file": "e2e/run-all.sh",
       "covers": "the 12 demo-mode Playwright suites (348 checks)",
@@ -122,9 +129,9 @@
     {
       "id": "live-signup",
       "file": "e2e/live/live-signup.cjs",
-      "covers": "sign up, name the workspace, land on an empty Today with none of the demo's sample data, Approvals and Connections show the workspace's own state, sign out and in; a change survives an immediate reload",
+      "covers": "sign up, name the workspace, land on an empty Today with none of the demo's sample data, Approvals and Connections show the workspace's own state, sign out and in; a change survives an immediate reload; a save and a sign-out whose first attempt is lost on the way still happen, once",
       "status": "pass",
-      "tests": 28
+      "tests": 29
     },
     {
       "id": "live-mail",

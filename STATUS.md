@@ -20,6 +20,7 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 | Reading mail and drafting (phase 1, started early) | Built: the model reads threads people wrote and proposes a sort; the Draft button writes a draft. |
 | Filing written back to Gmail (phase 1) | Built. Sorting a thread in Timmy labels it in Gmail (“Timmy Follow Up”, “Timmy Waiting”, “Timmy Read Through”) and leaves it in Gmail's inbox; archiving takes it out of the inbox; Undo files it back. Each write is an effect record approved by the person's own action. Tested against the fake provider; the three Gmail calls were checked against Composio's tool list, not yet run on a real mailbox. |
 | Filing from the chat, and Auto mode (phase 1) | Built. Ask Timmy to file or archive a thread and it shows the change with “File it” and “Leave it”. With the setting in Settings › Approvals switched on, Timmy files what you clearly asked for and asks when unsure: a judge model decides from your own words and a fixed description of the action, never from the mail. The setting covers labels and archiving only; a send always waits for Send. |
+| Waiting (phase 1) | Built. A reply Timmy drafts that asks for something carries what the other person owes and by when (three working days when the email names no date), so “Send & track” moves the thread to Waiting. When the date passes with no answer, the morning run drafts a nudge (5 at most a day); the Draft button on such a thread writes a nudge too. Sending a nudge sets a new date. A reply ends the wait and drops a nudge that was drafted. Nothing is sent without Send. |
 | The morning run (phase 1) | Built. At the time and on the days set in Settings › Schedule, in the workspace's own time zone, Timmy checks the mailbox for anything the triggers missed, reads what people wrote, and drafts replies to what needs an answer (10 at most). It moves nothing and sends nothing; the drafts wait in Approvals. Today and the activity log say what it did. It needs a connected mailbox, and no run time is shown without one. |
 | Cold email (phase 2, built early because the decision was made) | Built as decided: Timmy writes it and opens Gmail's compose window; nothing cold goes through an API. The lead is marked contacted when sync sees the email in Sent, and replies show in the Unibox. |
 | Frontend live mode (`VITE_TIMMY_LIVE=1`) | Built: sign-in, onboarding, state from the API, Connect buttons, model picker, monthly limit, approvals for writes Timmy proposes. The demo is unchanged and still the default build. |
@@ -64,10 +65,10 @@ Cost measurement: `server/scripts/measure-cost.ts` (the header says how to run i
 
 | Suite | Result |
 | --- | --- |
-| API unit and integration (`server/test`, 12 files) | 206 of 206 pass |
+| API unit and integration (`server/test`, 13 files) | 216 of 216 pass |
 | Demo-mode Playwright (`e2e/`, 12 suites, 348 checks) | 12 of 12 pass |
-| Live-mode Playwright (`e2e/live/`, 9 suites, 155 checks) | 9 of 9 pass |
-| Live-mode Playwright against **staging** (Railway) | 8 of 8 pass (139 checks) on the build with the morning run. The sign-up suite was run three times to confirm the reload fix. To be run again after each push. |
+| Live-mode Playwright (`e2e/live/`, 9 suites, 156 checks) | 9 of 9 pass |
+| Live-mode Playwright against **staging** (Railway) | 8 of 9 on the build with chat filing; the ninth (`live-ask`) failed once at sign-out and passed 3 of 3 on re-run. The cause was a single request lost on the way, which the app now retries (see below). To be run again after each push. |
 | Demo suites against a deployed build of this branch | Not run: `web` deploys the older branch, and I won't change that service without your OK |
 | Real-provider smoke (real Gmail through Composio) | Not run: needs a test Gmail account connected by a person |
 
@@ -148,6 +149,8 @@ Also changed from its notes: a From header's comment is no longer read as the se
 
 **Found by running the suites on staging:** a change made a moment before the page was reloaded or closed could be lost, because the request that saves it was cut off with the page. It showed up as the sign-up suite failing about half the time on staging and never on one machine. Saves now finish even after the page is gone. A tab also no longer shows its own change twice for a moment when the stream delivers it before the answer to its request. `e2e/live/live-signup.cjs` now reloads immediately after adding a rule, on purpose, and checks the rule is there once.
 
+**Also found on staging:** one suite failed once at sign-out. The server's log showed the sign-out request never arrived: it was lost on the way, and the page reloaded with the session still open. The browser now sends a request again, once, when it is lost in transit and is safe to repeat (a read, a sign-out, or a command, which the server knows by its id and applies once). If signing out still cannot reach the server, the person is told. `e2e/live/live-signup.cjs` drops the first attempt of a save and of a sign-out on purpose and checks both still happen, once.
+
 Not done, by choice: a full content-security policy for scripts (the dictation model loads from a CDN, and the policy needs an inventory first); pinning the Docker base image by digest; rate limits on commands and chat beyond the cap on jobs at once; a narrower database role for the API process (it holds the owner's credentials); cleaning the document viewers' saved files at sign-out. The audit could not check four things from where it ran: stream load on the shared database pools, memory use on a very large mailbox, how long pg-boss keeps finished jobs, and where the prebuilt document-viewer binaries came from.
 
 ## Code review (Nov 16, 2026)
@@ -203,7 +206,7 @@ Test changes that came with this, so you can check them:
 ## What's next
 
 1. Finish phase 0: a real Gmail account end to end (connect, backfill, a real email in, a real send out), then repeat the cost measurement on it.
-2. Phase 1, in this order: Waiting (track what you asked for, draft a nudge when the date slips), calendar events written to Google Calendar, decisions, ontology v1, Outlook and Drive. Reading mail, the Draft button and the morning run are built.
+2. Phase 1, in this order: calendar events written to Google Calendar, decisions, ontology v1, Outlook and Drive. Reading mail, the Draft button and the morning run are built.
 
 Known gaps to close in phase 1 (none of them lets anything be sent without approval):
 - Calendar: Google Calendar events are synced in, but events added in Timmy are not written to Google Calendar yet.

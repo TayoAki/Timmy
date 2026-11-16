@@ -208,7 +208,10 @@ export async function projectThread(tx: Tx, state: State, workspaceId: string, c
           unread: true,
           ask: snippet || existing.ask,
           suggestion: suggest({ sender: (lastIn ?? last).sender as string, subject: (lastIn ?? last).subject as string, text: ((lastIn ?? last).text as string | null) ?? '', labels: (lastIn ?? last).labels as string[] }),
-          history: [...(existing.history ?? []), { at: new Date(), text: 'A reply arrived' }],
+          // Whatever the person was waiting for on this thread, the wait is over; a nudge drafted for it is no longer wanted.
+          waiting: undefined,
+          ...(existing.draft?.kind === 'nudge' ? { draft: undefined } : {}),
+          history: [...(existing.history ?? []), { at: new Date(), text: existing.draft?.kind === 'nudge' ? 'A reply arrived, so the nudge Timmy drafted was dropped' : 'A reply arrived' }],
         }
       : {}),
   };
