@@ -1,3 +1,4 @@
+import { composeLink } from './compose-link';
 import { draftHash } from './hash';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { NOW, PEOPLE, PROJECTS, setUnknownPerson } from '../data/mock';
@@ -115,6 +116,22 @@ export function LiveStoreProvider({ profile, snapshot, children }: { profile: Li
         return;
       }
       if (action.type === 'reset' || action.type === 'simulateReply' || action.type === 'release') return;
+      // Cold email is sent by hand: this opens the mail app's own compose window, filled in, while the click is still
+      // the browser's "user gesture" (so the new tab isn't blocked). Nothing is shown as sent; the server only logs it,
+      // and the lead becomes "contacted" when sync sees the email in the Sent folder.
+      if (action.type === 'out' && action.op.op === 'send' && action.op.channel === 'email') {
+        const lead = shown.current.out.leads[action.op.lead];
+        if (!lead) return;
+        const apps = shown.current.conn.apps;
+        const app = apps.gmail?.connected ? 'gmail' : apps.outlook?.connected ? 'outlook' : 'mailto';
+        const link = composeLink(app, { to: lead.email, subject: action.op.subject ?? '', body: action.op.body, from: app === 'gmail' ? apps.gmail?.account : undefined });
+        if (!link.bodyFits) void navigator.clipboard?.writeText(action.op.body).catch(() => {});
+        window.open(link.url, '_blank', 'noopener');
+        void send(commandId(), action).then(() => {
+          if (!link.bodyFits) rebase({ text: 'The email was too long for a link, so the text is on your clipboard. Paste it into the message.' });
+        });
+        return;
+      }
       // The demo writes a canned draft on the spot. Here the model writes it on the server, so nothing is shown until it has.
       if (action.type === 'makeDraft') {
         void send(commandId(), action);

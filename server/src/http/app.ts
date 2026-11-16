@@ -9,7 +9,7 @@ import { sysPool, withWorkspace } from '../db/pool';
 import { audit } from '../gateway/gateway';
 import { enqueueSoon, inlineJobs } from '../jobs/jobs';
 import { log } from '../lib/log';
-import { composio, composioReady, fakeComposio } from '../providers/composio';
+import { composio, composioReady, fakeComposio, signWebhook } from '../providers/composio';
 import { lastMailTo } from '../providers/email';
 import { modelReady } from '../providers/model';
 import { runCommand } from '../state/engine';
@@ -255,6 +255,18 @@ export function buildApp(): Hono<Env> {
         return c.json({ ok: res.ok, message: d.message });
       }
       if (body.op === 'sent') return c.json({ sent: fake.sent(conn.connected_account_id) });
+      // The person sent an email themselves, from their mail app: it appears in Sent and the provider announces it.
+      if (body.op === 'sent-by-hand') {
+        const m = body.message as { to: string; subject: string; body: string };
+        const box = fake.accounts.get(conn.connected_account_id)!;
+        const id = `hand-${Date.now().toString(36)}`;
+        box.messages.push({ id, threadId: `th-${id}`, from: box.address, to: [m.to], subject: m.subject, body: m.body, at: new Date(), labels: ['SENT'] });
+        const payload = JSON.stringify({ id: `evt_${id}`, metadata: { trigger_slug: 'GMAIL_EMAIL_SENT_TRIGGER', connected_account_id: conn.connected_account_id, user_id: box.userId }, data: { thread_id: `th-${id}`, message_id: id } });
+        const ts = String(Math.floor(Date.now() / 1000));
+        const res = await app.request('/api/hooks/composio', { method: 'POST', headers: { 'content-type': 'application/json', 'webhook-id': `wh_${id}`, 'webhook-timestamp': ts, 'webhook-signature': signWebhook(`wh_${id}`, ts, payload, fake.secret) }, body: payload });
+        await inlineJobs()?.drain('mail.ingest');
+        return c.json({ ok: res.ok });
+      }
       if (body.op === 'fail') {
         fake.failNext.set(String(body.slug), body.mode as 'error');
         return c.json({ ok: true });

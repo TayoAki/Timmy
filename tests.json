@@ -81,6 +81,13 @@
       "status": "pass"
     },
     {
+      "id": "api-coldmail",
+      "file": "server/test/coldmail.test.ts",
+      "covers": "cold email sends nothing through the provider; the compose link; sent and reply detection for leads through sync",
+      "tests": 8,
+      "status": "pass"
+    },
+    {
       "id": "demo-e2e",
       "file": "e2e/run-all.sh",
       "covers": "the 12 demo-mode Playwright suites (348 checks)",
@@ -128,6 +135,13 @@
       "covers": "a delegate's send held for the exec, in two browsers, with invitations. RevOps holds on CRM writes are covered in server/test/gateway.test.ts until the CRM connection exists (phase 2)",
       "status": "pass",
       "tests": 14
+    },
+    {
+      "id": "live-coldmail",
+      "file": "e2e/live/live-coldmail.cjs",
+      "covers": "a lead email opens Gmail's compose window, nothing is sent through the provider, the lead is contacted once the email is in Sent, the reply shows in the Unibox",
+      "tests": 12,
+      "status": "pass"
     },
     {
       "id": "smoke-openrouter",

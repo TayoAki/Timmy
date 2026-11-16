@@ -4,6 +4,7 @@
  * move (email, text, call, book a meeting, add to People). Sending goes
  * through the same limits as campaigns.
  */
+import { isLive } from '../../live/clock';
 import { CalendarPlus, Check, Globe, Briefcase, Mail, MessageSquare, Phone, Sparkles, UserPlus } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import type { Channel, Lead } from '../../data/outbound-types';
@@ -264,13 +265,14 @@ export function MessageDialog({ lead, channel, onClose, initial }: { lead: Lead;
       footer={
         <>
           <span className="modal-foot-note">
-            {channel === 'sms' ? `${body.length} characters${body.length > 160 ? ` · ${Math.ceil(body.length / 153)} texts` : ''}` : cold ? 'Counts toward today’s cold-email limit' : 'A reply, so it doesn’t count toward the cold limit'}
+            {channel === 'sms' ? `${body.length} characters${body.length > 160 ? ` · ${Math.ceil(body.length / 153)} texts` : ''}` : isLive() ? 'Opens in your mail app, filled in. You send it from there; Timmy never sends cold email itself.' : cold ? 'Counts toward today’s cold-email limit' : 'A reply, so it doesn’t count toward the cold limit'}
           </span>
           <button className="btn" onClick={onClose}>
             Cancel
           </button>
           <button className="btn btn-primary" disabled={!body.trim() || left || (channel === 'email' && !subject.trim())} onClick={send}>
-            {cold && today.left === 0 ? 'Queue for tomorrow' : 'Send'}
+            {/* On a real workspace an email to a lead is sent by hand from the person's own mail app. */}
+            {isLive() && channel === 'email' ? 'Open in Gmail' : cold && today.left === 0 ? 'Queue for tomorrow' : 'Send'}
           </button>
         </>
       }

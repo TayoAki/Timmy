@@ -220,10 +220,44 @@ export async function ingestThread(workspaceId: string, connectionId: string, th
   const list = raw.map(normalize).filter((m): m is MailMessage => !!m);
   if (!list.length) return 0;
   return mutate(workspaceId, 'sync', async (tx, loaded) => {
-    let fresh = 0;
-    for (const m of list) if ((await upsertMessage(tx, workspaceId, conn, m)).inserted) fresh++;
-    return { state: await projectThread(tx, loaded.state, workspaceId, conn, threadKey), result: fresh };
+    const fresh: MailMessage[] = [];
+    for (const m of list) if ((await upsertMessage(tx, workspaceId, conn, m)).inserted) fresh.push(m);
+    const projected = await projectThread(tx, loaded.state, workspaceId, conn, threadKey);
+    return { state: noteLeadMail(projected, fresh), result: fresh.length };
   });
+}
+
+/* ───────────── Mail to and from leads ───────────── */
+
+/**
+ * Cold email is sent by hand from the person's mail app, so this is how Timmy
+ * finds out: a message in Sent addressed to a lead means the lead was
+ * contacted, and a message from a lead's address is a reply. Who a message is
+ * from is the parsed address, never the display name.
+ */
+export function noteLeadMail(state: State, fresh: MailMessage[]): State {
+  if (!fresh.length) return state;
+  const byEmail = new Map(Object.values(state.out.leads).map((l) => [l.email.toLowerCase(), l]));
+  if (!byEmail.size) return state;
+  const have = new Set(state.out.messages.map((m) => m.id));
+  let leads = state.out.leads;
+  const added: State['out']['messages'] = [];
+  for (const m of fresh) {
+    const sentByUser = m.labels.includes('SENT');
+    const who = sentByUser ? [...m.to, ...m.cc] : [parseSender(m.from).email];
+    for (const email of who) {
+      const lead = byEmail.get(email);
+      const id = `gm-${m.id}-${lead?.id}`;
+      if (!lead || have.has(id)) continue;
+      have.add(id);
+      added.push({ id, lead: lead.id, channel: 'email', dir: sentByUser ? 'out' : 'in', at: m.at, subject: m.subject, body: paragraphs(m.text).join('\n\n'), ...(sentByUser ? { status: 'sent' as const } : {}) });
+      const cur = leads[lead.id]!;
+      const status = sentByUser ? (cur.status === 'new' || cur.status === 'queued' ? 'contacted' : cur.status) : ['new', 'queued', 'contacted'].includes(cur.status) ? 'replied' : cur.status;
+      leads = { ...leads, [lead.id]: { ...cur, status, ...(sentByUser ? {} : { unread: true }) } as typeof cur };
+    }
+  }
+  if (!added.length) return state;
+  return { ...state, out: { ...state.out, leads, messages: [...state.out.messages, ...added] } };
 }
 
 /* ───────────── Backfill ───────────── */

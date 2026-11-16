@@ -16,7 +16,8 @@ import { callTool, meter, type ConnectionRow } from './tools';
 
 /** The frontend's app ids, and the Composio toolkit behind each. */
 export const TOOLKITS: Record<string, { toolkit: string; kind: 'mail' | 'calendar' | 'files'; triggers: { slug: string; config?: Record<string, unknown> }[] }> = {
-  gmail: { toolkit: 'gmail', kind: 'mail', triggers: [{ slug: 'GMAIL_NEW_GMAIL_MESSAGE', config: { labelIds: 'INBOX' } }] },
+  // New mail in the inbox, and mail the person sent themselves (how Timmy learns a hand-sent cold email went out).
+  gmail: { toolkit: 'gmail', kind: 'mail', triggers: [{ slug: 'GMAIL_NEW_GMAIL_MESSAGE', config: { labelIds: 'INBOX' } }, { slug: 'GMAIL_EMAIL_SENT_TRIGGER' }] },
   gcal: { toolkit: 'googlecalendar', kind: 'calendar', triggers: [{ slug: 'GOOGLECALENDAR_GOOGLE_CALENDAR_EVENT_SYNC_TRIGGER', config: { calendarId: 'primary' } }] },
   gdrive: { toolkit: 'googledrive', kind: 'files', triggers: [] },
   outlook: { toolkit: 'outlook', kind: 'mail', triggers: [{ slug: 'OUTLOOK_MESSAGE_TRIGGER' }] },

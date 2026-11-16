@@ -427,7 +427,9 @@ describe('the demo’s pretend sends are refused on a real workspace', () => {
   it('outbound sends, launches and fake connections fail closed', async () => {
     const lead = { id: 'lead-x', first: 'Lee', last: 'Lead', email: 'lee@lead.test', company: 'LeadCo', title: 'VP', status: 'new', source: 'csv', fit: 50, added: new Date() };
     expect((await w.cmd({ type: 'out', op: { op: 'addLead', lead } })).ok).toBe(true);
-    for (const op of [{ op: 'send', lead: 'lead-x', channel: 'email', subject: 'Hi', body: 'Cold' }, { op: 'send', lead: 'lead-x', channel: 'sms', body: 'Text' }, { op: 'launch', id: 'camp-1' }, { op: 'channel', id: 'sms', patch: { connected: true } }, { op: 'mailbox', mailbox: { id: 'mb-x', address: 'x@y.test' } }, { op: 'book', lead: 'lead-x', start: new Date(), end: new Date() }]) {
+    // A cold email is accepted but sends nothing (it opens in the person's mail app; see coldmail.test.ts). It leaves no trace here either.
+    expect((await w.cmd({ type: 'out', op: { op: 'send', lead: 'lead-x', channel: 'email', subject: 'Hi', body: 'Cold' } })).ok).toBe(true);
+    for (const op of [{ op: 'send', lead: 'lead-x', channel: 'sms', body: 'Text' }, { op: 'launch', id: 'camp-1' }, { op: 'channel', id: 'sms', patch: { connected: true } }, { op: 'mailbox', mailbox: { id: 'mb-x', address: 'x@y.test' } }, { op: 'book', lead: 'lead-x', start: new Date(), end: new Date() }]) {
       const out = await w.cmd({ type: 'out', op });
       expect(out.ok, JSON.stringify(op)).toBe(false);
     }

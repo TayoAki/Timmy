@@ -35,7 +35,7 @@ describe('connecting a mailbox', () => {
     expect(s.conn.apps.gmail).toMatchObject({ connected: true, account: 'ada@sync.test' });
     const [conn] = await rows('select status, account_label, toolkit, composio_user_id from connection where id = $1', [box.connectionId]);
     expect(conn).toMatchObject({ status: 'active', account_label: 'ada@sync.test', toolkit: 'gmail', composio_user_id: `${w.workspaceId}.${w.userId}` });
-    expect(await rows('select slug from trigger_instance where connection_id = $1', [box.connectionId])).toEqual([{ slug: 'GMAIL_NEW_GMAIL_MESSAGE' }]);
+    expect(await rows('select slug from trigger_instance where connection_id = $1 order by slug', [box.connectionId])).toEqual([{ slug: 'GMAIL_EMAIL_SENT_TRIGGER' }, { slug: 'GMAIL_NEW_GMAIL_MESSAGE' }]);
     expect((await rows<{ action: string }>('select action from audit_log where workspace_id = $1', [w.workspaceId])).map((r) => r.action)).toEqual(expect.arrayContaining(['connection.started', 'connection.active']));
   });
 
