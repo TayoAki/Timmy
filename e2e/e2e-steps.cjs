@@ -65,8 +65,10 @@ const assert = (c, m) => { if (!c) throw new Error('FAIL: ' + m); console.log('o
   const fsCraft = await p.evaluate(() => ({ el: document.fullscreenElement?.className ?? '', cls: !!document.querySelector('.craft.full') }));
   assert(/craft/.test(fsCraft.el) || fsCraft.cls, `Ctrl+\\ inside the spreadsheet editor goes full screen (${JSON.stringify(fsCraft)})`);
   await p.screenshot({ path: 'shots/fullscreen-sheet.png' });
-  await p.keyboard.press('Control+Backslash'); await p.waitForTimeout(400);
-  assert(!(await p.evaluate(() => !!document.fullscreenElement || !!document.querySelector('.craft.full'))), 'and back out');
+  await p.keyboard.press('Control+Backslash');
+  // Leaving full screen settles a beat later on a busy machine: wait for it rather than a fixed delay.
+  const out = await p.waitForFunction(() => !document.fullscreenElement && !document.querySelector('.craft.full'), null, { timeout: 4000 }).then(() => true, () => false);
+  assert(out, 'and back out');
   const label = await p.locator('.craft-app').innerText();
   assert(label === 'Spreadsheet editor', `no brand name in the bar (${label})`);
   console.log('errors', errors);

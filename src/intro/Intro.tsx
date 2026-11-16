@@ -21,7 +21,7 @@
  * The motion, focus and playback helpers live in src/cinema/engine.ts.
  * The demo data here is fresh and never saved.
  */
-import { Play, Plug, RotateCcw } from 'lucide-react';
+import { Play, RotateCcw } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { blur, camera, depthBlur, FILM_W, kf, place, setLens, useFilm, worldOf, type P } from '../cinema/engine';
 import { ApprovalCard } from '../areas/approvals/ApprovalCard';
@@ -240,8 +240,8 @@ export function Intro({ children }: { children: ReactNode }) {
             <p className="intro-sub intro-close" ref={sub}>
               <span className="intro-tag">Never drop a ball.</span>
               <span className="outro-cta">
-                <Plug size={18} />
-                Connect your Gmail
+                <Play size={18} />
+                Try the demo
               </span>
             </p>
           ) : (

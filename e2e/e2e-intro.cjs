@@ -68,7 +68,7 @@ const KEY = 'timmy-state-v3';
   assert(Math.abs((await p.evaluate(() => window.__film.length)) - 7.35) < 0.01, 'the close joined at 11.05 s runs 7.35 s');
   await p.evaluate(() => window.__film.seek(4.6));
   await p.waitForTimeout(150);
-  assert(Number(await p.locator('.intro-title').evaluate((el) => getComputedStyle(el).opacity)) > 0.9 && /Never drop a ball/.test(await p.locator('.intro-tag').innerText()) && /Connect your Gmail/.test(await p.locator('.intro-close .outro-cta').innerText()), 'it lands on Timmy, “Never drop a ball.” and the CTA');
+  assert(Number(await p.locator('.intro-title').evaluate((el) => getComputedStyle(el).opacity)) > 0.9 && /Never drop a ball/.test(await p.locator('.intro-tag').innerText()) && /Try the demo/.test(await p.locator('.intro-close .outro-cta').innerText()), 'it lands on Timmy, “Never drop a ball.” and Try the demo');
 
   await p.goto(BASE);
   await p.waitForTimeout(800);
