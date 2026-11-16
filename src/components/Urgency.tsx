@@ -20,8 +20,11 @@ export function UrgencyTag({ info, always }: { info: UrgencyInfo; always?: boole
 
 /** Reasons as one readable line: "Due today at 5:00 PM · Says “today”". */
 export function UrgencyReasons({ info, max = 3 }: { info: UrgencyInfo; max?: number }) {
-  if (!info.reasons.length) return null;
-  return <span className="urg-reasons">{info.reasons.slice(0, max).join(' · ')}</span>;
+  const { state } = useStore();
+  // With deals hidden, money-based reasons ("$18,000 deal") stay out of sight.
+  const reasons = state.showDeals ? info.reasons : info.reasons.filter((r) => !/\$[\d,]+/.test(r));
+  if (!reasons.length) return null;
+  return <span className="urg-reasons">{reasons.slice(0, max).join(' · ')}</span>;
 }
 
 /** On a thread: the level, why, and a way to correct Timmy. */

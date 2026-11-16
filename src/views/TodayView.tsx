@@ -40,6 +40,7 @@ import { UrgencyReasons, UrgencyTag } from '../components/Urgency';
 import { Avatar, EffortChip, Kbd, tint } from '../components/common';
 import { DocIcon } from '../components/DocBits';
 import { Frame } from '../components/Frame';
+import { PHONE, useMedia } from '../lib/useMedia';
 
 export function TodayView({ tab }: { tab: TodayTab }) {
   const { state, dispatch } = useStore();
@@ -77,12 +78,16 @@ function Brief() {
   const approvals = scopedApprovals(state);
   const focus = state.focus;
   const scopeProject = state.scope ? state.ws.projects[state.scope] : undefined;
+  const phone = useMedia(PHONE);
+
+  if (state.calm) return <CalmBrief ranked={ranked} approvals={approvals.length} />;
 
   return (
     <>
       <div className="brief-head">
         <h1 className="page-title">Good morning, Taylor.</h1>
         <RunControl />
+        <CalmToggle />
       </div>
       <p className="page-sub">
         {fmtLongDate(NOW)}. Timmy sorted {LAST_RUN_COUNT} emails this morning.{' '}
@@ -91,11 +96,14 @@ function Brief() {
       </p>
       <ScopeNote />
 
-      {!focus && <QuickActions />}
+      {/* On a phone, what needs you comes first; quick actions live in Ask and More. */}
+      {phone && <UrgentSection ranked={ranked} limit={4} />}
+
+      {!focus && !phone && <QuickActions />}
 
       <Highlight />
 
-      <UrgentSection ranked={ranked} />
+      {!phone && <UrgentSection ranked={ranked} />}
 
       <ApprovalsSection approvals={focus ? approvals.slice(0, 3) : approvals} total={approvals.length} />
 
@@ -172,13 +180,15 @@ function RunControl() {
 }
 
 /** The urgent list: only what needs you today, or everything open ranked. */
-function UrgentSection({ ranked }: { ranked: { t: Thread; u: UrgencyInfo }[] }) {
+function UrgentSection({ ranked, limit }: { ranked: { t: Thread; u: UrgencyInfo }[]; limit?: number }) {
   const { state, dispatch } = useStore();
+  const [all, setAll] = useState(false);
   const mode = state.schedule.brief;
   const urgent = ranked.filter((x) => x.u.level === 'urgent');
   const soon = ranked.filter((x) => x.u.level === 'soon').length;
   const later = ranked.length - urgent.length - soon;
-  const rows = mode === 'urgent' ? urgent : ranked;
+  const full = mode === 'urgent' ? urgent : ranked;
+  const rows = limit && !all ? full.slice(0, limit) : full;
   const setMode = (brief: 'urgent' | 'all') => dispatch({ type: 'setSchedule', schedule: { brief } });
 
   return (
@@ -237,7 +247,14 @@ function UrgentSection({ ranked }: { ranked: { t: Thread; u: UrgencyInfo }[] }) 
           <span>Everything open can wait until later in the week.</span>
         </div>
       )}
-      {mode === 'urgent' && (soon > 0 || later > 0) && (
+      {rows.length < full.length && (
+        <p className="urg-more">
+          <button className="link-btn" onClick={() => setAll(true)}>
+            Show {full.length - rows.length} more
+          </button>
+        </p>
+      )}
+      {mode === 'urgent' && rows.length === full.length && (soon > 0 || later > 0) && (
         <p className="urg-more">
           {soon > 0 && `${plural(soon, 'more thing')} for this week`}
           {soon > 0 && later > 0 && ' and '}
@@ -282,6 +299,96 @@ function ApprovalsSection({ approvals, total }: { approvals: Approval[]; total: 
         </div>
       )}
     </section>
+  );
+}
+
+/** Switch between the full brief and the calm one, right where you read it. */
+function CalmToggle() {
+  const { state, dispatch } = useStore();
+  return (
+    <button className="btn btn-sm btn-ghost calm-toggle" aria-pressed={state.calm} onClick={() => dispatch({ type: 'setPrefs', calm: !state.calm })} title="A shorter brief with fewer badges">
+      {state.calm ? 'Show everything' : 'Calm view'}
+    </button>
+  );
+}
+
+/**
+ * The calm brief, for people who want a system, not a cockpit: your highlight,
+ * the few things that need you, one line for approvals and your next meeting.
+ * In focus mode it goes quieter still: the highlight and what's next.
+ */
+function CalmBrief({ ranked, approvals }: { ranked: { t: Thread; u: UrgencyInfo }[]; approvals: number }) {
+  const { state, dispatch } = useStore();
+  const [showUrgent, setShowUrgent] = useState(false);
+  const urgent = ranked.filter((x) => x.u.level === 'urgent');
+  const quiet = state.focus;
+  const next = todaysEvents(state.ws).find((e) => e.end > NOW && e.kind !== 'personal' && eventInScope(state, e));
+  return (
+    <>
+      <div className="brief-head">
+        <h1 className="page-title">Good morning, Taylor.</h1>
+        <CalmToggle />
+      </div>
+      <p className="page-sub">
+        {fmtLongDate(NOW)}.{' '}
+        {urgent.length ? `${plural(urgent.length, 'thing')} need${urgent.length === 1 ? 's' : ''} you today.` : 'Nothing needs you today.'}
+      </p>
+      <ScopeNote />
+
+      <Highlight />
+
+      {next && (
+        <section className="section calm-next" aria-label="Next on your calendar">
+          <div className="card card-pad calm-line">
+            <span className="calm-when">{fmtTime(next.start)}</span>
+            <span className="calm-what">
+              <strong>{next.title}</strong>
+              {next.with.length > 0 && <span className="muted"> · {next.with.map((p) => PEOPLE[p]?.name.split(' ')[0] ?? p).join(', ')}</span>}
+            </span>
+            <button className="btn btn-sm btn-ghost" onClick={() => (next.thread ? dispatch({ type: 'openThread', id: next.thread }) : dispatch({ type: 'navigate', route: { view: 'calendar', tab: 'day' } }))}>
+              {next.thread ? 'Prepare' : 'Calendar'}
+              <ArrowRight size={14} />
+            </button>
+          </div>
+        </section>
+      )}
+
+      {quiet && !showUrgent ? (
+        <p className="calm-collapsed">
+          {urgent.length ? `${plural(urgent.length, 'urgent thing')} waiting.` : 'Nothing urgent.'}{' '}
+          {urgent.length > 0 && (
+            <button className="link-btn" onClick={() => setShowUrgent(true)}>
+              Show
+            </button>
+          )}
+        </p>
+      ) : (
+        <UrgentSection ranked={ranked} limit={3} />
+      )}
+
+      {!quiet && approvals > 0 && (
+        <section className="section" aria-label="Approvals">
+          <button className="card calm-approvals" onClick={() => dispatch({ type: 'navigate', route: { view: 'approvals', tab: 'open' } })}>
+            <span>
+              <strong>{plural(approvals, 'thing')}</strong> wait{approvals === 1 ? 's' : ''} for your OK
+            </span>
+            <span className="calm-approvals-go">
+              Review
+              <ArrowRight size={14} />
+            </span>
+          </button>
+        </section>
+      )}
+
+      {quiet && (
+        <p className="focus-foot">
+          Focus mode: just your highlight and what’s next.{' '}
+          <button className="link-btn" onClick={() => dispatch({ type: 'setFocus', on: false })}>
+            Leave focus mode
+          </button>
+        </p>
+      )}
+    </>
   );
 }
 

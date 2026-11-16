@@ -16,6 +16,7 @@ import './styles/files.css';
 import './styles/library.css';
 import './styles/approvals.css';
 import './styles/focus.css';
+import './styles/phone.css';
 import App from './App';
 
 createRoot(document.getElementById('root')!).render(

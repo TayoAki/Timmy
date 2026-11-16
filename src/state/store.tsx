@@ -140,6 +140,10 @@ export interface State {
   focus: boolean;
   /** The project everything is narrowed to, or null for all of them. */
   scope: string | null;
+  /** Calm home: fewer badges, a shorter brief, and a quieter focus mode. */
+  calm: boolean;
+  /** Show deals, the pipeline and the CRM record (off for people outside sales). */
+  showDeals: boolean;
   /** Outbound: leads, campaigns, the unibox, limits, forms and social. */
   out: Outbound;
 }
@@ -185,6 +189,7 @@ export type Action =
   | { type: 'setUrgency'; id: string; level: 'urgent' | 'later' | null }
   | { type: 'setFocus'; on?: boolean }
   | { type: 'setScope'; project: string | null }
+  | { type: 'setPrefs'; calm?: boolean; showDeals?: boolean }
   /** Approve or turn down an item in the Approvals queue. */
   | { type: 'resolve'; key: string; option: string; change?: { deal: string; stage: string; value: number }; via?: 'send' }
   /** Outbound: leads, campaigns, sending, forms, social. */
@@ -226,6 +231,8 @@ const initial: State = {
   schedule: DEFAULT_SCHEDULE,
   focus: false,
   scope: null,
+  calm: false,
+  showDeals: true,
   out: outboundSeed(),
 };
 
@@ -313,8 +320,8 @@ const logged = (s: State, text: string, kind: Activity['kind'], threadId?: strin
   ...s.activity,
 ];
 
-const withToast = (s: State, text: string, undo?: Snapshot, tone?: Toast['tone']): Toast[] =>
-  [...s.toasts, { id: toastSeq++, text, undo, tone }].slice(-3);
+/** One notice at a time: a new one replaces the last, so they never stack over the page. */
+const withToast = (_s: State, text: string, undo?: Snapshot, tone?: Toast['tone']): Toast[] => [{ id: toastSeq++, text, undo, tone }];
 
 /** The deal change a sorted email points to, if it's waiting in Approvals: "Brightwave → Closed won". */
 const crmWaiting = (s: State, t: Thread): string | null => {
@@ -779,6 +786,21 @@ function reducer(s: State, a: Action): State {
       };
     }
 
+    case 'setPrefs': {
+      const next = { ...s, calm: a.calm ?? s.calm, showDeals: a.showDeals ?? s.showDeals };
+      const text =
+        a.calm !== undefined && a.calm !== s.calm
+          ? a.calm
+            ? 'Calm home on: fewer badges and a shorter brief.'
+            : 'Calm home off: everything is back.'
+          : a.showDeals !== undefined && a.showDeals !== s.showDeals
+            ? a.showDeals
+              ? 'Deals and the CRM are showing.'
+              : 'Deals and the CRM are hidden. Turn them back on in Appearance.'
+            : '';
+      return { ...next, toasts: text ? withToast(s, text) : s.toasts };
+    }
+
     case 'setScope': {
       if (a.project === s.scope) return s;
       const p = a.project ? s.ws.projects[a.project] : null;
@@ -951,7 +973,7 @@ const Ctx = createContext<{ state: State; dispatch: Dispatch<Action> } | null>(n
 
 const STORAGE_KEY = 'timmy-state-v3';
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
-const PERSISTED = ['threads', 'deals', 'activity', 'rules', 'ws', 'highlight', 'highlightDone', 'dismissed', 'route', 'back', 'decisions', 'approvalLog', 'schedule', 'focus', 'scope', 'out'] as const;
+const PERSISTED = ['threads', 'deals', 'activity', 'rules', 'ws', 'highlight', 'highlightDone', 'dismissed', 'route', 'back', 'decisions', 'approvalLog', 'schedule', 'focus', 'scope', 'out', 'calm', 'showDeals'] as const;
 
 function load(): State {
   try {

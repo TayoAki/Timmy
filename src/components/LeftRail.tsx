@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { sectionOf, useStore, type Route, type Section } from '../state/store';
 import { Avatar, TimmyMark } from './common';
 
-interface Item {
+export interface Item {
   section: Section | 'search';
   label: string;
   icon: ReactNode;
@@ -13,29 +13,36 @@ interface Item {
   badge?: number;
 }
 
-export function LeftRail() {
-  const { state, dispatch } = useStore();
-  const current = state.searchOpen ? 'search' : sectionOf(state.route);
+/** Every section, with its route and badge: the rail on wide screens, the More sheet on phones. */
+export function useSections(): Item[] {
+  const { state } = useStore();
   const inbox = state.threads.filter((t) => t.box === 'inbox').length;
   const captured = Object.values(state.ws.notes).filter((n) => !n.processed).length;
   const approvals = scopedApprovals(state).length;
   const out = useOutboundCounts();
-
-  const items: Item[] = [
+  // Calm home: only Approvals keeps a badge.
+  const b = (n: number) => (state.calm ? undefined : n || undefined);
+  return [
     { section: 'mail', label: 'Today & mail', icon: <House size={20} />, route: { view: 'today', tab: 'brief' } },
     { section: 'approvals', label: 'Approvals', icon: <Stamp size={20} />, route: { view: 'approvals', tab: 'open' }, badge: approvals || undefined },
     { section: 'search', label: 'Search  ⌘K', icon: <Search size={20} /> },
-    { section: 'tasks', label: 'Tasks', icon: <ListChecks size={20} />, route: { view: 'tasks', tab: 'board' }, badge: captured || undefined },
+    { section: 'tasks', label: 'Tasks', icon: <ListChecks size={20} />, route: { view: 'tasks', tab: 'board' }, badge: b(captured) },
     { section: 'calendar', label: 'Calendar', icon: <CalendarDays size={20} />, route: { view: 'calendar', tab: 'week' } },
     { section: 'docs', label: 'Docs', icon: <FileText size={20} />, route: { view: 'docs', tab: 'recent' } },
     { section: 'projects', label: 'Projects', icon: <FolderKanban size={20} />, route: { view: 'projects', tab: 'active' } },
     { section: 'people', label: 'People', icon: <Users size={20} />, route: { view: 'people', tab: 'priority' } },
-    { section: 'outbound', label: 'Outbound', icon: <Rocket size={20} />, route: { view: 'outbound', tab: 'leads' }, badge: out.unread + out.waiting || undefined },
+    { section: 'outbound', label: 'Outbound', icon: <Rocket size={20} />, route: { view: 'outbound', tab: 'leads' }, badge: b(out.unread + out.waiting) },
     { section: 'social', label: 'Social (coming soon)', icon: <Megaphone size={20} />, route: { view: 'social', tab: 'overview' } },
     { section: 'files', label: 'Drive', icon: <HardDrive size={20} />, route: { view: 'files', tab: 'browse', folder: 'f02' } },
     { section: 'library', label: 'AI library', icon: <Library size={20} />, route: { view: 'library', tab: 'prompts' } },
-    { section: 'activity', label: 'Timmy’s activity', icon: <Bell size={20} />, route: { view: 'activity', tab: 'all' }, badge: inbox || undefined },
+    { section: 'activity', label: 'Timmy’s activity', icon: <Bell size={20} />, route: { view: 'activity', tab: 'all' }, badge: b(inbox) },
   ];
+}
+
+export function LeftRail() {
+  const { state, dispatch } = useStore();
+  const current = state.searchOpen ? 'search' : sectionOf(state.route);
+  const items = useSections();
 
   const go = (item: Item) => {
     if (item.section === 'search') dispatch({ type: 'search', open: true });

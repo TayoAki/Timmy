@@ -1,3 +1,4 @@
+import { PHONE, useMedia } from '../../lib/useMedia';
 import { CalendarClock, CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, FileText, Mail, Plus, Sparkles } from 'lucide-react';
 import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { Avatar, DueChip, Folder, tint } from '../../components/common';
@@ -66,6 +67,11 @@ export function CalendarView() {
   const closeDetail = useCallback(() => setDetail(null), []);
   const closeCreate = useCallback(() => setCreating(null), []);
   const closeBlock = useCallback(() => setBlockFor(null), []);
+  // A week of columns doesn't fit a phone: open on the day instead.
+  const phone = useMedia(PHONE);
+  useEffect(() => {
+    if (phone && isWeek) dispatch({ type: 'navigate', route: { view: 'calendar', tab: 'day', date: r.date } });
+  }, [phone]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Another screen asked to show an event (e.g. the weekly review link).
   useEffect(() => {

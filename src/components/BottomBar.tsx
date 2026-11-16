@@ -7,6 +7,7 @@ import { inBox, useStore } from '../state/store';
 import { openThreads, useUrgency } from '../state/urgency';
 import { MODES, PALETTES, Swatch, useTheme, type Mode } from '../state/theme';
 import { AssistantLauncher } from '../agent/Assistant';
+import { PhoneTabs } from './PhoneNav';
 
 const MODE_ICON: Record<Mode, typeof Sun> = { light: Sun, dark: Moon, system: Monitor };
 const FOCUS_KEY = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘.' : 'Ctrl+.';
@@ -47,7 +48,7 @@ export function BottomBar() {
       <nav className="bar-group bar-right" aria-label="Shortcuts">
         <BarStat icon={Flame} label="Urgent" count={urgent} tone="urgent" onClick={() => dispatch({ type: 'navigate', route: { view: 'today', tab: 'brief' } })} />
         <BarStat icon={Stamp} label="To approve" count={approvals} onClick={() => dispatch({ type: 'navigate', route: { view: 'approvals', tab: 'open' } })} />
-        {!focus && <BarStat icon={Inbox} label="Unsorted" count={inbox} onClick={() => dispatch({ type: 'navigate', route: { view: 'today', tab: 'triage' } })} />}
+        {!focus && !state.calm && <BarStat icon={Inbox} label="Unsorted" count={inbox} onClick={() => dispatch({ type: 'navigate', route: { view: 'today', tab: 'triage' } })} />}
         <span className="bar-sep" aria-hidden />
         <button
           className={`bar-stat bar-focus${focus ? ' on' : ''}`}
@@ -72,6 +73,8 @@ export function BottomBar() {
           </>
         )}
       </nav>
+
+      <PhoneTabs />
     </footer>
   );
 }

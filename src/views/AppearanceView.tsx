@@ -1,16 +1,42 @@
 import { Check, Monitor, Moon, Sun } from 'lucide-react';
 import { Frame } from '../components/Frame';
+import { useStore } from '../state/store';
 import { MODES, PALETTES, useTheme, type Palette } from '../state/theme';
 
 const MODE_ICON = { light: Sun, dark: Moon, system: Monitor } as const;
 
 export function AppearanceView() {
   const { mode, palette, systemDark, setMode, setPalette } = useTheme();
+  const { state, dispatch } = useStore();
 
   return (
     <Frame tabs={[{ id: 'appearance', label: 'Appearance' }]} active="appearance" onTab={() => {}}>
       <h1 className="page-title">Appearance</h1>
-      <p className="page-sub">Choose light or dark, and how dark mode looks. Your choice is saved in this browser.</p>
+      <p className="page-sub">How the home screen reads, light or dark, and how dark mode looks. Your choices are saved in this browser.</p>
+
+      <section className="section">
+        <div className="section-head">
+          <h2 className="section-title" id="home-label">
+            Home screen
+          </h2>
+          <span className="section-sub">Calm is a shorter brief with fewer badges</span>
+        </div>
+        <div className="seg-control seg-control-lg" role="radiogroup" aria-labelledby="home-label">
+          <button role="radio" aria-checked={!state.calm} onClick={() => dispatch({ type: 'setPrefs', calm: false })}>
+            Everything
+          </button>
+          <button role="radio" aria-checked={state.calm} onClick={() => dispatch({ type: 'setPrefs', calm: true })}>
+            Calm
+          </button>
+        </div>
+        <label className="pref-row">
+          <span>
+            <strong>Show deals and the CRM</strong>
+            <span className="field-hint">Deal values, the pipeline and CRM records. Turn off if you’re not in sales.</span>
+          </span>
+          <button className="switch" role="switch" aria-checked={state.showDeals} aria-label="Show deals and the CRM" onClick={() => dispatch({ type: 'setPrefs', showDeals: !state.showDeals })} />
+        </label>
+      </section>
 
       <section className="section">
         <div className="section-head">

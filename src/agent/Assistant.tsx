@@ -5,7 +5,7 @@
  * changed until you press a button in a widget.
  */
 import type { Message } from '@ag-ui/core';
-import { ArrowUp, BadgeDollarSign, CalendarDays, Check, ChevronDown, FilePenLine, History, LoaderCircle, Mail, Plus, Stamp, Sun, Trash2, X, type LucideIcon } from 'lucide-react';
+import { ArrowUp, BadgeDollarSign, CalendarDays, Check, ChevronDown, FilePenLine, History, Hourglass, LoaderCircle, Mail, Plus, Stamp, Sun, Trash2, X, type LucideIcon } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { contextOf } from '../state/assistant';
@@ -42,7 +42,7 @@ interface Card {
   ask: string;
 }
 
-const cardsFor = (view: string | undefined): Card[] => {
+const cardsFor = (view: string | undefined, deals = true): Card[] => {
   if (view === 'thread')
     return [
       { icon: Mail, title: 'Summarize this thread', body: 'What it needs, by when, and the next actions.', ask: 'Summarize this thread' },
@@ -58,7 +58,9 @@ const cardsFor = (view: string | undefined): Card[] => {
   return [
     { icon: Sun, title: 'Plan my day', body: 'Urgent mail, today’s meetings and what needs your OK.', ask: 'Plan my day' },
     { icon: Stamp, title: 'Clear my approvals', body: 'Drafts, decisions, CRM updates and invites, ready to approve.', ask: 'What needs my approval?' },
-    { icon: BadgeDollarSign, title: 'Brief me on the pipeline', body: 'Open deals, next steps and what’s late.', ask: 'Brief me on the pipeline' },
+    deals
+      ? { icon: BadgeDollarSign, title: 'Brief me on the pipeline', body: 'Open deals, next steps and what’s late.', ask: 'Brief me on the pipeline' }
+      : { icon: Hourglass, title: 'Who owes me?', body: 'What others promised you, and nudges for the late ones.', ask: 'Who owes me?' },
   ];
 };
 
@@ -317,7 +319,7 @@ export function Assistant() {
                 Working from {SOURCES.join(', ').replace(/, ([^,]*)$/, ' and $1')}
               </p>
               <div className="ai-cards">
-                {cardsFor(state.route.view).map((c) => (
+                {cardsFor(state.route.view, state.showDeals).map((c) => (
                   <button key={c.title} className="ai-card" onClick={() => send(c.ask)}>
                     <c.icon size={18} aria-hidden />
                     <strong>{c.title}</strong>
@@ -337,7 +339,9 @@ export function Assistant() {
               <div className="ai-dock">{composer(false)}</div>
             </>
           )}
-          <p className="ai-foot">Timmy prepares the work; you approve anything that’s sent or changed. {ASK_KEY} opens this anywhere.</p>
+          <p className="ai-foot">
+            Timmy prepares the work; you approve anything that’s sent or changed.<span className="ai-foot-keys"> {ASK_KEY} opens this anywhere.</span>
+          </p>
         </main>
       </div>
     </div>,

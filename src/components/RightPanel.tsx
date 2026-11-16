@@ -308,7 +308,7 @@ function ThreadContext({ t }: { t: Thread }) {
         </Section>
       )}
 
-      {deal && (
+      {deal && state.showDeals && (
         <Section title="CRM record">
           <div className="rp-card">
             <div className="deal-head">

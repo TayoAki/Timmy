@@ -73,7 +73,7 @@ function Shell() {
   }, [dispatch, state.searchOpen, state.drawer, state.capture, state.compose]);
 
   return (
-    <div className="app" data-drawer={state.drawer ?? undefined} data-focus={state.focus ? '' : undefined}>
+    <div className="app" data-drawer={state.drawer ?? undefined} data-focus={state.focus ? '' : undefined} data-calm={state.calm ? '' : undefined}>
       <LeftRail />
       <Sidebar />
       {r.view === 'today' && <TodayView tab={r.tab} />}
