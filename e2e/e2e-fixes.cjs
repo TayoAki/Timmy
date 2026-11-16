@@ -7,7 +7,7 @@ const assert = (c, m) => { if (!c) { throw new Error('FAIL: ' + m); } console.lo
   const errors = [];
   p.on('pageerror', e => errors.push(e.message));
   p.on('console', m => m.type() === 'error' && errors.push(m.text()));
-  await p.goto('http://localhost:5173/');
+  await p.goto((process.env.BASE || 'http://localhost:5173/'));
   await p.evaluate(() => localStorage.clear());
   await p.reload();
   await p.waitForTimeout(700);
@@ -119,9 +119,12 @@ const assert = (c, m) => { if (!c) { throw new Error('FAIL: ' + m); } console.lo
   await p.evaluate(() => localStorage.clear());
   await p.reload();
   await p.waitForTimeout(700);
-  await p.locator('.urg-list .urg-row-title').first().click();
+  // The first rows on Today are leads since round 3; this check is about an open email, so open a mail row.
+  await p.locator('.urg-list .urg-row-title', { hasText: 'Confirm the Dec 1 pilot start with Marcus' }).first().click();
   await p.waitForTimeout(300);
-  const threadId = (await state()).route.id;
+  const opened = (await state()).route;
+  assert(opened.view === 'thread', `a mail row opens its thread (view ${opened.view})`);
+  const threadId = opened.id;
   await p.keyboard.press('Control+i');
   await p.waitForTimeout(200);
   await p.keyboard.type("what's urgent?");

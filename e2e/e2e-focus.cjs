@@ -6,7 +6,7 @@ const assert = (c, m) => { if (!c) throw new Error('FAIL: ' + m); console.log('o
   const errors = [];
   p.on('pageerror', e => errors.push(e.message));
   p.on('console', m => m.type() === 'error' && errors.push(m.text()));
-  await p.goto('http://localhost:5173/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(700);
+  await p.goto((process.env.BASE || 'http://localhost:5173/')); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(700);
   const urgentAll = await p.locator('.urg-list .urg-row').count();
 
   await p.click('.scope-btn'); await p.click('.scope-item:has-text("Acme Renewal")'); await p.waitForTimeout(300);

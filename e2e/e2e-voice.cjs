@@ -20,7 +20,7 @@ const STUB = (phrase) => `
   p.on('pageerror', (e) => errors.push(e.message));
   p.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
   await p.addInitScript(STUB('tell dana whitefield at north peak that the brightwave form arrived'));
-  await p.goto('http://localhost:5173/');
+  await p.goto((process.env.BASE || 'http://localhost:5173/'));
   await p.evaluate(() => { localStorage.removeItem('timmy-state-v3'); });
   await p.reload();
   await p.waitForTimeout(700);

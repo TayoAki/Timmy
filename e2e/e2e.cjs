@@ -5,7 +5,7 @@ const check = (name, ok, extra = '') => { results.push(`${ok ? 'PASS' : 'FAIL'} 
 (async () => {
   const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 1440, height: 900 } });
   const errors = []; p.on('pageerror', e => errors.push(e.message)); p.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
-  await p.goto('http://localhost:5173/'); await p.waitForTimeout(400);
+  await p.goto((process.env.BASE || 'http://localhost:5173/')); await p.waitForTimeout(400);
   const rail = (name) => p.getByRole('button', { name, exact: true }).first().click();
   const modal = () => p.locator('.modal').last();
 

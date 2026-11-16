@@ -11,7 +11,7 @@ const assert = (c, m) => { if (!c) throw new Error('FAIL: ' + m); console.log('o
     await p.keyboard.press('Control+k'); await p.keyboard.type(subject); await p.waitForTimeout(300); await p.keyboard.press('Enter'); await p.waitForTimeout(500);
   };
   const step = (text) => p.locator('.right .step-row', { hasText: text });
-  await p.goto('http://localhost:5173/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(700);
+  await p.goto((process.env.BASE || 'http://localhost:5173/')); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(700);
 
   await open('Revised quote for 120 seats');
   assert(await step('Send reply and track').locator('.step-verb').innerText() === 'Send & track', 'send step shows "Send & track"');

@@ -14,7 +14,7 @@ const assert = (c, m) => { if (!c) throw new Error('FAIL: ' + m); console.log('o
     await p.waitForTimeout(300);
   };
   const lastAnswer = () => p.locator('.ai-msg.timmy').last();
-  await p.goto('http://localhost:5173/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(700);
+  await p.goto((process.env.BASE || 'http://localhost:5173/')); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(700);
 
   await p.keyboard.press('Control+i'); await p.waitForTimeout(300);
   assert(await p.locator('.ai-shell').count() === 1, 'Ctrl+I opens Ask Timmy');

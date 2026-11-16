@@ -7,7 +7,7 @@ const assert = (c, m) => { if (!c) { throw new Error('FAIL: ' + m); } console.lo
   const errors = [];
   p.on('pageerror', e => errors.push(e.message));
   p.on('console', m => m.type() === 'error' && errors.push(m.text()));
-  const fresh = async () => { await p.goto('http://localhost:5173/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(700); };
+  const fresh = async () => { await p.goto((process.env.BASE || 'http://localhost:5173/')); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(700); };
   const state = async () => { await p.waitForTimeout(500); return p.evaluate(() => JSON.parse(localStorage.getItem('timmy-state-v3') || '{}')); };
   const openThread = async (subject) => {
     await p.keyboard.press('Control+k'); await p.waitForTimeout(150);
