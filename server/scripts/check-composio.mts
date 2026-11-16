@@ -15,7 +15,7 @@ import { config } from '../src/config';
 const TOOLS: Record<string, Record<string, string[]>> = {
   gmail: {
     GMAIL_GET_PROFILE: [],
-    GMAIL_FETCH_EMAILS: ['query', 'max_results', 'include_payload', 'page_token'],
+    GMAIL_FETCH_EMAILS: ['query', 'max_results', 'include_payload', 'page_token', 'verbose', 'include_spam_trash'],
     GMAIL_FETCH_MESSAGE_BY_THREAD_ID: ['thread_id'],
     GMAIL_SEND_EMAIL: ['recipient_email', 'extra_recipients', 'cc', 'subject', 'body', 'is_html', 'include_signature'],
     GMAIL_REPLY_TO_THREAD: ['thread_id', 'message_body', 'recipient_email', 'extra_recipients', 'cc', 'is_html', 'include_signature'],
@@ -58,6 +58,9 @@ const TRIGGERS: Record<string, Record<string, string[]>> = {
 /** A few argument types the code depends on. A change here once went unnoticed (send_updates was yes/no, then a word). */
 const TYPES: Record<string, Record<string, string>> = {
   GOOGLECALENDAR_CREATE_EVENT: { send_updates: 'string', create_meeting_room: 'boolean' },
+  // The look at the mailbox for changes: without these two as yes/no, the trash would be left out or bodies fetched.
+  GMAIL_FETCH_EMAILS: { verbose: 'boolean', include_spam_trash: 'boolean', max_results: 'integer' },
+  OUTLOOK_LIST_MESSAGES: { select: 'array', top: 'integer' },
   GMAIL_SEND_EMAIL: { include_signature: 'boolean' },
   GMAIL_REPLY_TO_THREAD: { include_signature: 'boolean' },
   OUTLOOK_CREATE_DRAFT: { to_recipients: 'array' },

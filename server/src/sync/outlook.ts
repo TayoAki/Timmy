@@ -12,9 +12,9 @@
  *     "reply" would choose the recipients itself, and what was approved is what must go out.
  */
 import { withWorkspace } from '../db/pool';
-import { LABEL_NAMES } from './labels';
-import type { Mailbox } from './mailbox';
-import { htmlToText, type MailMessage } from './message';
+import { LABEL_NAMES, type Labelled } from './labels';
+import type { Mailbox, MessageState } from './mailbox';
+import { htmlToText, parseSender, type MailMessage } from './message';
 import { callTool, connectionById, type ConnectionRow, type Phase } from './tools';
 
 interface GraphRecipient {
@@ -145,6 +145,20 @@ function addressedAsApproved(draft: GraphMessage, p: { to: string[]; cc?: string
   return (!to || sameSet(to, lower(p.to))) && (!cc || sameSet(cc, lower(p.cc ?? [])));
 }
 
+/** What is asked of Outlook when only where each message sits matters: no body and no subject. Who wrote it is asked only to tell the person's own messages apart. */
+const STATE_SELECT = ['id', 'conversationId', 'from', 'receivedDateTime', 'sentDateTime', 'isRead', 'isDraft', 'parentFolderId', 'categories'];
+const toState = (conn: ConnectionRow) => {
+  const own = (conn.account_label ?? '').toLowerCase();
+  return (m: MailMessage): MessageState => ({
+    id: m.id,
+    threadKey: m.threadKey,
+    at: m.at,
+    labels: m.labels,
+    filedAs: (Object.keys(LABEL_NAMES) as Labelled[]).filter((place) => m.labels.includes(`${CATEGORY}${LABEL_NAMES[place]}`)),
+    mine: m.labels.includes('SENT') || (!!own && parseSender(m.from).email === own),
+  });
+};
+
 const chunks = <T>(list: T[], n: number): T[][] => Array.from({ length: Math.ceil(list.length / n) }, (_, i) => list.slice(i * n, i * n + n));
 
 export const outlook: Mailbox = {
@@ -257,4 +271,16 @@ export const outlook: Mailbox = {
     const plan = outlookPlan(p.box, messages);
     return !plan.updates.length && !plan.toInbox.length && !plan.toArchive.length;
   },
+
+  async recentStates(workspaceId, conn, q) {
+    const f = await folders(workspaceId, conn, q.phase);
+    // Every folder is listed, Deleted Items and Junk included, because having been moved there is the news.
+    const res = await callTool(workspaceId, conn.id, 'OUTLOOK_LIST_MESSAGES', { folder: 'allfolders', select: STATE_SELECT, orderby: ['receivedDateTime desc'], received_date_time_ge: stamp(q.since), top: q.pageSize, ...(q.pageToken ? { page_token: q.pageToken } : {}) }, q.phase);
+    if (!res.successful) throw new Error(res.error ?? 'the mailbox could not be listed');
+    const data = payload(res.data);
+    const messages = ((data.value ?? []) as GraphMessage[]).map((m) => fromOutlook(m, f)).filter((m): m is MailMessage => !!m);
+    return { messages: messages.map(toState(conn)), next: (data.next_page_token as string | null | undefined) || undefined };
+  },
+
+  statesOf: async (_workspaceId, conn, messages) => messages.map(toState(conn)),
 };

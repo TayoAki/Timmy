@@ -322,7 +322,7 @@ export class FakeComposio implements ComposioProvider {
   /** A message as Microsoft Graph returns it. */
   private graph(m: FakeMessage) {
     const sender = /^(.*)<([^<>]+)>\s*$/.exec(m.from);
-    const folder = m.labels.includes('DRAFT') ? 'drafts' : m.labels.includes('SENT') ? 'sentitems' : m.labels.includes('INBOX') ? 'inbox' : m.labels.includes('ARCHIVE') ? 'archive' : m.labels.includes('TRASH') ? 'deleteditems' : 'other';
+    const folder = m.labels.includes('DRAFT') ? 'drafts' : m.labels.includes('SENT') ? 'sentitems' : m.labels.includes('INBOX') ? 'inbox' : m.labels.includes('ARCHIVE') ? 'archive' : m.labels.includes('TRASH') ? 'deleteditems' : m.labels.includes('SPAM') ? 'junkemail' : 'other';
     const escape = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     return {
       id: m.id,
@@ -368,12 +368,19 @@ export class FakeComposio implements ComposioProvider {
         const after = /after:(\d+)/.exec(q)?.[1];
         const inSent = /in:sent/.test(q);
         let list = [...box.messages].sort((a, b) => b.at.getTime() - a.at.getTime());
+        // Like Gmail, the trash and spam are left out unless they are asked for.
+        if (args.include_spam_trash !== true) list = list.filter((m) => !m.labels.includes('TRASH') && !m.labels.includes('SPAM'));
         if (after) list = list.filter((m) => m.at.getTime() / 1000 >= Number(after));
         if (inSent) list = list.filter((m) => m.labels.includes('SENT'));
         const subject = /subject:"([^"]+)"/.exec(q)?.[1];
         if (subject) list = list.filter((m) => m.subject === subject);
         const page = list.slice(start, start + max);
-        return ok({ messages: page.map((m) => this.wire(m)), nextPageToken: start + max < list.length ? String(start + max) : null, resultSizeEstimate: list.length });
+        // Asked not to be verbose, the real tool promises ids, the time, the sender, the subject and the labels, and no body.
+        const brief = (m: FakeMessage) => {
+          const { messageText: _text, preview: _preview, attachmentList: _files, ...rest } = this.wire(m);
+          return rest;
+        };
+        return ok({ messages: page.map((m) => (args.verbose === false ? brief(m) : this.wire(m))), nextPageToken: start + max < list.length ? String(start + max) : null, resultSizeEstimate: list.length });
       }
       case 'GMAIL_FETCH_MESSAGE_BY_THREAD_ID': {
         const list = box.messages.filter((m) => m.threadId === args.thread_id).sort((a, b) => a.at.getTime() - b.at.getTime());
@@ -467,7 +474,10 @@ export class FakeComposio implements ComposioProvider {
         if (conversation !== undefined) list = list.filter((m) => m.threadId === conversation);
         if (folder !== 'allfolders') list = list.filter((m) => this.graph(m).parentFolderId === `fld-${folder}`);
         const page = list.slice(start, start + max);
-        return ok({ value: page.map((m) => this.graph(m)), ...(start + max < list.length ? { next_page_token: String(start + max) } : {}) });
+        // Like Outlook, only the properties that were selected come back (the id always does).
+        const select = Array.isArray(args.select) ? (args.select as string[]) : null;
+        const only = (g: Record<string, unknown>) => (select ? Object.fromEntries(Object.entries(g).filter(([k]) => k === 'id' || select.includes(k))) : g);
+        return ok({ value: page.map((m) => only(this.graph(m))), ...(start + max < list.length ? { next_page_token: String(start + max) } : {}) });
       }
       case 'OUTLOOK_CREATE_DRAFT': {
         const msg: FakeMessage = { id: newId('om'), threadId: newId('conv'), from: box.address, to: ((args.to_recipients as string[] | undefined) ?? []).map(String), cc: ((args.cc_recipients as string[] | undefined) ?? []).map(String), subject: String(args.subject ?? ''), body: String(args.body ?? ''), at: new Date(), labels: ['DRAFT'] };

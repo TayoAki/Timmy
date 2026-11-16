@@ -15,7 +15,8 @@ export interface ConnectionRow {
   meta: Record<string, unknown>;
 }
 
-export type Phase = 'connect' | 'backfill' | 'sync' | 'reconcile' | 'agent' | 'send';
+/** `changes` is the periodic look at what the person changed in the mailbox itself (see mailbox-check.ts). */
+export type Phase = 'connect' | 'backfill' | 'sync' | 'reconcile' | 'changes' | 'agent' | 'send';
 
 export async function connectionById(workspaceId: string, connectionId: string): Promise<ConnectionRow | null> {
   return withWorkspace({ workspaceId }, async (tx) => ((await tx.query('select * from connection where id = $1 and workspace_id = $2', [connectionId, workspaceId])).rows[0] as ConnectionRow | undefined) ?? null);
