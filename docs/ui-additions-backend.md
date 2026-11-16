@@ -14,7 +14,7 @@ Today all four run in the browser on demo data, like the rest of the app. This d
 - what the user sees now, and what is real versus simulated;
 - how to build the backend so it works on real accounts.
 
-It follows the stack and rules in the backend PRD. That means:
+It follows the stack and rules in the backend PRD, and the backend already built on `claude/funny-keller-5ouhro` (see ‚ÄúWhere the backend is today‚Äù). That means:
 
 - TypeScript and Hono.
 - Postgres with row-level security, and pg-boss for jobs.
@@ -35,24 +35,50 @@ It follows the stack and rules in the backend PRD. That means:
 
 The estimates are our guesses for one engineer who knows the stack. They assume the PRD's phase 0 foundations already exist: auth, the store, the command API, the gateway and Composio.
 
+## Where the backend is today (checked Nov 16, 2026)
+
+The backend is on the branch `claude/funny-keller-5ouhro`, in `server/`. Its `STATUS.md` says phase 0 is built, deployed to both staging and production, and tested on staging. The Railway project `timmy` has two environments with the same services:
+
+| Service | What it runs | Staging | Production |
+| --- | --- | --- | --- |
+| `web` | The demo frontend. It redeploys `claude/modest-meitner-59cqpr` (this branch) on every push. | https://web-staging-5c9e4925.up.railway.app | https://web-production-c4bbfc9c.up.railway.app |
+| `app` | The API plus the live app (`VITE_TIMMY_LIVE=1`). It redeploys `claude/funny-keller-5ouhro`. | https://app-staging-fcb4f05d.up.railway.app: fake providers and test hooks; the live suites run here | https://app-production-a7a7000d.up.railway.app: real Composio and OpenRouter keys, invite-only sign-up, no sign-ups yet |
+| `pgvector` | Postgres 18 with pgvector, private network only | yes | yes |
+| `timmy-files` | A bucket, wired to `app` but not used by code yet | yes | yes |
+
+**The new UI is not in the live app yet.** The editor, automations, website chat and board changes are on this branch only. That means two things:
+
+- They show on both `web` services, as the demo with sample data.
+- They are not in `app`, because the backend branch split off before them.
+
 ## How the frontend talks to the backend (applies to everything below)
 
-The PRD's contract stays: each reducer action becomes a command at `POST /v1/commands`, and state comes back as patches over `GET /v1/stream`. Two points matter for this round:
+The backend runs **the frontend's own reducer on the server** (`server/src/state/engine.ts`):
 
-- **New state slices.** This round added these slices to `state.ws`:
-  - `trash`, the pages in the trash;
-  - `automations`;
-  - `chat`, the widget settings;
-  - `chats`, the visitors' conversations.
+1. Each command arrives at `POST /api/v1/commands`.
+2. The server applies it to the workspace's stored state, saves the difference, and sends patches to every open tab over `GET /api/v1/stream`.
+3. The Action gateway then checks the *result*, so anything that would put a message on the wire becomes an effect record first.
 
-  It also added these fields:
-  - on docs: `icon`, `cover`, and per-block `indent`, `color` and `rich`;
-  - on files: `parent`, `trashed` and `trashRoot`.
+State is stored slice by slice: `SLICES` and `WS_COLLECTIONS` in `src/live/patches.ts`.
 
-  The types are in `src/data/ws-types.ts`.
-- **No generic patch API.** The frontend writes these slices with generic workspace ops (`put`, `patch`, `remove`). The server must not accept generic ops. Each change becomes a named, validated command (`doc.save`, `page.trash`, `automation.update`, `chat.reply`‚Ä¶), so permissions and validation live in one place.
+**Bringing this round live:**
 
-Pictures (images in docs, page covers and the chat icon) are stored today as `data:` URLs in browser storage. On the server they become uploads (see Files and pictures).
+1. **Merge this branch into the backend branch.**
+   - Expect conflicts in `src/state/store.tsx`, `src/data/ws-types.ts`, `src/App.tsx`, `README.md` and the e2e suites. Both branches made the suites honor `BASE`.
+   - The two new demo suites are `e2e/e2e-pages.cjs` and `e2e/e2e-uis.cjs`.
+2. **Add the new collections to `WS_COLLECTIONS`:** `trash`, `automations`, `chat` and `chats`. If they're missing, the server won't keep them and they'll vanish on reload.
+   - The new doc fields (`icon`, `cover`, and each block's `indent`, `color` and `rich`) already ride inside `ws.docs`.
+   - The new file fields (`parent`, `trashed`, `trashRoot`) ride inside `ws.files` and `ws.trash`.
+3. **Check the shapes on the server.** The reducer applies the frontend's generic workspace ops (`put`, `patch`, `remove`) as they are, so the commit step should check the new records with a schema before saving them:
+   - known block types;
+   - size limits;
+   - an automation graph with exactly one trigger and no loops;
+   - chat settings.
+4. **Keep pictures out of Postgres.** Doc images, covers and the chat picture are `data:` URLs today, and they would land in the state tables. Until uploads exist (see Files and pictures), cap their size in the commit check. Then move them to the `timmy-files` bucket.
+5. **Tab sync in live mode.** The stream already keeps a workspace's tabs in sync, so in live mode the editor should stop publishing saves over its BroadcastChannel (`src/areas/docs/editor/presence.ts`). It can keep sharing cursors.
+6. **Live suites.** Add live suites for the new slices next to the existing `e2e/live/` ones, and run them on staging first.
+
+The API paths below use the backend's `/api/` prefix.
 
 ---
 
@@ -107,7 +133,7 @@ Keep the block JSON. It's already the contract, and every reader (drafts, Ask, e
 | `doc_text` | `file_id`, `block_id`, `text`, `tsv` (tsvector), `embedding` (pgvector). It holds one row per text block, for search and for grounding Ask Timmy. |
 | `file` (existing) | Add `parent_id`, `trashed_at`, `trashed_by` and `trash_root_id`. Index `(workspace_id, parent_id)` for the tree. |
 
-**Commands**
+**Commands.** These are reducer actions, since the server runs the reducer. Today the editor sends generic `ws` ops. Giving these changes their own action names makes the checks, the audit log and the version check (against the workspace's `state_rev`) easier to follow.
 
 | Command | Rule |
 | --- | --- |
@@ -191,7 +217,7 @@ Cost and effort: one more service to run (WebSocket, sticky sessions), about 3‚Ä
 | Trigger | Event source (from the PRD's sync design) |
 | --- | --- |
 | New email | Gmail or Outlook items from Composio triggers. "From contains" and "subject contains" are matched in code. |
-| Form submitted | `/hooks/forms/{id}`, the same intake as speed to lead |
+| Form submitted | `/api/hooks/forms/{id}`, the same intake as speed to lead |
 | File added to a folder | Drive's polling trigger, filtered by folder id |
 | Meeting ends | Calendar sync. A pg-boss job is scheduled for each matching event's end time and moved when the event moves. |
 | Deal stage changes | An internal event when a deal-stage effect completes, or when CRM sync sees the change |
@@ -237,11 +263,11 @@ Cost and effort: one more service to run (WebSocket, sticky sessions), about 3‚Ä
 **Commands and endpoints**
 
 - `automation.create`, `automation.update {id, graph, name, description}`, `automation.setEnabled {id, enabled, allowSendWithoutAsking?}` and `automation.delete`.
-- `POST /v1/automations/{id}/test`
+- `POST /api/v1/automations/{id}/test`
   - `{ sample: true }` reproduces today's UI.
   - `{ eventId }` replays a real recent event.
   - Either way it's a **dry run**: effects are built and previewed but never executed, and the steps come back as the same log the UI shows now.
-- `GET /v1/automations/{id}/runs` backs a "Runs" tab, which is the next UI piece to add: a run list with step-by-step detail and errors.
+- `GET /api/v1/automations/{id}/runs` backs a "Runs" tab, which is the next UI piece to add: a run list with step-by-step detail and errors.
 
 **Later**
 
@@ -289,15 +315,15 @@ Cost and effort: one more service to run (WebSocket, sticky sessions), about 3‚Ä
   - our cookies and storage stay ours;
   - the customer's page scripts can't read the conversation.
 - **Locking the iframe to the customer's site:**
-  - It loads public settings from `GET /public/chat/{siteKey}/config`: name, picture, colour, greeting, help desk answers and questions. These are public, cached briefly and carry no secrets.
+  - It loads public settings from `GET /api/public/chat/{siteKey}/config`: name, picture, colour, greeting, help desk answers and questions. These are public, cached briefly and carry no secrets.
   - The `siteKey` is tied to the website set in Set up. Every public request checks `Origin`, and the iframe's `frame-ancestors` CSP lists only that site, so the widget can't be lifted onto other sites.
 
 **Conversations**
 
 - **Visitor identity.** A visitor is an anonymous id that the iframe keeps in its own storage. Browsers now partition iframe storage by site, which is what we want. Each chat gets a signed conversation token.
 - **Messages.**
-  - The visitor sends with `POST /public/chat/messages` and receives over SSE (`GET /public/chat/stream`). That matches the app's SSE design, with no WebSockets needed.
-  - Your side gets chat updates through the existing `/v1/stream`.
+  - The visitor sends with `POST /api/public/chat/messages` and receives over SSE (`GET /api/public/chat/stream`). That matches the app's SSE design, with no WebSockets needed.
+  - Your side gets chat updates through the existing `/api/v1/stream`.
 - **Tables:**
   - `chat_widget` (settings, `site_key`, `allowed_origin`);
   - `chat_visitor`;
@@ -364,7 +390,7 @@ The board's new pieces are lane summaries, quick add, tags, the contact card and
 
 Images in docs, page covers, the chat picture and visitors' attachments are `data:` URLs today, so they fit in browser storage. On the server:
 
-1. The client asks `POST /v1/uploads {purpose, type, size}`. The server checks the limits and returns a presigned PUT URL to Railway Buckets plus an `asset_id`.
+1. The client asks `POST /api/v1/uploads {purpose, type, size}`. The server checks the limits and returns a presigned PUT URL to Railway Buckets plus an `asset_id`.
 2. The client uploads, then saves `asset:{id}` in the block or setting, instead of the data URL.
 3. Pictures are served from short-lived signed URLs. The exception is the chat widget's public picture, which uses a long-lived public URL.
 4. Uploads are limited to 10 MB (5 MB for chat visitors), and to image types only for covers and the chat. EXIF data is stripped from photos.
