@@ -28,6 +28,7 @@ import { agentRoutes } from './agent';
 import { membership, workspacesOf } from '../auth/members';
 import { ctxOf, requireRead, requireSession, requireWorkspace, sameOrigin, sessionOf, type Env } from './session';
 import { testRoutes } from './test-hooks';
+import { trackedRoutes } from './tracked';
 
 const wire = (body: unknown, status = 200) => new Response(toWire(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
 
@@ -291,6 +292,7 @@ export function buildApp(): Hono<Env> {
   });
 
   agentRoutes(app);
+  trackedRoutes(app);
 
   if (config.testHooks) testRoutes(app);
 
