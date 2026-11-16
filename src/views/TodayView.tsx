@@ -52,6 +52,7 @@ import { leadAlerts, whenWords, type LeadAlert } from '../state/leads';
 import { LeadMark } from '../areas/outbound/shared';
 import { speed } from '../areas/outbound/LeadPanel';
 import { playStory } from '../story/StoryPlayer';
+import { AutomationNotices } from '../areas/automations/Notices';
 
 export function TodayView({ tab }: { tab: TodayTab }) {
   const { state, dispatch } = useStore();
@@ -129,6 +130,9 @@ function Brief() {
       {!phone && <UrgentSection ranked={ranked} alerts={alerts} />}
 
       <ApprovalsSection approvals={focus ? approvals.slice(0, 3) : approvals} total={approvals.length} />
+
+      {/* On a real workspace: what the automations told you today (“Notify me”), and any Timmy switched off. */}
+      {isLive() && !focus && <AutomationNotices />}
 
       {!focus && (
         <div className="tri-grid">

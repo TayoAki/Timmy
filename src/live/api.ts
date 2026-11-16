@@ -77,4 +77,24 @@ export const api = {
     call<{ model: string; models: LiveProfile['models']; approvalMode: 'ask' | 'auto'; killSwitch: boolean; timezone: string; monthlySpendCapUsd: number; maxConcurrentRuns: number; limits: { monthlySpendCapUsd: number; maxConcurrentRuns: number } }>('GET', '/api/v1/settings'),
   saveSettings: (patch: { model?: string; approvalMode?: 'ask' | 'auto'; killSwitch?: boolean; monthlySpendCapUsd?: number; timezone?: string }) => call('PATCH', '/api/v1/settings', patch),
   audit: () => call<{ entries: { id: number; at: Date; actor: string; action: string; effect_id: string | null; detail: Record<string, unknown> }[] }>('GET', '/api/v1/audit?limit=100'),
+  /** What an automation has done lately: its runs, newest first, each with its steps. */
+  automationRuns: (id: string) => call<AutomationRuns>('GET', `/api/v1/automations/${encodeURIComponent(id)}/runs`),
 };
+
+export interface AutomationRun {
+  id: string;
+  status: 'queued' | 'running' | 'waiting' | 'done' | 'failed' | 'cancelled';
+  /** What set it off, in a line. */
+  startedBy: string;
+  createdAt: Date;
+  finishedAt: Date | null;
+  /** When a paused run carries on. */
+  wakeAt: Date | null;
+  error: string | null;
+  steps: { id: string; kind: string; label: string; status: 'running' | 'waiting' | 'done' | 'failed' | 'cancelled'; text: string; error: string | null; attempt: number }[];
+}
+
+export interface AutomationRuns {
+  automation: { id: string; on: boolean; note: string | null; nextRunAt: Date | null };
+  runs: AutomationRun[];
+}
