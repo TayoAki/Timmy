@@ -27,7 +27,7 @@ You are building the backend for **Timmy**, an AI work assistant, and connecting
 Build in the PRD's phases. Finish each phase, deploy it and test it before starting the next:
 - **Phase 0, foundations.** Better Auth and workspaces, Postgres with RLS, the Composio Gmail and Calendar connection with backfill and triggers, the item store, the agent loop with runs and effect records, the Action gateway, and Ask over real mail. Also instrument the cost per user: tokens including thinking, Composio calls, and backfill. Report the cost numbers to me before phase 1.
 - **Phase 1.** Triage, brief, drafts, Waiting, decisions, ontology v1, Outlook and Drive.
-- **Phase 2.** CRM sync with the RevOps queue, the sending service over secondary-domain mailboxes (never cold mail through the user's main Gmail connection), Twilio texts and the browser dialer with 10DLC, lead sources (Follow Up Boss, Zillow by email parsing for now, Realtor.com), enrichment and lead finding within caps, delegate mode, client workspaces.
+- **Phase 2.** CRM sync with the RevOps queue, the sending service over secondary-domain mailboxes (never cold mail through the user's main Gmail connection), Twilio texts and the browser dialer with 10DLC, lead sources (Follow Up Boss, Zillow by email parsing for now, Realtor.com), enrichment and lead finding within caps (behind a provider interface: Apollo, Clay, People Data Labs, Hunter or any API; I also mentioned "treg", which isn't confirmed, so ask me which provider before wiring a real one), delegate mode, client workspaces.
 - **Phase 3.** The desktop sandbox, routines and channels.
 
 **Connecting the frontend:**
