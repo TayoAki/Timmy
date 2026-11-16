@@ -110,10 +110,14 @@ run('live-pages', async (browser) => {
   ok((await page.locator('.au-card', { hasText: 'Thank new customers' }).count()) === 1, 'after a reload the automation is listed, from the server');
 
   /* ── The website chat's settings ── */
+  // The chat can now really be put on a website (live-chat.cjs covers that end to end). What is checked here is
+  // the switch itself: it is refused while there is no website for the chat to show on, and works once there is.
+  const tooSoon = await cmd({ type: 'ws', ops: [{ op: 'patch', col: 'chat', id: 'site', patch: { on: true } }] });
+  ok(tooSoon.body.ok === false && /Set your website first/.test(tooSoon.body.error) && (await slices())['ws.chat'].site.on === false, 'switching the chat on is refused with the reason while no website is set, and it stays off');
   const chat = await cmd({ type: 'ws', ops: [{ op: 'patch', col: 'chat', id: 'site', patch: { domain: 'apollo.example', faq: [{ id: 'f1', q: 'When is launch?', a: 'July 16.' }] } }] });
   ok(chat.body.ok && (await slices())['ws.chat'].site.domain === 'apollo.example', 'the chat’s settings are kept');
   const chatOn = await cmd({ type: 'ws', ops: [{ op: 'patch', col: 'chat', id: 'site', patch: { on: true } }] });
-  ok(chatOn.body.ok === false && /isn’t switched on yet/.test(chatOn.body.error), 'switching the chat on is refused with the reason, because no website could load it yet');
+  ok(chatOn.body.ok === true && (await slices())['ws.chat'].site.on === true && /^[A-Za-z0-9_-]{32}$/.test((await slices())['ws.chat'].site.siteKey), 'with a website set, the owner switches the chat on, and it has its own key for the snippet');
   const forged = await cmd({ type: 'ws', ops: [{ op: 'put', col: 'chats', item: { id: 'fake', messages: [{ id: 'm', from: 'visitor', text: 'hi', at: new Date().toISOString() }], live: false, unread: true } }] });
   ok(forged.body.ok === false, 'a visitor’s conversation can’t be made up from a member’s screen');
 
