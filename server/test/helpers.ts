@@ -125,3 +125,35 @@ export async function releaseHolds(c: Client): Promise<number> {
 }
 
 export const rows = async <T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> => (await sysPool.query(sql, params)).rows as T[];
+
+/* ───────────── Uploaded files ───────────── */
+
+/** A request whose body is raw bytes, with the client's cookies, as a browser sends a file. */
+export async function sendBytes(c: Client, method: string, path: string, bytes: Uint8Array, headers: Record<string, string> = {}) {
+  return (await boot()).request(path, { method, headers: { origin: ORIGIN, cookie: [...c.cookies].map(([k, v]) => `${k}=${v}`).join('; '), ...headers }, body: bytes as BodyInit });
+}
+
+/** The smallest files of a few kinds: each begins the way a real one does, followed by `fill`. */
+const text = (s: string) => new TextEncoder().encode(s);
+export const samples = {
+  png: (fill = 'timmy') => new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...text(fill)]),
+  jpeg: (fill = 'timmy') => new Uint8Array([0xff, 0xd8, 0xff, 0xe0, ...text(fill)]),
+  pdf: (fill = 'A quote.') => text(`%PDF-1.4\n${fill}\n%%EOF\n`),
+  text,
+};
+
+export interface Uploaded {
+  status: number;
+  assetId: string;
+  error?: string;
+}
+
+/** Uploads a file the way the browser does: announce it, then send the bytes. `status` is the last answer's. */
+export async function uploadFile(c: Client, f: { purpose: string; type: string; bytes: Uint8Array; name?: string }): Promise<Uploaded> {
+  const announced = await c.post('/api/v1/uploads', { purpose: f.purpose, type: f.type, size: f.bytes.length, ...(f.name ? { name: f.name } : {}) });
+  const told = (await announced.json()) as { assetId?: string; error?: string; upload?: { url: string; method: string } };
+  if (announced.status !== 200 || !told.upload) return { status: announced.status, assetId: '', error: told.error };
+  const put = await sendBytes(c, told.upload.method, told.upload.url, f.bytes, { 'content-type': f.type });
+  const kept = (await put.json()) as { error?: string };
+  return { status: put.status, assetId: told.assetId!, error: kept.error };
+}

@@ -9,6 +9,7 @@ import type { Block } from '../../../src/data/ws-types';
 import type { State } from '../../../src/state/store';
 import { modelFor } from '../config';
 import { withWorkspace } from '../db/pool';
+import { assetRefsOf, usablePictures } from '../files/assets';
 import { audit } from '../gateway/gateway';
 import { jsonObject } from '../lib/json';
 import { complete } from '../providers/model';
@@ -125,7 +126,9 @@ export async function summarizePage(ctx: Ctx, pageId: string, onScreen?: unknown
   const name = (id: string) => state.ws.files[id]?.name;
   // The editor sends what is on screen, which may be a moment ahead of the last save. It is held to the same rules as a saved page.
   if (onScreen !== undefined) {
-    const bad = blocksProblem(onScreen);
+    // Uploaded pictures on the page are named by reference; only this workspace's own count.
+    const pictures = await withWorkspace({ workspaceId: ctx.workspaceId }, (tx) => usablePictures(tx, ctx.workspaceId, [...assetRefsOf(onScreen)]));
+    const bad = blocksProblem(onScreen, pictures);
     if (bad) return { ok: false, reason: bad, status: 400 };
   }
   // An earlier summary is not part of what the page says.

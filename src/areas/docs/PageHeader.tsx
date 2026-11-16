@@ -24,6 +24,7 @@ import { ancestors, purgeOps, restoreOps } from './pages';
 import { openFile, shortPath } from './shared';
 import { toggleStarOps, showInFolder } from './FileView';
 import { LIVE } from '../../live/config';
+import { uploadPicture } from '../../live/upload';
 
 export function PageHeader({ file, body, shortcut }: { file: WFile; body: DocBody; shortcut?: WFile }) {
   const { state, dispatch } = useStore();
@@ -271,6 +272,7 @@ function CoverPicker({ anchor, current, onPick, onClose }: { anchor: Anchor; cur
   const [tab, setTab] = useState<'gallery' | 'upload' | 'link'>('gallery');
   const [link, setLink] = useState('');
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState('');
   const input = useRef<HTMLInputElement>(null);
   return (
     <Popover anchor={anchor} onClose={onClose} className="pg-cover-pop" label="Change cover" align="end">
@@ -302,7 +304,12 @@ function CoverPicker({ anchor, current, onPick, onClose }: { anchor: Anchor; cur
             <ImagePlus size={14} aria-hidden />
             {busy ? 'Adding…' : 'Upload an image'}
           </button>
-          <p className="muted">Wide images work best, at least 1500 pixels across. It’s kept in this browser.</p>
+          <p className="muted">Wide images work best, at least 1500 pixels across. {LIVE ? 'It’s uploaded to your workspace.' : 'It’s kept in this browser.'}</p>
+          {failed && (
+            <p className="field-error" role="alert">
+              {failed}
+            </p>
+          )}
           <input
             ref={input}
             type="file"
@@ -312,8 +319,13 @@ function CoverPicker({ anchor, current, onPick, onClose }: { anchor: Anchor; cur
               const f = e.target.files?.[0];
               if (!f) return;
               setBusy(true);
+              setFailed('');
               try {
-                onPick({ kind: 'image', value: await shrinkImage(f, LIVE ? 1400 : 2000), y: 50 });
+                // On a real workspace the cover is uploaded and the page keeps a reference to it. The demo keeps it inline.
+                onPick({ kind: 'image', value: LIVE ? await uploadPicture(f, 'page-cover', 2000) : await shrinkImage(f, 2000), y: 50 });
+              } catch (err) {
+                if (!LIVE) throw err;
+                setFailed((err as Error).message);
               } finally {
                 setBusy(false);
               }

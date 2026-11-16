@@ -22,6 +22,7 @@ import { withWorkspace, type Tx } from '../db/pool';
 import { cancelHeld, decide, GatewayError, onReplay, propose, type EffectRow } from '../gateway/gateway';
 import type { WsOp } from '../../../src/state/ws';
 import { checkWsOps } from './ws-check';
+import { assetRefsIn, usablePictures } from '../files/assets';
 import { LIVE_DECISION } from '../agent/read';
 import { prepareMailSend } from '../gateway/mail';
 import { SYNCED_PREFIX, eventProposal } from '../sync/calendar-write';
@@ -213,7 +214,9 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
   if (a.type === 'ws') {
     // Docs, pages, tasks, automations and chat settings arrive as plain put / patch / remove operations.
     // What is acceptable is decided here, before the reducer applies them and before anything is saved.
-    const bad = checkWsOps(state, a.ops) ?? notRunningYet(state, a.ops);
+    // An uploaded picture is saved by reference. Which references are this workspace's own uploaded pictures is looked up first.
+    const pictures = await usablePictures(tx, ctx.workspaceId, assetRefsIn((col, id) => (Object.hasOwn(state.ws, col) ? (state.ws as unknown as Record<string, Record<string, unknown>>)[col]?.[id] : undefined), a.ops));
+    const bad = checkWsOps(state, a.ops, pictures) ?? notRunningYet(state, a.ops);
     if (bad) return { state, reject: bad };
   }
   // Rules are instructions Timmy follows for everyone (writing rules go into every drafting prompt), and the schedule

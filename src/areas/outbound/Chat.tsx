@@ -34,6 +34,9 @@ import { useStore, ws } from '../../state/store';
 import { patch, put, uid } from '../../state/ws';
 import { chatWidgetFor } from '../../data/ws-mock';
 import { shrinkImage } from '../docs/editor/nodeviews';
+import { pictureUrl } from '../../lib/files';
+import { LIVE } from '../../live/config';
+import { uploadPicture } from '../../live/upload';
 
 const OWNER = PEOPLE.me!.name.split(' ')[0]!;
 const COLORS = ['#3f51d9', '#0f766e', '#d9730d', '#c14c8a', '#1c1b19', '#2f8a5b'];
@@ -120,7 +123,7 @@ export function respond(w: ChatWidget, st: Talk, text: string): { replies: Reply
 
 function BotFace({ w, size = 34 }: { w: ChatWidget; size?: number }) {
   return w.icon ? (
-    <img className="wc-face" src={w.icon} alt="" width={size} height={size} />
+    <img className="wc-face" src={pictureUrl(w.icon)} alt="" width={size} height={size} />
   ) : (
     <span className="wc-face mark" style={{ width: size, height: size }}>
       <TimmyMark size={size} />
@@ -277,7 +280,13 @@ function Setup({ w }: { w: ChatWidget }) {
                 hidden
                 onChange={async (e) => {
                   const f = e.target.files?.[0];
-                  if (f) set({ icon: await shrinkImage(f, 256) }, 'Picture updated');
+                  if (!f) return;
+                  // On a real workspace the picture is uploaded and the settings keep a reference to it. The demo keeps it inline.
+                  if (!LIVE) return set({ icon: await shrinkImage(f, 256) }, 'Picture updated');
+                  uploadPicture(f, 'chat-icon', 256).then(
+                    (icon) => set({ icon }, 'Picture updated'),
+                    (err: Error) => dispatch({ type: 'toast', text: err.message, tone: 'warn' }),
+                  );
                 }}
               />
             </div>
@@ -574,7 +583,7 @@ function Preview({ w }: { w: ChatWidget }) {
       )}
       {w.on ? (
         <button className="wc-launcher" style={{ '--wc': w.color } as CSSProperties} aria-label={open ? 'Hide the chat' : 'Open the chat'} onClick={() => setOpen((o) => !o)}>
-          {open ? <X size={22} /> : w.icon ? <img src={w.icon} alt="" /> : <MessageCircle size={24} />}
+          {open ? <X size={22} /> : w.icon ? <img src={pictureUrl(w.icon)} alt="" /> : <MessageCircle size={24} />}
         </button>
       ) : (
         <p className="wc-off">The chat is off, so visitors don’t see it.</p>
