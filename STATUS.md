@@ -44,7 +44,7 @@ The frontend session and this session each merged the UI branch `claude/modest-m
 - **This session's merge** is the one on this branch, with the server-side checks, decisions, the ontology and the rest described above.
 - **They are now one.** The temporary branch is merged into this one. From it came: smaller pictures in the live app (1,000 px JPEG, 1,400 px for covers) so a page stays under the 1 MB limit per command; guards for workspaces saved before the chat existed; the starter chat settings (`chatWidgetFor`); an opt-in `TEST_PROXY` for running the live suites through a proxy that holds the staging test token; and test screenshots no longer tracked.
 - **Where the two differed, this branch's stricter behaviour was kept.** The other session's `server/test/pages.test.ts` and `e2e/live/live-pages.cjs` are replaced by this branch's files of the same names. Theirs checked that the new records survive a reload, which this branch's tests also check; but they also expected an automation's On switch and a visitor's chat to be writable from a member's screen, and this server refuses both on purpose (a switch must not say On while nothing runs; a visitor's conversation is written only by the server).
-- **Staging's `app` still follows the temporary branch** (its last deploy is from there, 18:57 UTC). Production's `app` follows this branch. See "Needs your attention".
+- **Staging's `app` follows this branch again** (changed back on Nov 16 with your OK; only that one setting, in staging only). Production's `app` follows this branch too.
 
 ## What is deployed
 
@@ -88,7 +88,7 @@ Cost measurement: `server/scripts/measure-cost.ts` (the header says how to run i
 | API unit and integration (`server/test`, 20 files) | 331 of 331 pass |
 | Demo-mode Playwright (`e2e/`, 17 suites, 483 checks) | 17 of 17 pass in one clean run. The frontend branch brought five suites (`e2e-round4`, `e2e-story`, `e2e-intro`, `e2e-pages`, `e2e-uis`). An earlier run had one failure in `e2e-round3`, caused by my editing source files while the dev server hot-reloaded mid-run; nothing was changed for it. |
 | Live-mode Playwright (`e2e/live/`, 15 suites, 249 checks) | 15 of 15 pass, on the combined code after both merges. Fourteen run on one server; `live-verify` runs on a server restarted with address confirmation required. |
-| Live-mode Playwright against **staging** (Railway) | Not verified for this branch. Staging's `app` follows the other session's temporary branch (see below), so a run there on Nov 16 tested that older build: 10 suites passed, and the 3 that failed (`live-outlook`, `live-pages`, `live-decisions`) check features only this branch has. The last run of this branch on staging was 11 of 11 (199 checks) on build `231dc18`, before the new UI. |
+| Live-mode Playwright against **staging** (Railway) | 13 of 13 suites pass (243 checks) on build `b401b3f`, after staging's `app` was pointed back at this branch. (`live-verify` and the stream-reconnect suite need a server restarted with other settings, so they run locally only.) An earlier run that day had hit the other session's older build: 10 passed and the 3 that failed checked features only this branch has. |
 | Composio tool check (`server/scripts/check-composio.mts`, real API, read-only) | Pass: 24 tools and 8 events exist at the pinned versions and take the arguments the code sends. |
 | Real connect links for Outlook and Drive (Composio's real API) | Pass: a link was minted for each through the server's own code, with the pinned versions, and the pending accounts were removed again. Composio accepted the narrower Outlook permission set (`timmy-outlook-a7eae611`: mail and profile only). Nobody has signed in through them yet. |
 | Demo suites against a deployed build of this branch | Not run: `web` deploys the older branch, and I won't change that service without your OK |
@@ -254,6 +254,13 @@ Test changes that came with this, so you can check them:
 
 - **Automation engine, version 1**: so an automation that is switched on really runs. New-email and schedule triggers; create a task, notify, draft a reply, ask me first, add to a doc, and a Send step that always waits for a person; if/else and wait; a dry-run endpoint and a run history.
 - **Website chat, version 1**: the loader script and embeddable frame, public endpoints locked to the customer's site, rule-based replies (no model), leads from chats, take over, limits against abuse.
+- **Calendars, completed**: Outlook's calendar read and written like Google's; changing and deleting events on both, through approval when guests are told.
+- **Changes made in Gmail or Outlook itself**: a thread archived, labelled, read or deleted there follows in Timmy, without Timmy writing anything back.
+- **File storage**: pictures uploaded to the bucket instead of being kept inside the page; attachments on outgoing email.
+- **Version history for pages**, and emptying the page trash after 30 days.
+- **Ontology, next step**: types for the workspace's trade (deals, properties, candidates…), proposals of new ones, and a screen to review them.
+
+Each is built in its own copy of the repo with its own database, then reviewed, merged and tested here together. The safety review runs once they are all in.
 
 ## Needs your attention
 
@@ -270,16 +277,16 @@ Test changes that came with this, so you can check them:
 - [ ] **The production frontend's branch.** `web` deploys `claude/modest-meitner-59cqpr`; this work is on `claude/funny-keller-5ouhro`. I will not change that service without your OK.
 - [ ] **An outage fallback model, if you want one.** None is configured (decision 6). Tell me which model to evaluate; I run the eval, show you the numbers, and you decide.
 - [ ] **OpenRouter budget for this session.** The key attached to the session has about $11 left; a large eval needs more.
-- [ ] **Point staging's `app` back at `claude/funny-keller-5ouhro`**, or tell me to. The other session pointed it at its temporary branch for a test run and it is still there, so staging is not running this branch's latest work (decisions, the ontology, Drive reading, the server-side checks). I have not changed it: that setting was another session's deliberate choice. Until it is changed, the live suites can't verify this branch on staging; they pass locally.
-- [ ] **Open questions from the new-UI doc, with the defaults I am building to** (say if any should change): the website chat answers from rules only at launch, no model; an automation's Send step always waits for a person (sending without asking comes later, owner or admin only); two people typing in one page at once is left for phase 3; chat transcripts are kept 12 months and trashed pages 30 days; the chat loader is served from the app's own address until you pick a domain such as `chat.timmy.app`.
+- [x] **Staging's `app` is pointed back at `claude/funny-keller-5ouhro`** (your OK, Nov 16). All 13 suites that run there pass on it.
+- [x] **Open questions from the new-UI doc: you confirmed the defaults** (Nov 16). The website chat answers from rules only at launch, no model; an automation's Send step always waits for a person (sending without asking comes later, owner or admin only); two people typing in one page at once is left for phase 3; chat transcripts are kept 12 months and trashed pages 30 days; the chat loader is served from the app's own address until you pick a domain such as `chat.timmy.app`.
 - [ ] **Rotate the Supadata key** you pasted (it is not in the repo or logs), along with the earlier pasted keys.
 
 ## What's next
 
 1. Finish phase 0: a real mailbox end to end (connect, backfill, a real email in, a real send out), then repeat the cost measurement on it.
-2. Merge and review the automation engine and the website chat (in progress), then run everything on staging.
-3. Phase 1, what is left: picture uploads to the bucket instead of inline; Outlook's calendar; calendar changes and deletes; attachments; reading back changes made in the mailbox; trade-specific ontology types and the review screen for them.
-4. Before phase 1 ends: the subagent safety review, which will include Outlook, Drive, the new UI's checks, decisions, the ontology, automations and the website chat.
+2. Review and merge the seven builds listed under "In progress", then run everything locally and on staging.
+3. The safety review that closes phase 1, over everything added since the last one: Outlook, Drive, the new UI's checks, decisions, the ontology, automations, the website chat and the seven builds. With it, an attack-style review of the deployed staging app from the outside.
+4. Paperwork that needs outside parties: a penetration test by an outside firm, and a data processing agreement reviewed by a lawyer. Drafts to hand them are in `docs/legal/`.
 
 Known gaps to close in phase 1 (none of them lets anything be sent without approval):
 - Calendar: a new event is written to Google Calendar, but a change to an existing event, or deleting one, is not. Event times are sent to Google as UTC instants, which is right for the moment in time but has not been checked on a real calendar for how Google displays them.

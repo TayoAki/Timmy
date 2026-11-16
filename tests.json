@@ -307,9 +307,9 @@
   },
   {
    "id": "staging-full",
-   "covers": "the live-mode browser suites (e2e/live/run-all.sh, 11 suites, 199 checks) against the staging server on Railway with stand-in providers",
-   "status": "blocked",
-   "result": "Not verified for this branch since the new UI was merged: staging’s app follows the other session’s temporary branch. Last run of this branch on staging: 11 of 11 on build 231dc18 (Nov 16, 2026)."
+   "covers": "the live-mode browser suites (e2e/live/run-all.sh, 13 suites, 243 checks) against the staging server on Railway with stand-in providers",
+   "status": "pass",
+   "result": "13 of 13 on build b401b3f (Nov 16, 2026), after staging’s app was pointed back at this branch with the owner’s OK."
   },
   {
    "id": "prod-smoke",
