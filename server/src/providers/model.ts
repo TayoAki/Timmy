@@ -232,11 +232,11 @@ export class FakeModel implements ModelProvider {
     if (req.route === 'read') {
       // The stand-in reads two plain patterns out of the thread: "should we A or B?" and "I'll send X by <date>".
       const content = req.messages[req.messages.length - 1]!.content;
-      const mail = content.slice(content.indexOf('<untrusted'));
+      const mail = content.slice(content.indexOf('<untrusted source="mail">'));
       const choice = /[Ss]hould (?:we|I) ([^?."\\]{3,60}?) or ([^?."\\]{3,60}?)\?/.exec(mail);
       const promise = /((?:I will|I'll|We will|We'll) (?:send|share|deliver) [^."\\]{3,80}? by (\d{4}-\d{2}-\d{2}))/.exec(mail);
       const question = choice ? `Should we ${choice[1]} or ${choice[2]}?` : '';
-      const made = [...content.slice(0, content.indexOf('<untrusted')).matchAll(/^(\d+)\. “([^”]+)”/gm)];
+      const made = [...content.slice(0, content.indexOf('<untrusted source="mail">')).matchAll(/^(\d+)\. “([^”]+)”/gm)];
       const same = made.find((m) => m[2] === question);
       const price = /(\$\d[\d,.]*) per seat/.exec(mail);
       const cap = (t: string) => t[0]!.toUpperCase() + t.slice(1);

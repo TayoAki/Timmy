@@ -251,6 +251,13 @@ describe('decisions', () => {
     await deliver({ ...ask, from: 'Sam Rivera <sam@acme.test>', subject: 'Pricing, again' });
     expect((await w.state()).decisions.filter((d) => d.title.startsWith('Should we hold the price'))).toHaveLength(1);
     expect((await thread('Pricing, again')).context).toMatch(/^You decided this on \d{4}-\d{2}-\d{2}: Hold the price\.$/);
+    // The earlier decision's wording came from someone else's email, so the reading step gets it as outside content,
+    // inside its own wrapper, never as part of the instructions.
+    const read = model().requests.filter((r) => r.route === 'read').at(-1)!;
+    const user = read.messages.at(-1)!.content;
+    const list = user.slice(user.indexOf('<untrusted source="decisions">'), user.indexOf('<untrusted source="mail">'));
+    expect(list).toContain('1. “Should we hold the price or drop it to match the competitor?”: Hold the price');
+    expect(user.slice(0, user.indexOf('<untrusted source="decisions">'))).not.toContain('Should we hold the price');
   });
 
   it('a reading that is not a usable question makes no card', async () => {
