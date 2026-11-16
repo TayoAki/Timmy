@@ -6,7 +6,7 @@
 # Needs Playwright with Chromium: npm i -D playwright && npx playwright install chromium
 cd "$(dirname "$0")"
 fail=0
-for t in e2e e2e-approvals e2e-steps e2e-agent e2e-focus e2e-voice e2e-fixes e2e-ask e2e-outbound e2e-calm-phone e2e-round3 e2e-round3b; do
+for t in e2e e2e-approvals e2e-steps e2e-agent e2e-focus e2e-voice e2e-fixes e2e-ask e2e-outbound e2e-calm-phone e2e-round3 e2e-round3b e2e-round4; do
   out=$(node "$t.cjs" 2>&1); code=$?
   n=$(echo "$out" | grep -cE '^ok -|^PASS')
   if [ $code -ne 0 ]; then fail=1; echo "FAIL $t ($n passed)"; echo "$out" | grep -E 'FAIL|Error' | head -3; else echo "ok   $t ($n checks)"; fi

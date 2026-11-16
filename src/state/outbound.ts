@@ -46,7 +46,11 @@ export type OutOp =
   | { op: 'post'; post: SocialPost }
   | { op: 'removePost'; id: string }
   | { op: 'book'; lead: string; start: Date; end: Date; showing?: string }
-  | { op: 'toCrm'; lead: string };
+  | { op: 'toCrm'; lead: string }
+  | { op: 'draftCampaign'; id: string }
+  | { op: 'sendDrafts'; ids: string[] }
+  | { op: 'editDraft'; id: string; subject: string; body: string }
+  | { op: 'removeDrafts'; ids: string[] };
 
 export interface OutHelpers {
   toast: (s: State, text: string, opts?: { undo?: boolean; tone?: Toast['tone'] }) => Toast[];
@@ -123,7 +127,7 @@ const quietHours = (s: State) => {
 };
 
 /** A first email to someone who never asked to hear from you. */
-const isCold = (s: State, lead: Lead) => lead.source !== 'form' && !s.out.messages.some((m) => m.lead === lead.id && (m.dir === 'in' || m.channel === 'email'));
+const isCold = (s: State, lead: Lead) => lead.source !== 'form' && !s.out.messages.some((m) => m.lead === lead.id && m.status !== 'draft' && (m.dir === 'in' || m.channel === 'email'));
 
 /* ───────────── The reducer ───────────── */
 
@@ -134,9 +138,82 @@ const patchLeads = (s: State, ids: string[], fn: (l: Lead) => Lead): Record<stri
   return leads;
 };
 
+/** Cold emails Timmy saved as drafts in your sending accounts, oldest first. */
+export const draftsOf = (s: Pick<State, 'out'>) => s.out.messages.filter((m) => m.status === 'draft').sort((a, b) => a.at.getTime() - b.at.getTime());
+
 export function outbound(s: State, a: OutOp, h: OutHelpers): State {
   const out = s.out;
   switch (a.op) {
+    // Timmy writes the first email to each lead and saves it as a draft in the sending account.
+    case 'draftCampaign': {
+      const c = out.campaigns[a.id];
+      const step = c?.steps[0];
+      if (!c || !step || step.channel !== 'email') return s;
+      const ctx = ctxOf(s);
+      const boxes = c.options.mailboxes.filter((id) => out.mailboxes[id]);
+      const have = new Set(out.messages.filter((m) => m.status === 'draft' && m.campaign === c.id).map((m) => m.lead));
+      const made: OutMessage[] = [];
+      for (const id of c.leads) {
+        const l = out.leads[id];
+        if (!l || !l.email || have.has(id) || !['new', 'queued'].includes(l.status)) continue;
+        const v = step.variants[hash(l.id + c.id) % step.variants.length]!;
+        const vals = values(l, ctx.offer, ctx.sender);
+        made.push({ id: mid('draft'), lead: id, channel: 'email', dir: 'out', at: NOW, subject: render(v.subject, vals).text, body: render(v.body, vals).text, campaign: c.id, step: 0, mailbox: boxes[made.length % Math.max(boxes.length, 1)], status: 'draft' });
+      }
+      if (!made.length) return s;
+      return {
+        ...s,
+        out: { ...out, messages: [...out.messages, ...made] },
+        activity: h.log(s, `Saved ${plural(made.length, 'draft')} for “${c.name}” in your sending account${boxes.length === 1 ? '' : 's'}`, 'send'),
+      };
+    }
+
+    case 'editDraft': {
+      const messages = out.messages.map((m) => (m.id === a.id && m.status === 'draft' ? { ...m, subject: a.subject, body: a.body } : m));
+      return { ...s, out: { ...out, messages }, toasts: h.toast(s, 'Draft saved. Gmail or Outlook shows the same change.') };
+    }
+
+    case 'removeDrafts': {
+      const gone = new Set(a.ids);
+      const n = out.messages.filter((m) => gone.has(m.id) && m.status === 'draft').length;
+      return { ...s, out: { ...out, messages: out.messages.filter((m) => !(gone.has(m.id) && m.status === 'draft')) }, toasts: h.toast(s, `Deleted ${plural(n, 'draft')}`, { undo: true }) };
+    }
+
+    // Sending a draft goes through the same limits as any cold email; past today's room it waits for tomorrow.
+    case 'sendDrafts': {
+      const quiet: OutHelpers = { toast: (st) => st.toasts, log: (st) => st.activity };
+      let next = s;
+      let sent = 0;
+      let later = 0;
+      for (const id of a.ids) {
+        const d = next.out.messages.find((m) => m.id === id && m.status === 'draft');
+        if (!d) continue;
+        const c = d.campaign ? next.out.campaigns[d.campaign] : undefined;
+        const before = next.out.messages.length - 1;
+        next = { ...next, out: { ...next.out, messages: next.out.messages.filter((m) => m.id !== id) } };
+        next = outbound(next, { op: 'send', lead: d.lead, channel: 'email', subject: d.subject, body: d.body }, quiet);
+        const made = next.out.messages[next.out.messages.length - 1];
+        if (next.out.messages.length === before + 1 && made) {
+          const msgs = [...next.out.messages];
+          msgs[msgs.length - 1] = { ...made, campaign: d.campaign, step: d.step, mailbox: made.mailbox ?? d.mailbox };
+          if (made.status === 'scheduled') later++;
+          else sent++;
+          const l = next.out.leads[d.lead];
+          const wait = c?.steps[(d.step ?? 0) + 1]?.wait;
+          const leads = l && c ? { ...next.out.leads, [l.id]: { ...l, campaign: c.id, step: (d.step ?? 0) + 1, nextAt: wait !== undefined ? addDays(made.at, wait) : undefined } } : next.out.leads;
+          const campaigns = c && (c.status === 'review' || c.status === 'draft') ? { ...next.out.campaigns, [c.id]: { ...c, status: 'active' as const, launched: c.launched ?? NOW } } : next.out.campaigns;
+          next = { ...next, out: { ...next.out, messages: msgs, leads, campaigns } };
+        }
+      }
+      if (!sent && !later) return s;
+      const t = coldToday(next);
+      return {
+        ...next,
+        activity: h.log(s, `Sent ${plural(sent, 'cold email')} from drafts${later ? `; ${later} wait for tomorrow` : ''}`, 'send'),
+        toasts: h.toast(s, `Sent ${plural(sent, 'draft')}${later ? `. ${later} more go out tomorrow, after today’s limit` : ''} · ${t.sent} of ${t.cap} cold emails today. Timmy drafts each follow-up when it’s due, unless they reply.`, { undo: true }),
+      };
+    }
+
     case 'import': {
       const leads = { ...out.leads };
       for (const l of a.leads) leads[l.id] = l;

@@ -14,9 +14,10 @@ import { EmptyState, Menu } from '../../components/kit';
 import { BookDialog, CallDialog } from './LeadPanel';
 import { ChannelIcon, LABEL, LabelChip, LeadMark, name } from './shared';
 
-type Filter = 'replies' | 'unread' | 'interested' | 'meetings' | 'other' | 'forms';
+type Filter = 'replies' | 'sent' | 'unread' | 'interested' | 'meetings' | 'other' | 'forms';
 const FILTERS: [Filter, string][] = [
   ['replies', 'All replies'],
+  ['sent', 'Sent'],
   ['unread', 'Unread'],
   ['interested', 'Interested'],
   ['meetings', 'Meetings'],
@@ -30,14 +31,17 @@ export function UniboxTab() {
   const filter = (FILTERS.find(([f]) => f === r?.filter)?.[0] ?? 'replies') as Filter;
   const last = useMemo(() => {
     const m = new Map<string, (typeof state.out.messages)[number]>();
-    for (const x of state.out.messages) if (x.status !== 'scheduled' && (!m.get(x.lead) || m.get(x.lead)!.at < x.at)) m.set(x.lead, x);
+    for (const x of state.out.messages) if (x.status !== 'scheduled' && x.status !== 'draft' && (!m.get(x.lead) || m.get(x.lead)!.at < x.at)) m.set(x.lead, x);
     return m;
   }, [state.out.messages]);
   const replied = new Set(state.out.messages.filter((m) => m.dir === 'in').map((m) => m.lead));
+  const wrote = new Set(state.out.messages.filter((m) => m.dir === 'out' && m.status !== 'draft' && m.status !== 'scheduled').map((m) => m.lead));
   const convos = Object.values(state.out.leads)
-    .filter((l) => replied.has(l.id) || l.source === 'form')
+    .filter((l) => replied.has(l.id) || wrote.has(l.id) || l.source === 'form')
     .filter((l) =>
-      filter === 'unread'
+      filter === 'sent'
+        ? wrote.has(l.id) && !replied.has(l.id)
+        : filter === 'unread'
         ? l.unread
         : filter === 'interested'
           ? l.status === 'interested'
@@ -64,7 +68,7 @@ export function UniboxTab() {
       <div className="out-head">
         <div>
           <h1 className="page-title">Unibox</h1>
-          <p className="page-sub">Replies from every campaign and form, on every channel. Timmy labels them and drafts the next message; nothing goes out until you send it.</p>
+          <p className="page-sub">Every conversation with your leads, from every campaign and form, on every channel. Sent shows who you wrote to that hasn’t replied yet. Timmy labels replies and drafts the next message; nothing goes out until you send it.</p>
         </div>
       </div>
       <div className="filters" role="group" aria-label="Show">
@@ -79,7 +83,7 @@ export function UniboxTab() {
         <ul className="ubx-list" aria-label="Conversations">
           {convos.length === 0 && (
             <li>
-              <EmptyState icon={Inbox} title="Nothing here" body="Replies show up as soon as a lead writes back." />
+              <EmptyState icon={Inbox} title="Nothing here" body={filter === 'sent' ? 'Emails and texts you send to leads show up here, with the whole history, until they reply.' : 'Replies show up as soon as a lead writes back.'} />
             </li>
           )}
           {convos.map((l) => {
@@ -209,7 +213,10 @@ function Conversation({ lead, onBack }: { lead: Lead; onBack: () => void }) {
 
       {yes && (
         <p className="ubx-yes" role="status">
-          <CalendarCheck size={14} aria-hidden /> {lead.first} agreed to <strong>{whenWords(yes.at)}</strong> (“{yes.quote}”). It isn’t on your calendar yet.
+          <CalendarCheck size={14} aria-hidden />
+          <span>
+            {lead.first} agreed to <strong>{whenWords(yes.at)}</strong> (“{yes.quote}”). It isn’t on your calendar yet.
+          </span>
         </p>
       )}
       <ol className="ubx-msgs">
@@ -220,9 +227,9 @@ function Conversation({ lead, onBack }: { lead: Lead; onBack: () => void }) {
           </li>
         )}
         {msgs.map((m) => (
-          <li key={m.id} className={`ubx-msg ${m.dir}${m.channel === 'call' ? ' call' : ''}${m.status === 'scheduled' ? ' scheduled' : ''}`}>
+          <li key={m.id} className={`ubx-msg ${m.dir}${m.channel === 'call' ? ' call' : ''}${m.status === 'scheduled' || m.status === 'draft' ? ' scheduled' : ''}`}>
             <span className="ubx-meta">
-              <ChannelIcon channel={m.channel} size={12} /> {m.dir === 'in' ? lead.first : 'You'} · {m.status === 'scheduled' ? `scheduled for ${fmtStamp(m.at)}` : fmtStamp(m.at)}
+              <ChannelIcon channel={m.channel} size={12} /> {m.dir === 'in' ? lead.first : 'You'} · {m.status === 'draft' ? 'draft in your mailbox, not sent' : m.status === 'scheduled' ? `scheduled for ${fmtStamp(m.at)}` : fmtStamp(m.at)}
               {m.status === 'bounced' ? ' · bounced' : m.status === 'opened' && m.dir === 'out' ? ' · opened' : ''}
             </span>
             {m.subject && m.channel === 'email' && <strong className="ubx-subj">{m.subject}</strong>}

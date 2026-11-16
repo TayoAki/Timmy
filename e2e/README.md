@@ -15,5 +15,6 @@ Playwright scripts that drive the real app in Chromium, desktop (1440×900) and 
 | `e2e-calm-phone.cjs` | Phone tab bar and the calm home |
 | `e2e-round3.cjs` | Second-simulation fixes: leads on Today, any address, accepted times, send checks, Ask and outbound, one price, truthful drafts, polish |
 | `e2e-round3b.cjs` | Connections, RevOps approvals, Outlook, lead sources, enrichment and finding leads, calls, delegate mode, client workspaces, mailboxes, import checks, showings |
+| `e2e-round4.cjs` | Treg on by default, cold email as drafts in the connected account, the Unibox Sent view, the conversation banner and form-card layout |
 
 Run everything with `bash e2e/run-all.sh` (local dev server) or with `BASE=<url>` for a deployed build. When the backend lands, keep these passing in demo mode and add suites that run against a seeded test workspace.

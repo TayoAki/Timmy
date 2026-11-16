@@ -175,11 +175,11 @@ export function LeadPanel({ lead }: { lead: Lead }) {
         ) : (
           <ol className="lp-timeline">
             {msgs.slice(0, 12).map((m) => (
-              <li key={m.id} className={`lp-msg ${m.dir}${m.status === 'scheduled' ? ' scheduled' : ''}`}>
+              <li key={m.id} className={`lp-msg ${m.dir}${m.status === 'scheduled' || m.status === 'draft' ? ' scheduled' : ''}`}>
                 <ChannelIcon channel={m.channel} size={13} />
                 <div>
                   <span className="lp-msg-head">
-                    {m.dir === 'in' ? lead.first : 'You'} · {m.status === 'scheduled' ? `scheduled ${fmtDay(m.at)}, ${fmtTime(m.at)}` : fmtStamp(m.at)}
+                    {m.dir === 'in' ? lead.first : 'You'} · {m.status === 'draft' ? 'draft, not sent' : m.status === 'scheduled' ? `scheduled ${fmtDay(m.at)}, ${fmtTime(m.at)}` : fmtStamp(m.at)}
                     {m.status === 'bounced' ? ' · bounced' : m.status === 'opened' ? ' · opened' : ''}
                   </span>
                   <span className="lp-msg-body">{m.outcome ?? m.subject ?? m.body.split('\n').find((x) => x.trim() && !/^hi\b/i.test(x)) ?? m.body}</span>

@@ -138,7 +138,7 @@ export interface Campaign {
     /** Plain text only, no links in the first email: better deliverability. */
     plainText: boolean;
   };
-  /** Prepared by Timmy; waits in Approvals until you launch it. */
+  /** Prepared by Timmy, with each first email saved as a draft for you to send. */
   byTimmy?: boolean;
 }
 
@@ -194,7 +194,8 @@ export interface OutMessage {
   campaign?: string;
   step?: number;
   mailbox?: string;
-  status?: 'scheduled' | 'sent' | 'opened' | 'bounced';
+  /** draft: saved in the sending account's Drafts folder; nothing went out. */
+  status?: 'draft' | 'scheduled' | 'sent' | 'opened' | 'bounced';
   /** For calls: how it went. */
   outcome?: string;
 }

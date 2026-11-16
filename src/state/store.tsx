@@ -41,7 +41,7 @@ export type Route =
   | { view: 'social'; tab: 'overview' | 'create' | 'calendar' | 'trends' }
   | { view: 'connections'; group?: string };
 
-export type OutboundTab = 'leads' | 'campaigns' | 'unibox' | 'speed' | 'calls' | 'templates' | 'channels';
+export type OutboundTab = 'leads' | 'campaigns' | 'drafts' | 'unibox' | 'speed' | 'calls' | 'templates' | 'channels';
 
 export type Section = 'mail' | 'approvals' | 'activity' | 'people' | 'files' | 'rules' | 'tasks' | 'calendar' | 'docs' | 'projects' | 'library' | 'outbound' | 'social' | 'connections';
 

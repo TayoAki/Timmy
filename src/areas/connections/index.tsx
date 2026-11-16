@@ -23,8 +23,8 @@ export function ConnectionsView() {
     <Frame tabs={[{ id: 'apps', label: 'Connections' }]} active="apps" onTab={() => {}}>
       <h1 className="page-title">Connections</h1>
       <p className="page-sub">
-        {on} apps connected. Each one connects through Composio: Timmy reads what you connect, and anything it writes waits for approval. In this preview, connecting is simulated and nothing
-        leaves your browser.
+        {on} apps connected. Each one connects through Composio, except Treg, which uses a token. Timmy reads what you connect, and anything it writes waits for approval. In this preview,
+        connecting is simulated and nothing leaves your browser.
       </p>
 
       {GROUPS.map((g) => (
@@ -121,7 +121,7 @@ function ConnectDialog({ app, onClose }: { app: AppDef; onClose: () => void }) {
       open
       onClose={onClose}
       title={`Connect ${app.name}`}
-      description="You sign in to the app on a secure Composio page. Timmy never sees your password."
+      description={app.token ? 'Treg isn’t a Composio app. Timmy connects with its own Treg account, so there’s nothing to sign in to.' : 'You sign in to the app on a secure Composio page. Timmy never sees your password.'}
       width={500}
       footer={
         <>
@@ -151,6 +151,7 @@ function ConnectDialog({ app, onClose }: { app: AppDef; onClose: () => void }) {
           </>
         )}
       </dl>
+      {app.token && <p className="field-hint">Every call is tagged with this workspace and capped by your enrichment budget.</p>}
       {app.note && <p className="conn-note">{app.note}</p>}
     </Modal>
   );
@@ -195,7 +196,7 @@ function EnrichPanel() {
   return (
     <div className="card card-pad conn-policy" aria-label="Enrichment">
       <strong>Enrichment and leads Timmy finds</strong>
-      <p className="field-hint">{app ? `Using ${app.name}. Enrichment only fills empty fields; it never overwrites what you have.` : 'Connect a provider to enrich leads and let Timmy add leads it finds.'}</p>
+      <p className="field-hint">{app ? `Using ${app.name}${app.id === 'treg' ? ', which picks the best data source for each lookup' : ''}. Enrichment only fills empty fields; it never overwrites what you have.` : 'Connect a provider to enrich leads and let Timmy add leads it finds.'}</p>
       <Meter used={e.monthly - e.credits} cap={e.monthly} label="Credits this month" unit="used" />
       <label className="inline-check">
         <input type="checkbox" checked={e.autoFind} onChange={(x) => set({ autoFind: x.target.checked })} /> Timmy may add and enrich leads it finds on its own. Contacting them still waits for you.

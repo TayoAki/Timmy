@@ -119,7 +119,8 @@ const assert = (c, m) => { if (!c) { throw new Error('FAIL: ' + m); } console.lo
   await p.evaluate(() => localStorage.clear());
   await p.reload();
   await p.waitForTimeout(700);
-  await p.locator('.urg-list .urg-row-title').first().click();
+  // The first email row (lead rows can rank above it on Today).
+  await p.locator('.urg-list .urg-row:not(.urg-lead) .urg-row-title').first().click();
   await p.waitForTimeout(300);
   const threadId = (await state()).route.id;
   await p.keyboard.press('Control+i');

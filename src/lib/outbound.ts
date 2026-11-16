@@ -310,7 +310,7 @@ export interface CampaignStats {
 
 export function statsOf(c: Campaign, leads: Record<string, Lead>, messages: OutMessage[]): CampaignStats {
   const mine = messages.filter((m) => m.campaign === c.id);
-  const out = mine.filter((m) => m.dir === 'out' && m.status !== 'scheduled');
+  const out = mine.filter((m) => m.dir === 'out' && m.status !== 'scheduled' && m.status !== 'draft');
   const emails = out.filter((m) => m.channel === 'email');
   const ls = c.leads.map((id) => leads[id]).filter(Boolean) as Lead[];
   // Each reply counts for the step that came just before it.

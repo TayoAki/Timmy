@@ -11,7 +11,7 @@ You are building the backend for **Timmy**, an AI work assistant, and connecting
   - lead logic: `src/state/leads.ts`
   - the in-browser AG-UI agent: `src/agent/*`. It already supports `VITE_TIMMY_AGENT_URL` for a remote AG-UI agent.
 - **Hosting:** everything runs in the existing Railway project. The frontend is live at https://web-production-c4bbfc9c.up.railway.app, and Railway deploys the branch automatically. Add the API, Postgres and a bucket as services in that project.
-- **Tests:** `e2e/` holds 12 Playwright suites (about 340 checks). Run them with `bash e2e/run-all.sh`, with `BASE=<url>` for a deployed build. All of them pass today.
+- **Tests:** `e2e/` holds 13 Playwright suites (about 360 checks). Run them with `bash e2e/run-all.sh`, with `BASE=<url>` for a deployed build. All of them pass today.
 - **Library docs:** Better Auth, Composio, OpenRouter, pg-boss and Railway change often, and some of what you remember may be out of date. Check their current docs before you write code against them. Composio, for example, now steers agents toward its sessions API.
 
 ## Decisions already made
@@ -53,10 +53,10 @@ Build in the PRD's phases. Finish each phase, deploy it and test it before you s
 - **Phase 1.** Triage, brief, drafts, Waiting, decisions, ontology v1, Outlook and Drive.
 - **Phase 2:**
   - CRM sync with the RevOps queue.
-  - The sending service over secondary-domain mailboxes. Cold mail never goes through the user's main Gmail connection, because complaints there would hurt the domain they use for everyday mail.
-  - Twilio texts and the browser dialer, with 10DLC.
+  - Cold email as drafts. Timmy writes each email and saves it, through Composio, as a draft in the Gmail or Outlook account it sends from: the user's main account or any extra accounts they connect. Drafts show in Outbound › Drafts (the frontend already has this tab) and in the mailbox's own Drafts folder, and stay in sync both ways. Nothing goes out until the user sends it, one at a time or all at once. Sending keeps each account under its daily cap (30 by default, ceiling 50) and the provider's own limits, warms up new accounts, adds one-click unsubscribe, and pauses an account on bounces or complaints. Follow-ups are drafted when due, unless the lead replied. Sent emails and replies show in the Unibox with the whole history (the Sent view lists who hasn't replied yet). Google's policy bars apps with Gmail access from sending unsolicited commercial mail, so drafting for the user to send matters; don't add an automatic sending mode.
   - Lead sources: Follow Up Boss, Zillow by email parsing for now, and Realtor.com.
-  - Enrichment and lead finding within caps, behind a provider interface (Apollo, Clay, People Data Labs, Hunter or any API). I also mentioned "treg". I haven't confirmed which provider that is, so ask me before you connect a real one.
+  - Enrichment and lead finding through Treg (https://treg.to/), on by default for every workspace. Read https://treg.to/llms.txt and https://treg.to/integrate.md first. Follow Treg's guide for products: one Treg team token on our servers, the workspace id in the `X-Treg-Meta` header on every call (set by our code, never by the model), a per-workspace daily cap through Treg's budgets endpoint, `X-Treg-Route-Max-Cost` on each call, and the cost from `X-Treg-Cost-Micro` counted against the workspace's enrichment budget. Use Treg's routed lookups, which pick the provider for each job, and only catalog tools, never raw upstream URLs. A provider the workspace connects itself through Composio (Apollo, Clay, People Data Labs, Hunter) takes over from Treg. If treg.to is blocked by this environment's network, tell me.
+  - Twilio texts and calls are out of scope for now. In live mode, show texting and calling as coming soon; keep them working in demo mode.
   - Delegate mode and client workspaces.
 - **Phase 3.** The cloud computer (shell and headless browser in the sandbox), routines and channels.
 
@@ -70,15 +70,15 @@ Don't stop early because of context; save your state to these files and continue
 
 **Connecting the frontend:**
 - Move the reducer's persistence onto the API behind a flag.
-- Keep a **demo mode** with today's sample data. The 12 existing suites run against it, and I use it for demos.
+- Keep a **demo mode** with today's sample data. The 13 existing suites run against it, and I use it for demos.
 - Every screen that shows sample data today should show the signed-in user's real data in live mode.
 
 **Testing is part of done:**
 - Unit tests, and integration tests against a local Postgres with pgvector, run inside your session.
-- Fake providers (Composio, OpenRouter, Twilio) so CI is deterministic.
+- Fake providers (Composio, OpenRouter, Treg) so CI is deterministic.
 - Smoke tests against the real services behind env flags.
 - A `staging` environment in the Railway project. Run the live suites against staging, so test sign-ups never land in production.
-- New Playwright suites for live mode: sign up, connect a test Gmail account, receive a test email, get a triaged item and a draft, approve and send, check the audit log and undo. Also cover switching the model, RevOps holds, delegate holds and tenant isolation (two workspaces must never see each other's data).
+- New Playwright suites for live mode: sign up, connect a test Gmail account, receive a test email, get a triaged item and a draft, approve and send, check the audit log and undo. Also: ask Timmy for a campaign, see the drafts in Outbound and in the test Gmail Drafts folder, send them, and see them in the Unibox. Also cover switching the model, RevOps holds, delegate holds and tenant isolation (two workspaces must never see each other's data).
 - Run the full suite against every staging deploy.
 - Fix the code, not the tests. Don't skip, weaken or delete a test to get a green run. If a test is wrong, tell me why and what you changed.
 - Before each phase ends, have a subagent review the safety-critical code (the gateway, RLS, effect records, credential handling) against the safety properties above. Don't start subagents for small lookups; they add to the session's cost.
@@ -88,21 +88,21 @@ You can do these without asking:
 - write and refactor backend code, add dependencies, and run tests and migrations on local and staging databases;
 - create the Railway services this prompt names (API, Postgres from the pgvector template, a bucket, a staging environment), and set non-secret and reference variables;
 - deploy to staging and production, and push to your session's branch;
-- send test email and texts between the test accounts I give you;
+- send test email between the test accounts I give you, and make small Treg lookups for tests (under $5 in total unless I say otherwise);
 - retry, fix or work around failing calls, timeouts and flaky tests.
 
 Ask me first before you:
 - run a migration that drops or rewrites data in production;
 - delete a Railway service, volume, bucket or environment, or change the existing frontend service's settings;
 - send an email, text or call to anyone outside the test accounts I give you;
-- change the default model or the allowlist, or connect a real enrichment provider.
+- change the default model or the allowlist, or spend more than $5 on Treg calls in testing.
 
 **Credentials:**
-- Phase 0 needs an OpenRouter key and a Composio key. Later phases need Twilio (phase 2) and E2B or Daytona (phase 3). Railway provides Postgres and the bucket.
+- Phase 0 needs an OpenRouter key and a Composio key. Phase 2 needs a Treg team token (an admin token, for the budgets endpoint), and phase 3 needs E2B or Daytona. Railway provides Postgres and the bucket.
 - This environment may already be connected to OpenRouter. Check before you ask me for a key.
 - For keys you use inside your session, ask me through the secure credential form when you reach the step that needs one, never in chat. Use the fakes until then.
 - For deployed services, I add secrets as Railway variables myself.
-- Composio says its Google app already has Google's verification and security assessment (CASA). Put "get that confirmed in writing" on my list in `STATUS.md`.
+- Composio says its Google app already has Google's verification and security assessment (CASA). Put two items on my list in `STATUS.md`: get that confirmed in writing, and ask whether Composio's fair-use policy allows cold email sent from drafts through its Google app.
 
 ## Finishing work
 Please avoid stopping while you still owe work I asked for. Be persistent and don't stop unless needed. Status notes are welcome, and so is asking me about open decisions, but carry on with work that doesn't depend on my answer. If you notice yourself offering to wait or inviting me to redirect you, proceed with the next part of the task instead.
