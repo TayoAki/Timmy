@@ -35,8 +35,8 @@ export interface Lead {
   industry?: string;
   keywords?: string[];
   city?: string;
-  /** Where the lead came from: a list you imported, a connected form, or added by hand. */
-  source: 'import' | 'form' | 'manual' | 'found';
+  /** Where the lead came from: a list you imported, a connected form, added by hand, found by Timmy, or the chat on your website. */
+  source: 'import' | 'form' | 'manual' | 'found' | 'chat';
   list?: string;
   form?: string;
   /** What they wrote in the form. */

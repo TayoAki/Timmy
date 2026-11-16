@@ -32,89 +32,12 @@ import type { ChatConvo, ChatMsg, ChatWidget } from '../../data/ws-types';
 import { fmtStamp } from '../../lib/format';
 import { useStore, ws } from '../../state/store';
 import { patch, uid } from '../../state/ws';
+import { newTalk, respond, type Talk } from '../../lib/chat-bot';
 import { shrinkImage } from '../docs/editor/nodeviews';
 
 const OWNER = PEOPLE.me!.name.split(' ')[0]!;
 const COLORS = ['#3f51d9', '#0f766e', '#d9730d', '#c14c8a', '#1c1b19', '#2f8a5b'];
 const SLOTS = ['Tue, Nov 17 at 10:00 AM', 'Tue, Nov 17 at 2:30 PM', 'Wed, Nov 18 at 11:00 AM'];
-const EMAIL = /[\w.+-]+@[\w-]+\.[\w.-]+/;
-const STOP = new Set(['the', 'and', 'you', 'your', 'are', 'for', 'with', 'how', 'what', 'does', 'have', 'there', 'can', 'any', 'is', 'do', 'a', 'an', 'it', 'of', 'to', 'in', 'on', 'we', 'i', 'my']);
-const SYN: Record<string, string> = { price: 'cost', pricing: 'cost', much: 'cost', costs: 'cost', expensive: 'cost', trial: 'free', saml: 'sso', okta: 'sso', login: 'sso' };
-
-const words = (t: string) =>
-  t
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .split(/\s+/)
-    .filter((w) => w.length > 1 && !STOP.has(w))
-    .map((w) => SYN[w] ?? w);
-
-/** The help desk answer that best matches what the visitor wrote, if any matches well. */
-export function matchFaq(faq: ChatWidget['faq'], text: string) {
-  const t = new Set(words(text));
-  let best: { f: ChatWidget['faq'][number]; score: number } | null = null;
-  for (const f of faq) {
-    const q = words(f.q);
-    const score = q.filter((w) => t.has(w)).length / Math.max(1, Math.min(q.length, 3));
-    if (score > (best?.score ?? 0)) best = { f, score };
-  }
-  return best && best.score >= 0.5 ? best.f : null;
-}
-
-/* ───────────── What the preview bot says ───────────── */
-
-interface Talk {
-  email?: string;
-  name?: string;
-  q: number;
-  answers: Record<string, string>;
-  booked?: string;
-  handedOff?: boolean;
-}
-
-type Reply = { text: string; slots?: boolean };
-
-export function respond(w: ChatWidget, st: Talk, text: string): { replies: Reply[]; st: Talk } {
-  const next: Talk = { ...st, answers: { ...st.answers } };
-  const ask = (): Reply[] => {
-    if (!next.email) return [{ text: 'What’s the best email to reach you?' }];
-    const q = w.questions[next.q];
-    if (q) return [{ text: q.text }];
-    if (w.booking && !next.booked) return [{ text: `Thanks! Want to talk it through with ${OWNER}? Pick a time:`, slots: true }];
-    return [{ text: `Thanks! ${OWNER} will be in touch at ${next.email}.` }];
-  };
-
-  if (/\b(human|person|someone|agent|real|talk to|speak to|manager|call me|phone)\b/i.test(text)) {
-    next.handedOff = true;
-    const em = text.match(EMAIL)?.[0];
-    if (em) next.email = em;
-    if (w.handoff === 'book') return { replies: [{ text: `Happy to set that up with ${OWNER}. Pick a time:`, slots: true }], st: next };
-    if (w.handoff === 'email' && !next.email) return { replies: [{ text: `Leave your email and ${OWNER} will write back today.` }], st: next };
-    return { replies: [{ text: `I’ve let ${OWNER} know. They’ll reply here${next.email ? `, or by email at ${next.email}` : '. What’s the best email in case you step away?'}` }], st: next };
-  }
-
-  const em = text.match(EMAIL)?.[0];
-  if (em && !next.email) {
-    next.email = em;
-    const local = em.split('@')[0]!.split(/[._-]/)[0]!;
-    next.name = local.charAt(0).toUpperCase() + local.slice(1);
-    const rest = ask();
-    return { replies: [{ text: `Thanks, ${next.name}! ${rest[0]!.text}`, slots: rest[0]!.slots }], st: next };
-  }
-
-  const f = matchFaq(w.faq, text);
-  if (f) return { replies: [{ text: f.a }, ...(next.email ? [] : ask())], st: next };
-
-  if (next.email && next.q < w.questions.length) {
-    next.answers[w.questions[next.q]!.id] = text.trim();
-    next.q += 1;
-    return { replies: ask(), st: next };
-  }
-
-  if (!next.email) return { replies: [{ text: `Good question. I don’t have that answer yet, so ${OWNER} will reply. What’s the best email to reach you?` }], st: next };
-  return { replies: [{ text: `Thanks. I’ve passed that to ${OWNER}.` }], st: next };
-}
-
 /* ───────────── Shared pieces ───────────── */
 
 function BotFace({ w, size = 34 }: { w: ChatWidget; size?: number }) {
@@ -409,7 +332,7 @@ function Preview({ w }: { w: ChatWidget }) {
   const [tab, setTab] = useState<'chat' | 'help'>('chat');
   const first = (): ChatMsg[] => [{ id: 'g', from: 'timmy', text: w.greeting, at: NOW }];
   const [msgs, setMsgs] = useState<(ChatMsg & { slots?: boolean })[]>(first);
-  const [talk, setTalk] = useState<Talk>({ q: 0, answers: {} });
+  const [talk, setTalk] = useState<Talk>(newTalk);
   const [typing, setTyping] = useState(false);
   const [text, setText] = useState('');
   const body = useRef<HTMLDivElement>(null);
@@ -428,7 +351,7 @@ function Preview({ w }: { w: ChatWidget }) {
     setMsgs((m) => [...m, { id: uid('m'), from: 'visitor', text: t.trim(), at: NOW, image }]);
     setText('');
     if (image) return;
-    const { replies, st } = respond(w, talk, t);
+    const { replies, st } = respond(w, talk, t, { owner: OWNER, booking: true });
     setTalk(st);
     setTyping(true);
     window.setTimeout(() => {
@@ -448,7 +371,7 @@ function Preview({ w }: { w: ChatWidget }) {
 
   const restart = () => {
     setMsgs(first());
-    setTalk({ q: 0, answers: {} });
+    setTalk(newTalk());
     setTyping(false);
   };
 

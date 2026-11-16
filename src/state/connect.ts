@@ -297,5 +297,5 @@ export function gate(s: State, a: Action, h: ConnHelpers): State | null {
 }
 
 /** For the lead table: who found or enriched this lead. */
-export const leadOrigin = (l: Lead) => (l.source === 'found' ? 'Found by Timmy' : l.enriched ? `Enriched · ${l.enriched.by}` : undefined);
+export const leadOrigin = (l: Lead) => (l.source === 'found' ? 'Found by Timmy' : l.source === 'chat' ? 'Website chat' : l.enriched ? `Enriched · ${l.enriched.by}` : undefined);
 export { fullName };
