@@ -15,6 +15,10 @@ Measured from the file: about 99 BPM (one beat is 0.604 s), key of C♯, 70 s lo
 | 14.12 s | A hit | The title "Timmy" racks into focus |
 | 16.5–17.0 s | A gap | Fade to black; cut the music at 16.9 s with a 0.4 s fade |
 
+## Outro: the end of "Bass First"
+
+The outro (`?outro`, 15 s) uses the track from its hit at 57.10 s to the end (70.0 s). The film opens on that hit. The line "Never drop a ball." lands on the final hit (68.75 s in the track, 11.65 s into the outro). The last 2 s are silence over the title, then it fades to black.
+
 ## The story: a prompt for the bed under the voice
 
 Generate this one track to run under the whole story, from its first frame (the voice's 0:00) to the end card. It matches "Bass First" in tempo and key, so the cut from the intro feels like one score. The times come from the voiceover.

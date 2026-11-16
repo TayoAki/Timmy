@@ -10,3 +10,4 @@ dist
 
 e2e/shots/
 e2e/undefined/
+__pycache__/

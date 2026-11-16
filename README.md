@@ -12,6 +12,8 @@ Live preview: https://web-production-c4bbfc9c.up.railway.app (Railway, redeploys
 
 **The cinematic intro:** https://web-production-c4bbfc9c.up.railway.app/?intro is a 17-second opening that films the real app in 3D, in the style of a product launch. The urgent list settles onto the tilted brief row by row, the camera swings to the $58 decision while the cursor presses Keep $62, then it pulls back to the whole app and the title racks into focus. It's plain CSS 3D, with no 3D library: real components on surfaces in one scene, a camera rig that moves while the UI stays still, depth of field from per-layer blur plus a masked lens blur, and one slow-in, flat-landing motion curve. It's cut to the music in `docs/story-music.md` and plays on demo data that is never saved. `?intro=frames` waits for `window.__intro.seek(t)`, so a 30 fps video can be rendered frame by frame. The voiceover script is `docs/story-voiceover.md`, and `?story=play&sync=vo` plays the story to that take's timings for recording.
 
+**The cinematic outro:** `?outro` (15 seconds) films the end of Taylor's day on the same engine. What everyone owes Taylor settles onto the "I'm waiting on" card, the camera swings to today's calendar with the 9:15 call booked that morning, then it pulls back and "Never drop a ball." lands on the music's final hit, followed by Connect your Gmail. The engine is `src/cinema/engine.ts`. The `cinematic-3d` skill (`.claude/skills/cinematic-3d`) packages the whole method: the rules, the workflow, an engine copy, music analysis, voiceover timestamps, frame rendering and encoding.
+
 ```bash
 npm install
 npm run dev      # http://localhost:5173

@@ -20,12 +20,12 @@ const KEY = 'timmy-state-v3';
   const before = await p.evaluate((KEY) => localStorage.getItem(KEY), KEY);
 
   await p.goto(BASE + '?intro=frames');
-  await p.waitForFunction(() => window.__intro && window.__intro.ready, null, { timeout: 20000 });
-  assert(await p.evaluate(() => window.__intro.length) === 17, 'the intro is 17 seconds long');
+  await p.waitForFunction(() => window.__film && window.__film.ready, null, { timeout: 20000 });
+  assert(await p.evaluate(() => window.__film.length) === 17, 'the intro is 17 seconds long');
   assert(await p.locator('.intro-plane .app').count() === 1 && await p.locator('.intro-urgent .urg-row').count() >= 4 && await p.locator('.intro-card .ap-card').count() === 1, 'it films the real app, the urgent list and the $58 decision');
   assert(await p.locator('.intro-plane .tri-grid').count() === 1, 'it plays on fresh demo data (the full brief, not your calm view)');
 
-  const at = async (t) => { await p.evaluate((t) => window.__intro.seek(t), t); await p.waitForTimeout(120); };
+  const at = async (t) => { await p.evaluate((t) => window.__film.seek(t), t); await p.waitForTimeout(120); };
   await at(0.2);
   assert(Number(await p.locator('.intro-fade').evaluate((el) => getComputedStyle(el).opacity)) > 0.6, 'it opens from black');
   await at(3);
@@ -46,9 +46,25 @@ const KEY = 'timmy-state-v3';
   await at(17);
   assert(Number(await p.locator('.intro-fade').evaluate((el) => getComputedStyle(el).opacity)) > 0.95, 'it ends on black, ready to cut to the story');
 
+  // The outro: the end of Taylor's day, then the line and the call to action.
+  await p.goto(BASE + '?outro=frames');
+  await p.waitForFunction(() => window.__film && window.__film.ready, null, { timeout: 20000 });
+  assert(await p.evaluate(() => window.__film.length) === 15, 'the outro is 15 seconds long');
+  assert(/CFO approval/.test(await p.locator('.outro-card').first().innerText()), 'the outro films what Taylor is waiting on, including Dana’s CFO approval');
+  assert(/Intro call: Jamie Ortega/.test(await p.locator('.outro-card').nth(1).innerText()), 'and the 9:15 call booked that morning on today’s calendar');
+  await at(2);
+  const w1 = await p.locator('.outro-card').first().locator('.tc-list li').nth(2).evaluate((el) => el.style.transform);
+  await at(5);
+  const w2 = await p.locator('.outro-card').first().locator('.tc-list li').nth(2).evaluate((el) => el.style.transform);
+  assert(w1 !== w2 && /translateZ\(0/.test(w2), `its rows settle from depth too (${w1} → ${w2})`);
+  await at(13.6);
+  assert(Number(await p.locator('.outro-line').evaluate((el) => getComputedStyle(el).opacity)) > 0.9 && /Never drop a ball/.test(await p.locator('.outro-line').innerText()) && /Connect your Gmail/.test(await p.locator('.outro-cta').innerText()), 'it ends on “Never drop a ball.” and Connect your Gmail');
+  await at(15);
+  assert(Number(await p.locator('.intro-fade').evaluate((el) => getComputedStyle(el).opacity)) > 0.95, 'and fades to black');
+
   await p.goto(BASE);
   await p.waitForTimeout(800);
-  assert(await p.evaluate((KEY) => localStorage.getItem(KEY), KEY) === before, 'your saved demo data is untouched');
+  assert(await p.evaluate((KEY) => localStorage.getItem(KEY), KEY) === before, 'your saved demo data is untouched by both films');
 
   // ?intro plays on its own and offers the story at the end.
   await p.goto(BASE + '?intro');

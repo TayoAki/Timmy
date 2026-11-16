@@ -189,3 +189,68 @@
   gap: 10px;
   transform: translateX(-50%);
 }
+
+/* ───────────── The outro (?outro) ───────────── */
+.outro-card {
+  width: 440px;
+  transform-style: preserve-3d;
+}
+.outro-card .tri-card,
+.outro-card .tc-list {
+  transform-style: preserve-3d;
+}
+.outro-card .tri-card {
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.5);
+}
+.outro-card .tc-list li {
+  background: var(--surface);
+  border-radius: 8px;
+}
+/* The morning's confirmations stay out of the shot. */
+.intro-plane .toasts {
+  display: none;
+}
+.outro-title {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 34px;
+  pointer-events: none;
+}
+.outro-line {
+  margin: 0;
+  font-size: 96px;
+  font-weight: 650;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+  color: #f4f3ef;
+  opacity: 0;
+}
+.outro-sign {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  opacity: 0;
+}
+.outro-word {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 34px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  color: #f4f3ef;
+}
+.outro-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 24px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 20px;
+  font-weight: 600;
+}

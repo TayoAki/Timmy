@@ -189,6 +189,17 @@ function RunControl() {
   );
 }
 
+/** "I'm waiting on" on its own, for the cinematic outro. */
+export function WaitingNow({ limit = 3 }: { limit?: number }) {
+  const { state } = useStore();
+  return <WaitingCard threads={scopedThreads(state, inBox(state.threads, 'waiting'))} limit={limit} />;
+}
+
+/** Today's calendar card on its own, for the cinematic outro. */
+export function CalendarNow() {
+  return <CalendarCard />;
+}
+
 /** The "Needs you today" list on its own, for the cinematic intro. */
 export function UrgentNow({ limit = 5 }: { limit?: number }) {
   const { state } = useStore();
@@ -640,7 +651,7 @@ function OweCard({ threads }: { threads: Thread[] }) {
   );
 }
 
-function WaitingCard({ threads }: { threads: Thread[] }) {
+function WaitingCard({ threads, limit = 3 }: { threads: Thread[]; limit?: number }) {
   const { dispatch } = useStore();
   const overdue = threads.filter((t) => t.waiting?.due && t.waiting.due < NOW).length;
   const nodate = threads.filter((t) => !t.waiting?.due).length;
@@ -662,7 +673,7 @@ function WaitingCard({ threads }: { threads: Thread[] }) {
         ]}
       />
       <ul className="tc-list">
-        {sorted.slice(0, 3).map((t) => (
+        {sorted.slice(0, limit).map((t) => (
           <li key={t.id}>
             <button onClick={() => dispatch({ type: 'openThread', id: t.id })}>
               <Avatar id={t.waiting!.on} size={24} />

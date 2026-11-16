@@ -288,7 +288,12 @@ export function StoryPlayer() {
           setCursor((c) => ({ ...c, click: false }));
         }
       }
-      if (b.act) await b.act(h);
+      if (b.act) {
+        if (v) {
+          const next = BEATS.slice(i + 1).find((x) => VO_SYNC[x.id]);
+          await Promise.race([b.act(h), untilT(next ? VO_SYNC[next.id]!.at - (next.setup ? 1.2 : 0.05) : Infinity)]);
+        } else await b.act(h);
+      }
       if (!alive()) return;
       await sleep(b.press ? 600 : 150);
       setCursor((c) => ({ ...c, show: false }));

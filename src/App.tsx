@@ -23,6 +23,7 @@ import { Sidebar } from './components/Sidebar';
 import { StoreProvider, useStore, type Toast } from './state/store';
 import { StoryPlayer } from './story/StoryPlayer';
 import { Intro } from './intro/Intro';
+import { Outro } from './intro/Outro';
 import { ThemeProvider } from './state/theme';
 import { AppearanceView } from './views/AppearanceView';
 import { MailboxView } from './views/MailboxView';
@@ -31,17 +32,23 @@ import { ThreadView } from './views/ThreadView';
 import { TodayView } from './views/TodayView';
 import { VoiceView } from './views/VoiceView';
 
-/** ?intro plays the cinematic intro: the real app, filmed in 3D, on demo data that isn't saved. */
-const INTRO = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('intro');
+/** ?intro and ?outro play the cinematic films: the real app, filmed in 3D, on demo data that isn't saved. */
+const PARAMS = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
+const INTRO = PARAMS.has('intro');
+const OUTRO = !INTRO && PARAMS.has('outro');
 
 export default function App() {
   return (
     <ThemeProvider>
-      <StoreProvider ephemeral={INTRO}>
+      <StoreProvider ephemeral={INTRO || OUTRO}>
         {INTRO ? (
           <Intro>
             <Shell />
           </Intro>
+        ) : OUTRO ? (
+          <Outro>
+            <Shell />
+          </Outro>
         ) : (
           <Shell />
         )}
