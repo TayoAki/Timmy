@@ -23,7 +23,7 @@ import type { Plan, WidgetCall } from './plan';
 import type { Campaign } from '../data/outbound-types';
 import { fitOf, liveNow, pct, project, statsOf, writeSequence } from '../lib/outbound';
 import { coldToday, ctxOf } from '../state/outbound';
-import { callLead, callList, findLead, logCallNotes, textLead } from './outboundIntents';
+import { callLead, callList, findLead, findNewLeads, logCallNotes, textLead } from './outboundIntents';
 
 /* ───────────── Reading the request ───────────── */
 
@@ -718,6 +718,7 @@ export function intents(s: State, text: string, thread?: Thread): Plan | null {
     (st, x) => logCallNotes(st, x, text),
     callList,
     callLead,
+    (st, x) => findNewLeads(st, x, text),
     cantReach,
     overnight,
     (st, x) => editOpenDraft(st, x, text, thread),

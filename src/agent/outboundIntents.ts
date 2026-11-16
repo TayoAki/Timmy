@@ -9,6 +9,8 @@ import { fmtDay, fmtTime, plural } from '../lib/format';
 import type { ChatChoice, ChatLink } from '../state/assistant';
 import { callQueue, leadIn, whenWords, pendingAcceptance } from '../state/leads';
 import { canText, fill } from '../state/outbound';
+import { enrichApp } from '../state/connect';
+import { readFind } from '../lib/enrich';
 import type { State } from '../state/store';
 import { personName } from '../state/ws';
 import { personIn } from './intents';
@@ -161,5 +163,34 @@ export function logCallNotes(s: State, l: string, text: string): Plan | null {
         ],
       }),
     ],
+  };
+}
+
+/** "Find 10 dental practices in Austin": Timmy finds, adds and enriches leads itself, within your limits. */
+export function findNewLeads(s: State, l: string, text: string): Plan | null {
+  if (!/\b(find|get|source|prospect|look for|search for|pull)\b/.test(l) || !/\b(new )?(leads?|prospects?|clinics?|practices|companies|accounts|firms|offices|people like)\b/.test(l)) return null;
+  if (leadIn(s, l) && !/\d/.test(l)) return null;
+  const e = s.conn.enrich;
+  const want = readFind(text);
+  const room = Math.max(0, e.perDay - e.foundToday);
+  const n = Math.min(want.count, room);
+  const app = enrichApp(s);
+  const where = [want.industry ? `${want.industry} ` : '', want.city ? `in ${want.city}` : ''].join('').trim();
+  if (!n) return { steps: ['Checked today’s limit'], text: `Timmy already added ${e.perDay} leads today, the daily limit in Connections › Enrichment.`, calls: [answer({ links: [{ label: 'Connections', href: 'connections' }] })] };
+  const find = { type: 'conn' as const, op: { op: 'find' as const, query: text, quiet: true } };
+  const what = `${plural(n, 'lead')} that fit “${s.out.offer.name}”${where ? ` (${where})` : ''}`;
+  const links = [{ label: 'Found by Timmy', href: 'outbound:leads', sub: 'Your new leads' }];
+  if (e.autoFind) {
+    return {
+      steps: [`Searched ${app ? app.name : 'for leads'} for ${what}`, app ? `Enriched them with ${app.name}` : 'Skipped enrichment: no provider connected', 'Added them to “Found by Timmy”'],
+      text: `I added ${what} to “Found by Timmy”${app ? `, enriched with ${app.name} (about ${n * (app.credits ?? 1)} credits)` : ''}. Nothing was sent. Ask me to write a campaign for them when you’re ready.`,
+      effects: [find],
+      calls: [answer({ links })],
+    };
+  }
+  return {
+    steps: [`Searched for ${what}`],
+    text: `I can add ${what}${app ? ` and enrich them with ${app.name}` : ''}. You’ve set Timmy to ask first.`,
+    calls: [answer({ choices: [{ id: 'yes', label: `Add ${plural(n, 'lead')}`, primary: true, actions: [find], after: `Added ${plural(n, 'lead')} to “Found by Timmy”.`, open: 'outbound:leads' }, no('Nothing added.')], links })],
   };
 }

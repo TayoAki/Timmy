@@ -2326,3 +2326,315 @@ td.lead-sub {
   align-items: center;
   gap: 12px;
 }
+
+/* ───────────── Connections ───────────── */
+
+.conn-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.conn-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+}
+.conn-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.conn-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.conn-name {
+  display: grid;
+  min-width: 0;
+}
+.conn-name strong {
+  font-size: 14px;
+}
+.conn-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-3);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conn-card[data-connected] .conn-status {
+  color: var(--ok);
+}
+.conn-line {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.conn-line .muted {
+  display: inline-block;
+  min-width: 52px;
+}
+.conn-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 8px;
+}
+.conn-foot .muted {
+  font-size: 12px;
+}
+.conn-dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 14px;
+  margin: 0;
+  font-size: 13.5px;
+}
+.conn-dl dt {
+  color: var(--text-3);
+}
+.conn-dl dd {
+  margin: 0;
+}
+.conn-note {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--r);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.conn-policy {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  max-width: 640px;
+}
+.conn-policy .field-hint {
+  margin: 0;
+}
+.conn-two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+/* Held approvals */
+.held-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.held-row {
+  display: grid;
+  grid-template-columns: 150px 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+}
+.held-row + .held-row {
+  border-top: 1px solid var(--line);
+}
+.held-who {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--warn);
+}
+.held-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  font-size: 13.5px;
+}
+.held-text .muted {
+  font-size: 12.5px;
+}
+.held-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* Calls */
+.call-list {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.call-row {
+  display: grid;
+  grid-template-columns: 22px 32px 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+}
+.call-row + .call-row {
+  border-top: 1px solid var(--line);
+}
+.call-text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  font-size: 13.5px;
+}
+.call-text .muted {
+  font-size: 12.5px;
+}
+.call-why {
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.call-kind {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.call-kind.form {
+  color: var(--danger);
+}
+.call-kind.callback {
+  color: var(--warn);
+}
+.call-phone {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.call-prev p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.call-extras {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+}
+
+/* Client workspaces */
+.client-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.client-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.client-pick .input {
+  width: auto;
+  min-width: 220px;
+}
+
+/* Sending domains */
+.mb-head-actions {
+  display: inline-flex;
+  gap: 8px;
+}
+.dns-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dns-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 12px 16px;
+}
+.dns-domain {
+  font-size: 13.5px;
+}
+.dns-checks {
+  display: inline-flex;
+  gap: 6px;
+}
+.dns-chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--surface-2);
+}
+.dns-chip.ok {
+  color: var(--ok);
+}
+.dns-chip.bad {
+  color: var(--danger);
+}
+.dns-fixes {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+.dns-ok {
+  grid-column: 1 / -1;
+  font-size: 12.5px;
+}
+
+.lead-origin {
+  color: var(--accent-text);
+}
+.book-kind {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.delegate-chip {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+@media (max-width: 599px) {
+  .held-row {
+    grid-template-columns: 1fr;
+  }
+  .call-row {
+    grid-template-columns: 32px 1fr auto;
+  }
+  .call-row .urg-rank,
+  .call-row .call-phone {
+    display: none;
+  }
+  .conn-two {
+    grid-template-columns: 1fr;
+  }
+  .client-pick .input {
+    min-width: 0;
+  }
+}

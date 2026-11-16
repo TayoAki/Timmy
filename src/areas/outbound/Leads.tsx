@@ -3,11 +3,13 @@
  * see how well each lead fits your offer, have Timmy qualify the account, and
  * add the good ones to a campaign. Click a row for the lead's details.
  */
-import { ArrowDownWideNarrow, Check, ChevronDown, Globe, Briefcase, Plus, Search, Sparkles, Star, Trash2, Upload, Users } from 'lucide-react';
+import { ArrowDownWideNarrow, Briefcase, Download, Check, ChevronDown, Globe, Plus, Radar, Search, Sparkles, Star, Trash2, Upload, Users, Wand2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { Lead, LeadStatus } from '../../data/outbound-types';
 import { plural } from '../../lib/format';
 import { FIELD_LABELS, guessFields, parseCsv, SAMPLE_CSV, type LeadField } from '../../lib/csv';
+import { enrichApp, leadOrigin } from '../../state/connect';
+import { downloadCsv } from '../../lib/download';
 import { useStore } from '../../state/store';
 import { Field, Menu, Modal } from '../../components/kit';
 import { EmptyState } from '../../components/kit';
@@ -92,6 +94,20 @@ export function LeadsTab() {
           </p>
         </div>
         <div className="out-head-actions">
+          <button
+            className="btn btn-ghost"
+            disabled={!all.length}
+            onClick={() =>
+              downloadCsv(`${(list?.name ?? 'leads').replace(/[^\w-]+/g, '-')}.csv`, [
+                ['First name', 'Last name', 'Email', 'Phone', 'Title', 'Company', 'Website', 'Employees', 'Industry', 'City', 'Status', 'Campaign', 'Source', 'Enriched by'],
+                ...all.map((l) => [l.first, l.last, l.email, l.phone, l.title, l.company, l.website, l.employees, l.industry, l.city, l.status, l.campaign ? state.out.campaigns[l.campaign]?.name : '', l.source, l.enriched?.by]),
+              ])
+            }
+          >
+            <Download size={15} />
+            Export CSV
+          </button>
+          <FindLeadsButton />
           <button className="btn" onClick={() => setAdding(true)}>
             <Plus size={15} />
             Add lead
@@ -164,6 +180,14 @@ export function LeadsTab() {
           <button className="btn btn-sm" onClick={() => runQualify(sel)}>
             <Sparkles size={14} />
             Qualify with Timmy
+          </button>
+          <button
+            className="btn btn-sm"
+            title={enrichApp(state) ? `Fill empty fields with ${enrichApp(state)!.name}` : 'Connect an enrichment provider in Connections'}
+            onClick={() => (enrichApp(state) ? dispatch({ type: 'conn', op: { op: 'enrich', ids: sel } }) : dispatch({ type: 'navigate', route: { view: 'connections' } }))}
+          >
+            <Wand2 size={14} />
+            {enrichApp(state) ? `Enrich · ${sel.length * (enrichApp(state)!.credits ?? 1)} credits` : 'Enrich…'}
           </button>
           <Menu
             label="Add to campaign"
@@ -267,7 +291,10 @@ function LeadRow({ l, fit, picked, current, running, onPick, onOpen, onQualify }
           <LeadMark lead={l} />
           <span>
             <span className="lead-name-text">{name(l)}</span>
-            <span className="lead-sub">{l.title ?? '—'}</span>
+            <span className="lead-sub">
+              {l.title ?? '—'}
+              {leadOrigin(l) && <span className="lead-origin"> · {leadOrigin(l)}</span>}
+            </span>
           </span>
         </button>
       </td>
@@ -348,16 +375,18 @@ function ImportDialog({ onClose }: { onClose: () => void }) {
       return i >= 0 ? (row[i] ?? '').trim() : '';
     };
     const full = get('name');
-    const [f0, ...rest] = full.split(/\s+/);
+    // "Doe, Jane" is last, first.
+    const [f0, ...rest] = full.includes(',') ? [full.split(',')[1]!.trim(), full.split(',')[0]!.trim()] : full.split(/\s+/);
     const extra: Record<string, string> = {};
     map.forEach((f, i) => f === 'extra' && row[i] && (extra[header[i]!] = row[i]!));
     const site = get('website');
-    const emp = parseInt(get('employees').replace(/[^\d]/g, ''), 10);
+    // "60-80" or "51–200" is a range: keep the low end, not 6080.
+    const emp = parseInt((get('employees').match(/\d[\d,]*/)?.[0] ?? '').replace(/,/g, ''), 10);
     return {
       id: newId(),
       first: get('first') || f0 || '',
       last: get('last') || rest.join(' '),
-      email: get('email'),
+      email: get('email').trim().toLowerCase(),
       phone: get('phone') || undefined,
       title: get('title') || undefined,
       company: get('company') || (site ? site.replace(/^https?:\/\/(www\.)?/, '').split('.')[0]! : '—'),
@@ -373,9 +402,18 @@ function ImportDialog({ onClose }: { onClose: () => void }) {
       extra: Object.keys(extra).length ? extra : undefined,
     } satisfies Lead;
   });
-  const dupes = leads.filter((l) => l.email && existing.has(l.email.toLowerCase()));
+  const seen = new Set<string>();
+  // Already in Timmy, or the same address twice in this file (any capitalisation).
+  const dupes = leads.filter((l) => {
+    if (!l.email) return false;
+    const k = l.email.toLowerCase();
+    if (existing.has(k) || seen.has(k)) return true;
+    seen.add(k);
+    return false;
+  });
   const noEmail = leads.filter((l) => !l.email);
-  const ok = leads.filter((l) => !dupes.includes(l) && (l.first || l.company !== '—'));
+  const bad = leads.filter((l) => l.email && !/^[^\s@,;<>]+@[^\s@,;<>]+\.[a-z]{2,}$/i.test(l.email));
+  const ok = leads.filter((l) => !dupes.includes(l) && !bad.includes(l) && (l.first || l.company !== '—'));
 
   const onFile = async (file: File | undefined) => {
     if (!file) return;
@@ -400,7 +438,7 @@ function ImportDialog({ onClose }: { onClose: () => void }) {
       width={760}
       footer={
         <>
-          <span className="modal-foot-note">{rows.length ? `${plural(ok.length, 'lead')} ready${dupes.length ? ` · ${dupes.length} already in your leads, skipped` : ''}${noEmail.length ? ` · ${noEmail.length} without email` : ''}` : ''}</span>
+          <span className="modal-foot-note">{rows.length ? `${plural(ok.length, 'lead')} ready${dupes.length ? ` · ${dupes.length} duplicate${dupes.length === 1 ? '' : 's'} skipped` : ''}${bad.length ? ` · ${bad.length} invalid email${bad.length === 1 ? '' : 's'} skipped` : ''}${noEmail.length ? ` · ${noEmail.length} without email` : ''}` : ''}</span>
           <button className="btn" onClick={onClose}>
             Cancel
           </button>
@@ -533,5 +571,59 @@ function AddLeadDialog({ onClose }: { onClose: () => void }) {
         </Field>
       </div>
     </Modal>
+  );
+}
+
+/* ───────────── Find leads ───────────── */
+
+/** Timmy finds leads that fit your offer and adds them, enriched, within your daily limit. Nothing is sent. */
+function FindLeadsButton() {
+  const { state, dispatch } = useStore();
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const e = state.conn.enrich;
+  const app = enrichApp(state);
+  const room = Math.max(0, e.perDay - e.foundToday);
+  return (
+    <>
+      <button className="btn" onClick={() => setOpen(true)}>
+        <Radar size={15} />
+        Find leads
+      </button>
+      {open && (
+        <Modal
+          open
+          onClose={() => setOpen(false)}
+          title="Find leads that fit your offer"
+          description={`Timmy searches for people who match “${state.out.offer.name}” and adds them to “Found by Timmy”${app ? `, enriched with ${app.name}` : ''}. Nothing is sent.`}
+          width={520}
+          footer={
+            <>
+              <button className="btn btn-sm btn-ghost" onClick={() => setOpen(false)}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-sm btn-primary"
+                disabled={!room}
+                onClick={() => {
+                  dispatch({ type: 'conn', op: { op: 'find', query: q || '10' } });
+                  dispatch({ type: 'navigate', route: { view: 'outbound', tab: 'leads', list: 'list-found' } });
+                  setOpen(false);
+                }}
+              >
+                <Radar size={14} /> Find and add
+              </button>
+            </>
+          }
+        >
+          <Field label="What to look for" hint="Optional. For example: 15 dental practices in Austin. Blank uses your offer’s ideal customer.">
+            <input className="input" value={q} placeholder="10 leads that fit my offer" onChange={(x) => setQ(x.target.value)} data-autofocus />
+          </Field>
+          <p className="field-hint">
+            {room} of {e.perDay} left today · {e.credits} enrichment credits left this month{app ? '' : ' · no enrichment provider connected'}
+          </p>
+        </Modal>
+      )}
+    </>
   );
 }

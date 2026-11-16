@@ -337,6 +337,10 @@ export function outboundSeed(): Outbound {
   const f = formLeads();
   const leads: Record<string, Lead> = { ...h.leads };
   for (const l of f.leads) leads[l.id] = l;
+  // Callbacks you set on earlier calls, due today: they lead the call list.
+  if (leads['lead-20']) leads['lead-20'] = { ...leads['lead-20'], callbackAt: d(16, 14), callbackNote: 'Missed my call; wants the details, then a walkthrough with their COO', notes: 'Nov 13 call: no answer, left a voicemail' };
+  const gate = Object.values(leads).find((l) => l.campaign && l.status === 'contacted' && l.phone && l.id !== 'lead-20');
+  if (gate) leads[gate.id] = { ...gate, callbackAt: d(16, 11), callbackNote: 'Front desk said she’s in Monday before noon', notes: 'Nov 12 call: gatekeeper, left a message' };
   return {
     leads,
     lists: { [LIST.id]: LIST, 'list-forms': { id: 'list-forms', name: 'Form leads', source: 'form', created: d(1, 9) } },

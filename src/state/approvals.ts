@@ -128,6 +128,11 @@ function decisionNotes(s: State, thread?: string): ApprovalNote[] | undefined {
 }
 
 export function openApprovals(s: State): Approval[] {
+  const held = new Set(s.conn.held.map((h) => h.key));
+  return buildApprovals(s).filter((a) => !held.has(a.key));
+}
+
+function buildApprovals(s: State): Approval[] {
   const ctx: UrgencyContext = { ws: s.ws, deals: s.deals, rules: s.rules };
   const list: Approval[] = [];
 

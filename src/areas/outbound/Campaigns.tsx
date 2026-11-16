@@ -3,7 +3,8 @@
  * today's sending limit it uses. New campaign: pick leads, and Timmy writes the
  * sequence from your offer (or start from templates, or blank).
  */
-import { Pause, Play, Plus, Rocket, Send, Sparkles } from 'lucide-react';
+import { Download, Pause, Play, Plus, Rocket, Send, Sparkles } from 'lucide-react';
+import { downloadCsv } from '../../lib/download';
 import { useState } from 'react';
 import type { Campaign } from '../../data/outbound-types';
 import { fmtDay, plural } from '../../lib/format';
@@ -34,6 +35,25 @@ export function CampaignsTab() {
           <p className="page-sub">Sequences across email, calls and texts. Each one stays inside your sending window and daily limits, and stops for a lead the moment they reply.</p>
         </div>
         <div className="out-head-actions">
+          <button
+            className="btn btn-ghost"
+            disabled={!Object.keys(state.out.campaigns).length}
+            onClick={() =>
+              downloadCsv(`${state.clients.names[state.clients.active]?.replace(/[^\w-]+/g, '-') ?? 'client'}-report.csv`, [
+                ['Campaign', 'Status', 'Step', 'Leads', 'Contacted', 'Emails sent', 'Opened', 'Replied', 'Interested', 'Meetings', 'Bounced', 'Unsubscribed'],
+                ...Object.values(state.out.campaigns).flatMap((c) => {
+                  const st = statsOf(c, state.out.leads, state.out.messages);
+                  return [
+                    [c.name, c.status, 'All', st.leads, st.contacted, st.sent, st.opened, st.replied, st.interested, st.meetings, st.bounced, st.unsubscribed],
+                    ...st.byStep.map((b, i) => [c.name, c.status, `Step ${i + 1} (${c.steps[i]?.channel ?? ''})`, '', '', b.sent, b.opened, b.replied, '', '', '', '']),
+                  ];
+                }),
+              ])
+            }
+          >
+            <Download size={15} />
+            Client report
+          </button>
           <button className="btn btn-primary" onClick={() => setCreating(true)}>
             <Plus size={15} />
             New campaign

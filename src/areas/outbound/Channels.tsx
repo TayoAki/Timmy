@@ -9,6 +9,7 @@ import { useState } from 'react';
 import type { ChannelConn, Limits, Mailbox } from '../../data/outbound-types';
 import { NOW } from '../../data/mock';
 import { mailboxCap } from '../../lib/outbound';
+import { dnsFor, domainOf } from '../../lib/dns';
 import { coldToday } from '../../state/outbound';
 import { useStore } from '../../state/store';
 import { Field, Modal } from '../../components/kit';
@@ -23,6 +24,7 @@ export function ChannelsTab() {
   const sms = state.out.channels.sms;
   const calls = state.out.channels.call;
   const [addBox, setAddBox] = useState(false);
+  const [bulk, setBulk] = useState(false);
   const [connect, setConnect] = useState<ChannelConn | null>(null);
   const setLimits = (patch: Partial<Limits>) => dispatch({ type: 'out', op: { op: 'limits', patch } });
   const setBox = (m: Mailbox, patch: Partial<Mailbox>) => dispatch({ type: 'out', op: { op: 'mailbox', mailbox: { ...m, ...patch } } });
@@ -47,10 +49,16 @@ export function ChannelsTab() {
           <h2 className="section-title" id="mb-title">
             Sending mailboxes
           </h2>
-          <button className="btn btn-sm" onClick={() => setAddBox(true)}>
-            <Plus size={14} />
-            Add mailbox
-          </button>
+          <span className="mb-head-actions">
+            <button className="btn btn-sm" onClick={() => setBulk(true)}>
+              <Plus size={14} />
+              Add in bulk
+            </button>
+            <button className="btn btn-sm" onClick={() => setAddBox(true)}>
+              <Plus size={14} />
+              Add mailbox
+            </button>
+          </span>
         </div>
         <p className="field-hint mb-hint">Send cold email from a secondary domain (like trynorthpeak.io), never from your main one, so a bad week can’t touch the mail your customers rely on.</p>
         <ul className="mb-list">
@@ -91,7 +99,12 @@ export function ChannelsTab() {
             );
           })}
         </ul>
+        <p className="field-hint mb-hint">
+          {Object.keys(state.out.mailboxes).length} mailboxes · Timmy rotates cold email across the ones with room left today, so no single address carries the volume.
+        </p>
       </section>
+
+      <DomainChecks />
 
       <section className="section" aria-labelledby="guard-title">
         <div className="section-head">
@@ -178,6 +191,7 @@ export function ChannelsTab() {
       </section>
 
       {addBox && <AddMailbox onClose={() => setAddBox(false)} />}
+      {bulk && <BulkMailboxes onClose={() => setBulk(false)} />}
       {connect && <ConnectDialog c={connect} onClose={() => setConnect(null)} />}
     </>
   );
@@ -255,6 +269,102 @@ function ConnectDialog({ c, onClose }: { c: ChannelConn; onClose: () => void }) 
         <input className="input" value={account} placeholder={ask.placeholder} onChange={(e) => setAccount(e.target.value)} />
       </Field>
       <p className="field-hint preview-note">Preview: in this demo the channel connects without signing in, and nothing is actually sent.</p>
+    </Modal>
+  );
+}
+
+/* ───────────── Sending domains ───────────── */
+
+/** SPF, DKIM and DMARC for every domain you send from, with the fix for anything missing. */
+function DomainChecks() {
+  const { state } = useStore();
+  const domains = [...new Set(Object.values(state.out.mailboxes).map((m) => domainOf(m.address)))].filter(Boolean);
+  if (!domains.length) return null;
+  return (
+    <section className="section" aria-labelledby="dns-title">
+      <div className="section-head">
+        <h2 className="section-title" id="dns-title">
+          Sending domains
+        </h2>
+        <span className="section-sub">Gmail and Yahoo reject bulk mail without SPF, DKIM and DMARC. Timmy adds one-click unsubscribe to every cold email.</span>
+      </div>
+      <ul className="dns-list">
+        {domains.map((d) => {
+          const checks = dnsFor(d);
+          const bad = checks.filter((c) => !c.ok);
+          return (
+            <li key={d} className="card dns-row">
+              <strong className="dns-domain">{d}</strong>
+              <span className="dns-checks">
+                {checks.map((c) => (
+                  <span key={c.key} className={`dns-chip ${c.ok ? 'ok' : 'bad'}`}>
+                    {c.ok ? '✓' : '✕'} {c.label}
+                  </span>
+                ))}
+              </span>
+              {bad.length > 0 ? (
+                <ul className="dns-fixes">
+                  {bad.map((c) => (
+                    <li key={c.key}>{c.fix}</li>
+                  ))}
+                </ul>
+              ) : (
+                <span className="muted dns-ok">Ready to send</span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+/* ───────────── Many mailboxes at once ───────────── */
+
+function BulkMailboxes({ onClose }: { onClose: () => void }) {
+  const { state, dispatch } = useStore();
+  const [text, setText] = useState('');
+  const have = new Set(Object.values(state.out.mailboxes).map((m) => m.address.toLowerCase()));
+  const rows = text
+    .split(/\n+/)
+    .map((line) => line.split(/[,;\t]/).map((x) => x.trim()))
+    .filter((r) => r[0]);
+  const parsed = rows.map(([address, ...rest]) => ({ address: address!.toLowerCase(), name: rest.join(' ').trim() }));
+  const good = parsed.filter((r) => /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(r.address) && !have.has(r.address));
+  const main = good.filter((r) => r.address.endsWith('@northpeak.io'));
+  const add = () => {
+    good.forEach((r, i) =>
+      dispatch({
+        type: 'out',
+        op: { op: 'mailbox', mailbox: { id: `mb-${Date.now().toString(36)}-${i}`, address: r.address, name: r.name || state.out.mailboxes['mb-1']?.name || 'Sender', dailyLimit: state.out.limits.perMailbox, warmup: true, health: 80, sentToday: 0, added: NOW } },
+      }),
+    );
+    onClose();
+  };
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Add mailboxes in bulk"
+      description="One per line: address, then the sender name. Each starts warming up at a low daily limit."
+      width={560}
+      footer={
+        <>
+          <span className="modal-foot-note">
+            {good.length} ready{parsed.length - good.length ? ` · ${parsed.length - good.length} skipped (invalid or already added)` : ''}
+          </span>
+          <button className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="btn btn-primary" disabled={!good.length} onClick={add}>
+            Add {good.length || ''} mailbox{good.length === 1 ? '' : 'es'}
+          </button>
+        </>
+      }
+    >
+      <textarea className="input mono" rows={8} value={text} placeholder={'alex@trynorthpeak.io, Alex Rivera\nsam@getnorthpeak.io, Sam Lee'} aria-label="Mailboxes" onChange={(e) => setText(e.target.value)} data-autofocus />
+      {main.length > 0 && <p className="seq-hint warn">{main.length} on your main domain. Send cold email from a secondary domain instead.</p>}
+      <p className="field-hint">In the product each mailbox connects with its own Google or Microsoft sign-in, or SMTP with an app password.</p>
     </Modal>
   );
 }

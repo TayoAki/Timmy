@@ -36,7 +36,7 @@ export interface Lead {
   keywords?: string[];
   city?: string;
   /** Where the lead came from: a list you imported, a connected form, or added by hand. */
-  source: 'import' | 'form' | 'manual';
+  source: 'import' | 'form' | 'manual' | 'found';
   list?: string;
   form?: string;
   /** What they wrote in the form. */
@@ -63,12 +63,14 @@ export interface Lead {
   callbackNote?: string;
   /** Your running notes from calls and meetings. */
   notes?: string;
+  /** Filled in by an enrichment provider: which, when, and which fields. */
+  enriched?: { by: string; at: Date; fields: string[] };
 }
 
 export interface LeadList {
   id: string;
   name: string;
-  source: 'csv' | 'form' | 'manual';
+  source: 'csv' | 'form' | 'manual' | 'found';
   created: Date;
 }
 
@@ -200,7 +202,7 @@ export interface OutMessage {
 export interface FormSource {
   id: string;
   name: string;
-  kind: 'website' | 'typeform' | 'webflow' | 'hubspot' | 'facebook' | 'webhook';
+  kind: 'website' | 'typeform' | 'webflow' | 'hubspot' | 'facebook' | 'webhook' | 'zillow' | 'realtor' | 'fub';
   connected: boolean;
   /** Answer within this many minutes. */
   sla: number;

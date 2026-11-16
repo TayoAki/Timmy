@@ -249,6 +249,8 @@ export const routeFromHref = (href: string): Route => {
       return { view: 'outbound', tab: (idPart as never) || 'leads' };
     case 'social':
       return { view: 'social', tab: 'overview' };
+    case 'connections':
+      return { view: 'connections' };
     default:
       return { view: 'today', tab: 'brief' };
   }

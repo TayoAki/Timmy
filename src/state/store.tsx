@@ -8,6 +8,7 @@ import { fmtDate, fmtDay, fmtTime, money } from '../lib/format';
 import type { ApprovalKind, ApprovalRecord } from './approvals';
 import { draftFor } from './drafting';
 import { outbound, type OutOp } from './outbound';
+import { connect, connectSeed, gate, type Connect, type ConnHelpers, type ConnOp } from './connect';
 import { outboundSeed } from '../data/outbound-mock';
 import type { Outbound } from '../data/outbound-types';
 import { DEFAULT_SCHEDULE, fmtClock, nextRun, scheduleRule, whenLabel, daysLabel, type Schedule } from './schedule';
@@ -37,11 +38,12 @@ export type Route =
   | { view: 'approvals'; tab: 'open' | 'history'; filter?: ApprovalKind }
   | { view: 'outbound'; tab: OutboundTab; list?: string; id?: string; filter?: string }
   | { view: 'campaign'; id: string; tab: 'analytics' | 'leads' | 'sequence' | 'schedule' | 'options' }
-  | { view: 'social'; tab: 'overview' | 'create' | 'calendar' | 'trends' };
+  | { view: 'social'; tab: 'overview' | 'create' | 'calendar' | 'trends' }
+  | { view: 'connections'; group?: string };
 
-export type OutboundTab = 'leads' | 'campaigns' | 'unibox' | 'speed' | 'templates' | 'channels';
+export type OutboundTab = 'leads' | 'campaigns' | 'unibox' | 'speed' | 'calls' | 'templates' | 'channels';
 
-export type Section = 'mail' | 'approvals' | 'activity' | 'people' | 'files' | 'rules' | 'tasks' | 'calendar' | 'docs' | 'projects' | 'library' | 'outbound' | 'social';
+export type Section = 'mail' | 'approvals' | 'activity' | 'people' | 'files' | 'rules' | 'tasks' | 'calendar' | 'docs' | 'projects' | 'library' | 'outbound' | 'social' | 'connections';
 
 export const sectionOf = (r: Route): Section => {
   switch (r.view) {
@@ -75,6 +77,8 @@ export const sectionOf = (r: Route): Section => {
       return 'outbound';
     case 'social':
       return 'social';
+    case 'connections':
+      return 'connections';
     default:
       return 'mail';
   }
@@ -146,6 +150,10 @@ export interface State {
   showDeals: boolean;
   /** Outbound: leads, campaigns, the unibox, limits, forms and social. */
   out: Outbound;
+  /** Connected apps, CRM and delegate policies, enrichment, and actions waiting on someone else. */
+  conn: Connect;
+  /** Agencies: one outbound workspace per client. The active one is `out`; the rest wait here. */
+  clients: { active: string; names: Record<string, string>; stash: Record<string, Outbound> };
 }
 
 export type Action =
@@ -159,13 +167,13 @@ export type Action =
   | { type: 'markRead'; id: string; unread?: boolean }
   | { type: 'updateDraft'; id: string; body: string; subject?: string }
   | { type: 'discardDraft'; id: string }
-  | { type: 'sendDraft'; id: string; track: boolean }
+  | { type: 'sendDraft'; id: string; track: boolean; approved?: boolean }
   | { type: 'toggleStep'; id: string; step: string }
   /** Do what a next action says (send, update the deal, decide, block time), then tick it. */
   | { type: 'runStep'; id: string; step: string }
-  | { type: 'applyDeal'; id: string }
+  | { type: 'applyDeal'; id: string; approved?: boolean }
   /** Change a deal's stage or value (from Ask Timmy, after you press Update). */
-  | { type: 'editDeal'; id: string; stage?: string; value?: number }
+  | { type: 'editDeal'; id: string; stage?: string; value?: number; approved?: boolean }
   | { type: 'toggleRule'; id: string }
   | { type: 'addRule'; group: RuleGroup; text: string }
   | { type: 'dismiss'; key: string }
@@ -191,9 +199,13 @@ export type Action =
   | { type: 'setScope'; project: string | null }
   | { type: 'setPrefs'; calm?: boolean; showDeals?: boolean }
   /** Approve or turn down an item in the Approvals queue. */
-  | { type: 'resolve'; key: string; option: string; change?: { deal: string; stage: string; value: number }; via?: 'send' }
+  | { type: 'resolve'; key: string; option: string; change?: { deal: string; stage: string; value: number }; via?: 'send'; approved?: boolean }
   /** Outbound: leads, campaigns, sending, forms, social. */
-  | { type: 'out'; op: OutOp };
+  | { type: 'out'; op: OutOp }
+  | { type: 'conn'; op: ConnOp }
+  | { type: 'client'; to?: string; create?: string }
+  /** The exec or RevOps answered a held action (simulated in this preview). */
+  | { type: 'release'; id: string; approve: boolean };
 
 /** Builds a workspace change: dispatch(ws([put('tasks', task)], { toast: 'Task added', undo: true })). */
 export const ws = (ops: WsOp[], options: WsOptions = {}): Action => ({ type: 'ws', ops, ...options });
@@ -234,12 +246,35 @@ const initial: State = {
   calm: false,
   showDeals: true,
   out: outboundSeed(),
+  conn: connectSeed(),
+  clients: { active: 'own', names: { own: 'Northpeak (your company)' }, stash: {} },
 };
 
 // Leads you've met or added to People show up by name on the calendar and in People.
 for (const l of Object.values(initial.out.leads)) if (l.status === 'meeting') registerPerson({ id: l.id, name: `${l.first} ${l.last}`, email: l.email, title: l.title, company: l.company });
 
+/** A new client's outbound workspace: their own offer, no mailboxes, leads or campaigns yet. */
+function blankOutbound(client: string, from: Outbound): Outbound {
+  return {
+    leads: {},
+    lists: {},
+    offer: { name: `${client} offer`, product: client, audience: '', pain: '', outcome: '', proof: '', cta: 'Open to a quick call next week?', icp: { titles: [], industries: [], minEmployees: 1, maxEmployees: 10000 } },
+    templates: Object.fromEntries(Object.values(from.templates).filter((t) => t.builtIn).map((t) => [t.id, t])),
+    campaigns: {},
+    mailboxes: {},
+    channels: from.channels,
+    limits: from.limits,
+    messages: [],
+    forms: {},
+    posts: {},
+  };
+}
+
 let toastSeq = 1;
+const connHelpers: ConnHelpers = {
+  toast: (st, text, o) => withToast(st, text, o?.undo ? snap(st) : undefined, o?.tone),
+  log: (st, text, kind) => logged(st, text, kind),
+};
 let activitySeq = 1;
 
 const lowerFirst = midSentence;
@@ -353,6 +388,11 @@ const moveThread = (t: Thread, box: Box): Thread => {
 };
 
 function reducer(s: State, a: Action): State {
+  // Some actions need someone else's OK first: CRM writes (RevOps), and in delegate mode the exec's calls.
+  if (a.type === 'applyDeal' || a.type === 'editDeal' || a.type === 'sendDraft' || a.type === 'resolve') {
+    const held = gate(s, a, connHelpers);
+    if (held) return held;
+  }
   switch (a.type) {
     case 'navigate': {
       const back = isDetail(a.route) ? (isDetail(s.route) ? s.back : s.route) : a.route;
@@ -922,6 +962,53 @@ function reducer(s: State, a: Action): State {
       };
     }
 
+    case 'conn':
+      return connect(s, a.op, connHelpers);
+
+    case 'client': {
+      const cl = s.clients;
+      if (a.create) {
+        const id = `client-${Date.now().toString(36)}`;
+        return {
+          ...s,
+          out: blankOutbound(a.create, s.out),
+          route: { view: 'outbound', tab: 'templates' },
+          clients: { active: id, names: { ...cl.names, [id]: a.create }, stash: { ...cl.stash, [cl.active]: s.out } },
+          toasts: withToast(s, `Client workspace “${a.create}” created. Start with their offer; mailboxes, leads, campaigns and the Unibox are their own.`),
+        };
+      }
+      const next = a.to ? cl.stash[a.to] : undefined;
+      if (!a.to || a.to === cl.active || !next) return s;
+      const { [a.to]: _taken, ...rest } = cl.stash;
+      return {
+        ...s,
+        out: next,
+        route: s.route.view === 'campaign' ? { view: 'outbound', tab: 'campaigns' } : s.route,
+        clients: { ...cl, active: a.to, stash: { ...rest, [cl.active]: s.out } },
+        toasts: withToast(s, `Now in ${cl.names[a.to]}.`),
+      };
+    }
+
+    case 'release': {
+      const h = s.conn.held.find((x) => x.id === a.id);
+      if (!h) return s;
+      const rest = { ...s, conn: { ...s.conn, held: s.conn.held.filter((x) => x.id !== a.id) } };
+      const approver = h.who.replace(/ \(.*\)$/, '');
+      if (!a.approve) {
+        return {
+          ...rest,
+          approvalLog: recorded(rest, { key: h.key, kind: h.key.startsWith('crm') ? 'crm' : h.key.startsWith('dec') ? 'decision' : 'email', title: h.title, choice: `Declined by ${approver}`, approved: false }),
+          activity: logged(rest, `${approver} declined: ${h.title}`, 'approval'),
+          toasts: withToast(rest, `${approver} declined “${h.title}”. Nothing changed.`),
+        };
+      }
+      const done = reducer(rest, h.action);
+      // The record says who approved it and who asked.
+      const [first, ...older] = done.approvalLog;
+      const approvalLog = first && first.key === h.key ? [{ ...first, choice: `${first.choice} · approved by ${approver}${h.by !== 'you' ? `, asked by ${h.by}` : ''}` }, ...older] : done.approvalLog;
+      return { ...done, approvalLog, toasts: withToast(done, `${approver} approved: ${h.title}`, snap(rest)) };
+    }
+
     case 'out':
       return outbound(s, a.op, {
         toast: (st, text, o) => withToast(st, text, o?.undo ? snap(st) : undefined, o?.tone),
@@ -988,7 +1075,7 @@ const Ctx = createContext<{ state: State; dispatch: Dispatch<Action> } | null>(n
 
 const STORAGE_KEY = 'timmy-state-v3';
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
-const PERSISTED = ['threads', 'deals', 'activity', 'rules', 'ws', 'highlight', 'highlightDone', 'dismissed', 'route', 'back', 'decisions', 'approvalLog', 'schedule', 'focus', 'scope', 'out', 'calm', 'showDeals'] as const;
+const PERSISTED = ['threads', 'deals', 'activity', 'rules', 'ws', 'highlight', 'highlightDone', 'dismissed', 'route', 'back', 'decisions', 'approvalLog', 'schedule', 'focus', 'scope', 'out', 'calm', 'showDeals', 'conn', 'clients'] as const;
 
 function load(): State {
   try {
@@ -1011,6 +1098,7 @@ function load(): State {
     const templates = { ...next.out.templates };
     for (const t of Object.values(initial.out.templates)) if (t.builtIn && (templates[t.id]?.v ?? 0) < (t.v ?? 0)) templates[t.id] = t;
     next.out = { ...next.out, templates };
+    next.conn = { ...initial.conn, ...next.conn, apps: { ...initial.conn.apps, ...next.conn?.apps } };
     for (const l of Object.values(next.out.leads)) if (next.ws.contacts[l.id] || l.status === 'meeting') registerPerson({ id: l.id, name: `${l.first} ${l.last}`, email: l.email, title: l.title, company: l.company });
     for (const c of Object.values(next.ws.contacts)) registerPerson({ id: c.id, name: c.name, email: c.email, title: c.title, company: c.company });
     for (const t of next.threads) for (const p of t.participants) if (p.startsWith('mail:')) registerPerson(personFromMail(p)!);

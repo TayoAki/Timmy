@@ -1,4 +1,4 @@
-import { Bell, CalendarDays, FileText, FolderKanban, HardDrive, House, Library, ListChecks, Megaphone, Rocket, Search, Settings, Stamp, Users } from 'lucide-react';
+import { Bell, CalendarDays, FileText, FolderKanban, HardDrive, House, Library, ListChecks, Megaphone, Plug, Rocket, Search, Settings, Stamp, Users } from 'lucide-react';
 import { useOutboundCounts } from '../areas/outbound';
 import { scopedApprovals } from '../state/scope';
 import type { ReactNode } from 'react';
@@ -36,6 +36,7 @@ export function useSections(): Item[] {
     { section: 'files', label: 'Drive', icon: <HardDrive size={20} />, route: { view: 'files', tab: 'browse', folder: 'f02' } },
     { section: 'library', label: 'AI library', icon: <Library size={20} />, route: { view: 'library', tab: 'prompts' } },
     { section: 'activity', label: 'Timmy’s activity', icon: <Bell size={20} />, route: { view: 'activity', tab: 'all' }, badge: b(inbox) },
+    { section: 'connections', label: 'Connections', icon: <Plug size={20} />, route: { view: 'connections' } },
   ];
 }
 

@@ -45,7 +45,7 @@ export type OutOp =
   | { op: 'submit'; form: string; lead: Lead }
   | { op: 'post'; post: SocialPost }
   | { op: 'removePost'; id: string }
-  | { op: 'book'; lead: string; start: Date; end: Date }
+  | { op: 'book'; lead: string; start: Date; end: Date; showing?: string }
   | { op: 'toCrm'; lead: string };
 
 export interface OutHelpers {
@@ -441,10 +441,10 @@ export function outbound(s: State, a: OutOp, h: OutHelpers): State {
       const lead = out.leads[a.lead];
       if (!lead) return s;
       registerPerson({ id: lead.id, name: fullName(lead), email: lead.email, title: lead.title, company: lead.company });
-      const title = `Intro call: ${fullName(lead)}, ${lead.company}`;
+      const title = a.showing ? `Showing: ${fullName(lead)} at ${a.showing}` : `Intro call: ${fullName(lead)}, ${lead.company}`;
       return {
         ...s,
-        ws: applyOps(s.ws, [put('events', { id: `ev-${lead.id}-${a.start.getTime()}`, title, start: a.start, end: a.end, kind: 'meeting', with: [lead.id], note: `Booked from outbound${lead.campaign ? `: ${out.campaigns[lead.campaign]?.name ?? ''}` : ''}.` })]),
+        ws: applyOps(s.ws, [put('events', { id: `ev-${lead.id}-${a.start.getTime()}`, title, start: a.start, end: a.end, kind: 'meeting', with: [lead.id], note: a.showing ? `Showing at ${a.showing}. Booked from ${lead.form ? out.forms[lead.form]?.name ?? 'a lead source' : 'outbound'}.` : `Booked from outbound${lead.campaign ? `: ${out.campaigns[lead.campaign]?.name ?? ''}` : ''}.` })]),
         out: { ...out, leads: { ...out.leads, [lead.id]: { ...lead, status: 'meeting', label: 'meeting', unread: false, nextAt: undefined } } },
         activity: h.log(s, `Booked “${title}” for ${fmtDay(a.start)}, ${fmtTime(a.start)}`, 'calendar'),
         toasts: h.toast(s, `Invite sent to ${lead.first} for ${fmtDay(a.start)}, ${fmtTime(a.start)}`, { undo: true }),

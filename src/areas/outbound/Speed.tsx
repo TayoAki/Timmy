@@ -246,7 +246,7 @@ export function SpeedTab() {
   );
 }
 
-const KIND: Record<FormSource['kind'], string> = { website: 'Website form', typeform: 'Typeform', webflow: 'Webflow', hubspot: 'HubSpot form', facebook: 'Facebook Lead Ads', webhook: 'Webhook' };
+const KIND: Record<FormSource['kind'], string> = { website: 'Website form', typeform: 'Typeform', webflow: 'Webflow', hubspot: 'HubSpot form', facebook: 'Facebook Lead Ads', webhook: 'Webhook', zillow: 'Zillow Premier Agent', realtor: 'Realtor.com Lead Delivery', fub: 'Follow Up Boss' };
 
 function FormCard({ f }: { f: FormSource }) {
   const { state, dispatch } = useStore();

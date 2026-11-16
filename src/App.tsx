@@ -10,6 +10,7 @@ import { ProjectsView, ProjectView } from './areas/projects';
 import { TasksView } from './areas/tasks';
 import { CampaignView, OutboundView } from './areas/outbound';
 import { SocialView } from './areas/outbound/Social';
+import { ConnectionsView } from './areas/connections';
 import { Assistant } from './agent/Assistant';
 import { BottomBar } from './components/BottomBar';
 import { Compose } from './components/Compose';
@@ -97,6 +98,7 @@ function Shell() {
       {r.view === 'outbound' && <OutboundView />}
       {r.view === 'campaign' && <CampaignView key={r.id} />}
       {r.view === 'social' && <SocialView />}
+      {r.view === 'connections' && <ConnectionsView />}
       <RightPanel />
       <BottomBar />
       <div className="scrim" onClick={() => state.drawer && dispatch({ type: 'drawer', drawer: state.drawer })} />

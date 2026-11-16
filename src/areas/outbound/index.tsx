@@ -4,17 +4,20 @@
  * your lists and campaigns and the right panel showing the lead you picked
  * (or what needs you today).
  */
-import { Gauge, Inbox, LayoutTemplate, List, Mail, Plus, Rocket, Send, Timer, Users } from 'lucide-react';
+import { Gauge, Inbox, LayoutTemplate, List, Mail, PhoneCall, Plus, Rocket, Send, Timer, Users } from 'lucide-react';
 import { fmtListDate, plural } from '../../lib/format';
 import { campaignCap, liveNow, project } from '../../lib/outbound';
 import { coldToday, ctxOf } from '../../state/outbound';
 import { useStore, type OutboundTab } from '../../state/store';
 import { Frame } from '../../components/Frame';
-import { SideHead } from '../../components/kit';
+import { Field, Modal, SideHead } from '../../components/kit';
+import { useState } from 'react';
 import { tint } from '../../components/common';
 import { RpSection } from '../files/pickers';
 import { CampaignView } from './Campaign';
 import { CampaignsTab } from './Campaigns';
+import { CallsTab } from './Calls';
+import { callQueue } from '../../state/leads';
 import { ChannelsTab } from './Channels';
 import { LeadPanel } from './LeadPanel';
 import { LeadsTab } from './Leads';
@@ -49,6 +52,7 @@ export function OutboundView() {
         { id: 'campaigns', label: 'Campaigns', count: n.review || undefined },
         { id: 'unibox', label: 'Unibox', count: n.unread || undefined },
         { id: 'speed', label: 'Speed to lead', count: n.waiting || undefined },
+        { id: 'calls', label: 'Calls', count: callQueue(state).length || undefined },
         { id: 'templates', label: 'Templates & offer' },
         { id: 'channels', label: 'Channels & limits' },
       ]}
@@ -57,10 +61,12 @@ export function OutboundView() {
       wide
       scrollKey={`out-${tab}-${r?.list ?? ''}`}
     >
+      <ClientBar />
       {tab === 'leads' && <LeadsTab />}
       {tab === 'campaigns' && <CampaignsTab />}
       {tab === 'unibox' && <UniboxTab />}
       {tab === 'speed' && <SpeedTab />}
+      {tab === 'calls' && <CallsTab />}
       {tab === 'templates' && <TemplatesTab />}
       {tab === 'channels' && <ChannelsTab />}
     </Frame>
@@ -74,6 +80,7 @@ const NAV: { tab: OutboundTab; label: string; icon: typeof Users; hint: string; 
   { tab: 'campaigns', label: 'Campaigns', icon: Send, hint: 'Sequences across channels', color: 'var(--c-violet)' },
   { tab: 'unibox', label: 'Unibox', icon: Inbox, hint: 'Every reply in one place', color: 'var(--c-green)' },
   { tab: 'speed', label: 'Speed to lead', icon: Timer, hint: 'Form leads, on the clock', color: 'var(--c-amber)' },
+  { tab: 'calls', label: 'Calls', icon: PhoneCall, hint: 'Today’s call list', color: 'var(--c-red)' },
   { tab: 'templates', label: 'Templates & offer', icon: LayoutTemplate, hint: 'What Timmy writes from', color: 'var(--c-teal)' },
   { tab: 'channels', label: 'Channels & limits', icon: Gauge, hint: '30 cold emails a mailbox', color: 'var(--c-slate)' },
 ];
@@ -274,5 +281,64 @@ function SendingRules() {
         <li>Texts only to people who agreed to them.</li>
       </ul>
     </RpSection>
+  );
+}
+
+/* ───────────── Client workspaces ───────────── */
+
+/** Agencies run each client in its own workspace: offer, mailboxes, leads, campaigns and Unibox. */
+function ClientBar() {
+  const { state, dispatch } = useStore();
+  const [naming, setNaming] = useState(false);
+  const [nameText, setNameText] = useState('');
+  const cl = state.clients;
+  return (
+    <div className="client-bar">
+      <label className="client-pick">
+        <span className="field-label">Workspace</span>
+        <select className="input sm" value={cl.active} onChange={(e) => dispatch({ type: 'client', to: e.target.value })} aria-label="Client workspace">
+          {Object.entries(cl.names).map(([id, n]) => (
+            <option key={id} value={id}>
+              {n}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button className="btn btn-sm btn-ghost" onClick={() => setNaming(true)}>
+        <Plus size={14} />
+        New client workspace
+      </button>
+      {naming && (
+        <Modal
+          open
+          onClose={() => setNaming(false)}
+          title="New client workspace"
+          description="For agencies: the client gets their own offer, mailboxes, leads, campaigns, Unibox and reports. Your sending limits carry over."
+          width={460}
+          footer={
+            <>
+              <button className="btn btn-sm btn-ghost" onClick={() => setNaming(false)}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-sm btn-primary"
+                disabled={!nameText.trim()}
+                onClick={() => {
+                  dispatch({ type: 'client', create: nameText.trim() });
+                  setNaming(false);
+                  setNameText('');
+                }}
+              >
+                Create
+              </button>
+            </>
+          }
+        >
+          <Field label="Client name">
+            <input className="input" value={nameText} placeholder="Acme Dental Group" onChange={(e) => setNameText(e.target.value)} data-autofocus />
+          </Field>
+        </Modal>
+      )}
+    </div>
   );
 }

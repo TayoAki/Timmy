@@ -306,29 +306,69 @@ export function MessageDialog({ lead, channel, onClose, initial }: { lead: Lead;
 
 /* ───────────── Call ───────────── */
 
-const OUTCOMES = ['Connected: interested', 'Connected: not now', 'No answer, left a voicemail', 'No answer', 'Wrong number'];
+const OUTCOMES = ['Connected: interested', 'Connected: not now', 'Asked me to call back', 'Gatekeeper: left a message', 'No answer, left a voicemail', 'No answer', 'Wrong number'];
 
-export function CallDialog({ lead, onClose }: { lead: Lead; onClose: () => void }) {
+/**
+ * One call: dial, follow the script (the campaign step's own, if this call is
+ * a sequence step), take notes, set a callback, record a yes to texts, and log
+ * how it went. In a call run, logging moves on to the next call.
+ */
+export function CallDialog({ lead, onClose, script, progress, onLogged }: { lead: Lead; onClose: () => void; script?: string; progress?: string; onLogged?: () => void }) {
   const { state, dispatch } = useStore();
-  const script = state.out.templates['tpl-call'];
+  const c = lead.campaign ? state.out.campaigns[lead.campaign] : undefined;
+  const step = c && lead.step !== undefined ? c.steps[lead.step] : undefined;
+  const text = script ?? (step?.channel === 'call' ? step.variants[0]?.body : undefined) ?? state.out.templates['tpl-call']?.body ?? '';
+  const [notes, setNotes] = useState('');
+  const [later, setLater] = useState(false);
+  const [when, setWhen] = useState(() => {
+    const d = new Date(liveNow().getTime() + 24 * 3_600_000);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T10:00`;
+  });
+  const [consent, setConsent] = useState(false);
   const log = (o: string) => {
-    dispatch({ type: 'out', op: { op: 'logCall', lead: lead.id, outcome: o } });
+    const callback = later || o === 'Asked me to call back' ? new Date(when) : undefined;
+    if (consent && !/^y/i.test(lead.extra?.['Text me'] ?? '')) dispatch({ type: 'out', op: { op: 'patchLead', id: lead.id, patch: { extra: { ...lead.extra, 'Text me': 'Yes' } } } });
+    dispatch({ type: 'out', op: { op: 'logCall', lead: lead.id, outcome: o, notes: notes.trim() || undefined, callbackAt: callback && !isNaN(callback.getTime()) ? callback : undefined, callbackNote: callback ? notes.trim() || o : undefined } });
     if (o === 'Connected: interested') dispatch({ type: 'out', op: { op: 'label', lead: lead.id, label: 'interested' } });
-    onClose();
+    setNotes('');
+    setLater(false);
+    setConsent(false);
+    if (onLogged) onLogged();
+    else onClose();
   };
   return (
-    <Modal open onClose={onClose} title={`Call ${lead.first} ${lead.last}`} description={`${lead.phone} · ${lead.company}`} width={560}>
+    <Modal open onClose={onClose} title={`Call ${lead.first} ${lead.last}`} description={`${progress ? `${progress} · ` : ''}${lead.phone} · ${lead.company}${step?.channel === 'call' && c ? ` · ${c.name}, step ${lead.step! + 1}` : ''}`} width={600}>
       <div className="call-box">
         <a className="btn btn-primary call-dial" href={`tel:${lead.phone?.replace(/\s/g, '')}`}>
           <Phone size={15} />
           Call {lead.phone}
         </a>
-        {script && (
+        {text && (
           <div className="call-script">
-            <span className="field-label">Script</span>
-            {fill(state, script.body, lead).text.split('\n').map((line, i) => (line.trim() ? <p key={i}>{line}</p> : null))}
+            <span className="field-label">Script{step?.channel === 'call' ? ' (from the campaign)' : ''}</span>
+            {fill(state, text, lead).text.split('\n').map((line, i) => (line.trim() ? <p key={i}>{line}</p> : null))}
           </div>
         )}
+        {lead.notes && (
+          <div className="call-prev">
+            <span className="field-label">Earlier notes</span>
+            <p>{lead.notes.split('\n').slice(-2).join(' · ')}</p>
+          </div>
+        )}
+        <Field label="Notes">
+          <textarea className="input" rows={3} value={notes} placeholder="What they said, what’s next" onChange={(e) => setNotes(e.target.value)} />
+        </Field>
+        <div className="call-extras">
+          <label className="inline-check">
+            <input type="checkbox" checked={later} onChange={(e) => setLater(e.target.checked)} /> Set a callback
+          </label>
+          {later && <input className="input sm" type="datetime-local" aria-label="Callback time" value={when} onChange={(e) => setWhen(e.target.value)} />}
+          {!canText(state, lead) && lead.phone && (
+            <label className="inline-check">
+              <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} /> They said yes to texts
+            </label>
+          )}
+        </div>
         <div>
           <span className="field-label">How did it go?</span>
           <div className="call-outcomes">
@@ -354,8 +394,11 @@ export function BookDialog({ lead, onClose }: { lead: Lead; onClose: () => void 
   const [date, setDate] = useState(() => isoDay(yes?.at ?? liveNow()));
   const [time, setTime] = useState(() => (yes ? `${String(yes.at.getHours()).padStart(2, '0')}:${String(yes.at.getMinutes()).padStart(2, '0')}` : '10:00'));
   const [mins, setMins] = useState(30);
-  const book = (start: Date, length = 30) => {
-    dispatch({ type: 'out', op: { op: 'book', lead: lead.id, start, end: new Date(start.getTime() + length * 60000) } });
+  // Real estate: a showing at a property instead of a call.
+  const [showing, setShowing] = useState(false);
+  const [address, setAddress] = useState(lead.extra?.['Property'] ?? lead.extra?.['Address'] ?? '');
+  const book = (start: Date, length = showing ? 45 : 30) => {
+    dispatch({ type: 'out', op: { op: 'book', lead: lead.id, start, end: new Date(start.getTime() + length * 60000), showing: showing && address.trim() ? address.trim() : undefined } });
     onClose();
   };
   const custom = (() => {
@@ -365,7 +408,18 @@ export function BookDialog({ lead, onClose }: { lead: Lead; onClose: () => void 
   })();
   const clash = custom ? Object.values(state.ws.events).find((e) => e.start < new Date(custom.getTime() + mins * 60000) && e.end > custom) : undefined;
   return (
-    <Modal open onClose={onClose} title={`Book a call with ${lead.first}`} description="Timmy sends the invite and moves the lead to Meeting booked." width={500}>
+    <Modal open onClose={onClose} title={`Book ${showing ? 'a showing' : 'a call'} with ${lead.first}`} description="Timmy sends the invite and moves the lead to Meeting booked." width={500}>
+      <div className="book-kind">
+        <div className="seg-control" role="radiogroup" aria-label="Meeting type">
+          <button role="radio" aria-checked={!showing} onClick={() => setShowing(false)}>
+            Call
+          </button>
+          <button role="radio" aria-checked={showing} onClick={() => setShowing(true)}>
+            Showing
+          </button>
+        </div>
+        {showing && <input className="input" value={address} placeholder="Property address" aria-label="Property address" onChange={(e) => setAddress(e.target.value)} />}
+      </div>
       {yes && (
         <button className="book-yes" onClick={() => book(yes.at)}>
           <strong>Book {whenWords(yes.at)}</strong>

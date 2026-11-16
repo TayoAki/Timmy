@@ -91,7 +91,8 @@ function Brief() {
   return (
     <>
       <div className="brief-head">
-        <h1 className="page-title">Good morning, Taylor.</h1>
+        <h1 className="page-title">Good morning, {state.conn.delegate.on ? state.conn.delegate.me.split(' ')[0] : 'Taylor'}.</h1>
+        {state.conn.delegate.on && <span className="delegate-chip">Working for {state.conn.delegate.exec}</span>}
         <RunControl />
         <CalmToggle />
       </div>

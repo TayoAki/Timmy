@@ -50,6 +50,44 @@ export function ApprovalsView() {
   );
 }
 
+/** Actions waiting on someone else: RevOps for CRM writes, the exec in delegate mode. */
+function HeldSection() {
+  const { state, dispatch } = useStore();
+  const held = state.conn.held;
+  if (!held.length) return null;
+  return (
+    <section className="section" aria-labelledby="ap-held">
+      <div className="section-head">
+        <h2 className="section-title" id="ap-held">
+          Waiting on someone else · {held.length}
+        </h2>
+        <span className="section-sub">Each runs as it was once they approve. In this preview you answer for them.</span>
+      </div>
+      <ul className="card held-list">
+        {held.map((h) => (
+          <li key={h.id} className="held-row">
+            <span className="held-who">{h.who}</span>
+            <div className="held-text">
+              <strong>{h.title}</strong>
+              <span className="muted">
+                {h.detail} Asked by {h.by} · {fmtStamp(h.at)}
+              </span>
+            </div>
+            <div className="held-actions">
+              <button className="btn btn-sm btn-ghost" onClick={() => dispatch({ type: 'release', id: h.id, approve: false })}>
+                Declined
+              </button>
+              <button className="btn btn-sm" onClick={() => dispatch({ type: 'release', id: h.id, approve: true })}>
+                <Check size={14} /> {h.who.replace(/ \(.*\)$/, '').split(' ')[0]} approved
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function Queue({ all, filter }: { all: Approval[]; filter?: ApprovalKind }) {
   const { state, dispatch } = useStore();
   const shown = filter ? all.filter((a) => a.kind === filter) : all;
@@ -65,6 +103,8 @@ function Queue({ all, filter }: { all: Approval[]; filter?: ApprovalKind }) {
       </p>
 
       <ScopeNote hidden={openApprovals(state).length - all.length} noun={['approval', 'approvals']} />
+
+      <HeldSection />
 
       <div className="filters" role="group" aria-label="Show">
         <button className="filter" aria-pressed={!filter} onClick={() => dispatch({ type: 'navigate', route: { view: 'approvals', tab: 'open' } })}>
