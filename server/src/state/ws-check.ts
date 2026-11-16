@@ -222,7 +222,12 @@ export function checkWsOps(state: State, ops: unknown): string | null {
   if (!Array.isArray(ops) || ops.length > 400) return refused;
   // Later operations in a batch see what earlier ones did.
   const staged = new Map<string, Record<string, unknown> | null>();
-  const current = (col: string, id: string) => (staged.has(`${col}/${id}`) ? staged.get(`${col}/${id}`)! : (((state.ws as unknown as Record<string, Record<string, unknown>>)[col]?.[id] as Record<string, unknown> | undefined) ?? null));
+  // Only records that are really there count: an id such as "constructor" names something every object has.
+  const stored = (col: string, id: string) => {
+    const records = (state.ws as unknown as Record<string, Record<string, unknown>>)[col];
+    return records && Object.hasOwn(records, id) ? ((records[id] as Record<string, unknown> | undefined) ?? null) : null;
+  };
+  const current = (col: string, id: string) => (staged.has(`${col}/${id}`) ? staged.get(`${col}/${id}`)! : stored(col, id));
   for (const o of ops) {
     if (!plain(o) || typeof o.col !== 'string' || !COLLECTIONS.has(o.col)) return refused;
     const col = o.col;

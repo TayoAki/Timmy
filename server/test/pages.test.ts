@@ -95,6 +95,9 @@ describe('pages', () => {
     expect((await ws([{ op: 'put', col: 'notes', item: { id: 'has space' } }])).ok).toBe(false);
     expect((await ws([{ op: 'put', col: 'notes', item: { id: 'n1', name: 'x'.repeat(400) } }])).ok).toBe(false);
     expect(({} as Record<string, unknown>).x).toBeUndefined();
+    // A change to an id that every object answers to ("constructor") changes nothing: no record is made under it.
+    for (const id of ['constructor', 'toString', '__proto__']) expect((await ws([{ op: 'patch', col: 'tasks', id, patch: { title: 'made from nothing' } }])).ok, id).toBe(true);
+    expect(Object.keys((await w.state()).ws.tasks)).toEqual([]);
     const client = await addMember(w.workspaceId, 'client');
     expect((await client.cmd({ type: 'ws', ops: [{ op: 'put', col: 'docs', item: { id: 'c1', blocks: [] } }] })).ok).toBe(false);
     // Another workspace never sees these pages.
