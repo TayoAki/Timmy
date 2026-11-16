@@ -36,6 +36,16 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 | Frontend live mode (`VITE_TIMMY_LIVE=1`) | Built: sign-in, onboarding, state from the API, Connect buttons, model picker, monthly limit, approvals for writes Timmy proposes. The demo is unchanged and still the default build. |
 | Railway | `app` (API + live app), `pgvector` and the bucket `timmy-files` exist in `production` and `staging`. Both `app` services have the OpenRouter and Composio keys. |
 
+## Two merges of the new UI, now one (Nov 16, 2026)
+
+The frontend session and this session each merged the UI branch `claude/modest-meitner-59cqpr`.
+
+- **The frontend session's merge** went onto a temporary branch, `claude/modest-meitner-59cqpr-staging`. It was tested there (291 API tests, 17 demo suites, 13 live suites; 12 of 12 live suites on staging) and staging's `app` was pointed at that branch for the run.
+- **This session's merge** is the one on this branch, with the server-side checks, decisions, the ontology and the rest described above.
+- **They are now one.** The temporary branch is merged into this one. From it came: smaller pictures in the live app (1,000 px JPEG, 1,400 px for covers) so a page stays under the 1 MB limit per command; guards for workspaces saved before the chat existed; the starter chat settings (`chatWidgetFor`); an opt-in `TEST_PROXY` for running the live suites through a proxy that holds the staging test token; and test screenshots no longer tracked.
+- **Where the two differed, this branch's stricter behaviour was kept.** The other session's `server/test/pages.test.ts` and `e2e/live/live-pages.cjs` are replaced by this branch's files of the same names. Theirs checked that the new records survive a reload, which this branch's tests also check; but they also expected an automation's On switch and a visitor's chat to be writable from a member's screen, and this server refuses both on purpose (a switch must not say On while nothing runs; a visitor's conversation is written only by the server).
+- **Staging's `app` still follows the temporary branch** (its last deploy is from there, 18:57 UTC). Production's `app` follows this branch. See "Needs your attention".
+
 ## What is deployed
 
 Railway project `timmy`. Production:
@@ -260,6 +270,7 @@ Test changes that came with this, so you can check them:
 - [ ] **The production frontend's branch.** `web` deploys `claude/modest-meitner-59cqpr`; this work is on `claude/funny-keller-5ouhro`. I will not change that service without your OK.
 - [ ] **An outage fallback model, if you want one.** None is configured (decision 6). Tell me which model to evaluate; I run the eval, show you the numbers, and you decide.
 - [ ] **OpenRouter budget for this session.** The key attached to the session has about $11 left; a large eval needs more.
+- [ ] **Point staging's `app` back at `claude/funny-keller-5ouhro`**, or tell me to. The other session pointed it at its temporary branch for a test run and it is still there, so staging is not running this branch's latest work (decisions, the ontology, Drive reading, the server-side checks). I have not changed it: that setting was another session's deliberate choice. Until it is changed, the live suites can't verify this branch on staging; they pass locally.
 - [ ] **Open questions from the new-UI doc, with the defaults I am building to** (say if any should change): the website chat answers from rules only at launch, no model; an automation's Send step always waits for a person (sending without asking comes later, owner or admin only); two people typing in one page at once is left for phase 3; chat transcripts are kept 12 months and trashed pages 30 days; the chat loader is served from the app's own address until you pick a domain such as `chat.timmy.app`.
 - [ ] **Rotate the Supadata key** you pasted (it is not in the repo or logs), along with the earlier pasted keys.
 

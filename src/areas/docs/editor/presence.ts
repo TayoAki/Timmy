@@ -4,12 +4,12 @@
  * open in another tab of this browser (kept in sync through a
  * BroadcastChannel). Other people join once there's a server to relay them.
  */
-import { isLive } from '../../../live/clock';
 import { Extension, type Editor } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { useSyncExternalStore } from 'react';
 import type { Block } from '../../../data/ws-types';
+import { LIVE } from '../../../live/config';
 
 export interface RemoteCursor {
   id: string;
@@ -148,7 +148,8 @@ export function joinRoom(doc: string, editor: Editor, onBlocks: (blocks: Block[]
       return;
     }
     if (m.t === 'blocks') {
-      onBlocks(m.blocks);
+      // In the live app the server's stream already brings every tab the saved doc.
+      if (!LIVE) onBlocks(m.blocks);
       return;
     }
     const isNew = !seen.has(m.tab);
@@ -173,8 +174,7 @@ export function joinRoom(doc: string, editor: Editor, onBlocks: (blocks: Block[]
   const bye = () => post({ t: 'bye', tab: TAB, doc });
   window.addEventListener('pagehide', bye);
   return {
-    // On a real workspace a save reaches the person's other tabs from the server, once the server has accepted it.
-    publish: (blocks: Block[]) => (isLive() ? undefined : post({ t: 'blocks', tab: TAB, doc, blocks })),
+    publish: (blocks: Block[]) => (LIVE ? undefined : post({ t: 'blocks', tab: TAB, doc, blocks })),
     leave: () => {
       bye();
       window.removeEventListener('pagehide', bye);

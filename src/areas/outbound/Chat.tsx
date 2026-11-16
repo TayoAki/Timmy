@@ -31,7 +31,8 @@ import { NOW, PEOPLE } from '../../data/mock';
 import type { ChatConvo, ChatMsg, ChatWidget } from '../../data/ws-types';
 import { fmtStamp } from '../../lib/format';
 import { useStore, ws } from '../../state/store';
-import { patch, uid } from '../../state/ws';
+import { patch, put, uid } from '../../state/ws';
+import { chatWidgetFor } from '../../data/ws-mock';
 import { shrinkImage } from '../docs/editor/nodeviews';
 
 const OWNER = PEOPLE.me!.name.split(' ')[0]!;
@@ -150,9 +151,9 @@ function Bubble({ m, w, visitor }: { m: ChatMsg; w: ChatWidget; visitor?: string
 
 export function ChatTab() {
   const { state } = useStore();
-  const [view, setView] = useState<'setup' | 'chats'>(() => (Object.values(state.ws.chats).some((c) => c.unread) ? 'chats' : 'setup'));
-  const w = state.ws.chat.site!;
-  const unread = Object.values(state.ws.chats).filter((c) => c.unread).length;
+  const [view, setView] = useState<'setup' | 'chats'>(() => (Object.values(state.ws.chats ?? {}).some((c) => c.unread) ? 'chats' : 'setup'));
+  const w = state.ws.chat?.site ?? chatWidgetFor(PEOPLE.me?.company ?? 'Your business');
+  const unread = Object.values(state.ws.chats ?? {}).filter((c) => c.unread).length;
   return (
     <div className="wc">
       <div className="wc-head">
@@ -195,8 +196,10 @@ function Section({ title, hint, children, aside }: { title: string; hint: string
 }
 
 function Setup({ w }: { w: ChatWidget }) {
-  const { dispatch } = useStore();
-  const set = (change: Partial<ChatWidget>, toast?: string) => dispatch(ws([patch('chat', w.id, change)], toast ? { toast } : undefined));
+  const { state, dispatch } = useStore();
+  // A workspace that has never saved its chat settings gets them on the first change.
+  const set = (change: Partial<ChatWidget>, toast?: string) =>
+    dispatch(ws([state.ws.chat?.[w.id] ? patch('chat', w.id, change) : put('chat', { ...w, ...change })], toast ? { toast } : undefined));
   const [domain, setDomain] = useState(w.domain);
   const [q, setQ] = useState('');
   const [fq, setFq] = useState('');
@@ -584,7 +587,7 @@ function Preview({ w }: { w: ChatWidget }) {
 
 function Chats({ w }: { w: ChatWidget }) {
   const { state, dispatch } = useStore();
-  const all = Object.values(state.ws.chats).sort((a, b) => (b.messages.at(-1)?.at.getTime() ?? 0) - (a.messages.at(-1)?.at.getTime() ?? 0));
+  const all = Object.values(state.ws.chats ?? {}).sort((a, b) => (b.messages.at(-1)?.at.getTime() ?? 0) - (a.messages.at(-1)?.at.getTime() ?? 0));
   const [filter, setFilter] = useState<'unread' | 'all' | 'starred'>(() => (all.some((c) => c.unread) ? 'unread' : 'all'));
   const [q, setQ] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);

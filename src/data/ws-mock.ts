@@ -582,6 +582,24 @@ const automations: Automation[] = [
   },
 ];
 
+/** The website chat a new workspace starts with: off, Timmy's picture, three starter questions. */
+export const chatWidgetFor = (company: string, domain = ''): ChatWidget => ({
+  id: 'site',
+  on: false,
+  domain,
+  name: company,
+  color: '#3f51d9',
+  greeting: `Hi! I’m Timmy, ${company}’s assistant. Ask me anything, or leave your email and we’ll follow up.`,
+  questions: [
+    { id: 'q1', text: 'What’s your company called?' },
+    { id: 'q2', text: 'How many people would use it?' },
+    { id: 'q3', text: 'When would you like to start?' },
+  ],
+  faq: [],
+  handoff: 'notify',
+  booking: true,
+});
+
 const chatWidget: ChatWidget = {
   id: 'site',
   on: true,

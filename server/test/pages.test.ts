@@ -147,7 +147,9 @@ describe('automations', () => {
 describe('the website chat’s settings', () => {
   it('every workspace has them, switched off and empty, and they can be filled in', async () => {
     const start = (await w.state()).ws.chat.site!;
-    expect(start).toMatchObject({ id: 'site', on: false, domain: '', questions: [], faq: [], booking: false });
+    // Off, named after the workspace, with three starter questions to edit; booking is off because the chat can't book yet.
+    expect(start).toMatchObject({ id: 'site', on: false, domain: '', name: 'Pages', faq: [], booking: false });
+    expect(start.questions).toHaveLength(3);
     expect((await ws([{ op: 'patch', col: 'chat', id: 'site', patch: { domain: 'acme.example', greeting: 'Hello!', questions: [{ id: 'q1', text: 'What’s your company called?' }], faq: [{ id: 'f1', q: 'Price?', a: '$29 a seat.' }] } }])).ok).toBe(true);
     expect((await w.state()).ws.chat.site).toMatchObject({ domain: 'acme.example', greeting: 'Hello!', questions: [{ id: 'q1' }], faq: [{ id: 'f1' }] });
   });

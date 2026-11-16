@@ -1,5 +1,5 @@
 // Shared helpers for the live-mode suites. They drive the real app against the API with fake providers.
-const { chromium, devices } = require('playwright');
+const { chromium, devices, request } = require('playwright');
 
 const BASE = (process.env.BASE || 'http://localhost:8787/').replace(/\/?$/, '/');
 const stamp = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -45,6 +45,23 @@ async function api(page, method, path, body) {
   // A browser always sends Origin on a write; the API checks it, so the helper sends it too.
   // Test hooks on a deployed server (staging) need the test token.
   const headers = { ...(method === 'GET' ? {} : { origin: new URL(BASE).origin }), ...(path.startsWith('/api/test/') && process.env.TEST_TOKEN ? { 'x-test-token': process.env.TEST_TOKEN } : {}) };
+  // TEST_PROXY (optional): send test-hook calls through an HTTPS proxy that adds the test token, for runners
+  // that hold the token in a proxy rather than in TEST_TOKEN (Node also needs the proxy's CA in NODE_EXTRA_CA_CERTS).
+  // The page's own session cookies go along.
+  if (process.env.TEST_PROXY && path.startsWith('/api/test/')) {
+    const ctx = await request.newContext({ proxy: { server: process.env.TEST_PROXY }, storageState: await page.context().storageState() });
+    try {
+      const r = await ctx.fetch(new URL(path, BASE).toString(), { method, data: body, failOnStatusCode: false, headers });
+      const text = await r.text();
+      try {
+        return { status: r.status(), body: JSON.parse(text) };
+      } catch {
+        return { status: r.status(), body: text };
+      }
+    } finally {
+      await ctx.dispose();
+    }
+  }
   const r = await page.request.fetch(new URL(path, BASE).toString(), { method, data: body, failOnStatusCode: false, headers });
   const text = await r.text();
   try {

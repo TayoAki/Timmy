@@ -1,6 +1,7 @@
 import { initial, type State } from '../state/store';
 import { DEFAULT_SCHEDULE } from '../state/schedule';
 import { WS_COLLECTIONS } from './patches';
+import { chatWidgetFor } from '../data/ws-mock';
 
 /** Rules every new workspace starts with. The demo's own rules about its sample folders and deals are left out. */
 const STARTER_RULES = ['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'u1', 'u2', 'u3', 'u4', 'u6', 'u7', 'p1', 'p2', 'p3', 'p4', 'p5', 'w1', 'w2', 'w3', 's1', 's2', 's4'];
@@ -34,10 +35,9 @@ export function blankState({ first, company }: BlankOptions): State {
     toasts: [],
     ws: {
       ...(Object.fromEntries(WS_COLLECTIONS.map((c) => [c, {}])) as unknown as State['ws']),
-      // The website chat's settings always exist, switched off and empty until the person sets it up.
-      chat: {
-        site: { id: 'site', on: false, domain: '', name: company, color: '#3f51d9', greeting: `Hi! Ask a question, or leave your email and ${first} will follow up.`, questions: [], faq: [], handoff: 'notify', booking: false },
-      },
+      // The website chat's settings always exist, switched off until the person sets it up. Booking a call from
+      // the chat is not available on a real workspace yet, so it starts off.
+      chat: { site: { ...chatWidgetFor(company), greeting: `Hi! Ask a question, or leave your email and ${first} will follow up.`, booking: false } },
     },
     decisions: [],
     approvalLog: [],

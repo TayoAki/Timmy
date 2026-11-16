@@ -56,7 +56,7 @@ export function OutboundView() {
         { id: 'drafts', label: 'Drafts', count: n.drafts || undefined },
         { id: 'unibox', label: 'Unibox', count: n.unread || undefined },
         { id: 'speed', label: 'Speed to lead', count: n.waiting || undefined },
-        { id: 'chat', label: 'Website chat', count: Object.values(state.ws.chats).filter((c) => c.unread).length || undefined },
+        { id: 'chat', label: 'Website chat', count: Object.values(state.ws.chats ?? {}).filter((c) => c.unread).length || undefined },
         { id: 'calls', label: 'Calls', count: callQueue(state).length || undefined },
         { id: 'templates', label: 'Templates & offer' },
         { id: 'channels', label: 'Channels & limits' },
@@ -101,7 +101,7 @@ export function OutboundSide() {
   const today = coldToday(state);
   const lists = Object.values(state.out.lists);
   const campaigns = Object.values(state.out.campaigns);
-  const countFor: Partial<Record<OutboundTab, number>> = { unibox: n.unread, speed: n.waiting, campaigns: n.review, drafts: n.drafts, chat: Object.values(state.ws.chats).filter((c) => c.unread).length };
+  const countFor: Partial<Record<OutboundTab, number>> = { unibox: n.unread, speed: n.waiting, campaigns: n.review, drafts: n.drafts, chat: Object.values(state.ws.chats ?? {}).filter((c) => c.unread).length };
   return (
     <>
       <SideHead

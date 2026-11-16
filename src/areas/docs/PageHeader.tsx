@@ -23,6 +23,7 @@ import { useSaveState } from './editor/status';
 import { ancestors, purgeOps, restoreOps } from './pages';
 import { openFile, shortPath } from './shared';
 import { toggleStarOps, showInFolder } from './FileView';
+import { LIVE } from '../../live/config';
 
 export function PageHeader({ file, body, shortcut }: { file: WFile; body: DocBody; shortcut?: WFile }) {
   const { state, dispatch } = useStore();
@@ -312,7 +313,7 @@ function CoverPicker({ anchor, current, onPick, onClose }: { anchor: Anchor; cur
               if (!f) return;
               setBusy(true);
               try {
-                onPick({ kind: 'image', value: await shrinkImage(f, 2000), y: 50 });
+                onPick({ kind: 'image', value: await shrinkImage(f, LIVE ? 1400 : 2000), y: 50 });
               } finally {
                 setBusy(false);
               }

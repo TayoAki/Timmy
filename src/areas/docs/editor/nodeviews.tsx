@@ -13,6 +13,7 @@ import { useStore } from '../../../state/store';
 import { BlockText } from '../BlockText';
 import { LinkedTable } from '../LinkedTable';
 import { openFile, shortPath } from '../shared';
+import { LIVE } from '../../../live/config';
 
 /* ───────────── What node views can ask the editor for ───────────── */
 
@@ -42,7 +43,7 @@ const jsonAttr = (name: string, fallback: unknown) => ({
 /* ───────────── Image ───────────── */
 
 /** Downscale an uploaded picture so it fits in the browser's storage. */
-async function shrink(file: File, max = 1600): Promise<string> {
+async function shrink(file: File, max = LIVE ? 1000 : 1600): Promise<string> {
   const url = await new Promise<string>((res, rej) => {
     const r = new FileReader();
     r.onload = () => res(String(r.result));
@@ -61,7 +62,8 @@ async function shrink(file: File, max = 1600): Promise<string> {
   c.width = Math.round(img.width * k);
   c.height = Math.round(img.height * k);
   c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
-  return c.toDataURL(file.type === 'image/png' ? 'image/png' : 'image/jpeg', 0.86);
+  // PNGs keep transparency in the demo; the live app sends JPEG to stay under the API's size cap.
+  return c.toDataURL(file.type === 'image/png' && !LIVE ? 'image/png' : 'image/jpeg', LIVE ? 0.8 : 0.86);
 }
 export { shrink as shrinkImage };
 
