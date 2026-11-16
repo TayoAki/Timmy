@@ -1,6 +1,6 @@
 import type { Box } from '../../../src/data/types';
 import { createEvent, reconcileEvent } from '../sync/calendar-write';
-import { labelPlan, timmyLabels } from '../sync/labels';
+import { LabelsUnavailable, labelPlan, timmyLabels } from '../sync/labels';
 import { callTool, connectionById } from '../sync/tools';
 import type { EffectRow, Outcome } from './gateway';
 import type { EffectKind } from './policy';
@@ -62,13 +62,18 @@ const fileMail: Executor = async (e) => {
     const plan = labelPlan(p.box, await timmyLabels(e.workspace_id, conn, refresh));
     return { plan, res: await callTool(e.workspace_id, conn.id, 'GMAIL_MODIFY_THREAD_LABELS', { thread_id: p.threadKey, add_label_ids: plan.add, remove_label_ids: plan.remove }, 'send') };
   };
-  const remembered = !!conn.meta.labels;
-  let { plan, res } = await change(false);
-  // The label ids are remembered. If the person deleted a label in Gmail the remembered id is refused, so a
-  // refusal is tried once more with the labels looked up afresh. A refused change changed nothing.
-  if (!res.successful && remembered) ({ plan, res } = await change(true));
-  if (!res.successful) return { status: 'failed', error: res.error ?? 'Gmail refused the change.' };
-  return { status: 'completed', result: { via: 'gmail', added: plan.add, removed: plan.remove } };
+  try {
+    let { plan, res } = await change(false);
+    // The label ids are remembered. If the person deleted a label in Gmail the remembered id is refused, so a
+    // refusal is tried once more with the labels looked up afresh. A refused change changed nothing.
+    if (!res.successful && conn.meta.labels) ({ plan, res } = await change(true));
+    if (!res.successful) return { status: 'failed', error: res.error ?? 'Gmail refused the change.' };
+    return { status: 'completed', result: { via: 'gmail', added: plan.add, removed: plan.remove } };
+  } catch (err) {
+    // Getting the labels ready failed before anything was asked of the thread: a clean failure, not an unknown.
+    if (err instanceof LabelsUnavailable) return { status: 'failed', error: err.message };
+    throw err;
+  }
 };
 
 export const EXECUTORS: Partial<Record<EffectKind, Executor>> = {
@@ -84,7 +89,9 @@ async function reconcileFiling(e: EffectRow): Promise<Outcome> {
   const p = e.payload as unknown as FilePayload;
   const conn = await connectionById(e.workspace_id, p.connectionId);
   if (!conn || conn.status !== 'active' || conn.toolkit !== 'gmail') return unknown;
-  const plan = labelPlan(p.box, await timmyLabels(e.workspace_id, conn));
+  const ids = await timmyLabels(e.workspace_id, conn).catch(() => null);
+  if (!ids) return unknown;
+  const plan = labelPlan(p.box, ids);
   const res = await callTool(e.workspace_id, conn.id, 'GMAIL_FETCH_MESSAGE_BY_THREAD_ID', { thread_id: p.threadKey }, 'send');
   const messages = res.successful ? ((res.data.messages ?? []) as { labelIds?: string[] }[]) : [];
   if (!messages.length) return unknown;

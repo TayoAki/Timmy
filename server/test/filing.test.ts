@@ -173,8 +173,8 @@ describe('who may file, and when it can’t be written', () => {
     fake().failNext.set('GMAIL_LIST_LABELS', 'error');
     await w.cmd({ type: 'move', id: t.id, box: 'follow-up' });
     await jobs().drain();
-    expect((await filings())[0]).toMatchObject({ status: 'uncertain' });
-    // The first attempt could not even list the labels, so its outcome is unknown; the next move works.
+    // Listing the labels failed before the thread was touched: that is a clean failure, and the next move works.
+    expect((await filings())[0]).toMatchObject({ status: 'failed' });
     await w.cmd({ type: 'move', id: t.id, box: 'waiting' });
     await jobs().drain();
     expect(labelsOf(t.ext!.threadKey!)).toContain(LABEL_NAMES.waiting);
@@ -217,7 +217,8 @@ describe('who may file, and when it can’t be written', () => {
 
 describe('Timmy files when asked in the chat', () => {
   const ctxOf = (c: Client, role = 'owner') => ({ user: { id: c.userId, name: 'Owner', email: c.email }, workspaceId: c.workspaceId, role, rules: rulesFor(role) });
-  const ask = (text: string, attended = true) => startRun(ctxOf(w), { kind: attended ? 'ask' : 'routine', attended, system: ASK_SYSTEM, messages: [{ role: 'user', content: text }], threadId: 'chat-filing' });
+  /** `open` is the thread the person has open in the app while they ask, as the browser reports it. */
+  const ask = (text: string, attended = true, open?: string) => startRun(ctxOf(w), { kind: attended ? 'ask' : 'routine', attended, system: ASK_SYSTEM, messages: [{ role: 'user', content: text }], threadId: 'chat-filing', openThreadId: open });
   const fileCall = (id: string, where = 'archived') => ({ toolCalls: [{ name: 'file_thread', arguments: { id, box: where } }] });
   const runRow = async (id: string) => (await rows<Record<string, unknown>>('select status, result from run where id = $1', [id]))[0]!;
 
@@ -274,12 +275,12 @@ describe('Timmy files when asked in the chat', () => {
     await w.request('PATCH', '/api/v1/settings', { approvalMode: 'auto' });
     model().reset();
     model().script.push(fileCall(t.id), { content: '{"decision":"approve","reason":"They asked for exactly this."}' }, { content: 'Archived.' });
-    const out = await ask('Archive the newest email in my inbox');
+    const out = await ask('Archive this one', true, t.id);
     expect(out.status).toBe('waiting_approval');
     const judged = model().requests.find((r) => r.route === 'judge')!;
     const seen = JSON.stringify(judged.messages);
-    expect(seen).toContain('Archive the newest email in my inbox');
-    expect(seen).toContain('Move one mail thread to the archive in the user’s own mailbox');
+    expect(seen).toContain('Archive this one');
+    expect(seen).toContain('Move the mail thread the user has open to the archive in the user’s own mailbox');
     expect(seen).not.toContain('Falcon');
     expect(seen).not.toContain('dana@acme.test');
 
@@ -298,7 +299,8 @@ describe('Timmy files when asked in the chat', () => {
     await w.request('PATCH', '/api/v1/settings', { approvalMode: 'auto' });
     model().reset();
     model().script.push(fileCall(t.id), { content: '{"decision":"ask","reason":"Not clear which thread."}' });
-    await ask('Tidy up');
+    await ask('Tidy up', true, t.id);
+    expect(model().requests.filter((r) => r.route === 'judge')).toHaveLength(1);
     expect((await filings())[0]).toMatchObject({ status: 'intended', approved_by: null });
 
     const u = await deliver('Judge down', 'Sam Rivera <sam@acme.test>');
@@ -306,7 +308,7 @@ describe('Timmy files when asked in the chat', () => {
     model().script.push(fileCall(u.id), () => {
       throw new Error('judge unavailable');
     });
-    await ask('Archive the one from Sam');
+    await ask('Archive the one from Sam', true, u.id);
     expect((await filings()).at(-1)).toMatchObject({ status: 'intended', approved_by: null });
     await jobs().drain();
     expect(writes()).toHaveLength(0);

@@ -89,6 +89,12 @@ export function displayToolsOf(tools: RunAgentInput['tools']): ToolDef[] {
   return out;
 }
 
+/** The mail thread open in the app, from the route the browser reports. Auto mode may act on that thread only. */
+function openThreadOf(route: unknown): string | undefined {
+  const r = route as { view?: unknown; id?: unknown } | null | undefined;
+  return r && r.view === 'thread' && typeof r.id === 'string' && r.id.length <= 200 ? r.id : undefined;
+}
+
 /** The line that introduces a prepared action in the chat: what it is and what happens next. */
 function waitingLine(e: EffectRow): string {
   const mine = e.approver_route === 'user';
@@ -161,7 +167,7 @@ export function agentRoutes(app: Hono<Env>) {
 
         const result = await startRun(
           ctx,
-          { kind: 'ask', attended: true, threadId, system: ASK_SYSTEM, messages, userWords, displayTools, effort: 'low' },
+          { kind: 'ask', attended: true, threadId, system: ASK_SYSTEM, messages, userWords, displayTools, effort: 'low', openThreadId: openThreadOf(input.forwardedProps?.route) },
           {
             step: (name, done) => push({ type: done ? 'STEP_FINISHED' : 'STEP_STARTED', stepName: name }),
             text: (turn, delta) => {

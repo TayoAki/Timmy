@@ -8,6 +8,7 @@
  * person is still waiting for something they asked for.
  */
 import type { Draft, Thread } from '../../../src/data/types';
+import { draftHash } from '../../../src/live/hash';
 import { config, modelFor } from '../config';
 import { withWorkspace } from '../db/pool';
 import { jsonObject } from '../lib/json';
@@ -117,11 +118,11 @@ function threadData(thread: Thread, replyTo: string, extra: Record<string, unkno
 }
 
 /** Saves a draft on its thread unless the person has written one meanwhile (theirs wins, except when they asked for a rewrite). */
-async function save(workspaceId: string, threadId: string, draft: Draft, what: string, replace: boolean, still: (t: Thread) => boolean = () => true): Promise<DraftResult> {
+async function save(workspaceId: string, threadId: string, draft: Draft, what: string, replace: boolean, still: (t: Thread) => boolean = () => true, ext: Partial<NonNullable<Thread['ext']>> = {}): Promise<DraftResult> {
   const saved = await mutate(workspaceId, 'draft', async (_tx, loaded) => {
     const cur = loaded.state.threads.find((t) => t.id === threadId);
     if (!cur || (cur.draft && !replace) || !still(cur)) return { result: false };
-    return { state: { ...loaded.state, threads: loaded.state.threads.map((t) => (t.id === threadId ? { ...t, draft, history: [...(t.history ?? []), { at: new Date(), text: what }] } : t)) }, result: true };
+    return { state: { ...loaded.state, threads: loaded.state.threads.map((t) => (t.id === threadId ? { ...t, draft, ext: { ...t.ext, ...ext }, history: [...(t.history ?? []), { at: new Date(), text: what }] } : t)) }, result: true };
   });
   return saved ? { ok: true, draft } : { ok: false, reason: 'The thread already has a draft, or has changed.' };
 }
@@ -145,13 +146,18 @@ export async function draftReply(workspaceId: string, threadId: string, opts: Dr
   return save(workspaceId, threadId, draft, note ? `Timmy drafted a reply from your words: “${note.slice(0, 120)}”` : 'Timmy drafted a reply', !!note);
 }
 
-/** A thread the person is waiting on, where the wait has run out and nobody has answered. */
+/** The date a wait runs out: the one that was set, or the default counted from when the wait began. */
+const dueOf = (w: NonNullable<Thread['waiting']>) => (w.due ? new Date(w.due) : defaultDue(new Date(w.since)));
+
+/** A thread the person is waiting on, where the wait has run out, nobody has answered, and no nudge was drafted for this date yet. */
 export function wantsNudge(t: Thread, now = new Date()): boolean {
   if (t.box !== 'waiting' || !t.waiting || t.draft) return false;
   const last = t.messages[t.messages.length - 1];
   if (!last || last.from !== 'me') return false;
-  const due = t.waiting.due ? new Date(t.waiting.due) : defaultDue(new Date(t.waiting.since));
-  return due.getTime() < now.getTime();
+  const due = dueOf(t.waiting);
+  // One nudge per date: if the person discarded it, Timmy does not write it again the next morning.
+  const nudgedFor = t.ext?.nudge ? new Date(t.ext.nudge.due).getTime() : null;
+  return due.getTime() < now.getTime() && nudgedFor !== due.getTime();
 }
 
 /**
@@ -162,7 +168,12 @@ export async function draftNudge(workspaceId: string, threadId: string, opts: Dr
   const { state } = await readState(workspaceId);
   const thread = state.threads.find((t) => t.id === threadId);
   if (!thread?.waiting) return { ok: false, reason: 'That thread isn’t waiting on anyone.' };
-  const { on, item, since } = thread.waiting;
+  const { item, since } = thread.waiting;
+  // A nudge only ever goes to someone the person's own last email on this thread went to. Who the wait is "on" can
+  // be set by whoever sent that email (a delegate, for one); it is not allowed to send the thread's contents elsewhere.
+  const lastMine = [...thread.messages].reverse().find((m) => m.from === 'me');
+  const on = lastMine?.to.includes(thread.waiting.on) ? thread.waiting.on : lastMine?.to.find((p) => p !== 'me');
+  if (!on) return { ok: false, reason: 'There is nobody on that thread to nudge.' };
 
   const note = opts.note?.trim();
   const out = await ask(workspaceId, NUDGE_SYSTEM, [note ? `The user's note on what to say: ${note.slice(0, 2000)}` : '', threadData(thread, on, { waiting_for: item, asked_on: new Date(since).toISOString().slice(0, 10) })], opts);
@@ -172,7 +183,10 @@ export async function draftNudge(workspaceId: string, threadId: string, opts: Dr
 
   const draft: Draft = { to: [on], subject: reSubject(thread), body, sources: [], kind: 'nudge', trackAs: { on, item, due: defaultDue() } };
   // If the reply came in while the model was writing, the nudge is no longer wanted.
-  return save(workspaceId, threadId, draft, note ? `Timmy drafted a nudge from your words: “${note.slice(0, 120)}”` : `Timmy drafted a nudge: still waiting for ${item.toLowerCase()}`, !!note, (t) => t.box === 'waiting' && !!t.waiting);
+  // Remembered with the nudge: which date it was for, and (unless the person dictated it) what it said, so it is only
+  // ever dropped automatically while it is still exactly what Timmy wrote.
+  const nudge = { due: dueOf(thread.waiting), ...(note ? {} : { hash: draftHash(draft) }) };
+  return save(workspaceId, threadId, draft, note ? `Timmy drafted a nudge from your words: “${note.slice(0, 120)}”` : `Timmy drafted a nudge: still waiting for ${item.toLowerCase()}`, !!note, (t) => t.box === 'waiting' && !!t.waiting, { nudge });
 }
 
 /** The draft a thread calls for when the person presses Draft: a nudge if they are the one waiting, otherwise a reply. */

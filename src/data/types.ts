@@ -112,7 +112,13 @@ export interface Thread {
   /** Urgency you set yourself; otherwise Timmy ranks the thread. */
   urgency?: 'urgent' | 'later';
   /** Live mode: where this thread lives in the connected mailbox, and the names of the people in it. */
-  ext?: { threadKey?: string; connectionId?: string; people?: Record<string, { name: string; email: string }> };
+  ext?: {
+    threadKey?: string;
+    connectionId?: string;
+    people?: Record<string, { name: string; email: string }>;
+    /** The nudge Timmy last drafted here: for which date, and a hash of its text while nobody has edited it. */
+    nudge?: { due: Date; hash?: string };
+  };
 }
 
 export interface Doc {

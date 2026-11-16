@@ -46,7 +46,9 @@ export interface AgentTool {
    * For writes Auto mode may decide: what the judge is told this call would do. Built from our own fixed words
    * and the call's plain choices only, never from anything fetched (a subject, a sender, a body).
    */
-  describe?(args: Record<string, unknown>): string;
+  describe?(args: Record<string, unknown>): string | undefined;
+  /** For writes Auto mode may decide: the id of the one thing this call acts on, so it can be checked against what the person has open. */
+  target?(args: Record<string, unknown>): string | undefined;
   run(args: Record<string, unknown>, t: ToolRun): Promise<ToolOutcome>;
 }
 
@@ -233,7 +235,9 @@ const fileThread: AgentTool = {
   step: 'Filing the thread',
   effectKind: 'mail.modify',
   // What the judge is told: the action and the place, both from our own fixed words. Never the thread's subject.
-  describe: (args) => (isBox(args.box) ? `Move one mail thread ${BOX_WORDS[args.box]} in the user’s own mailbox` : 'Move one mail thread'),
+  // Nothing to describe means nothing to judge: a call the tool would refuse anyway is never put to Auto mode.
+  describe: (args) => (isBox(args.box) ? `Move the mail thread the user has open ${BOX_WORDS[args.box]} in the user’s own mailbox` : undefined),
+  target: (args) => (typeof args.id === 'string' ? args.id : undefined),
   def: {
     name: 'file_thread',
     description:

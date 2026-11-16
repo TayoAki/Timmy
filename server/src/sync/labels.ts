@@ -16,10 +16,11 @@ export const LABEL_NAMES = { 'follow-up': 'Timmy Follow Up', waiting: 'Timmy Wai
 type Labelled = keyof typeof LABEL_NAMES;
 export type LabelIds = Record<Labelled, string>;
 
-const isLabelled = (box: Box): box is Labelled => box in LABEL_NAMES;
+// Own keys only: with `in`, a word like "constructor" would pass as a place.
+const isLabelled = (box: Box): box is Labelled => Object.hasOwn(LABEL_NAMES, box);
 
 export const BOX_WORDS: Record<Box, string> = { inbox: 'back to the inbox', 'follow-up': 'under Follow Up', waiting: 'under Waiting', 'read-through': 'under Read Through', archived: 'to the archive' };
-export const isBox = (v: unknown): v is Box => typeof v === 'string' && v in BOX_WORDS;
+export const isBox = (v: unknown): v is Box => typeof v === 'string' && Object.hasOwn(BOX_WORDS, v);
 
 /**
  * What the gateway is asked when a synced thread is filed in `box`, whether a person moved it or Timmy proposes to.
@@ -35,6 +36,9 @@ export function filingProposal(t: Thread, box: Box): Pick<Proposal, 'kind' | 'pa
     target: t.ext.threadKey,
   };
 }
+
+/** Timmy's labels could not be found or made. Nothing was changed on any thread. */
+export class LabelsUnavailable extends Error {}
 
 /** The label changes that put a thread in `box`. Removing a label the thread doesn't have is harmless. */
 export function labelPlan(box: Box, ids: LabelIds): { add: string[]; remove: string[] } {
@@ -52,17 +56,24 @@ export async function timmyLabels(workspaceId: string, conn: ConnectionRow, refr
   const known = conn.meta.labels as Partial<LabelIds> | undefined;
   if (!refresh && known && Object.keys(LABEL_NAMES).every((k) => typeof known[k as Labelled] === 'string')) return known as LabelIds;
 
-  const listed = await callTool(workspaceId, conn.id, 'GMAIL_LIST_LABELS', {}, 'send');
-  if (!listed.successful) throw new Error(listed.error ?? 'could not list the mailbox’s labels');
-  const existing = new Map(((listed.data.labels ?? []) as { id: string; name: string }[]).map((l) => [l.name, l.id]));
+  const list = async () => {
+    const listed = await callTool(workspaceId, conn.id, 'GMAIL_LIST_LABELS', {}, 'send');
+    if (!listed.successful) throw new LabelsUnavailable(listed.error ?? 'could not list the mailbox’s labels');
+    return new Map(((listed.data.labels ?? []) as { id: string; name: string }[]).map((l) => [l.name, l.id]));
+  };
+  let existing = await list();
   const ids = {} as LabelIds;
   for (const [box, name] of Object.entries(LABEL_NAMES) as [Labelled, string][]) {
     let id = existing.get(name);
     if (!id) {
       const made = await callTool(workspaceId, conn.id, 'GMAIL_CREATE_LABEL', { label_name: name, label_list_visibility: 'labelShow', message_list_visibility: 'show' }, 'send');
-      const data = (made.data.response_data ?? made.data) as { id?: string };
-      if (!made.successful || !data.id) throw new Error(made.error ?? `could not create the label ${name}`);
-      id = data.id;
+      id = ((made.data.response_data ?? made.data) as { id?: string }).id;
+      if (!made.successful || !id) {
+        // Two filings can reach a new mailbox together, and the other one may have just made this label: look again.
+        existing = await list();
+        id = existing.get(name);
+      }
+      if (!id) throw new LabelsUnavailable(made.error ?? `could not create the label ${name}`);
     }
     ids[box] = id;
   }

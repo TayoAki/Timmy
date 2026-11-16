@@ -8,14 +8,16 @@ run('live-filing', async (browser) => {
   await connectGmail(page, 'dorothy@nasa.test');
   await deliver(page, { from: 'Deals <newsletter@shop.test>', subject: 'Weekly deals', body: 'Big savings this week. Unsubscribe here.' });
   await deliver(page, { from: 'Mary Jackson <mary@nasa.test>', subject: 'Wind tunnel slot', body: 'Dorothy, can I have the tunnel on Tuesday?' });
+  await deliver(page, { from: 'Christine Darden <christine@nasa.test>', subject: 'Budget memo', body: 'Dorothy, the budget memo is attached for your review.' });
   await page.click('button[aria-label="Today & mail"]');
   let threads = [];
-  for (let i = 0; i < 40 && threads.length < 2; i++) {
+  for (let i = 0; i < 40 && threads.length < 3; i++) {
     threads = (await api(page, 'GET', '/api/v1/state')).body.slices.threads;
     await page.waitForTimeout(250);
   }
   const deals = threads.find((t) => t.subject === 'Weekly deals');
   const tunnel = threads.find((t) => t.subject === 'Wind tunnel slot');
+  const memo = threads.find((t) => t.subject === 'Budget memo');
   const boxOf = async (id) => (await api(page, 'GET', '/api/v1/state')).body.slices.threads.find((t) => t.id === id).box;
   const labels = async (subject) => (await api(page, 'POST', '/api/test/fake', { op: 'labels' })).body.threads[subject] || [];
 
@@ -50,17 +52,28 @@ run('live-filing', async (browser) => {
   ok(await until(async () => (await boxOf(deals.id)) === 'archived'), 'after “File it” the thread is archived in Timmy');
   ok(await until(async () => !(await labels('Weekly deals')).includes('INBOX')), 'and out of the inbox in the mailbox');
 
-  // Switch the setting on: what is clearly asked for is filed without a second step.
+  // Switch the setting on: the thread that is open on screen is filed without a second step when asked.
   await page.keyboard.press('Escape');
   await page.click('button[aria-label="Rules & settings"]');
   await page.getByRole('tab', { name: 'Approvals' }).click();
   await page.locator('select[name="approval-mode"]').selectOption('auto');
-  await page.locator('.toast', { hasText: /file what you clearly asked for/ }).waitFor();
+  await page.locator('.toast', { hasText: /file the thread you have open/ }).waitFor();
+  await page.click('button[aria-label="Today & mail"]');
+  await page.getByRole('tab', { name: /Triage/ }).click();
+  await page.locator('.main').getByText('Wind tunnel slot').first().click();
+  await page.locator('.main').getByText('can I have the tunnel on Tuesday?').first().waitFor();
   await ask(`archive thread ${tunnel.id}`);
   const second = page.locator('.ai-msg.timmy').last();
   ok(/You let Timmy decide routine filing, so it is filing this now/.test(await second.innerText()), 'with the setting on, the chat says Timmy is filing it itself');
   ok((await second.getByRole('button', { name: 'File it', exact: true }).count()) === 0, 'and asks for no second step');
   ok(await until(async () => (await boxOf(tunnel.id)) === 'archived'), 'the thread is archived');
+
+  // The setting reaches no further than the open thread: asked about another one, Timmy still shows it and waits.
+  await ask(`archive thread ${memo.id}`);
+  const third = page.locator('.ai-msg.timmy').last();
+  await third.getByRole('button', { name: 'File it', exact: true }).waitFor();
+  await page.waitForTimeout(1500);
+  ok((await boxOf(memo.id)) === 'inbox', 'with the setting on, a thread that is not the one open is not filed without the person’s OK');
   const audit = (await api(page, 'GET', '/api/v1/audit')).body.entries;
   ok(audit.some((e) => e.action === 'effect.approved' && e.actor === 'auto') && audit.some((e) => e.action === 'effect.approved' && e.actor !== 'auto'), 'the audit log shows which filing a person approved and which Timmy decided');
 

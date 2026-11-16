@@ -92,6 +92,10 @@ export const config = {
   serviceSpendCeilingUsd: Number(env.TIMMY_SERVICE_SPEND_CEILING_USD ?? 500),
   /** The share of a workspace's monthly limit that work nobody asked for (reading incoming mail) may use, so a flood of mail can't silence Ask. */
   unattendedShare: Number(env.TIMMY_UNATTENDED_SHARE ?? 0.5),
+  /** The most threads one command may file. Each is a write to the mailbox, so one command can't ask for an unbounded number. */
+  maxFilingsPerCommand: Number(env.TIMMY_MAX_FILINGS_PER_COMMAND ?? 100),
+  /** The most calendar events one command may create in the connected calendar, for the same reason. */
+  maxEventsPerCommand: Number(env.TIMMY_MAX_EVENTS_PER_COMMAND ?? 20),
   /** How long synced mail is kept after its mailbox is disconnected or its workspace deleted. */
   mailRetentionDays: Number(env.TIMMY_MAIL_RETENTION_DAYS ?? 30),
   concurrentRunsCeiling: Number(env.TIMMY_CONCURRENT_RUNS_CEILING ?? 4),

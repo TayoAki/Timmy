@@ -19,7 +19,7 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 | Agent loop (leased runs, checkpoints, pause for approval), Ask over mail | Built. |
 | Reading mail and drafting (phase 1, started early) | Built: the model reads threads people wrote and proposes a sort; the Draft button writes a draft. |
 | Filing written back to Gmail (phase 1) | Built. Sorting a thread in Timmy labels it in Gmail (“Timmy Follow Up”, “Timmy Waiting”, “Timmy Read Through”) and leaves it in Gmail's inbox; archiving takes it out of the inbox; Undo files it back. Each write is an effect record approved by the person's own action. Tested against the fake provider; the three Gmail calls were checked against Composio's tool list, not yet run on a real mailbox. |
-| Filing from the chat, and Auto mode (phase 1) | Built. Ask Timmy to file or archive a thread and it shows the change with “File it” and “Leave it”. With the setting in Settings › Approvals switched on, Timmy files what you clearly asked for and asks when unsure: a judge model decides from your own words and a fixed description of the action, never from the mail. The setting covers labels and archiving only; a send always waits for Send. |
+| Filing from the chat, and Auto mode (phase 1) | Built. Ask Timmy to file or archive a thread and it shows the change with “File it” and “Leave it”. With the setting in Settings › Approvals switched on, Timmy files the one thread you have open when you ask, once per request, and asks about anything else: a judge model decides from your own words and a fixed description of the action, never from the mail. The setting covers a label or archiving only; a send always waits for Send. |
 | Waiting (phase 1) | Built. A reply Timmy drafts that asks for something carries what the other person owes and by when (three working days when the email names no date), so “Send & track” moves the thread to Waiting. When the date passes with no answer, the morning run drafts a nudge (5 at most a day); the Draft button on such a thread writes a nudge too. Sending a nudge sets a new date. A reply ends the wait and drops a nudge that was drafted. Nothing is sent without Send. |
 | Events written to Google Calendar (phase 1) | Built for new events. An event added in Timmy goes onto the connected Google Calendar after the undo window; with guests Google sends the invitations, so it is approved like an email (an assistant's waits for the exec, and a member using someone else's calendar waits for that person). Undo inside the window means nobody is invited. Once Google has the event, that copy replaces the one made in Timmy, so it shows once. Changing or deleting an existing event is not written back yet. Tested against the fake provider; the Google call was checked against Composio's tool list, not yet run on a real calendar. |
 | The morning run (phase 1) | Built. At the time and on the days set in Settings › Schedule, in the workspace's own time zone, Timmy checks the mailbox for anything the triggers missed, reads what people wrote, and drafts replies to what needs an answer (10 at most). It moves nothing and sends nothing; the drafts wait in Approvals. Today and the activity log say what it did. It needs a connected mailbox, and no run time is shown without one. |
@@ -66,10 +66,10 @@ Cost measurement: `server/scripts/measure-cost.ts` (the header says how to run i
 
 | Suite | Result |
 | --- | --- |
-| API unit and integration (`server/test`, 14 files) | 227 of 227 pass |
+| API unit and integration (`server/test`, 15 files) | 241 of 241 pass |
 | Demo-mode Playwright (`e2e/`, 12 suites, 348 checks) | 12 of 12 pass |
-| Live-mode Playwright (`e2e/live/`, 10 suites, 168 checks) | 10 of 10 pass |
-| Live-mode Playwright against **staging** (Railway) | 9 of 9 pass (156 checks) on the build with Waiting and the retry fix. On the build before it, `live-ask` failed once at sign-out because a request was lost on the way; the app now retries (see below). |
+| Live-mode Playwright (`e2e/live/`, 10 suites, 169 checks) | 10 of 10 pass |
+| Live-mode Playwright against **staging** (Railway) | 10 of 10 pass (168 checks) on the build with calendar writes. To be run again on the build with the review fixes. |
 | Demo suites against a deployed build of this branch | Not run: `web` deploys the older branch, and I won't change that service without your OK |
 | Real-provider smoke (real Gmail through Composio) | Not run: needs a test Gmail account connected by a person |
 
@@ -156,6 +156,21 @@ Also changed from its notes: a From header's comment is no longer read as the se
 
 Not done, by choice: a full content-security policy for scripts (the dictation model loads from a CDN, and the policy needs an inventory first); pinning the Docker base image by digest; rate limits on commands and chat beyond the cap on jobs at once; a narrower database role for the API process (it holds the owner's credentials); cleaning the document viewers' saved files at sign-out. The audit could not check four things from where it ran: stream load on the shared database pools, memory use on a very large mailbox, how long pg-boss keeps finished jobs, and where the prebuilt document-viewer binaries came from.
 
+## Safety review of the first phase 1 additions (Nov 16, 2026)
+
+A third independent reviewer read the morning run, filing, Auto mode and Waiting against the five safety properties and ran 26 probe tests. It found nothing that sends mail, crosses workspaces, runs twice or leaks a key, and confirmed that Auto mode cannot approve anything but filing, that the judge never sees a subject or sender, that the morning run made no outside write even with a model that obeyed hostile mail, and that the retry is safe. It reported six findings, none high. Each has a test in `server/test/review2.test.ts`.
+
+1. **Auto mode approved "one thread to the archive" without knowing which thread, or how many** (medium). A model steered by mail it had read could have archived threads the person never named. Auto mode is now tied in code, before any model is asked, to the one thread open on the person's screen, once per request. Anything else is shown and waits. A chat that carries earlier answers also tells the judge to be stricter.
+2. **One "Accept all" could make an unbounded number of mailbox writes** (medium/low). A command may now file at most 100 threads; more is refused whole. The same kind of limit (20) applies to calendar events, which the review did not cover because they were added while it ran.
+3. **A nudge could be addressed to someone outside the thread** (low), because who a wait is "on" could be set by whoever sent the email. A nudge now only goes to someone the person's last email on that thread went to.
+4. **A nudge the person had rewritten was deleted when any message arrived** (low). It is now dropped only while it is still exactly what Timmy wrote and the person being waited on answers. Someone else writing keeps the wait and the nudge. A discarded nudge is not written again the next morning.
+5. **Place names were not validated** (low): a word like "constructor" passed as a place, and a caller could claim Timmy made a move. Only the five places are accepted, and "Timmy filed this" is written only when Timmy did.
+6. **Two filings reaching a new mailbox together left one unconfirmed** (low). The second now finds the label the first just made, and a failure to prepare labels is recorded as a clean failure.
+
+Writing those tests also showed that an action with a field of the wrong shape could crash the reducer and answer 500; it is now refused like any other bad command.
+
+**For you to confirm:** members and assistants file mail in the workspace's mailbox on their own say (and through Auto mode for the open thread), while a send from that mailbox waits for its owner. I think that is right, since filing reaches nobody and is an assistant's job, but it is your call.
+
 ## Code review (Nov 16, 2026)
 
 Two more independent reviews, run the way the `code-review` skill from mattpocock/skills prescribes: one against coding standards (duplication, modules that do too much, code that decides by reading message text), and one against the brief and the PRD. What changed as a result:
@@ -185,7 +200,7 @@ Test changes that came with this, so you can check them:
 5. **New mail gets a first sort by plain code** (newsletters, receipts, calendar replies, automated notices), with the reason shown. Only a thread a person wrote is read by the model, once, and the model only proposes: the thread moves when the person accepts it in Triage.
 6. **There is no outage fallback model yet.** I had set `anthropic/claude-opus-5` as the fallback; the review against the brief pointed out that a fallback reads the same mail as the default, so it is a model added without the eval or your OK. It is removed. The fallback list is supported (`TIMMY_MODEL_FALLBACKS`) and empty; if the default's providers are down, Timmy says so instead of answering from another model. The judge never falls back, whatever the list says.
 7. **An app can be connected only once Timmy reads it or acts through it.** Outlook and Drive had Connect buttons that led to a connection nothing used. They now show as coming soon, like the rest, until phase 1 builds them.
-8. **Auto mode came back once it had something to decide.** It was withdrawn while nothing could use it. It now covers one thing: filing mail in the person's own mailbox when they ask in the chat. Off by default.
+8. **Auto mode came back once it had something to decide.** It was withdrawn while nothing could use it. It now covers one thing: filing the thread the person has open, in their own mailbox, when they ask in the chat. Off by default.
 9. **Limits.** A workspace's owner or admin can set its monthly model limit ($50 to start) and how many jobs run at once (2 to start), up to ceilings set on the server (`TIMMY_SPEND_CAP_CEILING_USD`, default $200; `TIMMY_CONCURRENT_RUNS_CEILING`, default 4). The ceilings protect whoever pays the model bill until billing exists. The limit on jobs applies to starting new work; a job that is waiting for an approval always resumes.
 10. **One everyday mailbox per workspace in phase 0.** It is who "me" is in that workspace's mail. A mailbox per member comes with phase 1.
 11. **The first morning run waits for the first mail sync.** A workspace that connects its mailbox after the day's run time still gets that day's run, once the first 30 days of mail are in, if that is within six hours of the set time.

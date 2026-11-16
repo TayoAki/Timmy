@@ -5,6 +5,7 @@
  */
 import type { State } from '../../../src/state/store';
 import type { Thread } from '../../../src/data/types';
+import { draftHash } from '../../../src/live/hash';
 import { config } from '../config';
 import { withWorkspace, type Tx } from '../db/pool';
 import { newId } from '../lib/ids';
@@ -195,7 +196,13 @@ export async function projectThread(tx: Tx, state: State, workspaceId: string, c
   // Messages Timmy sent that sync hasn't returned yet stay until their real copy arrives.
   const stored = new Set(messages.map((m) => m.id));
   const local = existing.messages.filter((m) => !stored.has(m.id) && m.from === 'me' && Date.now() - new Date(m.at).getTime() < 10 * 60_000);
-  const reply = arrived.some((m) => m.from !== 'me');
+  // A message from the mailbox's own address is the person's (a copy to self, a draft the provider returned), not a reply.
+  const reply = arrived.some((m) => m.from !== 'me' && m.from !== `mail:${mine}`);
+  // The wait ends when the person it was on answers. Someone else writing on the thread (an out-of-office, a
+  // colleague copied in) brings it back to the inbox but the wait, and any nudge, stay.
+  const answered = !!existing.waiting && arrived.some((m) => m.from === existing.waiting!.on);
+  // A nudge is dropped only while it is still exactly what Timmy wrote; one the person edited or dictated is theirs.
+  const dropNudge = answered && existing.draft?.kind === 'nudge' && !!existing.ext?.nudge?.hash && existing.ext.nudge.hash === draftHash(existing.draft);
   const next: LiveThread = {
     ...existing,
     participants: [...new Set([...existing.participants, ...participants])],
@@ -208,10 +215,9 @@ export async function projectThread(tx: Tx, state: State, workspaceId: string, c
           unread: true,
           ask: snippet || existing.ask,
           suggestion: suggest({ sender: (lastIn ?? last).sender as string, subject: (lastIn ?? last).subject as string, text: ((lastIn ?? last).text as string | null) ?? '', labels: (lastIn ?? last).labels as string[] }),
-          // Whatever the person was waiting for on this thread, the wait is over; a nudge drafted for it is no longer wanted.
-          waiting: undefined,
-          ...(existing.draft?.kind === 'nudge' ? { draft: undefined } : {}),
-          history: [...(existing.history ?? []), { at: new Date(), text: existing.draft?.kind === 'nudge' ? 'A reply arrived, so the nudge Timmy drafted was dropped' : 'A reply arrived' }],
+          ...(answered ? { waiting: undefined } : {}),
+          ...(dropNudge ? { draft: undefined } : {}),
+          history: [...(existing.history ?? []), { at: new Date(), text: dropNudge ? 'A reply arrived, so the nudge Timmy drafted was dropped' : 'A reply arrived' }],
         }
       : {}),
   };
@@ -241,6 +247,8 @@ export async function ingestThread(workspaceId: string, connectionId: string, th
  */
 async function storeMessages(tx: Tx, state: State, workspaceId: string, conn: ConnectionRow, list: MailMessage[]): Promise<{ state: State; fresh: number; threads: number }> {
   const fresh: MailMessage[] = [];
+  // A draft sitting in the mailbox is not mail that was sent or received; it is left out.
+  list = list.filter((m) => !m.labels.includes('DRAFT'));
   for (const m of list) if ((await upsertMessage(tx, workspaceId, conn, m)).inserted) fresh.push(m);
   const keys = [...new Set(list.map((m) => m.threadKey))];
   let next = state;

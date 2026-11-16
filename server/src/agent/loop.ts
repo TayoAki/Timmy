@@ -49,6 +49,8 @@ export interface StartRun {
   /** Tools the browser draws itself (widgets). Their calls are passed to the browser, not run here. */
   displayTools?: ToolDef[];
   effort?: Effort;
+  /** The mail thread the person has open in the app while they ask, if any. The only thing Auto mode may act on. */
+  openThreadId?: string;
 }
 
 export interface RunResult {
@@ -67,6 +69,12 @@ interface Checkpoint {
   pending: Record<string, string>;
   effort: Effort;
   userWords: string[];
+  /** The thread the person had open when they asked. Auto mode may act on this one thread and no other. */
+  openThreadId?: string;
+  /** Auto mode has already decided one action in this run; the next one asks. */
+  autoUsed?: boolean;
+  /** The conversation came with earlier answers, which may quote mail: the judge is told to be stricter. */
+  carriesHistory?: boolean;
 }
 
 async function saveCheckpoint(workspaceId: string, runId: string, fence: number, seq: number, cp: Checkpoint) {
@@ -130,6 +138,8 @@ export async function startRun(ctx: Ctx, input: StartRun, events: RunEvents = {}
     pending: {},
     effort: input.effort ?? 'low',
     userWords: input.userWords ?? input.messages.filter((m) => m.role === 'user').map((m) => m.content),
+    openThreadId: input.openThreadId,
+    carriesHistory: input.messages.some((m) => m.role === 'assistant' || m.role === 'tool'),
   };
   return drive(ctx, { runId, fence: 1, model, attended: input.attended, threadId: input.threadId, kind: input.kind }, cp, 0, events);
 }
@@ -212,10 +222,18 @@ async function runTools(ctx: Ctx, run: Driving, cp: Checkpoint, calls: ToolCall[
     }
     events.step?.(tool.step, false);
     const t: ToolRun = { ctx, runId: run.runId, fence: run.fence, callId: call.id, conversation: run.threadId, attended: run.attended };
-    if (tool.kind === 'write' && run.attended && tool.effectKind && isKind(tool.effectKind) && KINDS[tool.effectKind].autoEligible) {
-      // Auto mode: the judge sees the user's own words and a description built from the action's kind, nothing fetched.
+    // Auto mode. What it may decide is fixed here in code, before any model is asked: one action per run, of a kind
+    // that reaches nobody else, and only on the thread the person has open in the app. A model that was steered by
+    // something it read can ask to file other threads, or many; those all go to the person. The judge then decides
+    // from the person's own words and a description built from our own fixed words, nothing fetched.
+    const bound = !cp.autoUsed && !!cp.openThreadId && tool.target?.(args) === cp.openThreadId;
+    const action = tool.describe?.(args);
+    if (bound && action && tool.kind === 'write' && run.attended && tool.effectKind && isKind(tool.effectKind) && KINDS[tool.effectKind].autoEligible) {
       const ws = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => (await tx.query('select approval_mode, (select read_outside from run where id = $2) as read_outside from workspace where id = $1', [ctx.workspaceId, run.runId])).rows[0]);
-      if (ws?.approval_mode === 'auto') t.auto = await judge({ workspaceId: ctx.workspaceId, runId: run.runId, kind: tool.effectKind, payload: {}, action: tool.describe?.(args) ?? KINDS[tool.effectKind].label, userWords: cp.userWords, readOutside: !!ws.read_outside });
+      if (ws?.approval_mode === 'auto') {
+        t.auto = await judge({ workspaceId: ctx.workspaceId, runId: run.runId, kind: tool.effectKind, payload: {}, action, userWords: cp.userWords, readOutside: !!ws.read_outside || !!cp.carriesHistory });
+        if (t.auto.verdict === 'approve') cp.autoUsed = true;
+      }
     }
     let out;
     try {

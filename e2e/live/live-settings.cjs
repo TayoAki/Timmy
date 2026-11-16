@@ -42,9 +42,9 @@ run('live-settings', async (browser) => {
   const mode = page.locator('select[name="approval-mode"]');
   ok((await mode.inputValue()) === 'ask', 'by default Timmy asks before it files anything');
   await mode.selectOption('auto');
-  await page.locator('.toast', { hasText: /file what you clearly asked for/ }).waitFor();
+  await page.locator('.toast', { hasText: /file the thread you have open/ }).waitFor();
   ok((await api(page, 'GET', '/api/v1/settings')).body.approvalMode === 'auto', 'the choice is saved');
-  ok(/only covers labels and archiving in your own mailbox/.test(await page.locator('.live-settings').innerText()) && /waits for your OK or a rule you wrote/.test(await page.locator('.live-settings').innerText()), 'Settings says it covers filing only, and that sends always need an OK');
+  ok(/only covers a label or archiving, in your own mailbox, for the one thread open/.test(await page.locator('.live-settings').innerText()) && /waits for your OK or a rule you wrote/.test(await page.locator('.live-settings').innerText()), 'Settings says it covers filing only, and that sends always need an OK');
   const audit = (await api(page, 'GET', '/api/v1/audit')).body.entries.filter((e) => e.action === 'settings.changed');
   ok(audit.length >= 2, 'setting changes are in the audit log');
 

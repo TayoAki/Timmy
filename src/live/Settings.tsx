@@ -114,14 +114,14 @@ export function LiveSettings() {
           onChange={(e) => {
             const next = e.target.value as 'ask' | 'auto';
             setMode(next);
-            void save({ approvalMode: next }, next === 'auto' ? 'Timmy will file what you clearly asked for, and ask when unsure.' : 'Timmy will ask before it files anything.');
+            void save({ approvalMode: next }, next === 'auto' ? 'Timmy will file the thread you have open when you ask, and ask about anything else.' : 'Timmy will ask before it files anything.');
           }}
         >
           <option value="ask">Show me each change and wait for my OK</option>
-          <option value="auto">File it when I clearly asked for it, and ask when unsure</option>
+          <option value="auto">File the thread I have open when I ask, and ask about anything else</option>
         </select>
         <span className="field-hint">
-          This only covers labels and archiving in your own mailbox, which nobody else sees. Whatever you choose, anything that reaches another person (an email, an invite, a post) waits for your OK or a rule you wrote. Timmy never moves money, signs documents or deletes accounts.
+          This only covers a label or archiving, in your own mailbox, for the one thread open on your screen when you ask. Whatever you choose, anything that reaches another person (an email, an invite, a post) waits for your OK or a rule you wrote. Timmy never moves money, signs documents or deletes accounts.
           {!canChange && ' An owner or admin can change this.'}
         </span>
       </label>

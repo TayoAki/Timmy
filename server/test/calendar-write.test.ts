@@ -3,6 +3,7 @@
  * invitations, so it waits for approval and the undo window like an email; it is never created twice.
  */
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { config } from '../src/config';
 import type { EffectRow } from '../src/gateway/gateway';
 import { reconcileEffect } from '../src/gateway/gateway';
 import { syncCalendar } from '../src/sync/calendar';
@@ -113,6 +114,25 @@ describe('an event with guests', () => {
     expect((await w.cmd({ type: 'effect', id: e!.id, approve: true })).ok).toBe(true);
     await releaseHolds(w);
     expect(google()).toMatchObject([{ summary: 'Board prep', invited: true }]);
+  });
+});
+
+describe('how much one command may do', () => {
+  it('a command that adds more events than the limit is refused whole', async () => {
+    const before = config.maxEventsPerCommand;
+    config.maxEventsPerCommand = 2;
+    try {
+      const item = (i: number) => ({ id: `bulk-${i}`, title: `Bulk ${i}`, start: at(24 + i), end: at(25 + i), kind: 'meeting', with: ['mail:dana@client.test'] });
+      const tooMany = await w.cmd({ type: 'ws', ops: [0, 1, 2].map((i) => ({ op: 'put', col: 'events', item: item(i) })) });
+      expect(tooMany.ok).toBe(false);
+      expect(tooMany.error).toMatch(/adds up to 2 at a time/);
+      expect(await events()).toHaveLength(0);
+      expect(await effects()).toHaveLength(0);
+      expect((await w.cmd({ type: 'ws', ops: [0, 1].map((i) => ({ op: 'put', col: 'events', item: item(i) })) })).ok).toBe(true);
+      expect(await effects()).toHaveLength(2);
+    } finally {
+      config.maxEventsPerCommand = before;
+    }
   });
 });
 

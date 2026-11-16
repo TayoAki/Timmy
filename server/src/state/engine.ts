@@ -22,11 +22,12 @@ import { withWorkspace, type Tx } from '../db/pool';
 import { cancelHeld, decide, GatewayError, onReplay, propose, type EffectRow } from '../gateway/gateway';
 import { prepareMailSend } from '../gateway/mail';
 import { SYNCED_PREFIX, eventProposal } from '../sync/calendar-write';
-import { filingProposal } from '../sync/labels';
+import { filingProposal, isBox } from '../sync/labels';
 import { draftHash } from '../../../src/live/hash';
 import type { Actor } from '../gateway/policy';
 import { config } from '../config';
 import { enqueueSoon } from '../jobs/jobs';
+import { log } from '../lib/log';
 import { modelReady } from '../providers/model';
 import { commitState, loadState, remember, type Commit, type Loaded, type PreImage } from './docs';
 
@@ -123,7 +124,12 @@ export async function runCommand(ctx: Ctx, cmd: { id: string; action: Action }):
     await tx.query('savepoint command');
     try {
       handled = await handle(tx, loaded, ctx, cmd);
-      if (!handled.reject) handled = { ...handled, state: await fileMoves(tx, loaded, ctx, cmd.id, handled.state) };
+      if (!handled.reject) {
+        // Each thread a command moves is one write to the mailbox. A single command may not ask for an unbounded number.
+        const moves = movedThreads(loaded.state, handled.state).length;
+        if (moves > config.maxFilingsPerCommand) handled = { state: loaded.state, reject: `That would file ${moves} threads at once. Timmy files up to ${config.maxFilingsPerCommand} at a time; do it in smaller batches.` };
+        else handled = { ...handled, state: await fileMoves(tx, loaded, ctx, cmd.id, handled.state) };
+      }
       if (!handled.reject) handled = await addEvents(tx, loaded, ctx, cmd.id, handled);
     } catch (err) {
       if (!(err instanceof GatewayError)) throw err;
@@ -160,6 +166,12 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
   const state = loaded.state;
   if (!a || typeof a.type !== 'string') return { state, reject: 'That isn’t a command.' };
   if (DEMO_ONLY.has(a.type)) return { state, reject: NOT_LIVE };
+  if (a.type === 'move') {
+    // A thread can only be put in one of the five places. Who moved it is the server's to say, never the caller's:
+    // "Timmy filed this" is written only when Timmy did.
+    if (!isBox(a.box)) return { state, reject: 'That isn’t a place a thread can be moved to.' };
+    delete a.by;
+  }
 
   // Approving or declining is the one thing a read-only role (RevOps) may still do.
   const decision = decisionIn(a);
@@ -217,7 +229,15 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
   if (a.type === 'out' && OUT_NOT_LIVE[a.op.op]) return { state, reject: OUT_NOT_LIVE[a.op.op] };
   if (a.type === 'resolve' && a.key.startsWith('camp:') && a.option === 'launch') return { state, reject: OUT_NOT_LIVE.launch };
 
-  const next = reduce(loaded, state, a);
+  let next: State | undefined;
+  try {
+    next = reduce(loaded, state, a);
+  } catch (err) {
+    // The reducer was written for well-formed actions from its own screens. One it can't apply (a field of the wrong
+    // shape) is refused like any other bad command; it must not take the request down.
+    log.warn('an action could not be applied', { type: a.type, error: (err as Error).message });
+    return { state, reject: 'That command couldn’t be applied.' };
+  }
   // The reducer has no default case: an action it doesn't know returns nothing.
   if (!next) return { state, reject: 'That isn’t a command.' };
   return gateSends(tx, loaded, ctx, cmd, state, next);
@@ -319,14 +339,17 @@ async function gateSends(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; ac
  * person's own action is the approval, and nothing about it reaches anyone else. If the write can't be made
  * (sending is switched off, the role can't write), the thread still moves in Timmy.
  */
-async function fileMoves(tx: Tx, loaded: Loaded, ctx: Ctx, commandId: string, next: State): Promise<State> {
-  const prev = loaded.state;
-  if (prev.threads === next.threads) return next;
+/** Synced threads that sit somewhere else after a command than before it. */
+function movedThreads(prev: State, next: State): Thread[] {
+  if (prev.threads === next.threads) return [];
   const before = new Map(prev.threads.map((t) => [t.id, t.box]));
+  return next.threads.filter((t) => before.has(t.id) && before.get(t.id) !== t.box && !!t.ext?.threadKey && !!t.ext.connectionId);
+}
+
+async function fileMoves(tx: Tx, loaded: Loaded, ctx: Ctx, commandId: string, next: State): Promise<State> {
   let state = next;
-  for (const t of next.threads) {
-    const was = before.get(t.id);
-    const filing = was === undefined || was === t.box ? null : filingProposal(t, t.box);
+  for (const t of movedThreads(loaded.state, next)) {
+    const filing = filingProposal(t, t.box);
     if (!filing) continue;
     const p = await propose(tx, loaded, state, actorOf(ctx), {
       ...filing,
@@ -353,6 +376,8 @@ async function addEvents(tx: Tx, loaded: Loaded, ctx: Ctx, commandId: string, ha
   if (prev.ws.events === next.ws.events) return handled;
   const fresh = Object.values(next.ws.events).filter((ev) => !prev.ws.events[ev.id] && !ev.id.startsWith(SYNCED_PREFIX));
   if (!fresh.length) return handled;
+  // Each new event is a write to the calendar, and with guests an invitation. One command may not ask for an unbounded number.
+  if (fresh.length > config.maxEventsPerCommand) return { state: prev, reject: `That would add ${fresh.length} events at once. Timmy adds up to ${config.maxEventsPerCommand} at a time.` };
   // The person's own calendar if they connected one, otherwise the workspace's first (whose owner then approves).
   const cal = (await tx.query(`select id from connection where workspace_id = $1 and status = 'active' and toolkit = 'googlecalendar' order by (user_id = $2) desc, created_at limit 1`, [ctx.workspaceId, ctx.user.id])).rows[0] as { id: string } | undefined;
   if (!cal) return handled;
