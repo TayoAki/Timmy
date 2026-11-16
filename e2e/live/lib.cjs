@@ -60,8 +60,13 @@ async function connectApp(page, name, address) {
   await page.click('button[aria-label="Connections"]');
   const card = page.locator('li.conn-card', { has: page.getByText(name, { exact: true }) }).first();
   await card.getByRole('button', { name: 'Connect' }).click();
+  // The address bar may still say "connect=ok" from an earlier connect in the same test, so that alone proves nothing.
+  // What is waited for is this connect's own return trip: the server's answer to the callback, then the page it lands on.
+  const back = page.waitForResponse((r) => r.url().includes('/api/v1/connections/callback'), { timeout: 30000 });
   await page.getByRole('button', { name: `Continue to ${name}` }).click();
+  await back;
   await page.waitForURL(/connect=ok/, { timeout: 15000 });
+  await page.waitForLoadState('load');
   await page.locator('.main').waitFor();
 }
 const connectGmail = (page, address) => connectApp(page, 'Gmail', address);

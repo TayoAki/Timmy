@@ -26,7 +26,11 @@ interface DriveFile {
   lastModifyingUser?: { displayName?: string; emailAddress?: string };
 }
 
-const FIELDS = 'id,name,mimeType,modifiedTime,createdTime,trashed,webViewLink,size,shared,owners,lastModifyingUser';
+/**
+ * What is asked for about each file, and the token for the next page. Drive only returns what is named here:
+ * leave the token out and a long list silently ends after its first page.
+ */
+const FIELDS = 'nextPageToken,files(id,name,mimeType,modifiedTime,createdTime,trashed,webViewLink,size,shared,owners,lastModifyingUser)';
 const FOLDER = 'application/vnd.google-apps.folder';
 const payload = (data: Record<string, unknown>) => (data.response_data ?? data) as Record<string, unknown>;
 
@@ -91,7 +95,7 @@ export async function syncFiles(workspaceId: string, connectionId: string, opts:
     const res = await callTool(
       workspaceId,
       connectionId,
-      'GOOGLEDRIVE_LIST_FILES',
+      'GOOGLEDRIVE_FIND_FILE',
       { q: `modifiedTime > '${since}' and trashed = false and mimeType != '${FOLDER}'`, fields: FIELDS, orderBy: 'modifiedTime desc', pageSize: opts.pageSize ?? 200, ...(pageToken ? { pageToken } : {}) },
       'sync',
     );

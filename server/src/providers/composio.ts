@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Composio } from '@composio/core';
 import { config } from '../config';
 import { newId } from '../lib/ids';
@@ -75,6 +75,18 @@ function eventFrom(id: string, rawBody: string): ProviderEvent {
 
 /* ───────────── The real provider ───────────── */
 
+const SCOPED_NAME = /^timmy-.+-[0-9a-f]{8}$/;
+
+/**
+ * The name and permissions of the Composio-managed auth config for a toolkit. With a narrowed set of permissions the
+ * name ends in a fingerprint of that set, so changing the set makes a new config instead of quietly reusing the old one.
+ */
+export function managedAuthConfig(toolkit: string): { name: string; scopes?: string[] } {
+  const scopes = config.composio.scopes[toolkit];
+  if (!scopes?.length) return { name: `timmy-${toolkit}` };
+  return { name: `timmy-${toolkit}-${createHash('sha256').update([...scopes].sort().join(',')).digest('hex').slice(0, 8)}`, scopes };
+}
+
 class RealComposio implements ComposioProvider {
   // Every toolkit runs at the version pinned in config. A tool from a toolkit with no pinned version is refused
   // by the client, so nothing ever runs at "whatever is newest".
@@ -87,10 +99,13 @@ class RealComposio implements ComposioProvider {
     if (configured) return configured;
     const cached = this.authConfigs.get(toolkit);
     if (cached) return cached;
+    const { name, scopes } = managedAuthConfig(toolkit);
     const existing = await this.client.authConfigs.list({ toolkit, isComposioManaged: true });
-    let id = existing.items?.[0]?.id;
+    const listed = (existing.items ?? []) as { id: string; name?: string }[];
+    // A config made for a different set of permissions is never reused: the name carries a fingerprint of the set.
+    let id = listed.find((c) => c.name === name)?.id ?? (scopes ? undefined : listed.find((c) => !SCOPED_NAME.test(c.name ?? ''))?.id);
     if (!id) {
-      const created = await this.client.authConfigs.create(toolkit, { type: 'use_composio_managed_auth', name: `timmy-${toolkit}` });
+      const created = await this.client.authConfigs.create(toolkit, { type: 'use_composio_managed_auth', name, ...(scopes ? { credentials: { scopes } } : {}) });
       id = created.id;
     }
     this.authConfigs.set(toolkit, id);
@@ -522,7 +537,7 @@ export class FakeComposio implements ComposioProvider {
       /* ───── Google Drive ───── */
       case 'GOOGLEDRIVE_GET_ABOUT':
         return ok({ user: { emailAddress: box.address, displayName: 'Stand-in person' } });
-      case 'GOOGLEDRIVE_LIST_FILES': {
+      case 'GOOGLEDRIVE_FIND_FILE': {
         const q = String(args.q ?? '');
         const since = /modifiedTime > '([^']+)'/.exec(q)?.[1];
         const max = Number(args.pageSize ?? 100);
@@ -533,7 +548,9 @@ export class FakeComposio implements ComposioProvider {
         if (/mimeType != 'application\/vnd\.google-apps\.folder'/.test(q)) list = list.filter((f) => f.mimeType !== 'application/vnd.google-apps.folder');
         const page = list.slice(start, start + max);
         const wire = (f: FakeFile) => ({ id: f.id, name: f.name, mimeType: f.mimeType, modifiedTime: f.modifiedTime, createdTime: f.modifiedTime, trashed: !!f.trashed, webViewLink: f.link ?? `https://docs.google.com/document/d/${f.id}/edit`, shared: f.owner !== box.address, owners: [{ displayName: f.owner.split('@')[0], emailAddress: f.owner }] });
-        return ok({ files: page.map(wire), ...(start + max < list.length ? { nextPageToken: String(start + max) } : {}) });
+        // Like Drive itself, the stand-in returns only what `fields` names: without nextPageToken there, a long list just ends.
+        const wantsToken = !args.fields || /(^|,)\s*nextPageToken\s*(,|$)/.test(String(args.fields));
+        return ok({ files: page.map(wire), ...(wantsToken && start + max < list.length ? { nextPageToken: String(start + max) } : {}) });
       }
       default:
         return { successful: false, data: {}, error: `The fake provider has no tool called ${slug}` };

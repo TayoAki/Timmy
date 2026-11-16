@@ -96,6 +96,19 @@ export const config = {
       outlook: env.COMPOSIO_AUTH_CONFIG_OUTLOOK ?? '',
     } as Record<string, string>,
     /**
+     * The permissions asked for at sign-in, per toolkit, when they should be fewer than Composio's managed app asks
+     * for by default. Outlook's default set includes calendars, contacts, Teams chat and mailbox settings; Timmy
+     * reads and sends mail, so it asks for mail and the profile only. A toolkit not listed here (or set to an empty
+     * value) uses Composio's defaults. Google is left at the defaults: Google only lets an app ask for permissions it
+     * has been approved for, and which narrower ones Composio's Google app holds is not published.
+     */
+    scopes: {
+      outlook: (env.COMPOSIO_SCOPES_OUTLOOK ?? 'Mail.Read,Mail.ReadWrite,Mail.Send,offline_access,User.Read').split(',').map((x) => x.trim()).filter(Boolean),
+      gmail: (env.COMPOSIO_SCOPES_GMAIL ?? '').split(',').map((x) => x.trim()).filter(Boolean),
+      googlecalendar: (env.COMPOSIO_SCOPES_GOOGLECALENDAR ?? '').split(',').map((x) => x.trim()).filter(Boolean),
+      googledrive: (env.COMPOSIO_SCOPES_GOOGLEDRIVE ?? '').split(',').map((x) => x.trim()).filter(Boolean),
+    } as Record<string, string[]>,
+    /**
      * The version of each Composio toolkit this code was written against. Composio changes tool names and
      * arguments between versions (Outlook's send tool took `to_email`, then `to`), so the server never runs
      * "whatever is newest": a version moves forward here, after its tools have been checked. COMPOSIO_TOOLKIT_VERSIONS

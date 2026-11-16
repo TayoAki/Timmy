@@ -209,3 +209,25 @@ describe('Composio toolkit versions', () => {
     }
   });
 });
+
+describe('permissions asked for at sign-in', () => {
+  it('Outlook asks for mail and the profile only; a changed set gets a config of its own; Google keeps Composio’s defaults', async () => {
+    const { managedAuthConfig } = await import('../src/providers/composio');
+    const outlook = managedAuthConfig('outlook');
+    expect(outlook.scopes).toEqual(['Mail.Read', 'Mail.ReadWrite', 'Mail.Send', 'offline_access', 'User.Read']);
+    expect(outlook.scopes!.some((s) => /Calendars|Contacts|Chat|MailboxSettings/.test(s))).toBe(false);
+    expect(outlook.name).toMatch(/^timmy-outlook-[0-9a-f]{8}$/);
+    const before = [...config.composio.scopes.outlook!];
+    try {
+      config.composio.scopes.outlook = [...before, 'Calendars.Read'];
+      expect(managedAuthConfig('outlook').name).not.toBe(outlook.name);
+      // The same set in another order is the same config.
+      config.composio.scopes.outlook = [...before].reverse();
+      expect(managedAuthConfig('outlook').name).toBe(outlook.name);
+    } finally {
+      config.composio.scopes.outlook = before;
+    }
+    expect(managedAuthConfig('gmail')).toEqual({ name: 'timmy-gmail' });
+    expect(managedAuthConfig('googledrive')).toEqual({ name: 'timmy-googledrive' });
+  });
+});

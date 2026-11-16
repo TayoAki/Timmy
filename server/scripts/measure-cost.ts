@@ -183,7 +183,7 @@ async function main() {
       return { ...u, kind: /^draft/i.test(text) ? 'draft' : /^send/i.test(text) ? 'send' : 'ask' };
     };
     console.log('\n== Model cost (real calls, Claude Opus 5.5 through OpenRouter, effort low) ==');
-    const rows = [];
+    const rows: Awaited<ReturnType<typeof ask>>[] = [];
     const questions = [
       'What did Dana Whitfield ask me for most recently?',
       'Find the email about the renewal quote for Northwind Health and tell me the price per seat they mentioned.',

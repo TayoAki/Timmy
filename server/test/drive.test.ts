@@ -14,7 +14,7 @@ const DAY = 86400_000;
 const ago = (days: number) => new Date(Date.now() - days * DAY).toISOString();
 const add = (name: string, extra: Record<string, unknown> = {}) => fake().addFile(drive.account, { name, ...extra });
 const files = (c: Client = w) => rows<{ subject: string; snippet: string; sender: string; external_id: string; meta: { link: string | null; mimeType: string } }>(`select subject, snippet, sender, external_id, meta from item where workspace_id = $1 and kind = 'file' order by subject`, [c.workspaceId]);
-const listings = () => fake().calls.filter((c) => c.connectedAccountId === drive.account && c.slug === 'GOOGLEDRIVE_LIST_FILES');
+const listings = () => fake().calls.filter((c) => c.connectedAccountId === drive.account && c.slug === 'GOOGLEDRIVE_FIND_FILE');
 const search = async (c: Client, query: string) => {
   const out = await TOOL_BY_NAME.search_files!.run({ query }, { ctx: { user: { id: c.userId, name: 'O', email: c.email }, workspaceId: c.workspaceId, role: 'owner', rules: rulesFor('owner') }, runId: 'run_none', fence: 0, callId: 'call', attended: true });
   return out as { result: string; outside?: boolean };
@@ -67,8 +67,8 @@ describe('the list of files', () => {
     ]);
     expect(list[0]!.meta.link).toBe(`https://docs.google.com/document/d/${list[0]!.external_id}/edit`);
     // Only what the list needs is asked for, and nothing is ever written to Drive.
-    expect(listings().at(-1)!.args.fields).toBe('id,name,mimeType,modifiedTime,createdTime,trashed,webViewLink,size,shared,owners,lastModifyingUser');
-    expect(fake().calls.filter((c) => c.connectedAccountId === drive.account).map((c) => c.slug).filter((s) => !['GOOGLEDRIVE_LIST_FILES', 'GOOGLEDRIVE_GET_ABOUT'].includes(s))).toEqual([]);
+    expect(listings().at(-1)!.args.fields).toBe('nextPageToken,files(id,name,mimeType,modifiedTime,createdTime,trashed,webViewLink,size,shared,owners,lastModifyingUser)');
+    expect(fake().calls.filter((c) => c.connectedAccountId === drive.account).map((c) => c.slug).filter((s) => !['GOOGLEDRIVE_FIND_FILE', 'GOOGLEDRIVE_GET_ABOUT'].includes(s))).toEqual([]);
   });
 
   it('names kinds the way a person would', () => {

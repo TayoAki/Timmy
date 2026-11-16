@@ -1,6 +1,6 @@
 # Timmy backend: status
 
-Last updated: Nov 16, 2026 (session 1). Read this first, then `tests.json`, then `git log`.
+Last updated: Nov 16, 2026 (session 1, after Outlook, Drive and Resend). Read this first, then `tests.json`, then `git log`.
 The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 
 ## Where things stand
@@ -11,10 +11,14 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 | --- | --- |
 | API server (`server/`, Hono on Node) | Built and deployed. Serves the API and the live app from one origin. |
 | Postgres with row-level security | Built (`server/migrations/0001_init.sql`). Production runs Postgres 18 from the pgvector template. |
-| Sign-in and workspaces (Better Auth: email + password, email link, six roles, invitations) | Built. Email links and invitations are written to an outbox table until a mail provider is chosen. |
+| Sign-in and workspaces (Better Auth: email + password, email link, six roles, invitations) | Built. |
+| Timmy's own account mail (sign-in links, invitations, password resets, address confirmation) | Built on Resend. Every message is recorded first, then delivered by a job with a fixed key, so a retry is never a second email. It switches on when the `app` service has `RESEND_API_KEY` and `TIMMY_MAIL_FROM`; until then messages wait in the outbox table and email + password works. With mail on, a new account must open the link sent to its address before it can sign in. Tested against a local stand-in for Resend's API; no real email has been sent (that needs your key and your OK on a recipient). |
 | State sync (`POST /api/v1/commands`, `GET /api/v1/stream`) | Built. The server runs the frontend's own reducer and sends patches. |
 | Action gateway, effect records, audit log, 30-second undo | Built. |
-| Composio: connect, mail backfill, new-mail webhook, nightly mail check, calendar sync, item store | Built and tested against the fake provider, for Gmail and Google Calendar. Every other app shows as coming soon and the API refuses to connect it. The real key works (connect links were minted against the real API); a real Gmail account has not been connected yet. |
+| Composio: connect, mail backfill, new-mail webhook, nightly mail check, calendar sync, item store | Built and tested against the fake provider, for Gmail, Outlook, Google Calendar and Google Drive. Every other app shows as coming soon and the API refuses to connect it. The real key works (connect links were minted against the real API); no real account has been connected yet. |
+| Outlook mail (phase 1) | Built. Outlook connects through Composio like Gmail and is a workspace's mailbox in the same way (one mailbox per workspace, Gmail or Outlook). First read of the last 30 then 90 days, new mail and sent mail by event, the nightly check, sending and replying through the gateway with the undo window, and filing written back: Follow Up, Waiting and Read Through become Outlook categories with the same names, and Archived moves the messages to Outlook's Archive folder. HTML bodies are stored and shown as text. Outlook's calendar and OneDrive are not read yet, and the card says so. Tested against the fake provider and checked against Composio's real tool definitions; not yet run on a real mailbox. |
+| Google Drive (phase 1) | Built, read-only. Timmy keeps a list of files changed in the last 90 days and from then on (name, kind, owner, when it changed, link), kept current by Drive's events and a nightly pass, and Ask can search it (“find the file …”). Timmy does not open files and writes nothing to Drive. Tested against the fake provider and checked against Composio's real tool definitions; not yet run on a real Drive. |
+| Composio toolkit versions | Pinned in config (`composio.toolkitVersions`, overridable with `COMPOSIO_TOOLKIT_VERSIONS`). `server/scripts/check-composio.mts` checks every tool and event the server uses against Composio's API at the pinned versions; it passes. |
 | Model layer (OpenRouter), model picker, cost log, spend cap | Built. Real calls made on Claude Opus 5.5. An owner can set the monthly limit in Settings, up to a ceiling the server sets ($200 by default). No fallback model is configured (see decision 6). |
 | Agent loop (leased runs, checkpoints, pause for approval), Ask over mail | Built. |
 | Reading mail and drafting (phase 1, started early) | Built: the model reads threads people wrote and proposes a sort; the Draft button writes a draft. |
@@ -23,7 +27,7 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 | Waiting (phase 1) | Built. A reply Timmy drafts that asks for something carries what the other person owes and by when (three working days when the email names no date), so “Send & track” moves the thread to Waiting. When the date passes with no answer, the morning run drafts a nudge (5 at most a day); the Draft button on such a thread writes a nudge too. Sending a nudge sets a new date. A reply ends the wait and drops a nudge that was drafted. Nothing is sent without Send. |
 | Events written to Google Calendar (phase 1) | Built for new events. An event added in Timmy goes onto the connected Google Calendar after the undo window; with guests Google sends the invitations, so it is approved like an email (an assistant's waits for the exec, and a member using someone else's calendar waits for that person). Undo inside the window means nobody is invited. Once Google has the event, that copy replaces the one made in Timmy, so it shows once. Changing or deleting an existing event is not written back yet. Tested against the fake provider; the Google call was checked against Composio's tool list, not yet run on a real calendar. |
 | The morning run (phase 1) | Built. At the time and on the days set in Settings › Schedule, in the workspace's own time zone, Timmy checks the mailbox for anything the triggers missed, reads what people wrote, and drafts replies to what needs an answer (10 at most). It moves nothing and sends nothing; the drafts wait in Approvals. Today and the activity log say what it did. It needs a connected mailbox, and no run time is shown without one. |
-| Cold email (phase 2, built early because the decision was made) | Built as decided: Timmy writes it and opens Gmail's compose window; nothing cold goes through an API. The lead is marked contacted when sync sees the email in Sent, and replies show in the Unibox. |
+| Cold email (phase 2, built early because the decision was made) | Built as decided: Timmy writes it and opens the compose window of the connected mail app (Gmail, or Outlook on the web); nothing cold goes through an API. The lead is marked contacted when sync sees the email in Sent, and replies show in the Unibox. |
 | Frontend live mode (`VITE_TIMMY_LIVE=1`) | Built: sign-in, onboarding, state from the API, Connect buttons, model picker, monthly limit, approvals for writes Timmy proposes. The demo is unchanged and still the default build. |
 | Railway | `app` (API + live app), `pgvector` and the bucket `timmy-files` exist in `production` and `staging`. Both `app` services have the OpenRouter and Composio keys. |
 
@@ -66,14 +70,22 @@ Cost measurement: `server/scripts/measure-cost.ts` (the header says how to run i
 
 | Suite | Result |
 | --- | --- |
-| API unit and integration (`server/test`, 15 files) | 241 of 241 pass |
+| API unit and integration (`server/test`, 18 files) | 286 of 286 pass |
 | Demo-mode Playwright (`e2e/`, 12 suites, 348 checks) | 12 of 12 pass |
-| Live-mode Playwright (`e2e/live/`, 10 suites, 170 checks) | 10 of 10 pass |
-| Live-mode Playwright against **staging** (Railway) | 10 of 10 pass (170 checks) on the build with the review fixes. The calendar suite failed on its first staging run because the test looked for the waiting invitation before the server had answered; the test now waits for it and passed 3 of 3. |
+| Live-mode Playwright (`e2e/live/`, 12 suites, 205 checks) | 12 of 12 pass. Eleven run on one server; `live-verify` runs on a server restarted with address confirmation required. |
+| Live-mode Playwright against **staging** (Railway) | Being re-run on this build; the result is recorded in the next commit. |
+| Composio tool check (`server/scripts/check-composio.mts`, real API, read-only) | Pass: 21 tools and 8 events exist at the pinned versions and take the arguments the code sends. |
 | Demo suites against a deployed build of this branch | Not run: `web` deploys the older branch, and I won't change that service without your OK |
-| Real-provider smoke (real Gmail through Composio) | Not run: needs a test Gmail account connected by a person |
+| Real-provider smoke (a real Gmail or Outlook mailbox, a real Drive, through Composio) | Not run: needs a test account connected by a person |
+| A real email through Resend | Not run: needs `RESEND_API_KEY`, a sender address on a domain verified in Resend, and your OK on who receives it |
 
-Two changes were made to the existing demo suites, both to make them run correctly, not to make them pass:
+Tests changed in the Outlook and Drive round, and why:
+- `review.test` and `sync.test` asserted that Outlook and Drive could not be connected (400). They can now. The first now asserts the stronger thing it was about: with Gmail connected, Outlook is refused by the one-mailbox rule (409, naming the connected address). The second lists apps that still can't be connected.
+- `gateway.test`, `audit.test` and `live-mail` matched the words “Connect Gmail first”; the message now says “Connect Gmail or Outlook first”.
+- `live-signup` used the Outlook card as its example of “coming soon”; it now uses HubSpot, and checks that Outlook, Drive and Calendar can be connected.
+- `e2e-steps` (demo) failed 2 runs in 5 on a busy machine: it pressed the key that leaves full screen in the spreadsheet editor and looked once, 400 ms later. The check is unchanged; it now looks until it holds, for up to three seconds. It then passed 6 of 6. The app code was not changed.
+
+Two changes were made to the existing demo suites earlier, both to make them run correctly, not to make them pass:
 - Eight suites ignored `BASE` and always tested `localhost:5173`. They now honor it.
 - `e2e-fixes` was failing before any backend work. Its last block clicked the first row on Today and assumed it was an email; since leads were added to Today the first row is a lead. It now opens a mail row and asserts that it did.
 
@@ -199,7 +211,7 @@ Test changes that came with this, so you can check them:
 4. **Twilio (texts and the dialer) is skipped for now** (owner's instruction, Nov 16). Texts and calls stay demo-only.
 5. **New mail gets a first sort by plain code** (newsletters, receipts, calendar replies, automated notices), with the reason shown. Only a thread a person wrote is read by the model, once, and the model only proposes: the thread moves when the person accepts it in Triage.
 6. **There is no outage fallback model yet.** I had set `anthropic/claude-opus-5` as the fallback; the review against the brief pointed out that a fallback reads the same mail as the default, so it is a model added without the eval or your OK. It is removed. The fallback list is supported (`TIMMY_MODEL_FALLBACKS`) and empty; if the default's providers are down, Timmy says so instead of answering from another model. The judge never falls back, whatever the list says.
-7. **An app can be connected only once Timmy reads it or acts through it.** Outlook and Drive had Connect buttons that led to a connection nothing used. They now show as coming soon, like the rest, until phase 1 builds them.
+7. **An app can be connected only once Timmy reads it or acts through it.** Outlook and Drive had Connect buttons that led to a connection nothing used, so they were switched off until built. They are built now (see decisions 14 to 17) and their buttons are real. Everything else still shows as coming soon; all of it will connect through Composio when its phase builds it (CRMs and lead sources in phase 2).
 8. **Auto mode came back once it had something to decide.** It was withdrawn while nothing could use it. It now covers one thing: filing the thread the person has open, in their own mailbox, when they ask in the chat. Off by default.
 9. **Limits.** A workspace's owner or admin can set its monthly model limit ($50 to start) and how many jobs run at once (2 to start), up to ceilings set on the server (`TIMMY_SPEND_CAP_CEILING_USD`, default $200; `TIMMY_CONCURRENT_RUNS_CEILING`, default 4). The ceilings protect whoever pays the model bill until billing exists. The limit on jobs applies to starting new work; a job that is waiting for an approval always resumes.
 10. **One everyday mailbox per workspace in phase 0.** It is who "me" is in that workspace's mail. A mailbox per member comes with phase 1.
@@ -207,15 +219,26 @@ Test changes that came with this, so you can check them:
 12. **The morning run only prepares.** It drafts for threads you put in Follow Up, and for inbox threads Timmy read as needing a reply with at least medium confidence, where the other person wrote last and the thread is no older than 14 days. It never accepts a triage suggestion for you. Its model cost counts against the half of the monthly limit set aside for work nobody asked for. The workspace's time zone is taken from the owner's browser the first time they open it.
 13. **How filing shows in Gmail.** Gmail label names can't contain “/”, so the labels are “Timmy Follow Up”, “Timmy Waiting” and “Timmy Read Through”. A labelled thread stays in Gmail's inbox; only Archived removes it. Say if you would rather labelled threads leave the inbox.
 
+14. **How filing shows in Outlook.** Outlook has no labels, so Timmy's three places are categories with the same names (“Timmy Follow Up”, “Timmy Waiting”, “Timmy Read Through”) on the messages you received, which stay in the inbox. Archived moves them to Outlook's Archive folder; back to the inbox moves them back. Your own categories are never touched, and your copies in Sent Items are left where they are. Timmy does not add its categories to Outlook's colour list (that needs a broader permission), so they show without a colour until you give them one.
+15. **An Outlook reply is a draft that is addressed, checked and then sent.** Outlook's own “reply” picks the recipients itself (whoever wrote the last message). Timmy makes a reply draft, sets To and Cc to exactly the approved people, reads back what Outlook holds, and sends only if it matches. If any step is refused nothing is sent; an unsent draft can be left in Drafts.
+16. **Mail goes out exactly as approved: no signature is added by the provider.** Gmail's send tools now append the account's Gmail signature unless told not to. Timmy tells them not to, so the email is the text you saw and approved. Say if you would rather your signature were added (it would then also show in the preview).
+17. **Composio toolkit versions are pinned.** The server had been running each tool at Composio's newest version, while the code was written against an older listing. Checking the newest versions found two differences that the stand-in provider could not: the calendar tool's “send invitations” setting had changed from yes/no to a word (fixed), and Outlook's tools had been renamed (Outlook is built on the new names). Versions now move forward only in config, after `check-composio.mts` passes.
+18. **Drive is a list of names for now.** Reading inside a file means fetching an export from a link Composio returns, which wants its own care (size limits, what a document may tell the model). It is the next step for Drive, with the document index.
+20. **Outlook is asked only for what Timmy uses.** Composio's default sign-in for Outlook asks for calendars, contacts, Teams chat and mailbox settings as well as mail. Timmy asks for mail (read, change, send) and the profile only (`COMPOSIO_SCOPES_OUTLOOK`; set it empty to go back to Composio's defaults if a real connect needs something more). Reading Outlook's calendar later will mean asking each person to connect again. Google is left at Composio's defaults, because Google only lets an app ask for permissions it has been approved for and Composio does not publish which narrower ones its app holds (see "Needs your attention").
+19. **Timmy's own mail goes through Resend** (your choice). With it configured, sign-up requires confirming the address, which closes the gap the audit left open (anyone could register an address they don't own).
+
 ## Needs your attention
 
 - [ ] **Production sign-up is invite-only since the audit.** To create your own account on production, add your address to the `app` service's variables: `TIMMY_SIGNUP_ALLOW=you@example.com` (several addresses, or whole domains like `@example.com`, separated by commas). People you invite to a workspace can sign up without being on the list. `TIMMY_SIGNUP=open` opens it to everyone; I recommend leaving that until a mail provider is in place and sign-ups can verify their address. Staging stays open, which the test suites need.
 - [ ] **Confirm or reverse the mailbox rule** (see the audit section): a member's send from a mailbox someone else connected waits for that person.
-- [ ] **A test Gmail account** I may send from, and an address I may send to. Connecting it needs a person at Google's consent screen, so you press Connect once.
+- [ ] **A test Gmail account** I may send from, and an address I may send to. Connecting it needs a person at Google's consent screen, so you press Connect once. Only one of Gmail and Outlook can be a workspace's mailbox at a time, so the two tests use two workspaces.
 - [ ] **Turn on backups** for the `pgvector` volume (Railway dashboard → the volume → Backups). There is no tool for it on my side.
 - [ ] **Rotate the keys pasted in chat** (two Composio keys, one OpenRouter key) once setup is done. They are not in the repo or in logs.
-- [ ] **Composio's Google verification.** Get it confirmed in writing that Composio's managed Google app carries Google's restricted-scope verification and the CASA assessment. Their docs do not say so.
-- [ ] **A mail provider for Timmy's own account mail** (sign-in links, invitations, password resets). Until then email + password works and links wait in an outbox table. Once there is one, invitations should also require a verified email.
+- [ ] **Add Resend to production.** On the `app` service in Railway add `RESEND_API_KEY` and `TIMMY_MAIL_FROM` (for example `Timmy <timmy@yourdomain.com>`; the domain must be verified in Resend). Sign-in links, invitations and resets are then delivered, and new accounts must confirm their address. Tell me an address I may send one test email to.
+- [ ] **Composio's Google verification: what it means and what is not confirmed.** Google makes any app that reads Gmail pass its own app review plus a yearly outside security assessment (CASA); an app that hasn't is limited to 100 users and its sign-ins expire after 7 days. With Composio's managed app, that app is Composio's, so the review is theirs to hold. Composio's pages say it “registers and maintains the Google OAuth app” and that there is “no verification on your end”; they do not say in so many words that their app has passed the review for reading mail. The first real Gmail connect will show it: an “unverified app” warning or a 100-user cap would mean it has not. For production with many users Composio itself recommends your own Google app (your name on the consent screen, your own quota), which then needs the review. Sources are in the PRD's connections section.
+- [ ] **What Google's sign-in page will ask for.** With Composio's Google app, connecting Gmail asks for full mail access and also your contacts and profile details (birthday, addresses, phone numbers); connecting Drive asks for full access to your files, although Timmy only lists their names. Those are Composio's default sets, and I have not narrowed them because a permission their app is not approved for would block sign-in. Two ways to narrow: ask Composio which smaller sets their app supports (then it is one variable per app, `COMPOSIO_SCOPES_GMAIL` and `COMPOSIO_SCOPES_GOOGLEDRIVE`), or move to your own Google app, which also puts Timmy's name on the page and needs Google's review. Your call; nothing is blocked meanwhile.
+- [ ] **A test Outlook account and a test Drive**, the same as the test Gmail account: a person presses Connect once. A company Microsoft 365 account may show “Need admin approval” on Microsoft's page; a personal Outlook.com account does not.
+- [ ] **Confirm or change three Outlook and Gmail choices** (decisions 14 to 16): categories for filing in Outlook, replies sent as a checked draft, and no provider signature.
 - [ ] **The production frontend's branch.** `web` deploys `claude/modest-meitner-59cqpr`; this work is on `claude/funny-keller-5ouhro`. I will not change that service without your OK.
 - [ ] **An outage fallback model, if you want one.** None is configured (decision 6). Tell me which model to evaluate; I run the eval, show you the numbers, and you decide.
 - [ ] **OpenRouter budget for this session.** The key attached to the session has about $11 left; a large eval needs more.
@@ -223,15 +246,18 @@ Test changes that came with this, so you can check them:
 
 ## What's next
 
-1. Finish phase 0: a real Gmail account end to end (connect, backfill, a real email in, a real send out), then repeat the cost measurement on it.
-2. Phase 1, in this order: decisions, ontology v1, Outlook and Drive; then calendar changes and deletes, attachments, and reading back changes made in Gmail. Reading mail, the Draft button and the morning run are built.
+1. Finish phase 0: a real mailbox end to end (connect, backfill, a real email in, a real send out), then repeat the cost measurement on it.
+2. Phase 1, in this order: decisions, ontology v1; then reading inside Drive files, Outlook's calendar, calendar changes and deletes, attachments, and reading back changes made in the mailbox. Reading mail, the Draft button, the morning run, filing, Waiting, Outlook mail and the Drive file list are built.
+3. Before phase 1 ends: the subagent safety review, which will include the Outlook and Drive code added here.
 
 Known gaps to close in phase 1 (none of them lets anything be sent without approval):
 - Calendar: a new event is written to Google Calendar, but a change to an existing event, or deleting one, is not. Event times are sent to Google as UTC instants, which is right for the moment in time but has not been checked on a real calendar for how Google displays them.
-- Filing is one-way: a thread sorted or archived in Timmy is labelled or archived in Gmail, but a thread archived or labelled in Gmail itself does not move in Timmy.
+- Filing is one-way: a thread sorted or archived in Timmy is labelled or archived in the mailbox, but a thread archived or labelled in Gmail or Outlook itself does not move in Timmy.
+- Outlook: the calendar and OneDrive are not read; attachment names are not shown (Gmail's are); a mailbox with no Archive folder cannot be archived to (the filing fails cleanly and says so); a draft left behind by a refused reply is not cleaned up.
+- Drive: only names are searched, not contents; a file shared with you long ago and not changed since is not on the list; files in the trash leave the list when Drive announces it, and a missed announcement leaves a stale entry until the file changes.
 - Attachments cannot be sent.
 - A few demo screens still show sample wording on a real workspace (the "undo anything for 7 days" line on Activity). The sample archive count, the sample "done without asking" list and the templates signed "Taylor" from "Northpeak" are fixed.
-- A reply typed in the Unibox to a lead who wrote back is treated like cold email (it opens Gmail). It should go through the normal reply path, with approval and the undo window.
+- A reply typed in the Unibox to a lead who wrote back is treated like cold email (it opens the mail app). It should go through the normal reply path, with approval and the undo window.
 
 Known debt in the code (from the code-standards review; none of it is a safety gap):
 - The Action gateway also keeps the screens' list of waiting actions up to date and calls back into the command engine through registered hooks. Those are three jobs in one module; the screen projection should move out.
