@@ -387,3 +387,51 @@ describe('leases and fences', () => {
     expect(await resumeRun(w.workspaceId, out.runId)).toBeNull();
   });
 });
+
+describe('drafting a reply', () => {
+  it('the Draft button writes a draft with the model, from the thread as marked data, and sends nothing', async () => {
+    const thread = (await w.state()).threads[0]!;
+    await w.cmd({ type: 'addRule', group: 'writing', text: 'Never use exclamation marks.' });
+    model().script.push((req) => {
+      expect(req.route).toBe('draft');
+      const user = req.messages[1]!.content;
+      expect(user).toContain('Never use exclamation marks.');
+      expect(user).toContain('<untrusted source="mail">');
+      expect(user.indexOf('please send the revised quote')).toBeGreaterThan(user.indexOf('<untrusted source="mail">'));
+      expect(req.messages[0]!.content).not.toContain('revised quote');
+      return { content: '{"body":"Hi Dana,\\n\\nThe revised quote at $58 per seat is on its way by Friday.\\n\\nBest"}' };
+    });
+    const out = await w.cmd({ type: 'makeDraft', id: thread.id });
+    expect(out.ok).toBe(true);
+    expect((await w.state()).threads.find((t) => t.id === thread.id)!.draft).toBeUndefined();
+    await jobs().drain('draft.make');
+    const t = (await w.state()).threads.find((x) => x.id === thread.id)!;
+    expect(t.draft).toMatchObject({ to: ['mail:dana@acme.test'], subject: 'Re: Revised quote for 120 seats', kind: 'reply' });
+    expect(t.draft!.body).toContain('$58 per seat');
+    expect(await effects()).toHaveLength(0);
+    expect(sent()).toHaveLength(0);
+    expect((await rows<{ route: string }>('select route from usage_event where workspace_id = $1', [w.workspaceId])).map((r) => r.route)).toEqual(['draft']);
+  });
+
+  it('a draft the person wrote meanwhile is kept, and a note asks for a rewrite', async () => {
+    const thread = (await w.state()).threads[0]!;
+    await w.cmd({ type: 'makeDraft', id: thread.id });
+    await jobs().drain('draft.make');
+    await w.cmd({ type: 'updateDraft', id: thread.id, body: 'My own words.' });
+    await w.cmd({ type: 'makeDraft', id: thread.id });
+    await jobs().drain('draft.make');
+    expect((await w.state()).threads.find((t) => t.id === thread.id)!.draft!.body).toBe('My own words.');
+    model().script.push({ content: '{"body":"Tuesday works for me."}' });
+    await w.cmd({ type: 'makeDraft', id: thread.id, note: 'say Tuesday works' });
+    await jobs().drain('draft.make');
+    expect((await w.state()).threads.find((t) => t.id === thread.id)!.draft!.body).toBe('Tuesday works for me.');
+  });
+
+  it('an answer that is not a draft leaves the thread as it was', async () => {
+    const thread = (await w.state()).threads[0]!;
+    model().script.push({ content: 'I cannot help with that.' });
+    await w.cmd({ type: 'makeDraft', id: thread.id });
+    await jobs().drain('draft.make');
+    expect((await w.state()).threads.find((t) => t.id === thread.id)!.draft).toBeUndefined();
+  });
+});

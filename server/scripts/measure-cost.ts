@@ -15,6 +15,7 @@
  *
  * In a cloud session also set NODE_USE_ENV_PROXY=1; the proxy supplies the OpenRouter key.
  */
+import { draftReply } from '../src/agent/draft';
 import { ASK_SYSTEM } from '../src/agent/prompts';
 import { startRun } from '../src/agent/loop';
 import { rulesFor } from '../src/auth/roles';
@@ -142,8 +143,20 @@ async function main() {
   console.log('First sort by plain code (no model call):');
   for (const s of sorted) console.log(`  ${String(s.box).padEnd(13)} ${String(s.confidence).padEnd(7)} ${s.n}`);
 
-  /* Ask, on the real model */
+  /* The drafting route: one call per draft */
   if (WITH_MODEL) {
+    console.log('\n== Drafting route (real calls, one model call per draft) ==');
+    const people = await q<{ id: string; subject: string }>(`select id, data->>'subject' as subject from state_doc where workspace_id = $1 and slice = 'threads' and data->'suggestion'->>'box' = 'follow-up' order by ord limit 4`, [workspaceId]);
+    for (const [i, t] of people.entries()) {
+      const out = await draftReply(workspaceId, t.id, i === 3 ? { note: 'Say Tuesday at 2pm works, and ask them to bring the signed order form.' } : {});
+      console.log(`  [${out.ok ? 'ok' : 'failed: ' + out.reason}] ${t.subject.slice(0, 50).padEnd(50)} → ${(out.draft?.body ?? '').replace(/\s+/g, ' ').slice(0, 110)}`);
+    }
+    const d = (await q<{ calls: number; tin: number; tout: number; reasoning: number; cached: number; cost: number }>(`select count(*)::int as calls, avg(tokens_in)::int as tin, avg(tokens_out)::int as tout, avg(tokens_reasoning)::int as reasoning, avg(tokens_cached)::int as cached, avg(cost_usd)::float8 as cost from usage_event where workspace_id = $1 and route = 'draft'`, [workspaceId]))[0]!;
+    console.log(`  Average per draft over ${d.calls} drafts: input ${d.tin} (cached ${d.cached})  output ${d.tout} (reasoning ${d.reasoning})  cost ${money(d.cost)}`);
+  }
+
+  /* Ask, on the real model */
+  if (WITH_MODEL && !process.argv.includes('--only-draft')) {
     const ask = async (text: string) => {
       const t = Date.now();
       const out = await startRun(ctx, { kind: 'ask', attended: true, system: ASK_SYSTEM, messages: [{ role: 'user', content: `<context>\nNow: ${new Date().toISOString()}\nUser: Taylor Morgan\n</context>\n\n${text}` }], effort: 'low' });

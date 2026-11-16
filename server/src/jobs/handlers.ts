@@ -1,6 +1,7 @@
 import { config } from '../config';
 import { sysPool } from '../db/pool';
 import { dueEffects, executeEffect, onEffectApproved, onEffectSettled, reconcileEffect, staleExecuting } from '../gateway/gateway';
+import { draftReply } from '../agent/draft';
 import { abandonedRuns, resumeRun } from '../agent/loop';
 import { log } from '../lib/log';
 import { syncCalendar } from '../sync/calendar';
@@ -40,6 +41,11 @@ export function registerJobs() {
 
   defineJob('mail.ingest', async (d) => {
     await ingestThread(String(d.workspaceId), String(d.connectionId), String(d.threadKey), 'sync', d.seed as Record<string, unknown> | undefined);
+  });
+
+  defineJob('draft.make', async (d) => {
+    const out = await draftReply(String(d.workspaceId), String(d.threadId), { note: d.note as string | undefined, userName: d.userName as string | undefined });
+    if (!out.ok) log.warn('no draft written', { workspaceId: d.workspaceId, reason: out.reason });
   });
 
   defineJob('calendar.sync', async (d) => {

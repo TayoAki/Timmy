@@ -114,6 +114,11 @@ export function LiveStoreProvider({ profile, snapshot, children }: { profile: Li
         return;
       }
       if (action.type === 'reset' || action.type === 'simulateReply' || action.type === 'release') return;
+      // The demo writes a canned draft on the spot. Here the model writes it on the server, so nothing is shown until it has.
+      if (action.type === 'makeDraft') {
+        void send(commandId(), action);
+        return;
+      }
       const id = commandId();
       let next = reducer(shown.current, action);
       if (!next) return;

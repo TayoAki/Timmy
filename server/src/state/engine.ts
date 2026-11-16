@@ -21,6 +21,8 @@ import { withWorkspace, type Tx } from '../db/pool';
 import { cancelHeld, decide, GatewayError, propose, type EffectRow } from '../gateway/gateway';
 import type { Actor } from '../gateway/policy';
 import { config } from '../config';
+import { enqueueSoon } from '../jobs/jobs';
+import { modelReady } from '../providers/model';
 import { commitState, loadState, remember, type Commit, type Loaded, type PreImage } from './docs';
 
 enterLive();
@@ -175,7 +177,13 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
   if (!ctx.rules.work) return { state, reject: 'Your role can’t make changes in this workspace.' };
   if (a.type === 'undo') return undo(tx, loaded, ctx, a.command);
 
-  if (a.type === 'makeDraft') return { state, reject: 'Timmy’s drafting isn’t switched on for this workspace yet.' };
+  if (a.type === 'makeDraft') {
+    // Drafting is a model call, so it runs as a job; the draft arrives on the stream when it is written.
+    if (!modelReady()) return { state, reject: 'Timmy’s model isn’t configured on this server yet.' };
+    if (!state.threads.some((t) => t.id === a.id)) return { state, reject: 'That thread is no longer here.' };
+    enqueueSoon('draft.make', { workspaceId: ctx.workspaceId, threadId: a.id, note: a.note, userName: ctx.user.name }, { singletonKey: `draft:${ctx.workspaceId}:${a.id}` });
+    return { state, toast: { text: 'Timmy is writing a draft. Nothing is sent until you press Send.' } };
+  }
   if (a.type === 'conn') {
     if (CONN_POLICY_OPS.has(a.op.op)) {
       if (!ctx.rules.policy) return { state, reject: 'Only an owner or admin can change this.' };

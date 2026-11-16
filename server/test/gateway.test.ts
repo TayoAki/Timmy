@@ -408,7 +408,7 @@ describe('the demo’s pretend sends are refused on a real workspace', () => {
       const out = await w.cmd({ type: 'out', op });
       expect(out.ok, JSON.stringify(op)).toBe(false);
     }
-    for (const action of [{ type: 'simulateReply', id: 'x' }, { type: 'reset' }, { type: 'release', id: 'x', approve: true }, { type: 'conn', op: { op: 'connect', id: 'twilio' } }, { type: 'conn', op: { op: 'enrich', ids: ['lead-x'] } }, { type: 'makeDraft', id: 'x' }]) {
+    for (const action of [{ type: 'simulateReply', id: 'x' }, { type: 'reset' }, { type: 'release', id: 'x', approve: true }, { type: 'conn', op: { op: 'connect', id: 'twilio' } }, { type: 'conn', op: { op: 'enrich', ids: ['lead-x'] } }, { type: 'makeDraft', id: 'no-such-thread' }]) {
       expect((await w.cmd(action)).ok, JSON.stringify(action)).toBe(false);
     }
     const s = await w.state();
