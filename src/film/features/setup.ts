@@ -40,7 +40,7 @@ export default function setup(): Film {
       { t0: each + 0.6, t1: teach - 0.65, target: within(gmail, '.conn-dl') },
       { t0: edit + 0.5, t1: f.recap - 0.2, target: corrections },
     ],
-    scrolls: [{ t: crm - 0.4, d: 0.5, target: card(/^HubSpot$/), offset: 120 }],
+    scrolls: [],
     moves: [
       { t: mail + 0.6, d: 0.6, to: gmail, ox: 40, bow: 60 },
       { t: calendar - 0.1, d: 0.45, to: card(/^Google Calendar$/), ox: 40 },
