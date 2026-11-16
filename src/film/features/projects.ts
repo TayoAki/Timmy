@@ -32,7 +32,7 @@ export default function projects(): Film {
     cards: [],
     cams: [
       { t: 0, d: 0.01, target: 'full' },
-      { t: gathers - 0.3, d: 0.7, target: css('.main [role="tablist"]'), zoom: 1.9, dx: 140 },
+      { t: gathers - 0.3, d: 0.7, target: ptab(/^Mail/), zoom: 1.9, dx: 60, dy: 40 },
       { t: decisions - 0.2, d: 0.6, target: block(/^Latest decisions$/), zoom: 1.6 },
       { t: due - 0.25, d: 0.5, target: block(/^Due soon$/), zoom: 1.65 },
       { t: owes - 0.2, d: 0.5, target: block(/^Waiting on others$/), zoom: 1.65 },
