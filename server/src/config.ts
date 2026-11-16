@@ -71,6 +71,9 @@ export const config = {
   /** First pass of the backfill, done before the first brief. The rest follows in the background. */
   backfillFastDays: Number(env.TIMMY_BACKFILL_FAST_DAYS ?? 30),
   backfillFullDays: Number(env.TIMMY_BACKFILL_FULL_DAYS ?? 90),
+  /** After the first backfill pass, the model reads the newest threads people wrote: this many at most, this far back. */
+  firstReadThreads: Number(env.TIMMY_FIRST_READ_THREADS ?? 40),
+  firstReadDays: Number(env.TIMMY_FIRST_READ_DAYS ?? 7),
 };
 
 export const isProd = () => config.stage === 'production';

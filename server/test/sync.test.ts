@@ -106,6 +106,12 @@ describe('backfill', () => {
     expect(jobs().queue.filter((j) => j.name === 'mail.backfill').map((j) => j.data.days)).toEqual([30]);
     await jobs().drain('mail.backfill');
     expect((await rows('select kind, state from sync_cursor where connection_id = $1 order by kind', [box.connectionId]))).toEqual([{ kind: 'backfill-30', state: 'done' }, { kind: 'backfill-90', state: 'done' }]);
+    // After the first pass the model reads the newest threads people wrote (two here), and only those.
+    const reads = jobs().queue.filter((j) => j.name === 'mail.read');
+    expect(reads).toHaveLength(2);
+    await jobs().drain();
+    const s = await w.state();
+    expect(s.threads.filter((t) => t.suggestion?.confidence === 'medium')).toHaveLength(2);
   });
 });
 

@@ -38,7 +38,20 @@ export function registerJobs() {
     const p = await backfillMail(String(d.workspaceId), String(d.connectionId), { days, maxPages: 20 });
     if (!p.done) enqueueSoon('mail.backfill', d);
     // The first pass covers the recent weeks so the first brief is quick; the rest follows.
-    else if (days < config.backfillFullDays) enqueueSoon('mail.backfill', { ...d, days: config.backfillFullDays }, { startAfter: 60 });
+    else if (days < config.backfillFullDays) {
+      enqueueSoon('mail.backfill', { ...d, days: config.backfillFullDays }, { startAfter: 60 });
+      // So the first screen is useful: the model reads the newest threads people wrote. Older ones keep the plain-code sort.
+      if (modelReady() && p.pages > 0) {
+        const workspaceId = String(d.workspaceId);
+        const { state } = await readState(workspaceId);
+        const since = Date.now() - config.firstReadDays * 86400_000;
+        const newest = state.threads
+          .filter((t) => needsReading(t) && new Date(t.messages[t.messages.length - 1]?.at ?? 0).getTime() >= since)
+          .sort((a, b) => new Date(b.messages[b.messages.length - 1]!.at).getTime() - new Date(a.messages[a.messages.length - 1]!.at).getTime())
+          .slice(0, config.firstReadThreads);
+        for (const t of newest) enqueueSoon('mail.read', { workspaceId, threadId: t.id }, { singletonKey: `read:${workspaceId}:${t.id}` });
+      }
+    }
     log.info('backfill pass', { workspaceId: d.workspaceId, days, ...p });
   });
 
