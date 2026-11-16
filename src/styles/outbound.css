@@ -546,8 +546,7 @@ select.input.sm {
 .lp-quote {
   margin-top: 8px;
   padding: 8px 12px;
-  border-left: 3px solid var(--accent-line);
-  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  border-radius: var(--r-sm);
   background: var(--surface-2);
   font-size: 13px;
   line-height: 1.5;
@@ -1451,7 +1450,7 @@ select.input.sm {
   background: none;
 }
 .ubx-msg.form {
-  border-left: 3px solid var(--warn);
+  background: var(--warn-soft);
 }
 .ubx-msg.scheduled {
   opacity: 0.7;
@@ -1676,13 +1675,9 @@ select.input.sm {
   display: grid;
   gap: 10px;
   padding: 14px 16px;
-  border-left: 3px solid var(--ok);
-}
-.spd-card.soon {
-  border-left-color: var(--warn);
 }
 .spd-card.late {
-  border-left-color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
 }
 .spd-top {
   display: flex;
