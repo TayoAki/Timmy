@@ -17,3 +17,6 @@ server/dist
 .env.*
 e2e/undefined/
 __pycache__/
+
+# Working copies used by helpers during a session
+.claude/worktrees/
