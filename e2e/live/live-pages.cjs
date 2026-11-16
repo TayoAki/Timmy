@@ -95,12 +95,13 @@ run('live-pages', async (browser) => {
   const au = await drawn();
   ok(au.edges.length === 1 && au.nodes[1].config.title === 'Send {{company}} a welcome pack' || Object.values(au.nodes[1].config).includes('Send {{company}} a welcome pack'), 'with their connections and settings');
 
-  // A test run uses sample data and sends nothing; switching it on is refused, because nothing would run.
+  // A test run uses sample data and sends nothing. Switching this one on is refused: it starts from a form, and
+  // forms can't be connected yet. (An automation the engine can run is switched on in live-automations.)
   await page.locator('button', { hasText: 'Test run' }).click();
   await page.waitForFunction(() => document.querySelectorAll('.ae-log-list li:not(.ae-log-wait)').length === 2, null, { timeout: 8000 });
   ok(/Nothing is sent/.test(await page.locator('.ae-log').textContent()), 'a test run walks the steps with sample data and says nothing is sent');
   const on = await cmd({ type: 'ws', ops: [{ op: 'patch', col: 'automations', id: au.id, patch: { on: true } }] });
-  ok(on.body.ok === false && /isn’t switched on yet/.test(on.body.error) && (await drawn()).on === false, 'switching it on is refused with the reason, and it stays off');
+  ok(on.body.ok === false && /can’t be switched on yet\. “Form submitted” needs a lead form, and none can be connected yet\./.test(on.body.error) && (await drawn()).on === false, 'switching it on is refused with the reason (its trigger can’t run yet), and it stays off');
   const loop = await cmd({ type: 'ws', ops: [{ op: 'patch', col: 'automations', id: au.id, patch: { edges: [...au.edges, { id: 'back', from: au.nodes[1].id, to: au.nodes[0].id }] } }] });
   ok(loop.body.ok === false, 'a graph that loops back into its trigger is refused');
   await page.reload();
