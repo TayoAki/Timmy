@@ -9,3 +9,9 @@ dist
 .craft-build/
 
 e2e/shots/
+
+# Backend
+server/node_modules
+server/dist
+.env
+.env.*

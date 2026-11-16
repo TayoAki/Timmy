@@ -109,6 +109,8 @@ export interface Thread {
   history?: { at: Date; text: string }[];
   /** Urgency you set yourself; otherwise Timmy ranks the thread. */
   urgency?: 'urgent' | 'later';
+  /** Live mode: where this thread lives in the connected mailbox, and the names of the people in it. */
+  ext?: { threadKey?: string; connectionId?: string; people?: Record<string, { name: string; email: string }> };
 }
 
 export interface Doc {

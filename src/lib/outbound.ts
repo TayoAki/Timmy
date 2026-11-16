@@ -5,6 +5,7 @@
  * same run gives the seed history, today's queue and a launch projection.
  */
 import { NOW } from '../data/mock';
+import { isLive } from '../live/clock';
 import type { Campaign, Lead, Limits, Mailbox, Offer, OutMessage, ReplyLabel, SeqStep } from '../data/outbound-types';
 
 export const DAY = 86_400_000;
@@ -27,7 +28,7 @@ export const hash = (s: string) => {
 
 const BOOT = Date.now();
 /** The app's clock, moving forward in real time: for speed-to-lead timers. */
-export const liveNow = () => new Date(NOW.getTime() + (Date.now() - BOOT));
+export const liveNow = () => (isLive() ? new Date() : new Date(NOW.getTime() + (Date.now() - BOOT)));
 
 /* ───────────── Variables ───────────── */
 

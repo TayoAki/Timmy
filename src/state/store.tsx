@@ -12,6 +12,8 @@ import { connect, connectSeed, gate, type Connect, type ConnHelpers, type ConnOp
 import { outboundSeed } from '../data/outbound-mock';
 import type { Outbound } from '../data/outbound-types';
 import { DEFAULT_SCHEDULE, fmtClock, nextRun, scheduleRule, whenLabel, daysLabel, type Schedule } from './schedule';
+import type { PendingEffect } from '../live/types';
+import { isLive, liveSuffix } from '../live/clock';
 import { applyOps, decisionOps, firstName, midSentence, patch as wsPatch, personFromMail, personName, put, registerPerson, type WsOp, type WsOptions } from './ws';
 
 export type TodayTab = 'brief' | 'triage' | 'drafts';
@@ -154,6 +156,8 @@ export interface State {
   conn: Connect;
   /** Agencies: one outbound workspace per client. The active one is `out`; the rest wait here. */
   clients: { active: string; names: Record<string, string>; stash: Record<string, Outbound> };
+  /** Live mode: writes Timmy proposed that are waiting for someone's OK, or held for the undo window. Empty in the demo. */
+  pending: PendingEffect[];
 }
 
 export type Action =
@@ -205,7 +209,13 @@ export type Action =
   | { type: 'conn'; op: ConnOp }
   | { type: 'client'; to?: string; create?: string }
   /** The exec or RevOps answered a held action (simulated in this preview). */
-  | { type: 'release'; id: string; approve: boolean };
+  | { type: 'release'; id: string; approve: boolean }
+  /** Live mode: the server's confirmed state, laid over what the browser shows. */
+  | { type: 'server'; state: Partial<State>; toast?: { text: string; tone?: Toast['tone'] } }
+  /** Live mode: approve or turn down a write Timmy proposed. */
+  | { type: 'effect'; id: string; approve: boolean }
+  /** Live mode: take back the change a command made (and any send it was holding). */
+  | { type: 'undo'; command: string };
 
 /** Builds a workspace change: dispatch(ws([put('tasks', task)], { toast: 'Task added', undo: true })). */
 export const ws = (ops: WsOp[], options: WsOptions = {}): Action => ({ type: 'ws', ops, ...options });
@@ -221,7 +231,7 @@ export const boxTag = (box: Box) => {
   return `[${l.num}] ${l.name}`;
 };
 
-const initial: State = {
+export const initial: State = {
   threads: THREADS,
   deals: DEALS,
   activity: ACTIVITY,
@@ -248,6 +258,7 @@ const initial: State = {
   out: outboundSeed(),
   conn: connectSeed(),
   clients: { active: 'own', names: { own: 'Northpeak (your company)' }, stash: {} },
+  pending: [],
 };
 
 // Leads you've met or added to People show up by name on the calendar and in People.
@@ -292,10 +303,13 @@ const snap = (s: State): Snapshot => ({
 
 const fmtShortClock = (d: Date) => fmtTime(d).replace(':00', '');
 
+/** When a log line happened: the demo spaces them a minute apart from its fixed clock; a real workspace uses the time. */
+const stamp = () => (isLive() ? new Date() : new Date(NOW.getTime() + activitySeq * 60000));
+
 let recordSeq = 1;
 /** Adds a line to the Approvals history. */
 const recorded = (s: Pick<State, 'approvalLog'>, r: Omit<ApprovalRecord, 'id' | 'at'>): ApprovalRecord[] => [
-  { id: `ap-${recordSeq++}-${Date.now().toString(36)}`, at: new Date(NOW.getTime() + activitySeq * 60000), ...r },
+  { id: `ap-${recordSeq++}-${Date.now().toString(36)}${liveSuffix()}`, at: stamp(), ...r },
   ...s.approvalLog,
 ];
 
@@ -360,7 +374,7 @@ const patch = (threads: Thread[], id: string, fn: (t: Thread) => Thread) =>
   threads.map((t) => (t.id === id ? fn(t) : t));
 
 const logged = (s: State, text: string, kind: Activity['kind'], threadId?: string): Activity[] => [
-  { id: `live-${activitySeq++}`, at: new Date(NOW.getTime() + activitySeq * 60000), kind, text, threadId },
+  { id: isLive() ? `act-${Date.now().toString(36)}-${activitySeq++}${liveSuffix()}` : `live-${activitySeq++}`, at: stamp(), kind, text, threadId },
   ...s.activity,
 ];
 
@@ -387,7 +401,7 @@ const moveThread = (t: Thread, box: Box): Thread => {
   return next;
 };
 
-function reducer(s: State, a: Action): State {
+export function reducer(s: State, a: Action): State {
   // Some actions need someone else's OK first: CRM writes (RevOps), and in delegate mode the exec's calls.
   if (a.type === 'applyDeal' || a.type === 'editDeal' || a.type === 'sendDraft' || a.type === 'resolve') {
     const held = gate(s, a, connHelpers);
@@ -1036,6 +1050,16 @@ function reducer(s: State, a: Action): State {
       };
     }
 
+    case 'server':
+      return { ...s, ...a.state, toasts: a.toast ? withToast(s, a.toast.text, undefined, a.toast.tone) : s.toasts };
+
+    case 'effect':
+      // The server decides; meanwhile the card leaves the queue.
+      return { ...s, pending: s.pending.filter((e) => e.id !== a.id) };
+
+    case 'undo':
+      return s;
+
     case 'simulateReply': {
       const t = s.threads.find((x) => x.id === a.id);
       if (!t?.waiting) return s;
@@ -1069,7 +1093,8 @@ function reducer(s: State, a: Action): State {
   }
 }
 
-const Ctx = createContext<{ state: State; dispatch: Dispatch<Action> } | null>(null);
+export const StoreCtx = createContext<{ state: State; dispatch: Dispatch<Action> } | null>(null);
+const Ctx = StoreCtx;
 
 /* ───────────── Saved in this browser ───────────── */
 

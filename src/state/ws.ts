@@ -8,6 +8,7 @@
  *   dispatch(ws([remove('notes', id)]))
  */
 import { NOW, PEOPLE } from '../data/mock';
+import { liveSuffix } from '../live/clock';
 import type { Person } from '../data/types';
 import type { Col, Folder, ItemOf, Sheet, SheetColumn, WEvent, WS } from '../data/ws-types';
 import { FILING_FOLDER, SHARED_FOLDER } from '../data/ws-mock';
@@ -47,7 +48,7 @@ export const applyOps = (ws: WS, ops: WsOp[]): WS => {
 
 let seq = 0;
 /** Unique id for new items, e.g. uid('task') → "task-lq3x9a-1". */
-export const uid = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${++seq}`;
+export const uid = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${++seq}${liveSuffix()}`;
 
 /* ───────────── People ───────────── */
 
