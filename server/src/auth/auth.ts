@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { betterAuth } from 'better-auth';
+import { APIError } from 'better-auth/api';
 import { getMigrations } from 'better-auth/db/migration';
 import { magicLink, organization } from 'better-auth/plugins';
 import { createAccessControl } from 'better-auth/plugins/access';
@@ -36,6 +37,22 @@ const roles = {
   client: ac.newRole({ reports: ['read'] }),
 };
 
+const SIGNUP_CLOSED = 'Timmy is invite-only for now. Ask the person who runs your workspace to invite this address.';
+
+/**
+ * Whether a new account may be created for this address. When sign-up is
+ * invite-only, the address has to be on the operator's list or hold a pending
+ * invitation to a workspace.
+ */
+export async function maySignUp(email: string): Promise<boolean> {
+  if (config.signup === 'open') return true;
+  const address = email.trim().toLowerCase();
+  const domain = address.slice(address.lastIndexOf('@'));
+  if (config.signupAllow.includes(address) || config.signupAllow.includes(domain)) return true;
+  const { rows } = await authPool.query(`select 1 from invitation where lower(email) = $1 and status = 'pending' and "expiresAt" > now() limit 1`, [address]);
+  return rows.length > 0;
+}
+
 /** The signing secret comes from the environment, or is generated once and kept in the database. */
 async function authSecret(): Promise<string> {
   if (config.authSecret) return config.authSecret;
@@ -65,6 +82,19 @@ function build(secret: string) {
       },
     },
     session: { expiresIn: 60 * 60 * 24 * 30, updateAge: 60 * 60 * 24 },
+    // Railway's edge sets X-Real-IP to the caller's address. X-Forwarded-For can be sent by anyone, so it is not used:
+    // with it, one caller could dodge the sign-in limit, or everyone could share one counter and lock each other out.
+    advanced: { ipAddress: { ipAddressHeaders: ['x-real-ip'] } },
+    databaseHooks: {
+      user: {
+        create: {
+          // Every way an account comes to exist (password sign-up, a sign-in link for a new address) passes here.
+          before: async (user) => {
+            if (!(await maySignUp(user.email))) throw new APIError('FORBIDDEN', { message: SIGNUP_CLOSED });
+          },
+        },
+      },
+    },
     plugins: [
       magicLink({
         expiresIn: 600,
@@ -77,11 +107,16 @@ function build(secret: string) {
         roles,
         creatorRole: 'owner',
         allowUserToCreateOrganization: true,
+        // Each workspace has its own spending limit, so the number one account can create is bounded.
+        organizationLimit: config.workspacesPerAccount,
+        // Once Timmy's own mail is delivered, an invitation can only be accepted by someone who proved the address.
+        requireEmailVerificationOnInvitation: config.requireEmailVerification,
         schema: {
           organization: {
             additionalFields: {
               trade: { type: 'string', required: false, input: true },
-              parentId: { type: 'string', required: false, input: true },
+              // Set by the server when client workspaces arrive; never taken from the caller.
+              parentId: { type: 'string', required: false, input: false },
             },
           },
         },
@@ -96,15 +131,16 @@ function build(secret: string) {
           },
           beforeDeleteOrganization: async ({ organization: org }) => {
             await closeConnections(org.id, {}, 'system').catch((e) => log.error('could not close a deleted workspace’s connections', { error: (e as Error).message }));
-            await sysPool.query('update workspace set kill_switch = true where id = $1', [org.id]);
+            // Closed now; its data is removed by the purge job once the retention period has passed.
+            await sysPool.query('update workspace set kill_switch = true, deleted_at = now() where id = $1', [org.id]);
           },
           // Each workspace gets a settings row; its starting state is seeded the first time it loads.
           afterCreateOrganization: async ({ organization: org, user }) => {
-            const o = org as { id: string; name: string; trade?: string | null; parentId?: string | null };
+            const o = org as { id: string; name: string; trade?: string | null };
             await sysPool.query(
-              `insert into workspace (id, name, trade, parent_id, owner_name, owner_email)
-               values ($1, $2, $3, $4, $5, $6) on conflict (id) do nothing`,
-              [o.id, o.name, o.trade || 'other', o.parentId || null, user.name, user.email],
+              `insert into workspace (id, name, trade, owner_name, owner_email)
+               values ($1, $2, $3, $4, $5) on conflict (id) do nothing`,
+              [o.id, o.name, o.trade || 'other', user.name, user.email],
             );
           },
         },

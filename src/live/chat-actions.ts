@@ -11,7 +11,10 @@ type Loose = { type?: unknown; ops?: unknown; id?: unknown; approve?: unknown };
 export function safeChatAction(a: unknown): boolean {
   if (!a || typeof a !== 'object') return false;
   const x = a as Loose;
-  if (x.type === 'navigate' || x.type === 'openThread' || x.type === 'compose' || x.type === 'makeDraft') return true;
+  if (x.type === 'navigate' || x.type === 'openThread' || x.type === 'compose') return true;
+  // Starting a draft is allowed only in its plainest form. With a note it would replace a draft the person has
+  // already read, and the note (written by the model) would reach the drafting prompt as the person's own words.
+  if (x.type === 'makeDraft') return typeof x.id === 'string' && Object.keys(x).every((k) => k === 'type' || k === 'id');
   if (x.type === 'ws') {
     return Array.isArray(x.ops) && x.ops.length > 0 && x.ops.every((o) => !!o && typeof o === 'object' && (o as { op?: unknown }).op === 'put' && ['tasks', 'notes'].includes(String((o as { col?: unknown }).col)));
   }

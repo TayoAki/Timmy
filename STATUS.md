@@ -5,7 +5,7 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 
 ## Where things stand
 
-**Phase 0 (foundations) is built, deployed to staging and production, and tested on staging. It has been through an independent safety review, a code-standards review and a review against the brief; their findings are fixed or listed below as known debt. The one thing left for phase 0 is a run on a real Gmail account, which needs a person at Google's consent screen (see "Needs your attention").**
+**Phase 0 (foundations) is built, deployed to staging and production, and tested on staging. It has been through an independent safety review, a code-standards review, a review against the brief, and a security audit with Cloudflare's skill; their findings are fixed or listed below as known debt. The one thing left for phase 0 is a run on a real Gmail account, which needs a person at Google's consent screen (see "Needs your attention").**
 
 | Piece | State |
 | --- | --- |
@@ -61,9 +61,9 @@ Cost measurement: `server/scripts/measure-cost.ts` (the header says how to run i
 
 | Suite | Result |
 | --- | --- |
-| API unit and integration (`server/test`, 9 files) | 156 of 156 pass |
+| API unit and integration (`server/test`, 10 files) | 177 of 177 pass |
 | Demo-mode Playwright (`e2e/`, 12 suites, 348 checks) | 12 of 12 pass |
-| Live-mode Playwright (`e2e/live/`, 7 suites, 119 checks) | 7 of 7 pass |
+| Live-mode Playwright (`e2e/live/`, 7 suites, 124 checks) | 7 of 7 pass |
 | Live-mode Playwright against **staging** (Railway) | Last full pass was 6 of 6 (91 checks) on the commit before the code review. To be run again on this one once it has deployed. |
 | Demo suites against a deployed build of this branch | Not run: `web` deploys the older branch, and I won't change that service without your OK |
 | Real-provider smoke (real Gmail through Composio) | Not run: needs a test Gmail account connected by a person |
@@ -120,7 +120,30 @@ An independent reviewer read the gateway, row-level security, effect records, cr
 3. A sender's display name containing an address was taken as the sender. The sender is now the address in the angle brackets, and "sent by me" comes from the provider's Sent label.
 4. Smaller: connections end with their member or workspace; an open stream ends when the person is removed; one everyday mailbox per workspace and the approver sees which mailbox sends; an unconfirmed send is never called "not sent"; a delegate's send shows as sent once it goes out and cannot be sent twice; chat cannot replace a draft; only the person who started a connection can finish it; test hooks need a token on deployed servers and cannot start in production; decisions report what actually happened; role checks on three read routes.
 
-A second audit, using Cloudflare's security-audit skill, is running on the fixed code.
+## Security audit with Cloudflare's skill (Nov 16, 2026)
+
+A second, separate audit ran Cloudflare's `security-audit` skill in full-audit mode on the fixed code, with its own probe tests. It confirmed the earlier fixes that could be checked, found nothing that sends mail without approval, and reported 12 findings (4 medium, 7 low, 1 informational). Each has a test in `server/test/audit.test.ts` or the live suites. Its full report, the probes and their output are in the session's scratch folder and are not in the repo.
+
+| # | Finding | What changed |
+| --- | --- | --- |
+| 1 | An invitation link joined a workspace and switched to it just by being opened. Someone could invite your address to a look-alike workspace and get you to connect your mailbox there. | Opening the link now shows who invited you, to which workspace and in what role, and asks. "Not now" joins nothing. |
+| 2 | Until a mail provider exists nobody can prove they own an address, so someone could register yours first and plant a workspace. | **Production sign-up is now invite-only** (see "Needs your attention"). The full fix is email verification, which needs the mail provider. |
+| 3 | Anyone could sign up on production and spend on your model key: unlimited workspaces at $50 each, and a chat request could carry an enormous forged history. | Invite-only sign-up; 3 workspaces per account; one spending ceiling for the whole service ($500 a month by default, `TIMMY_SERVICE_SPEND_CEILING_USD`); the chat endpoint forwards at most 40 messages, 60,000 characters and 16 widgets. |
+| 4 | Leaving a workspace left the leaver's mailbox connected. | Leaving closes their connections, like being removed does. A job also closes any connection whose person is no longer a member. |
+| 5 | Two people connecting a mailbox at the same moment could both succeed. | Only the first to finish becomes the workspace's mailbox; a unique index in the database backs the check. |
+| 6 | Disconnecting a mailbox, or deleting a workspace, left all its synced mail in the database (the PRD promises deletion within 30 days). | Disconnecting takes that mailbox's mail off the screens and out of Ask at once and deletes the stored copy by a job. A deleted workspace is closed at once and all its rows are removed after 30 days. |
+| 7 | No limit on request size, including before the webhook's signature check. | 1 MB on API requests, 2 MB on the webhook, refused before anything is read. |
+| 8 | An assistant or member could add a rule, and writing rules go into every drafting prompt. | Rules and the schedule need the owner or an admin. |
+| 9 | A button written by the model could replace a draft you had already read, with its own note presented as yours. | A chat button may start a draft only when the thread has none, and can carry no note. |
+| 10 | Chat history stayed in the browser after sign-out, for whoever used it next. | It is kept per person and workspace and removed at sign-out. |
+| 11 | A flood of incoming mail could use up the whole monthly limit and silence Ask. | Reading mail on its own may use at most half of the limit (`TIMMY_UNATTENDED_SHARE`). |
+| 12 | A recorded command answer was returned before checking who asked. | Fixed with the code review: only the sender gets it. |
+
+Also changed from its notes: a From header's comment is no longer read as the sender; the sign-in limiter uses the address Railway's edge reports (`X-Real-IP`), which a caller cannot forge; responses carry nosniff, frame, referrer and transport-security headers; a deployed server's health check says only that it is up; one person can hold at most 12 streams open; only whoever connected an app, or an owner or admin, can disconnect it; old sign-in links and commands are cleaned up; the build has a `.dockerignore`.
+
+**A rule I changed because the audit raised it, for you to confirm or reverse:** an email leaves under the name of whoever connected the mailbox. A send from that mailbox by anyone else who is not an owner or admin now waits for the mailbox's owner, the same way a delegate's send waits for the exec. Before, any member could send from the workspace's mailbox on their own approval.
+
+Not done, by choice: a full content-security policy for scripts (the dictation model loads from a CDN, and the policy needs an inventory first); pinning the Docker base image by digest; rate limits on commands and chat beyond the cap on jobs at once; a narrower database role for the API process (it holds the owner's credentials); cleaning the document viewers' saved files at sign-out. The audit could not check four things from where it ran: stream load on the shared database pools, memory use on a very large mailbox, how long pg-boss keeps finished jobs, and where the prebuilt document-viewer binaries came from.
 
 ## Code review (Nov 16, 2026)
 
@@ -140,6 +163,7 @@ Test changes that came with this, so you can check them:
 - `server/test/gateway.test.ts` and `e2e/live/live-mail.cjs`: the "connect a mailbox first" message no longer mentions Outlook.
 - `e2e/live/live-settings.cjs`: the Auto-mode check is replaced by checks on the monthly limit, and a check that no approval mode is offered.
 - `e2e/live/live-mail.cjs`: Timmy's draft is now approved and sent from Approvals instead of discarded, so later counts of sent mail are one higher.
+- After the security audit: `server/test/gateway.test.ts` ("a member cannot approve another member's request") now expects the member's own request from the owner's mailbox to wait for the owner as well; `server/test/review.test.ts` (who may undo a held send) uses an admin as the sender for the same reason; `e2e/live/live-holds.cjs` accepts the invitation through the new confirmation screen instead of calling the API.
 
 ## Decisions made while building (the PRD is updated to match)
 
@@ -156,6 +180,8 @@ Test changes that came with this, so you can check them:
 
 ## Needs your attention
 
+- [ ] **Production sign-up is invite-only since the audit.** To create your own account on production, add your address to the `app` service's variables: `TIMMY_SIGNUP_ALLOW=you@example.com` (several addresses, or whole domains like `@example.com`, separated by commas). People you invite to a workspace can sign up without being on the list. `TIMMY_SIGNUP=open` opens it to everyone; I recommend leaving that until a mail provider is in place and sign-ups can verify their address. Staging stays open, which the test suites need.
+- [ ] **Confirm or reverse the mailbox rule** (see the audit section): a member's send from a mailbox someone else connected waits for that person.
 - [ ] **A test Gmail account** I may send from, and an address I may send to. Connecting it needs a person at Google's consent screen, so you press Connect once.
 - [ ] **Turn on backups** for the `pgvector` volume (Railway dashboard → the volume → Backups). There is no tool for it on my side.
 - [ ] **Rotate the keys pasted in chat** (two Composio keys, one OpenRouter key) once setup is done. They are not in the repo or in logs.

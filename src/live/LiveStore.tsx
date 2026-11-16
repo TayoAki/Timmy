@@ -6,6 +6,7 @@ import { ALL_LABELS, StoreCtx, reducer, type Action, type State } from '../state
 import { personFromMail, registerPerson } from '../state/ws';
 import { api, type Snapshot } from './api';
 import { blankState } from './blank';
+import { scopeConversations } from '../agent/conversations';
 import { enterLive } from './clock';
 import { applyPatches, fromWire, pickSlices, withSlices, type Patch } from './patches';
 import type { LiveProfile } from './types';
@@ -27,6 +28,7 @@ export function enterLiveWorld(profile: LiveProfile, me: Snapshot['me']) {
   PROJECTS.length = 0;
   ALL_LABELS.splice(0, ALL_LABELS.length, ...ALL_LABELS.filter((l) => /^(inbox|follow-up|waiting|read-through|archived)$/.test(l.id)));
   document.documentElement.dataset.live = '';
+  scopeConversations(profile.user.id, profile.workspace.id);
 }
 
 /** Names from the mailbox, so threads show "Dana Whitfield" and not an address. */

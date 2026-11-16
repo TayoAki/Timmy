@@ -1,9 +1,11 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
+import { secureHeaders } from 'hono/secure-headers';
 import { streamSSE } from 'hono/streaming';
 import { auth } from '../auth/auth';
-import { MODEL_ALLOWLIST, config, modelFor } from '../config';
+import { MODEL_ALLOWLIST, config, isLocal, modelFor } from '../config';
 import { sysPool, withWorkspace } from '../db/pool';
 import { audit } from '../gateway/gateway';
 import { enqueueSoon } from '../jobs/jobs';
@@ -12,10 +14,10 @@ import { log } from '../lib/log';
 import { composio, composioReady, fakeComposio } from '../providers/composio';
 import { modelReady } from '../providers/model';
 import { runCommand } from '../state/engine';
-import { stillAllowed, subscribe, type Subscriber } from '../state/hub';
+import { MAX_STREAMS_PER_PERSON, stillAllowed, streamsOf, subscribe, type Subscriber } from '../state/hub';
 import { rulesFor } from '../auth/roles';
 import { loadState } from '../state/docs';
-import { ConnectError, TOOLKITS, disconnect, finishConnect, startConnect } from '../sync/connect';
+import { ConnectError, TOOLKITS, closeConnections, disconnect, finishConnect, startConnect } from '../sync/connect';
 import { fromWire, pickSlices, toWire } from '../../../src/live/patches';
 import type { Action } from '../../../src/state/store';
 import { agentRoutes } from './agent';
@@ -34,7 +36,25 @@ export function buildApp(): Hono<Env> {
     return c.json({ error: 'Something went wrong on our side.' }, 500);
   });
 
-  app.get('/api/health', (c) => c.json({ ok: true, stage: config.stage, composio: composioReady(), model: modelReady(), fake: config.fakeProviders }));
+  // Browser protections on every response. The app opens its own document viewers in frames, so framing is allowed
+  // from this origin only. A full content-security policy for scripts is still to come (see STATUS.md).
+  app.use(
+    '*',
+    secureHeaders({
+      xFrameOptions: 'SAMEORIGIN',
+      contentSecurityPolicy: { frameAncestors: ["'self'"] },
+      referrerPolicy: 'strict-origin-when-cross-origin',
+      strictTransportSecurity: config.publicUrl.startsWith('https://') ? 'max-age=15552000; includeSubDomains' : false,
+      crossOriginEmbedderPolicy: false,
+    }),
+  );
+  // No request needs a large body. The check comes before anything reads it, including the webhook's signature check.
+  const tooLarge = (c: Context) => c.json({ error: 'That request is too large.' }, 413);
+  app.use('/api/hooks/*', bodyLimit({ maxSize: 2 * 1024 * 1024, onError: tooLarge }));
+  app.use('/api/*', bodyLimit({ maxSize: 1024 * 1024, onError: tooLarge }));
+
+  // What is configured is only told on a developer's own machine; a deployed server just says it is up.
+  app.get('/api/health', (c) => c.json(isLocal() ? { ok: true, stage: config.stage, composio: composioReady(), model: modelReady(), fake: config.fakeProviders } : { ok: true }));
 
   // Webhooks are signed by their sender; they carry no session and skip the same-origin check.
   app.post('/api/hooks/composio', async (c) => {
@@ -64,7 +84,14 @@ export function buildApp(): Hono<Env> {
   });
 
   app.use('/api/*', sameOrigin);
-  app.all('/api/auth/*', (c) => auth().handler(c.req.raw));
+  app.all('/api/auth/*', async (c) => {
+    // Leaving a workspace has no hook of its own in the auth library, so it is noticed here: whoever leaves
+    // takes their connected accounts with them, the same as when they are removed.
+    const leaving = c.req.method === 'POST' && c.req.path === '/api/auth/organization/leave' ? await leaver(c.req.raw.clone()) : null;
+    const res = await auth().handler(c.req.raw);
+    if (leaving && res.ok) await closeConnections(leaving.workspaceId, { userId: leaving.userId }, leaving.userId).catch((e) => log.error('could not close a leaving member’s connections', { error: (e as Error).message }));
+    return res;
+  });
 
   /* ───────────── Who am I ───────────── */
 
@@ -100,6 +127,7 @@ export function buildApp(): Hono<Env> {
   app.get('/api/v1/stream', requireWorkspace, requireRead, (c) => {
     const ctx = ctxOf(c);
     const rev = Number(c.req.query('rev') ?? 0);
+    if (streamsOf(ctx.workspaceId, ctx.user.id) >= MAX_STREAMS_PER_PERSON) return c.json({ error: 'Timmy is open in too many tabs. Close some and reload.' }, 429);
     return streamSSE(c, async (stream) => {
       let open = true;
       const send = (event: string, data: unknown) => {
@@ -111,7 +139,7 @@ export function buildApp(): Hono<Env> {
         const s = await sessionOf(headers);
         return !!s && s.user.id === ctx.user.id && rulesFor(await membership(ctx.user.id, ctx.workspaceId)).read;
       };
-      const sub: Subscriber = { workspaceId: ctx.workspaceId, rev, send, allowed, checkedAt: Date.now(), close: () => (open = false) };
+      const sub: Subscriber = { workspaceId: ctx.workspaceId, userId: ctx.user.id, rev, send, allowed, checkedAt: Date.now(), close: () => (open = false) };
       const off = subscribe(sub);
       stream.onAbort(() => {
         open = false;
@@ -179,6 +207,8 @@ export function buildApp(): Hono<Env> {
     const ctx = ctxOf(c);
     const conn = await finishConnect(ctx, String(c.req.query('c') ?? ''));
     if (!conn || conn.status !== 'active') return c.redirect(`/?connect=failed${conn ? `&app=${conn.app_id}` : ''}`);
+    // The first sync is queued once, when the connection has just become active; opening the link again queues nothing.
+    if (!conn.justConnected) return c.redirect(`/?connect=ok&app=${conn.app_id}`);
     if (TOOLKITS[conn.app_id]?.kind === 'mail') enqueueSoon('mail.backfill', { workspaceId: ctx.workspaceId, connectionId: conn.id, days: config.backfillFastDays }, { singletonKey: `bf:${conn.id}` });
     if (TOOLKITS[conn.app_id]?.kind === 'calendar') enqueueSoon('calendar.sync', { workspaceId: ctx.workspaceId, connectionId: conn.id }, { singletonKey: `cal:${conn.id}` });
     return c.redirect(`/?connect=ok&app=${conn.app_id}`);
@@ -240,8 +270,14 @@ export function buildApp(): Hono<Env> {
   const dist = config.webDist ? resolve(config.webDist) : '';
   const TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.woff2': 'font/woff2', '.wasm': 'application/wasm', '.wasmz': 'application/octet-stream', '.pdf': 'application/pdf', '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8', '.map': 'application/json' };
   app.get('*', (c) => {
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(new URL(c.req.url).pathname);
+    } catch {
+      return c.text('Bad request', 400);
+    }
     if (!dist || !existsSync(dist)) return c.text('Timmy API', 200);
-    const path = normalize(decodeURIComponent(new URL(c.req.url).pathname)).replace(/^(\.\.[/\\])+/, '');
+    const path = normalize(decoded).replace(/^(\.\.[/\\])+/, '');
     let file = join(dist, path);
     if (!file.startsWith(dist) || !existsSync(file) || statSync(file).isDirectory()) file = join(dist, 'index.html');
     const type = TYPES[extname(file)] ?? 'application/octet-stream';
@@ -250,6 +286,13 @@ export function buildApp(): Hono<Env> {
   });
 
   return app;
+}
+
+/** Who is leaving which workspace, read from a copy of the request before the auth library consumes it. */
+async function leaver(req: Request): Promise<{ userId: string; workspaceId: string } | null> {
+  const s = await sessionOf(req.headers).catch(() => null);
+  const body = (await req.json().catch(() => null)) as { organizationId?: unknown } | null;
+  return s && typeof body?.organizationId === 'string' ? { userId: s.user.id, workspaceId: body.organizationId } : null;
 }
 
 async function storedSecret(name: string): Promise<string> {

@@ -1,0 +1,18 @@
+# Keep the build context to what the image is built from: no history, no local installs, no secrets.
+.git
+.claude
+node_modules
+server/node_modules
+server/dist
+server/test
+server/scripts
+dist
+docs
+e2e
+scripts
+tests.json
+*.md
+.env
+.env.*
+**/.env
+**/.env.*

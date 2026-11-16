@@ -374,7 +374,9 @@ describe('15. smaller gaps', () => {
   });
 
   it('a member cannot undo another person’s action; the owner can', async () => {
-    const member = await addMember(w.workspaceId, 'member', 'M One');
+    // The sender is an admin: since the security audit a plain member's send from the owner's mailbox waits for the
+    // owner, and this test is about who may undo a send that is already approved and holding.
+    const member = await addMember(w.workspaceId, 'admin', 'A One');
     const other = await addMember(w.workspaceId, 'member', 'M Two');
     const made = await member.cmd({ type: 'sendNew', draft: { to: ['mail:dana@client.test'], subject: 'Theirs', body: 'b' } });
     expect((await other.cmd({ type: 'undo', command: made.id })).error).toMatch(/isn’t yours to undo/);

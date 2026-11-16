@@ -168,20 +168,36 @@ export async function propose(tx: Tx, loaded: Loaded, state: State, actor: Actor
 
   // Who has to say yes?
   let route: Route = 'user';
+  let onBehalfOf = p.onBehalfOf ?? null;
   let approval: { by: string; via: 'click' | 'rule' | 'auto'; policyId?: string } | null = null;
   const rule = await matchingRule(tx, workspaceId, kind, p.meta);
+
+  /** Where this goes for its OK when `actor` asks, and whether their own say is enough. */
+  const routeFor = async (who: Actor) => {
+    const a = approverFor(kind, who, { approver: state.conn.crm.approver });
+    // An email leaves under the name of whoever connected the mailbox. Someone else's send from it is theirs to
+    // approve (or an owner's or admin's), the same as a delegate's.
+    if (a.self && k.domain === 'mail' && k.outbound && !who.rules.policy && typeof p.payload.connectionId === 'string') {
+      const owner = (await tx.query('select user_id from connection where id = $1 and workspace_id = $2', [p.payload.connectionId, workspaceId])).rows[0]?.user_id as string | undefined;
+      if (owner && owner !== who.userId) {
+        onBehalfOf = onBehalfOf ?? owner;
+        return { route: 'exec' as const, self: false };
+      }
+    }
+    return a;
+  };
 
   if (p.source === 'user') {
     // A person pressed the button on the exact preview. That is the approval, if it is theirs to give.
     if (!actor) return refuse('A person has to press Send.');
-    const a = approverFor(kind, actor, { approver: state.conn.crm.approver });
+    const a = await routeFor(actor);
     route = a.route;
     if (a.self) approval = { by: actor.userId, via: 'click' };
   } else if (rule) {
     // A rule a person wrote covers this. It is the only way an unattended run sends.
     approval = { by: `rule:${rule.id}`, via: 'rule', policyId: rule.id };
   } else if (p.source === 'agent' && actor) {
-    const a = approverFor(kind, actor, { approver: state.conn.crm.approver });
+    const a = await routeFor(actor);
     route = a.route;
     const autoAllowed = loaded.workspace.approval_mode === 'auto' && k.autoEligible && !reachesSomeoneElse(kind, p.payload) && a.self;
     if (autoAllowed && p.auto?.verdict === 'approve') approval = { by: 'auto', via: 'auto' };
@@ -210,7 +226,7 @@ export async function propose(tx: Tx, loaded: Loaded, state: State, actor: Actor
       p.runId ?? null,
       p.commandId ?? null,
       who,
-      p.onBehalfOf ?? null,
+      onBehalfOf,
       route,
       approval?.by ?? null,
       approval?.via ?? null,
@@ -220,10 +236,10 @@ export async function propose(tx: Tx, loaded: Loaded, state: State, actor: Actor
     ],
   );
   const effect = rows[0] as EffectRow;
-  await audit(tx, workspaceId, { actor: who, onBehalfOf: p.onBehalfOf, action: 'effect.proposed', effectId: id, runId: p.runId, detail: { kind, target: p.target, source: p.source, route } });
+  await audit(tx, workspaceId, { actor: who, onBehalfOf, action: 'effect.proposed', effectId: id, runId: p.runId, detail: { kind, target: p.target, source: p.source, route } });
   if (approval) {
     await tx.query('insert into approval (workspace_id, effect_id, decision, decided_by, via, note) values ($1, $2, $3, $4, $5, $6)', [workspaceId, id, 'approve', approval.by, approval.via, p.auto?.reason ?? null]);
-    await audit(tx, workspaceId, { actor: approval.by, onBehalfOf: p.onBehalfOf, action: 'effect.approved', effectId: id, runId: p.runId, detail: { via: approval.via, holdUntil } });
+    await audit(tx, workspaceId, { actor: approval.by, onBehalfOf, action: 'effect.approved', effectId: id, runId: p.runId, detail: { via: approval.via, holdUntil } });
     approvedHook(effect);
   }
   return { effect, outcome: approval ? 'approved' : 'waiting', state: withPending(state, effect) };

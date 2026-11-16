@@ -31,7 +31,13 @@ const ADDRESS = /[^\s<>,;"']+@[^\s<>,;"']+\.[a-z]{2,}/gi;
 export const addresses = (v: unknown): string[] => (Array.isArray(v) ? v.join(', ') : String(v ?? '')).match(ADDRESS)?.map((a) => a.toLowerCase()) ?? [];
 /** "Dana Whitfield <dana@acme.com>" → { name: "Dana Whitfield", email: "dana@acme.com" } */
 export function parseSender(v: unknown): { name: string; email: string } {
-  const s = String(v ?? '');
+  // A From header may carry comments in parentheses, and a comment can hold anything, including something shaped
+  // like an address in angle brackets: mallory@evil.test (Pat <ceo@corp.test>). Comments are dropped first.
+  let s = String(v ?? '');
+  for (let before = ''; before !== s; ) {
+    before = s;
+    s = s.replace(/\([^()]*\)/g, ' ');
+  }
   // The address is what sits in the last <…>. The display name is free text the sender chose
   // and may itself look like an address ("ceo@corp.com" <mallory@evil.test>), so it is never used as one.
   const angle = [...s.matchAll(/<([^<>]*)>/g)].pop()?.[1];

@@ -4,7 +4,8 @@
   "safetyProperties": {
     "no outside write without an approved effect record or a rule": [
       "server/test/gateway.test.ts",
-      "server/test/agent.test.ts"
+      "server/test/agent.test.ts",
+      "server/test/audit.test.ts"
     ],
     "no action runs twice": [
       "server/test/gateway.test.ts",
@@ -12,7 +13,8 @@
     ],
     "no cross-workspace reads": [
       "server/test/isolation.test.ts",
-      "server/test/agent.test.ts"
+      "server/test/agent.test.ts",
+      "server/test/audit.test.ts"
     ],
     "no real credential inside a prompt, the sandbox or logs": [
       "server/test/unit.test.ts",
@@ -88,6 +90,13 @@
       "status": "pass"
     },
     {
+      "id": "api-audit",
+      "file": "server/test/audit.test.ts",
+      "covers": "one test per finding of the security audit: invite-only sign-up, workspaces per account, bounded chat input, the service-wide and unattended spending limits, leaving a workspace, two connects at once, deletion on disconnect and on workspace delete, request size limits, who may change rules, chat buttons and drafts, sender parsing, whose mailbox a send leaves from, browser headers, stream limit",
+      "tests": 21,
+      "status": "pass"
+    },
+    {
       "id": "demo-e2e",
       "file": "e2e/run-all.sh",
       "covers": "the 12 demo-mode Playwright suites (348 checks)",
@@ -111,9 +120,9 @@
     {
       "id": "live-ask",
       "file": "e2e/live/live-ask.cjs",
-      "covers": "Ask over mail; a send proposed in chat needs the Send button",
+      "covers": "Ask over mail; a send proposed in chat needs the Send button; chat history is kept per person and removed at sign-out",
       "status": "pass",
-      "tests": 11
+      "tests": 13
     },
     {
       "id": "live-model",
@@ -132,9 +141,9 @@
     {
       "id": "live-holds",
       "file": "e2e/live/live-holds.cjs",
-      "covers": "a delegate's send held for the exec, in two browsers, with invitations. A CRM change held for RevOps is covered in server/test/gateway.test.ts until a CRM can be connected",
+      "covers": "an invitation link asks before joining and tells an outsider nothing; a delegate's send held for the exec, in two browsers. A CRM change held for RevOps is covered in server/test/gateway.test.ts until a CRM can be connected",
       "status": "pass",
-      "tests": 14
+      "tests": 17
     },
     {
       "id": "live-coldmail",

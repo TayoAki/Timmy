@@ -351,10 +351,13 @@ describe('who may approve', () => {
       const r = await propose(tx, l, l.state, actorOf(m1, 'member'), { ...proposal('agent-m1'), source: 'agent' });
       return { state: r.state, result: r };
     });
-    for (const other of [m2, revops]) expect((await other.cmd({ type: 'effect', id: p.effect!.id, approve: true })).ok).toBe(false);
+    // The mailbox is the owner's. Since the security audit, a send from it by anyone else is the owner's to approve,
+    // so the member who asked can't approve it either (see audit.test.ts for a mailbox the member connected).
+    expect(p.effect).toMatchObject({ approver_route: 'exec', on_behalf_of: w.userId });
+    for (const other of [m1, m2, revops]) expect((await other.cmd({ type: 'effect', id: p.effect!.id, approve: true })).ok).toBe(false);
     await releaseHolds(w);
     expect(sent()).toHaveLength(0);
-    expect((await m1.cmd({ type: 'effect', id: p.effect!.id, approve: true })).ok).toBe(true);
+    expect((await w.cmd({ type: 'effect', id: p.effect!.id, approve: true })).ok).toBe(true);
     await releaseHolds(w);
     expect(sent()).toHaveLength(1);
   });

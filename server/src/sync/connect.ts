@@ -71,7 +71,7 @@ export async function startConnect(ctx: Ctx, appId: string): Promise<{ redirectU
  * account is really active is asked of Composio; the redirect's own query
  * string is not trusted.
  */
-export async function finishConnect(ctx: Ctx, connectionId: string): Promise<ConnectionRow | null> {
+export async function finishConnect(ctx: Ctx, connectionId: string): Promise<(ConnectionRow & { justConnected?: boolean }) | null> {
   const conn = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => ((await tx.query('select * from connection where id = $1 and workspace_id = $2', [connectionId, ctx.workspaceId])).rows[0] as ConnectionRow | undefined) ?? null);
   if (!conn || !conn.connected_account_id) return null;
   if (conn.status === 'active') return conn;
@@ -90,8 +90,25 @@ export async function finishConnect(ctx: Ctx, connectionId: string): Promise<Con
     if (over) await withWorkspace({ workspaceId: ctx.workspaceId }, (tx) => tx.query(`update connection set status = 'failed', updated_at = now() where id = $1 and status = 'pending'`, [connectionId]));
     return { ...conn, status: over ? 'failed' : 'pending' };
   }
-  const won = await withWorkspace({ workspaceId: ctx.workspaceId }, (tx) => tx.query(`update connection set status = 'active', updated_at = now() where id = $1 and status = 'pending'`, [connectionId]));
-  if (!won.rowCount) return { ...conn, status: 'failed' };
+  const app = TOOLKITS[conn.app_id]!;
+  // Two people can each start connecting a mailbox before either finishes. Only the first to finish becomes the
+  // workspace's mailbox: the check is part of the same statement that activates it, and a unique index backs it.
+  const won = await withWorkspace({ workspaceId: ctx.workspaceId, lock: true }, (tx) =>
+    tx
+      .query(
+        `update connection set status = 'active', updated_at = now() where id = $1 and status = 'pending'
+           and ($2::boolean is false or not exists (select 1 from connection o where o.workspace_id = connection.workspace_id and o.status = 'active' and o.app_id = any($3::text[]) and o.id <> connection.id))`,
+        [connectionId, app.kind === 'mail', MAIL_APPS],
+      )
+      .then((r) => r.rowCount ?? 0)
+      .catch((e: { code?: string }) => (e.code === '23505' ? 0 : Promise.reject(e))),
+  );
+  if (!won) {
+    // Whatever the reason it lost, this account is not kept: it is marked failed here and removed at the provider.
+    await withWorkspace({ workspaceId: ctx.workspaceId }, (tx) => tx.query(`update connection set status = 'failed', updated_at = now() where id = $1 and status = 'pending'`, [connectionId]));
+    enqueueSoon('connection.revoke', { connectedAccountId: conn.connected_account_id, triggers: [] });
+    return { ...conn, status: 'failed' };
+  }
 
   let label = acct.label ?? null;
   if (conn.toolkit === 'gmail') {
@@ -99,7 +116,6 @@ export async function finishConnect(ctx: Ctx, connectionId: string): Promise<Con
     const data = (profile?.data.response_data ?? profile?.data ?? {}) as { emailAddress?: string };
     label = data.emailAddress ?? label;
   }
-  const app = TOOLKITS[conn.app_id]!;
   const triggers: string[] = [];
   for (const t of app.triggers) {
     try {
@@ -123,7 +139,7 @@ export async function finishConnect(ctx: Ctx, connectionId: string): Promise<Con
   if (app.kind === 'mail' && label) {
     await withWorkspace({ workspaceId: ctx.workspaceId }, (tx) => tx.query('update workspace set owner_email = $2 where id = $1', [ctx.workspaceId, label]));
   }
-  return { ...conn, status: 'active', account_label: label };
+  return { ...conn, status: 'active', account_label: label, justConnected: true };
 }
 
 /**
@@ -141,19 +157,51 @@ export async function closeConnections(workspaceId: string, filter: { appId?: st
       [workspaceId, filter.appId ?? null, filter.userId ?? null],
     );
     const list = rows as { id: string; app_id: string; connected_account_id: string | null }[];
-    if (!list.length) return { result: [] as { account: string | null; triggers: string[] }[] };
-    const out: { account: string | null; triggers: string[] }[] = [];
+    if (!list.length) return { result: [] as { id: string; account: string | null; triggers: string[] }[] };
+    const out: { id: string; account: string | null; triggers: string[] }[] = [];
     for (const c of list) {
       const triggers = (await tx.query('delete from trigger_instance where connection_id = $1 returning id', [c.id])).rows.map((r) => r.id as string);
-      out.push({ account: c.connected_account_id, triggers });
+      out.push({ id: c.id, account: c.connected_account_id, triggers });
       await audit(tx, workspaceId, { actor, action: 'connection.removed', detail: { app: c.app_id, connectionId: c.id } });
     }
     const apps = { ...loaded.state.conn.apps };
     for (const c of list) apps[c.app_id] = { connected: false };
-    return { state: { ...loaded.state, conn: { ...loaded.state.conn, apps } }, result: out };
+    // What came from a disconnected account leaves the screens with it: its mail threads and its calendar events.
+    const gone = new Set(list.map((c) => c.id));
+    const eventPrefixes = list.map((c) => `gcal-${c.id.slice(-6)}-`);
+    const threads = loaded.state.threads.filter((t) => !t.ext?.connectionId || !gone.has(t.ext.connectionId));
+    const events = Object.fromEntries(Object.entries(loaded.state.ws.events).filter(([id]) => !eventPrefixes.some((p) => id.startsWith(p))));
+    return { state: { ...loaded.state, threads, ws: { ...loaded.state.ws, events }, conn: { ...loaded.state.conn, apps } }, result: out };
   });
-  for (const c of closed) enqueueSoon('connection.revoke', { connectedAccountId: c.account, triggers: c.triggers });
+  for (const c of closed) {
+    enqueueSoon('connection.revoke', { connectedAccountId: c.account, triggers: c.triggers });
+    // The stored copy of its mail and events is deleted by a job, so a large mailbox doesn't hold the request.
+    enqueueSoon('connection.purge', { workspaceId, connectionId: c.id }, { singletonKey: `purge:${c.id}` });
+  }
   return closed.length;
+}
+
+/**
+ * Deletes everything synced through a connection that is no longer in use: messages, their bodies, events and
+ * sync positions. Runs in batches and returns how many items went. A connection that is active is never touched.
+ */
+export async function purgeConnection(workspaceId: string, connectionId: string, batch = 2000): Promise<number> {
+  let total = 0;
+  for (;;) {
+    const n = await withWorkspace({ workspaceId }, async (tx) => {
+      const { rowCount } = await tx.query(
+        `delete from item where id in (
+           select i.id from item i join connection c on c.id = i.connection_id
+           where i.workspace_id = $1 and i.connection_id = $2 and c.status <> 'active' limit $3)`,
+        [workspaceId, connectionId, batch],
+      );
+      return rowCount ?? 0;
+    });
+    total += n;
+    if (n < batch) break;
+  }
+  await withWorkspace({ workspaceId }, (tx) => tx.query(`delete from sync_cursor where connection_id = $1 and exists (select 1 from connection c where c.id = $1 and c.status <> 'active')`, [connectionId]));
+  return total;
 }
 
 /** Removes an account and its triggers at the provider. Throws when the provider refuses, so the job is retried. */
@@ -164,5 +212,24 @@ export async function revokeAtProvider(connectedAccountId: string | null, trigge
 
 export async function disconnect(ctx: Ctx, appId: string): Promise<void> {
   if (!ctx.rules.connect) throw new ConnectError('Your role can’t disconnect apps in this workspace.', 403);
-  await closeConnections(ctx.workspaceId, { appId }, ctx.user.id);
+  // An owner or admin may disconnect anything; everyone else only what they connected themselves.
+  const closed = await closeConnections(ctx.workspaceId, { appId, ...(ctx.rules.policy ? {} : { userId: ctx.user.id }) }, ctx.user.id);
+  if (!closed && !ctx.rules.policy) {
+    const others = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => (await tx.query(`select 1 from connection where workspace_id = $1 and app_id = $2 and status in ('active', 'pending') limit 1`, [ctx.workspaceId, appId])).rows.length);
+    if (others) throw new ConnectError('Someone else connected this. They, or an owner or admin, can disconnect it.', 403);
+  }
+}
+
+/**
+ * Connections whose person is no longer in the workspace. Leaving and being removed both close them at once;
+ * this catches any other way a membership can end. Returns how many were closed.
+ */
+export async function closeOrphanedConnections(sys: { query: (text: string) => Promise<{ rows: Record<string, unknown>[] }> }): Promise<number> {
+  const { rows } = await sys.query(
+    `select distinct c.workspace_id, c.user_id from connection c
+     where c.status in ('active', 'pending') and not exists (select 1 from auth.member m where m."organizationId" = c.workspace_id and m."userId" = c.user_id)`,
+  );
+  let closed = 0;
+  for (const r of rows) closed += await closeConnections(r.workspace_id as string, { userId: r.user_id as string }, 'system');
+  return closed;
 }

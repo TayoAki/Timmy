@@ -22,9 +22,26 @@ run('live-holds', async (browser) => {
   await ea.page.getByLabel('Password').fill('correct-horse-battery-9');
   await ea.page.getByRole('button', { name: 'Create account' }).click();
   await ea.page.getByRole('heading', { name: 'Name your workspace' }).waitFor();
-  const accepted = await api(ea.page, 'POST', '/api/auth/organization/accept-invitation', { invitationId: invite.body.id });
-  ok(accepted.status === 200, `the assistant can accept the invitation (${accepted.status})`);
-  await ea.page.goto(BASE);
+
+  // Opening the invitation link joins nothing by itself: it says who is inviting them to what, and asks.
+  await ea.page.goto(`${BASE}?invite=${invite.body.id}`);
+  await ea.page.getByRole('heading', { name: `Join ${who.company}?` }).waitFor();
+  const asked = await ea.page.locator('.live-card').innerText();
+  ok(new RegExp(who.email).test(asked) && /as an assistant/.test(asked), 'the invitation link shows who invited them, to which workspace, and in what role');
+  ok((await api(ea.page, 'GET', '/api/v1/me')).body.workspaces.length === 0, 'opening the link did not join the workspace');
+  await ea.page.getByRole('button', { name: 'Not now' }).click();
+  await ea.page.getByRole('heading', { name: 'Name your workspace' }).waitFor();
+  ok((await api(ea.page, 'GET', '/api/v1/me')).body.workspaces.length === 0, 'saying “Not now” joins nothing');
+  // Someone else's invitation tells them nothing and joins nothing.
+  const outsider = await open(browser);
+  await signUp(outsider.page, { name: 'Olive Outsider' });
+  await outsider.page.goto(`${BASE}?invite=${invite.body.id}`);
+  await outsider.page.getByRole('heading', { name: 'This invitation can’t be used' }).waitFor();
+  ok(!new RegExp(who.company).test(await outsider.page.locator('.live-card').innerText()), 'an invitation for another address reveals nothing and joins nothing');
+  await outsider.context.close();
+
+  await ea.page.goto(`${BASE}?invite=${invite.body.id}`);
+  await ea.page.getByRole('button', { name: `Join ${who.company}` }).click();
   await ea.page.locator('.main').waitFor();
   const me = (await api(ea.page, 'GET', '/api/v1/me')).body;
   ok(me.active.role === 'assistant' && me.active.name === who.company, 'the assistant lands in the exec’s workspace with the assistant role');

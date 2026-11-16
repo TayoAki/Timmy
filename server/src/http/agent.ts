@@ -51,17 +51,42 @@ export function sanitizeDisplayCall(call: ToolCall): ToolCall {
   }
 }
 
-/** The browser sends the whole conversation each time; this is it in the model's terms. */
-function history(messages: AgUiMessage[]): ChatMessage[] {
+/**
+ * The browser sends the conversation and its widget list each time, and the server pays for every character of
+ * them. So each is bounded here: how many messages, how long each may be, how much in total, and how many
+ * widgets of what size. A real conversation in the app stays far inside these.
+ */
+const LIMITS = { messages: 40, perMessage: 8000, total: 60_000, toolCalls: 8, tools: 16, toolText: 3000 };
+
+/** The conversation in the model's terms, newest kept when it has to be cut. */
+export function history(messages: AgUiMessage[]): ChatMessage[] {
   const out: ChatMessage[] = [];
-  for (const m of messages.slice(-40)) {
-    if (m.role === 'user') out.push({ role: 'user', content: text(m.content).slice(0, 8000) });
-    else if (m.role === 'assistant') out.push({ role: 'assistant', content: text(m.content), toolCalls: m.toolCalls?.map((t) => ({ id: t.id, name: t.function.name, arguments: t.function.arguments })) });
-    else if (m.role === 'tool' && m.toolCallId) out.push({ role: 'tool', toolCallId: m.toolCallId, content: text(m.content) });
+  const cut = (v: unknown) => text(v).slice(0, LIMITS.perMessage);
+  for (const m of messages.slice(-LIMITS.messages)) {
+    if (m.role === 'user') out.push({ role: 'user', content: cut(m.content) });
+    else if (m.role === 'assistant')
+      out.push({ role: 'assistant', content: cut(m.content), toolCalls: (Array.isArray(m.toolCalls) ? m.toolCalls : []).slice(0, LIMITS.toolCalls).map((t) => ({ id: String(t.id).slice(0, 80), name: String(t.function?.name).slice(0, 80), arguments: String(t.function?.arguments ?? '').slice(0, LIMITS.perMessage) })) });
+    else if (m.role === 'tool' && m.toolCallId) out.push({ role: 'tool', toolCallId: String(m.toolCallId).slice(0, 80), content: cut(m.content) });
   }
-  // A tool result is only valid right after the call it answers; drop any that lost theirs to the cut above.
+  // Oldest messages go first when the whole is too long; the question being asked is always kept.
+  const size = (m: ChatMessage) => m.content.length + (m.toolCalls ?? []).reduce((n, t) => n + t.arguments.length, 0);
+  let total = out.reduce((n, m) => n + size(m), 0);
+  while (out.length > 1 && total > LIMITS.total) total -= size(out.shift()!);
+  // A tool result is only valid right after the call it answers; drop any that lost theirs to the cuts above.
   const calls = new Set(out.flatMap((m) => m.toolCalls?.map((t) => t.id) ?? []));
   return out.filter((m) => m.role !== 'tool' || calls.has(m.toolCallId!));
+}
+
+/** The widgets the browser says it can draw: a bounded number, each with a plain name and a bounded description. */
+export function displayToolsOf(tools: RunAgentInput['tools']): ToolDef[] {
+  const out: ToolDef[] = [];
+  for (const t of Array.isArray(tools) ? tools : []) {
+    if (out.length >= LIMITS.tools) break;
+    if (!t || typeof t.name !== 'string' || !/^[a-zA-Z0-9_-]{1,48}$/.test(t.name)) continue;
+    const parameters = t.parameters && typeof t.parameters === 'object' && JSON.stringify(t.parameters).length <= LIMITS.toolText ? t.parameters : { type: 'object', properties: {} };
+    out.push({ name: t.name, description: String(t.description ?? '').slice(0, LIMITS.toolText), parameters });
+  }
+  return out;
 }
 
 function approvalWidget(e: EffectRow) {
@@ -92,7 +117,7 @@ export function agentRoutes(app: Hono<Env>) {
       try {
         if (!ctx.rules.read) throw new Error('Your role can’t use Ask in this workspace.');
         if (!modelReady()) throw new Error('Timmy’s model isn’t configured on this server yet.');
-        const messages = history(input.messages ?? []);
+        const messages = history(Array.isArray(input.messages) ? input.messages : []);
         const last = messages[messages.length - 1];
         if (!last || last.role !== 'user') throw new Error('Ask a question first.');
         // What changes per request rides with the question, so the cached prefix stays the same.
@@ -103,7 +128,7 @@ export function agentRoutes(app: Hono<Env>) {
         const open = input.forwardedProps?.route ? `Open in the app: ${JSON.stringify(input.forwardedProps.route).slice(0, 300)}` : '';
         const onScreen = screen || open ? `\n${untrusted('screen', [screen, open].filter(Boolean).join('\n'))}` : '';
         last.content = `<context>\nNow: ${new Date().toISOString()}\nUser: ${ctx.user.name.replace(/[<>]/g, '')}\n</context>${onScreen}\n\n${last.content}`;
-        const displayTools: ToolDef[] = (input.tools ?? []).map((t) => ({ name: t.name, description: t.description ?? '', parameters: t.parameters ?? { type: 'object', properties: {} } }));
+        const displayTools = displayToolsOf(input.tools);
 
         const ids = new Map<number, string>();
         const started = new Set<number>();

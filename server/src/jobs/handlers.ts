@@ -8,7 +8,8 @@ import { readState } from '../state/mutate';
 import { abandonedRuns, resumeRun } from '../agent/loop';
 import { log } from '../lib/log';
 import { syncCalendar } from '../sync/calendar';
-import { revokeAtProvider } from '../sync/connect';
+import { purgeDeletedWorkspaces } from '../db/purge';
+import { closeOrphanedConnections, purgeConnection, revokeAtProvider } from '../sync/connect';
 import { backfillMail, ingestThread, reconcileMail } from '../sync/ingest';
 import { defineJob, enqueueSoon } from './jobs';
 
@@ -112,11 +113,33 @@ export function registerJobs() {
     '* * * * *',
   );
 
+  // What a disconnected account synced is deleted: its messages, their bodies and its events.
+  defineJob('connection.purge', async (d) => {
+    const gone = await purgeConnection(String(d.workspaceId), String(d.connectionId));
+    if (gone) log.info('deleted what a disconnected account had synced', { workspaceId: d.workspaceId, connectionId: d.connectionId, items: gone });
+  });
+
+  // A connection belongs to a member. If the membership ended some way the hooks did not see, it is closed here.
+  defineJob(
+    'connection.sweep',
+    async () => {
+      const closed = await closeOrphanedConnections(sysPool);
+      if (closed) log.warn('closed connections whose person had left the workspace', { closed });
+    },
+    '*/10 * * * *',
+  );
+
   defineJob(
     'webhook.cleanup',
     async () => {
       await sysPool.query(`delete from webhook_event where received_at < now() - interval '7 days'`);
       await sysPool.query(`delete from state_change where at < now() - interval '2 days'`);
+      // Sign-in links and invitations that were written out are of no use after a week.
+      await sysPool.query(`delete from email_outbox where created_at < now() - interval '7 days'`);
+      // A command's stored answer is only needed for a retry or an undo, both long past after a month.
+      await sysPool.query(`delete from command where at < now() - interval '30 days'`);
+      const purged = await purgeDeletedWorkspaces(sysPool, config.mailRetentionDays);
+      if (purged) log.info('removed the data of deleted workspaces', { workspaces: purged });
     },
     '17 3 * * *',
   );

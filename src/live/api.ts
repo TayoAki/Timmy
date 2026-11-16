@@ -31,6 +31,16 @@ export interface Me {
   active: (LiveProfile['workspace'] & { can: LiveProfile['can']; model: string; models: LiveProfile['models']; approvalMode: 'ask' | 'auto' }) | null;
 }
 
+export interface Invitation {
+  id: string;
+  email: string;
+  role: string;
+  status: string;
+  organizationId: string;
+  organizationName: string;
+  inviterEmail: string;
+}
+
 export interface Snapshot {
   rev: number;
   slices: Record<string, unknown>;
@@ -47,6 +57,8 @@ export const api = {
   signOut: () => call('POST', '/api/auth/sign-out', {}),
   createWorkspace: (name: string, trade: string) => call<{ id: string }>('POST', '/api/auth/organization/create', { name, trade, slug: `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'workspace'}-${Math.random().toString(36).slice(2, 8)}` }),
   setActive: (organizationId: string) => call('POST', '/api/auth/organization/set-active', { organizationId }),
+  /** What an invitation says, for the person it was sent to. Reading it joins nothing. */
+  invitation: (id: string) => call<Invitation>('GET', `/api/auth/organization/get-invitation?id=${encodeURIComponent(id)}`),
   acceptInvitation: (invitationId: string) => call<{ invitation?: { organizationId?: string } }>('POST', '/api/auth/organization/accept-invitation', { invitationId }),
   state: () => call<Snapshot>('GET', '/api/v1/state'),
   command: (id: string, action: Action) => call<CommandResult>('POST', '/api/v1/commands', { id, action }),

@@ -11,6 +11,8 @@ import { changesSince } from './docs';
  */
 export interface Subscriber {
   workspaceId: string;
+  /** Whose tab this is, so one person can't hold an unbounded number of streams open. */
+  userId?: string;
   /** The last revision this tab has. */
   rev: number;
   send: (event: string, data: unknown) => void;
@@ -49,6 +51,11 @@ export async function stopHub() {
     held.release();
   }
 }
+
+/** How many streams a person has open on a workspace right now. */
+export const streamsOf = (workspaceId: string, userId: string): number => [...(subscribers.get(workspaceId) ?? [])].filter((s) => s.userId === userId).length;
+/** More open tabs than anyone has; past this a new stream is refused. */
+export const MAX_STREAMS_PER_PERSON = 12;
 
 export function subscribe(sub: Subscriber): () => void {
   if (!subscribers.has(sub.workspaceId)) subscribers.set(sub.workspaceId, new Set());

@@ -45,6 +45,8 @@ export interface AgentTool {
 }
 
 const str = (v: unknown, max = 4000) => String(v ?? '').slice(0, max);
+/** Mail from a mailbox that has been disconnected is not Timmy's to read any more, even before its stored copy is deleted. */
+const FROM_A_CONNECTED_MAILBOX = `exists (select 1 from connection c where c.id = i.connection_id and c.status = 'active')`;
 
 /** A run that lost its lease must not write. Checked inside the same transaction as the write. */
 async function assertFence(tx: Tx, t: ToolRun) {
@@ -70,7 +72,7 @@ const searchMail: AgentTool = {
          select i.thread_key, i.occurred_at, i.sender, i.subject, i.snippet, i.direction,
                 ts_rank(to_tsvector('english', coalesce(i.subject, '') || ' ' || coalesce(i.snippet, '') || ' ' || coalesce(i.sender, '')), q.q) * 2 + coalesce(ts_rank(b.tsv, q.q), 0) as rank
          from item i left join item_body b on b.item_id = i.id, q
-         where i.workspace_id = $1 and i.kind = 'message'
+         where i.workspace_id = $1 and i.kind = 'message' and ${FROM_A_CONNECTED_MAILBOX}
            and (to_tsvector('english', coalesce(i.subject, '') || ' ' || coalesce(i.snippet, '') || ' ' || coalesce(i.sender, '')) @@ q.q or b.tsv @@ q.q or i.sender ilike any($3::text[]) or i.subject ilike any($3::text[]))
          order by rank desc, i.occurred_at desc limit $4`,
         [t.ctx.workspaceId, query, words.map((w) => `%${w.replace(/[%_]/g, '')}%`), limit],
@@ -95,7 +97,7 @@ const readThread: AgentTool = {
     const rows = await withWorkspace({ workspaceId: t.ctx.workspaceId }, async (tx) => {
       const { rows } = await tx.query(
         `select i.occurred_at, i.sender, i.recipients, i.subject, left(b.text, 6000) as text from item i left join item_body b on b.item_id = i.id
-         where i.workspace_id = $1 and i.kind = 'message' and i.thread_key = $2 order by i.occurred_at limit 30`,
+         where i.workspace_id = $1 and i.kind = 'message' and i.thread_key = $2 and ${FROM_A_CONNECTED_MAILBOX} order by i.occurred_at limit 30`,
         [t.ctx.workspaceId, key],
       );
       return rows;

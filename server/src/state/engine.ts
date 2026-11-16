@@ -100,6 +100,9 @@ const OUT_NOT_LIVE: Record<string, string> = {
 
 const CONN_POLICY_OPS = new Set(['crm', 'delegate', 'enrichPolicy']);
 
+/** Actions that change how Timmy behaves for the whole workspace. */
+const POLICY_ONLY = new Set(['addRule', 'toggleRule', 'setSchedule']);
+
 /* ───────────── Commands ───────────── */
 
 export async function runCommand(ctx: Ctx, cmd: { id: string; action: Action }): Promise<CommandResult> {
@@ -168,6 +171,9 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
   }
   if (!ctx.rules.work) return { state, reject: 'Your role can’t make changes in this workspace.' };
   if (a.type === 'undo') return undo(tx, loaded, ctx, a.command);
+  // Rules are instructions Timmy follows for everyone (writing rules go into every drafting prompt), and the schedule
+  // decides when it works. Only an owner or admin changes them.
+  if (POLICY_ONLY.has(a.type) && !ctx.rules.policy) return { state, reject: 'Only an owner or admin can change this.' };
 
   // A send names the draft the person was looking at. If someone, or Timmy, changed it since, they read it again first.
   if ((a.type === 'sendDraft' || a.type === 'runStep' || (a.type === 'resolve' && a.key.startsWith('draft:') && a.option === 'send')) && a.seen !== undefined) {
@@ -292,7 +298,8 @@ async function gateSends(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; ac
     if (p.outcome === 'waiting') {
       // Someone else has to approve (a delegate's send goes to the exec). The screen keeps the draft and shows who it waits on.
       const waiting = { ...prev, pending: p.state.pending };
-      return { state: waiting, effects: [p.effect!], toast: { text: `Waiting for ${p.effect!.approver_route === 'exec' ? 'the exec' : 'an approver'} to OK this before it goes out.` } };
+      const approver = p.effect!.approver_route !== 'exec' ? 'an approver' : ctx.role.split(',').some((r) => r.trim() === 'assistant') ? 'the exec' : 'the person whose mailbox this is';
+      return { state: waiting, effects: [p.effect!], toast: { text: `Waiting for ${approver} to OK this before it goes out.` } };
     }
     state = p.state;
     effects.push(p.effect!);

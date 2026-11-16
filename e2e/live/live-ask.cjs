@@ -62,5 +62,16 @@ run('live-ask', async (browser) => {
   ok((await sentMail(page)).length === 1, 'a declined email is never sent');
   ok((await api(page, 'GET', '/api/v1/state')).body.slices.pending.length === 0, 'nothing is left waiting');
 
+  // The conversation quotes mail. It is kept under this person's own key, and signing out removes it from the browser.
+  const keys = () => page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('timmy-agent-v1')));
+  const kept = await keys();
+  ok(kept.length === 1 && /^timmy-agent-v1:.+:.+$/.test(kept[0]), `the chat history is stored per person and workspace (${kept.join(', ')})`);
+  await page.keyboard.press('Escape');
+  await page.click('button[aria-label="Rules & settings"]');
+  await page.getByRole('tab', { name: 'Approvals' }).click();
+  await page.locator('.live-settings').getByRole('button', { name: 'Sign out' }).click();
+  await page.getByRole('heading', { name: 'Sign in to Timmy' }).waitFor();
+  ok((await keys()).length === 0, 'after signing out no conversation is left in this browser');
+
   ok(errors.length === 0, `no page errors (${errors.join(' | ')})`);
 });

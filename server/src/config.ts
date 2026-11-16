@@ -44,6 +44,17 @@ export const config = {
 
   authSecret: env.BETTER_AUTH_SECRET ?? '',
 
+  /**
+   * Who may create an account. "invite": only addresses on the list below, or with a pending invitation to a
+   * workspace. "open": anyone. Production is invite-only unless told otherwise, because every account can spend
+   * on the model key and, until a mail provider exists, nobody can prove they own the address they register.
+   */
+  signup: (env.TIMMY_SIGNUP ?? ((env.TIMMY_ENV ?? (env.NODE_ENV === 'production' ? 'production' : '')) === 'production' ? 'invite' : 'open')) as 'open' | 'invite',
+  /** Addresses (ada@example.com) and whole domains (@example.com) that may sign up when sign-up is invite-only. */
+  signupAllow: (env.TIMMY_SIGNUP_ALLOW ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
+  /** How many workspaces one account may create. */
+  workspacesPerAccount: Number(env.TIMMY_WORKSPACES_PER_ACCOUNT ?? 3),
+
   openrouter: {
     apiKey: env.OPENROUTER_API_KEY ?? '',
     baseUrl: env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1',
@@ -77,6 +88,12 @@ export const config = {
    * these ceilings guard whoever pays the model bill until billing exists.
    */
   spendCapCeilingUsd: Number(env.TIMMY_SPEND_CAP_CEILING_USD ?? 200),
+  /** The most the whole service may spend on the model in a month, across every workspace. Past it, every model call is refused. */
+  serviceSpendCeilingUsd: Number(env.TIMMY_SERVICE_SPEND_CEILING_USD ?? 500),
+  /** The share of a workspace's monthly limit that work nobody asked for (reading incoming mail) may use, so a flood of mail can't silence Ask. */
+  unattendedShare: Number(env.TIMMY_UNATTENDED_SHARE ?? 0.5),
+  /** How long synced mail is kept after its mailbox is disconnected or its workspace deleted. */
+  mailRetentionDays: Number(env.TIMMY_MAIL_RETENTION_DAYS ?? 30),
   concurrentRunsCeiling: Number(env.TIMMY_CONCURRENT_RUNS_CEILING ?? 4),
 
   /** How long the connect callback waits for the provider to report a new account as active. */

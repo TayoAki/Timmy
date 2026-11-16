@@ -52,6 +52,8 @@ export async function readThread(workspaceId: string, threadId: string): Promise
     const res = await complete({
       workspaceId,
       route: 'read',
+      // Incoming mail is read without anyone asking, so it draws on its own share of the monthly limit.
+      unattended: true,
       model,
       effort: 'low',
       maxTokens: 500,

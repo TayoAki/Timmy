@@ -35,8 +35,13 @@ interface Store {
   error: string | null;
 }
 
-const KEY = 'timmy-agent-v1';
+const DEMO_KEY = 'timmy-agent-v1';
 const MAX_CONVOS = 30;
+/**
+ * Where this browser keeps the conversations. The demo has one history. On a real workspace each person's
+ * history for each workspace has its own key, so the next person to use this browser doesn't get it.
+ */
+let KEY = DEMO_KEY;
 
 const load = (): Conversation[] => {
   try {
@@ -61,6 +66,23 @@ const set = (next: Partial<Store>) => {
   }
   listeners.forEach((l) => l());
 };
+
+/** Live mode: from here on, read and write this person's history for this workspace only. */
+export function scopeConversations(userId: string, workspaceId: string) {
+  KEY = `${DEMO_KEY}:${userId}:${workspaceId}`;
+  store = { ...store, convos: load(), active: null, running: null, error: null };
+  listeners.forEach((l) => l());
+}
+
+/** Live mode, on sign-out: conversations quote mail, so none are left in this browser. */
+export function forgetConversations() {
+  try {
+    for (const k of Object.keys(localStorage)) if (k === DEMO_KEY || k.startsWith(`${DEMO_KEY}:`)) localStorage.removeItem(k);
+  } catch {
+    /* storage unavailable */
+  }
+  store = { ...store, convos: [], active: null };
+}
 
 const subscribe = (l: () => void) => {
   listeners.add(l);

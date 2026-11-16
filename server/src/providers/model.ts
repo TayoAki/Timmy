@@ -4,7 +4,7 @@
  * list, prompt caching, a spend check before and a cost record after.
  */
 import { config } from '../config';
-import { withWorkspace } from '../db/pool';
+import { sysPool, withWorkspace } from '../db/pool';
 import { log } from '../lib/log';
 
 export interface ToolCall {
@@ -41,6 +41,8 @@ export interface ModelRequest {
   effort?: Effort;
   maxTokens?: number;
   runId?: string;
+  /** Nobody asked for this call: Timmy is reading incoming mail or preparing the morning run on its own. */
+  unattended?: boolean;
 }
 
 export interface Usage {
@@ -264,20 +266,46 @@ export function setModelForTests(p: ModelProvider | null) {
 
 /* ───────────── Spend ───────────── */
 
-/** Refuses a call when the workspace has used up this month's budget. */
-export async function checkBudget(workspaceId: string): Promise<{ spent: number; cap: number }> {
+let serviceSpend = { at: 0, usd: 0 };
+
+/** What every workspace together has spent on the model this month. Read at most every few seconds. */
+async function serviceSpentThisMonth(): Promise<number> {
+  if (Date.now() - serviceSpend.at > 5000) {
+    const { rows } = await sysPool.query(`select coalesce(sum(cost_usd), 0)::float8 as usd from usage_event where at >= date_trunc('month', now())`);
+    serviceSpend = { at: Date.now(), usd: Number(rows[0].usd) };
+  }
+  return serviceSpend.usd;
+}
+/** Tests change spend directly in the database; this makes the next check read it again. */
+export const forgetServiceSpend = () => {
+  serviceSpend = { at: 0, usd: 0 };
+};
+
+/**
+ * Refuses a model call that would go past a spending limit. Three limits apply:
+ * the workspace's own monthly limit; a smaller share of it for work nobody asked
+ * for, so a flood of incoming mail can't use up what Ask and drafting need; and
+ * one ceiling for the whole service, however many workspaces there are.
+ *
+ * The check comes before the call, so calls already in flight can take a
+ * workspace a little past its limit: by at most what the jobs running at that
+ * moment cost, and the number of those is capped too.
+ */
+export async function checkBudget(workspaceId: string, unattended = false): Promise<{ spent: number; cap: number }> {
   const row = await withWorkspace({ workspaceId }, async (tx) => {
     const w = (await tx.query('select monthly_spend_cap_usd from workspace where id = $1', [workspaceId])).rows[0];
-    const s = (await tx.query(`select coalesce(sum(cost_usd), 0)::float8 as spent from usage_event where workspace_id = $1 and at >= date_trunc('month', now())`, [workspaceId])).rows[0];
-    return { cap: Number(w?.monthly_spend_cap_usd ?? 0), spent: Number(s.spent) };
+    const s = (await tx.query(`select coalesce(sum(cost_usd), 0)::float8 as spent, coalesce(sum(cost_usd) filter (where unattended), 0)::float8 as alone from usage_event where workspace_id = $1 and at >= date_trunc('month', now())`, [workspaceId])).rows[0];
+    return { cap: Number(w?.monthly_spend_cap_usd ?? 0), spent: Number(s.spent), alone: Number(s.alone) };
   });
   if (row.spent >= row.cap) throw new BudgetError(`This workspace has reached its monthly limit of $${row.cap.toFixed(2)} for Timmy’s model. An owner can raise it in Settings.`);
+  if (unattended && row.alone >= row.cap * config.unattendedShare) throw new BudgetError('Timmy has used the part of this month’s limit set aside for reading mail on its own. Ask and drafting still work.');
+  if ((await serviceSpentThisMonth()) >= config.serviceSpendCeilingUsd) throw new BudgetError('Timmy’s model is paused: the service has reached its spending limit for this month.');
   return row;
 }
 
 /** One model call: budget check, the call, and a cost record whether it worked or not. */
 export async function complete(req: ModelRequest, onText?: (delta: string) => void): Promise<ModelResponse> {
-  await checkBudget(req.workspaceId);
+  await checkBudget(req.workspaceId, req.unattended);
   const started = Date.now();
   let res: ModelResponse | null = null;
   try {
@@ -287,9 +315,9 @@ export async function complete(req: ModelRequest, onText?: (delta: string) => vo
     const u = res?.usage;
     await withWorkspace({ workspaceId: req.workspaceId }, async (tx) => {
       await tx.query(
-        `insert into usage_event (workspace_id, route, model, provider, run_id, tokens_in, tokens_out, tokens_reasoning, tokens_cached, tokens_cache_write, cost_usd, generation_id, ms, ok)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-        [req.workspaceId, req.route, res?.model ?? req.model, res?.provider ?? null, req.runId ?? null, u?.tokensIn ?? 0, u?.tokensOut ?? 0, u?.tokensReasoning ?? 0, u?.tokensCached ?? 0, u?.tokensCacheWrite ?? 0, u?.costUsd ?? 0, res?.id ?? null, Date.now() - started, !!res],
+        `insert into usage_event (workspace_id, route, model, provider, run_id, tokens_in, tokens_out, tokens_reasoning, tokens_cached, tokens_cache_write, cost_usd, generation_id, ms, ok, unattended)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+        [req.workspaceId, req.route, res?.model ?? req.model, res?.provider ?? null, req.runId ?? null, u?.tokensIn ?? 0, u?.tokensOut ?? 0, u?.tokensReasoning ?? 0, u?.tokensCached ?? 0, u?.tokensCacheWrite ?? 0, u?.costUsd ?? 0, res?.id ?? null, Date.now() - started, !!res, !!req.unattended],
       );
       if (req.runId && u) await tx.query('update run set cost_usd = cost_usd + $2, tokens_in = tokens_in + $3, tokens_out = tokens_out + $4, tokens_reasoning = tokens_reasoning + $5 where id = $1', [req.runId, u.costUsd, u.tokensIn, u.tokensOut, u.tokensReasoning]);
     }).catch((e) => log.warn('could not record usage', { error: (e as Error).message }));
