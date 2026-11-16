@@ -165,6 +165,8 @@ Code: `src/areas/outbound/Chat.tsx`.
 
 The board's lanes now sum up what's late or due this week, each lane has quick add (type, Enter), cards carry tags (from email, meeting or time blocked, notes) and a contact chip with a hover card, and a dragged card shows where it will land. Ask Timmy's Pipeline view also shows deals by stage, sized by value.
 
+How to build the backend for the editor, automations and website chat: [docs/ui-additions-backend.md](docs/ui-additions-backend.md).
+
 ## Files: the full editors
 
 Documents, spreadsheets, presentations and PDFs open inside Timmy in full editors (shown as Document, Spreadsheet, Presentation and PDF editor). They are the open-source [Craft apps](https://getartcraft.com/apps) by ArtCraft (MIT or Apache-2.0), unbranded for hosting; their licences ship in `public/craft/<app>/`: [WordCraft](https://github.com/storytold/wordcraft) (.docx, .odt, .rtf, .md…), [GridCraft](https://github.com/storytold/gridcraft) (.xlsx, .xls, .ods, .csv), [DeckCraft](https://github.com/storytold/deckcraft) (.pptx) and [PdfCraft](https://github.com/storytold/pdfcraft) (.pdf). They're Rust apps compiled to WebAssembly and served by this site from `public/craft/<app>/`, so everything stays a web app.
