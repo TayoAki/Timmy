@@ -5,7 +5,7 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 
 ## Where things stand
 
-**Phase 0 (foundations) is built and tested locally, and the API is deployed to production. It is not yet proven on a real Gmail account or on a staging environment; both need one step from the owner (see "Needs your attention").**
+**Phase 0 (foundations) is built, deployed to staging and production, tested on staging, and has been through an independent safety review whose findings are fixed. The one thing left for phase 0 is a run on a real Gmail account, which needs a person at Google's consent screen (see "Needs your attention").**
 
 | Piece | State |
 | --- | --- |
@@ -19,11 +19,11 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 | Agent loop (leased runs, checkpoints, pause for approval), Ask over mail | Built. |
 | Reading mail and drafting (phase 1, started early) | Built: the model reads threads people wrote and proposes a sort; the Draft button writes a draft. |
 | Frontend live mode (`VITE_TIMMY_LIVE=1`) | Built: sign-in, onboarding, state from the API, Connect buttons, model picker, approvals for writes Timmy proposes. The demo is unchanged and still the default build. |
-| Railway | `app` (API + live app), `pgvector` and the bucket `timmy-files` exist in **production**. No `staging` environment yet. |
+| Railway | `app` (API + live app), `pgvector` and the bucket `timmy-files` exist in `production` and `staging`. Both `app` services have the OpenRouter and Composio keys. |
 
 ## What is deployed
 
-Railway project `timmy`, environment `production`:
+Railway project `timmy`. Production:
 
 | Service | What it is | URL |
 | --- | --- | --- |
@@ -32,7 +32,15 @@ Railway project `timmy`, environment `production`:
 | `pgvector` | Postgres 18 with pgvector. Private network only: its public TCP endpoint was removed. | none |
 | `timmy-files` | Bucket for files and, later, sandbox homes. Wired to `app` by reference variables; not used by code yet. | none |
 
-`app` has no provider keys yet, so sign-in and workspaces work there but Connect and Ask answer "not configured". No test sign-ups have been made on production.
+Production `app` has real providers configured. No test sign-ups have been made on production.
+
+Staging: the same services, duplicated. `app` is at https://app-staging-fcb4f05d.up.railway.app with `TIMMY_ENV=staging`, fake providers on (`TIMMY_FAKE_PROVIDERS=1`) and test hooks on behind a token (`TIMMY_TEST_HOOKS=1`, `TIMMY_TEST_TOKEN`), which is what the live suites need. To smoke-test real Composio and OpenRouter on staging, set `TIMMY_FAKE_PROVIDERS=0` there. Staging `web` still deploys `claude/modest-meitner-59cqpr`.
+
+Run the live suites against staging with:
+
+```bash
+BASE=https://app-staging-fcb4f05d.up.railway.app/ TEST_TOKEN=<the TIMMY_TEST_TOKEN variable on staging app> TIMMY_SEND_HOLD_SECONDS=4 bash e2e/live/run-all.sh
+```
 
 ## How to run it
 
@@ -52,10 +60,11 @@ Cost measurement: `server/scripts/measure-cost.ts` (the header says how to run i
 
 | Suite | Result |
 | --- | --- |
-| API unit and integration (`server/test`, 7 files) | 108 of 108 pass |
+| API unit and integration (`server/test`, 8 files) | 135 of 135 pass |
 | Demo-mode Playwright (`e2e/`, 12 suites, 348 checks) | 12 of 12 pass |
 | Live-mode Playwright (`e2e/live/`, 6 suites, 91 checks) | 6 of 6 pass |
-| Suites against staging | Not run: there is no staging environment yet |
+| Live-mode Playwright against **staging** (Railway) | 6 of 6 pass, 91 checks |
+| Demo suites against a deployed build of this branch | Not run: `web` deploys the older branch, and I won't change that service without your OK |
 | Real-provider smoke (real Gmail through Composio) | Not run: needs a test Gmail account connected by a person |
 
 Two changes were made to the existing demo suites, both to make them run correctly, not to make them pass:
@@ -101,24 +110,32 @@ Plain code sorts mail before any model call. In the test mailbox it gave a confi
 | Composio | $2 to $17 | About 3,300 calls: $16.50 at the $5 per 1,000 overage price, about $6 if covered by pooled seats, about $2 after the new-email change |
 | One-time, per new user | about $1.20 | 180 Composio calls for 90 days of backfill, and up to 40 first reads ($0.32) |
 
+## Safety review (Nov 16, 2026)
+
+An independent reviewer read the gateway, row-level security, effect records, credential handling, the agent and the sync code against the five safety properties, and ran probe tests. It confirmed the core (provider writes only through approved effects, no double execution under races, row-level security complete, auto mode cannot approve anything outbound) and found three high-severity gaps and a dozen smaller ones. All are fixed, with one test per finding in `server/test/review.test.ts`:
+
+1. A chat button written by the model could carry a send, so one click on an innocently labelled button counted as approval. Model-written buttons may now only open something or start a draft.
+2. A session made by registering someone else's address survived their password reset. A reset now ends every earlier session. (Email verification at sign-up is still off until a mail provider exists; see below.)
+3. A sender's display name containing an address was taken as the sender. The sender is now the address in the angle brackets, and "sent by me" comes from the provider's Sent label.
+4. Smaller: connections end with their member or workspace; an open stream ends when the person is removed; one everyday mailbox per workspace and the approver sees which mailbox sends; an unconfirmed send is never called "not sent"; a delegate's send shows as sent once it goes out and cannot be sent twice; chat cannot replace a draft; only the person who started a connection can finish it; test hooks need a token on deployed servers and cannot start in production; decisions report what actually happened; role checks on three read routes.
+
+A second audit, using Cloudflare's security-audit skill, is running on the fixed code.
+
 ## Decisions made while building (the PRD is updated to match)
 
 1. **One service serves the API and the live app, on one origin.** `up.railway.app` is on the public suffix list, so two Railway subdomains can't share a cookie, and cross-site cookies are blocked in Safari. The existing `web` service is untouched and stays the demo.
 2. **The server runs the frontend's reducer.** Each client action is applied by the same reducer code on the stored state, and the difference goes back as patches keyed by entity. An action that would send mail is detected from the reducer's result and turned into an effect record first. Demo-only actions are refused on a real workspace.
-3. **Cold email is sent from mailboxes connected through Composio** (owner's instruction, Nov 16), not from a separate SMTP pool.
+3. **Cold email is never sent through Google's API.** (Owner's decision, Nov 16, replacing the earlier "send from the Composio-connected account".) Timmy writes the cold email; pressing Send opens Gmail's own compose window with the recipient, subject and body filled in, and the person sends it from Gmail. Timmy marks the lead as contacted when sync sees the email in Sent, and shows replies in the Unibox. A sequence cannot send itself: each email is one click by a person.
 4. **Twilio (texts and the dialer) is skipped for now** (owner's instruction, Nov 16). Texts and calls stay demo-only.
 5. **New mail gets a first sort by plain code** (newsletters, receipts, calendar replies, automated notices), with the reason shown. Only a thread a person wrote is read by the model, once, and the model only proposes: the thread moves when the person accepts it in Triage.
 6. **The outage fallback** after Claude Opus 5.5 is `anthropic/claude-opus-5`. It is not user-selectable.
 
 ## Needs your attention
 
-- [ ] **Create the `staging` environment.** My Railway tools cannot create an environment. In the Railway dashboard: project `timmy` → environment menu → New environment → name it `staging` → duplicate `production`. That copies `app`, `pgvector`, the bucket and their wiring. Tell me when it exists and I will set its variables and run every suite against it.
-- [ ] **Add two secrets to the `app` service** (production, and staging once it exists): `OPENROUTER_API_KEY` and `COMPOSIO_API_KEY`. Or tell me to set them from the keys you pasted.
 - [ ] **A test Gmail account** I may send from, and an address I may send to. Connecting it needs a person at Google's consent screen, so you press Connect once.
 - [ ] **Turn on backups** for the `pgvector` volume (Railway dashboard → the volume → Backups). There is no tool for it on my side.
 - [ ] **Rotate the keys pasted in chat** (two Composio keys, one OpenRouter key) once setup is done. They are not in the repo or in logs.
 - [ ] **Composio's Google verification.** Get it confirmed in writing that Composio's managed Google app carries Google's restricted-scope verification and the CASA assessment. Their docs do not say so.
-- [ ] **Cold email from the connected account.** Google's API policy forbids sending unsolicited commercial mail through its user-data APIs, and complaints land on the domain used for everyday mail. Also, Composio's Gmail send tool has no custom-header field, so one-click unsubscribe needs their proxy call with a hand-built message.
 - [ ] **A mail provider for Timmy's own account mail** (sign-in links, invitations, password resets). Until then email + password works and links wait in an outbox table. Once there is one, invitations should also require a verified email.
 - [ ] **The production frontend's branch.** `web` deploys `claude/modest-meitner-59cqpr`; this work is on `claude/funny-keller-5ouhro`. I will not change that service without your OK.
 - [ ] **OpenRouter budget for this session.** The key attached to the session has about $11 left; a large eval needs more.
@@ -126,8 +143,10 @@ Plain code sorts mail before any model call. In the test mailbox it gave a confi
 
 ## What's next
 
-1. Finish phase 0: the independent safety review (running), staging, a real Gmail account, then the phase 0 report.
-2. Phase 1: triage with a model for what plain code can't settle, the brief, drafts on their own route, Waiting, decisions, ontology v1, Outlook and Drive.
+1. Finish phase 0: a real Gmail account end to end (connect, backfill, a real email in, a real send out), then repeat the cost measurement on it.
+2. Act on the Cloudflare-skill audit when it reports.
+3. Cold email as decided: compose in Gmail, detect the sent email and replies through sync.
+4. Phase 1: the brief, Waiting, decisions, ontology v1, Outlook and Drive. (Reading mail with the model and the Draft button are already built.)
 
 Known gaps to close in phase 1 (none of them lets anything be sent without approval):
 - Calendar: Google Calendar events are synced in, but events added in Timmy are not written to Google Calendar yet.

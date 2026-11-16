@@ -42,7 +42,7 @@
       "id": "api-gateway",
       "file": "server/test/gateway.test.ts",
       "covers": "hold and undo, exactly-once send, provider failures, database-enforced order, audit log, approver routing, never-list, rules for unattended runs, demo-only actions refused",
-      "tests": 23,
+      "tests": 24,
       "status": "pass"
     },
     {
@@ -71,6 +71,13 @@
       "file": "server/test/calendar.test.ts",
       "covers": "calendar sync on connect, re-sync on a provider event, cancelled events, isolation",
       "tests": 3,
+      "status": "pass"
+    },
+    {
+      "id": "api-review",
+      "file": "server/test/review.test.ts",
+      "covers": "one test per finding of the phase 0 safety review",
+      "tests": 26,
       "status": "pass"
     },
     {
@@ -137,9 +144,8 @@
     },
     {
       "id": "staging-full",
-      "covers": "every suite against the staging deploy",
-      "status": "blocked",
-      "on": "a staging environment (the owner creates it in the Railway dashboard)"
+      "covers": "the six live suites against the staging deploy on Railway (91 checks). The demo suites are not run against a deployed build of this branch: web deploys the older branch.",
+      "status": "pass"
     },
     {
       "id": "prod-smoke",
