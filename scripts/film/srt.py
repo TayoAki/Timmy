@@ -3,7 +3,7 @@
   python3 scripts/film/srt.py src/film/vo_words.json OUT.srt [--offset 13.6]
 
 Cues keep every spoken word, break at punctuation or pauses, and fit two lines of at most
-32 characters. The offset is where the narration starts in the film (after the cold open).
+32 characters. The offset is where the narration starts in the film (0 for v2: the voice opens the film).
 Spelling follows the product: "9:15", "proposal v4", "Send & track", the folder names.
 """
 import json
@@ -11,6 +11,11 @@ import re
 import sys
 
 FIX = [
+    (r"\btype form\b", "Typeform"),
+    (r"\bhub spot\b", "HubSpot"),
+    (r"\bFacebook lead ads\b", "Facebook Lead Ads"),
+    (r"owes what\?", "owes what."),
+    (r"files buried, three", "files buried three"),
     (r"\bmorning runs\b", "morning run"),
     (r"\b8 o'clock\b", "8:00"),
     (r"\bone o'clock to 2:30\b", "1:00 to 2:30"),
@@ -76,6 +81,26 @@ def main():
         if nxt is None or pause or punct or too_long:
             cues.append(cur)
             cur = []
+    # A lone word doesn't get a cue of its own: it joins the next cue ("Timmy," + "never drop a ball.")
+    # when that one follows closely, or else the cue before it ("…using your own files and" + "numbers.").
+    def fits(ws):
+        return len(wrap(" ".join(x["w"] for x in ws), 34)) <= 2
+
+    merged = []
+    i = 0
+    while i < len(cues):
+        c = cues[i]
+        ends = re.search(r"[.?!]$", c[0]["w"])
+        if len(c) == 1 and not ends and i + 1 < len(cues) and cues[i + 1][0]["s"] - c[0]["e"] < 1.0 and fits(c + cues[i + 1]):
+            merged.append(c + cues[i + 1])
+            i += 2
+            continue
+        if len(c) == 1 and merged and c[0]["s"] - merged[-1][-1]["e"] < 0.45 and fits(merged[-1] + c):
+            merged[-1] = merged[-1] + c
+        else:
+            merged.append(c)
+        i += 1
+    cues = merged
     with open(out, "w") as f:
         for n, c in enumerate(cues, 1):
             text = " ".join(x["w"] for x in c)
@@ -85,7 +110,8 @@ def main():
             end = c[-1]["e"] + offset + 0.25
             if n < len(cues):
                 end = min(end, cues[n][0]["s"] + offset - 0.05)
-            f.write(f"{n}\n{stamp(start)} --> {stamp(end)}\n" + "\n".join(wrap(text)) + "\n\n")
+            lines = wrap(text) if len(wrap(text)) <= 2 else wrap(text, 34)
+            f.write(f"{n}\n{stamp(start)} --> {stamp(end)}\n" + "\n".join(lines) + "\n\n")
     print(f"{out}: {len(cues)} cues")
 
 

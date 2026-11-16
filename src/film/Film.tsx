@@ -13,12 +13,15 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { bezier } from '../cinema/engine';
+import { TimmyMark } from '../components/common';
 import { useStore } from '../state/store';
 import { walkthrough, type Card, type Target } from './script';
 import '../styles/film.css';
 
 const camEase = bezier(0.65, 0, 0.35, 1);
 const moveEase = bezier(0.45, 0, 0.25, 1);
+/** The reveal: slow start, quick middle, long flat landing. */
+const swingEase = bezier(0.5, 0, 0.1, 1);
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 
 interface View {
@@ -34,6 +37,8 @@ interface Pt {
 export function Film({ children }: { children: ReactNode }) {
   const { dispatch } = useStore();
   const spec = useRef(walkthrough()).current;
+  const filmEl = useRef<HTMLDivElement>(null);
+  const stageEl = useRef<HTMLDivElement>(null);
   const camEl = useRef<HTMLDivElement>(null);
   const dimEl = useRef<HTMLDivElement>(null);
   const cardEl = useRef<HTMLDivElement>(null);
@@ -152,6 +157,19 @@ export function Film({ children }: { children: ReactNode }) {
         }
       }
       st.view = view;
+      // The reveal: the app swings in from the dark, tilted, and lands flat.
+      if (spec.swing && stageEl.current && filmEl.current) {
+        const { t0, t1 } = spec.swing;
+        const p = swingEase(clamp((t - t0) / (t1 - t0), 0, 1));
+        const q = 1 - p;
+        stageEl.current.style.transform =
+          q > 0.0005
+            ? `perspective(2200px) translate3d(${(q * 120).toFixed(2)}px, ${(q * 150).toFixed(2)}px, ${(-q * 900).toFixed(2)}px) rotateX(${(q * 26).toFixed(3)}deg) rotateY(${(-q * 30).toFixed(3)}deg) rotateZ(${(q * 7).toFixed(3)}deg)`
+            : '';
+        stageEl.current.classList.toggle('swinging', q > 0.0005);
+        stageEl.current.style.borderRadius = `${(q * 22).toFixed(2)}px`;
+        filmEl.current.classList.toggle('void', t < t1);
+      }
       const o = tx(view);
       if (camEl.current) camEl.current.style.transform = `translate(${o.x.toFixed(2)}px, ${o.y.toFixed(2)}px) scale(${view.s.toFixed(4)})`;
 
@@ -258,7 +276,10 @@ export function Film({ children }: { children: ReactNode }) {
       }
       if (ci >= 0 && cardEl.current) {
         const c = spec.cards[ci]!;
-        cardEl.current.style.opacity = String(Math.min(clamp((t - c.t0) / 0.22, 0, 1), clamp((c.t1 - t) / 0.18, 0, 1)));
+        // Back-to-back cards swap their words without showing the app between them.
+        const joinIn = spec.cards.some((o) => Math.abs(o.t1 - c.t0) < 0.02);
+        const joinOut = spec.cards.some((o) => Math.abs(o.t0 - c.t1) < 0.02);
+        cardEl.current.style.opacity = String(Math.min(joinIn ? 1 : clamp((t - c.t0) / 0.22, 0, 1), joinOut ? 1 : clamp((c.t1 - t) / 0.18, 0, 1)));
         cardEl.current.querySelectorAll<HTMLElement>('[data-at]').forEach((el) => {
           const p = camEase(clamp((t - Number(el.dataset.at)) / 0.28, 0, 1));
           el.style.opacity = String(p);
@@ -282,17 +303,20 @@ export function Film({ children }: { children: ReactNode }) {
 
   const active: Card | null = card ? spec.cards[card.i]! : null;
   return (
-    <div className="film">
-      <div className="film-cam" ref={camEl}>
-        {children}
+    <div className="film" ref={filmEl}>
+      <div className="film-stage" ref={stageEl}>
+        <div className="film-cam" ref={camEl}>
+          {children}
+        </div>
       </div>
       <div className="film-dim" ref={dimEl} aria-hidden />
       {active && (
         <div className={`film-card ${active.theme}`} ref={cardEl} aria-live="polite">
           <div className="film-card-body">
             {active.lines.slice(0, card!.n).map((l, i) => (
-              <p key={i} className={`film-line ${l.size ?? 'm'}${l.num ? ' numbered' : ''}`} data-at={l.t}>
+              <p key={`${card!.i}:${i}`} className={`film-line ${l.size ?? 'm'}${l.num ? ' numbered' : ''}`} data-at={l.t}>
                 {l.num && <span className="film-num">{l.num}</span>}
+                {l.mark && <TimmyMark size={l.size === 'xl' ? 88 : 30} />}
                 <span>{l.text}</span>
               </p>
             ))}

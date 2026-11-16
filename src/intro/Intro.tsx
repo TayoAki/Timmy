@@ -33,9 +33,15 @@ import '../styles/intro.css';
 
 const PARAMS = new URLSearchParams(window.location.search);
 const FRAMES = PARAMS.get('intro') === 'frames';
-/** ?intro&close: the close of the product film. The lockup carries one CTA and holds clean; no fade to black. */
+/** ?intro&close: the close of the product film. The lockup carries the line and one CTA and holds clean; no fade to black. */
 const CLOSE = PARAMS.has('close');
-export const INTRO_LENGTH = CLOSE ? 16.2 : 17;
+/**
+ * ?intro&close&from=11.05: join the close partway in (the film cuts in on the confirmation and
+ * the pull-back), so the title still lands on the music's final hit. It holds 2.4 s after the
+ * line instead of 2 s, and fills the product film's 16:9 frame.
+ */
+const FROM = CLOSE ? Number(PARAMS.get('from') ?? 0) : 0;
+export const INTRO_LENGTH = CLOSE ? (FROM ? 18.4 : 16.2) - FROM : 17;
 
 /** Where each surface sits in the world (the app plane lies behind the floating pieces). */
 const PLANE: P = { x: 140, y: 60, z: -320 };
@@ -81,7 +87,8 @@ export function Intro({ children }: { children: ReactNode }) {
     if (last) setToast(last.text);
   }, [state.toasts, toast]);
 
-  function render(t: number) {
+  function render(tt: number) {
+    const t = tt + FROM;
     const a = anchors.current;
     if (!a || !rig.current || !frame.current) return;
 
@@ -175,7 +182,7 @@ export function Intro({ children }: { children: ReactNode }) {
       sub.current.style.opacity = String(kf(t, [[14.6, 0], [15.4, 1]]));
       sub.current.style.transform = `translateY(${kf(t, [[14.6, 10], [15.4, 0]]).toFixed(2)}px)`;
     }
-    if (fade.current) fade.current.style.opacity = String(CLOSE ? kf(t, [[0, 1], [0.9, 0]]) : kf(t, [[0, 1], [0.9, 0], [16.3, 0], [16.9, 1]]));
+    if (fade.current) fade.current.style.opacity = String(CLOSE ? kf(tt, [[0, 1], [FROM ? 0.45 : 0.9, 0]]) : kf(t, [[0, 1], [0.9, 0], [16.3, 0], [16.9, 1]]));
   }
 
   // Measure where things are inside the surfaces, then play (or wait for seek).
@@ -193,7 +200,7 @@ export function Intro({ children }: { children: ReactNode }) {
       toast: { x: keep.x - 160, y: keep.y + 96, z: CARD.z + 70 },
     };
   }
-  const { ended, scale } = useFilm(INTRO_LENGTH, FRAMES, setup, render);
+  const { ended, scale } = useFilm(INTRO_LENGTH, FRAMES, setup, render, FROM > 0);
 
   return (
     <div className="intro" aria-label="Timmy, a cinematic intro">
@@ -230,7 +237,8 @@ export function Intro({ children }: { children: ReactNode }) {
             Timmy
           </h1>
           {CLOSE ? (
-            <p className="intro-sub" ref={sub}>
+            <p className="intro-sub intro-close" ref={sub}>
+              <span className="intro-tag">Never drop a ball.</span>
               <span className="outro-cta">
                 <Plug size={18} />
                 Connect your Gmail

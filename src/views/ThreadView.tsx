@@ -616,7 +616,20 @@ function Links({ t }: { t: Thread }) {
         {(t.docs ?? []).map((id) => {
           const d = state.ws.files[id]!;
           return (
-            <article key={id} className="card link-card">
+            <article
+              key={id}
+              className="card link-card"
+              role="button"
+              tabIndex={0}
+              aria-label={`Open ${d.name}`}
+              onClick={() => dispatch({ type: 'navigate', route: { view: 'file', id } })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  dispatch({ type: 'navigate', route: { view: 'file', id } });
+                }
+              }}
+            >
               <DocThumb doc={d} />
               <div className="link-meta">
                 <div className="file-name">

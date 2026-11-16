@@ -62,9 +62,32 @@ const KEY = 'timmy-state-v3';
   await at(15);
   assert(Number(await p.locator('.intro-fade').evaluate((el) => getComputedStyle(el).opacity)) > 0.95, 'and fades to black');
 
+  // The product film's close joins the morning film partway in, so its title lands on the final hit.
+  await p.goto(BASE + '?intro=frames&close&from=11.05');
+  await p.waitForFunction(() => window.__film && window.__film.ready, null, { timeout: 20000 });
+  assert(Math.abs((await p.evaluate(() => window.__film.length)) - 7.35) < 0.01, 'the close joined at 11.05 s runs 7.35 s');
+  await p.evaluate(() => window.__film.seek(4.6));
+  await p.waitForTimeout(150);
+  assert(Number(await p.locator('.intro-title').evaluate((el) => getComputedStyle(el).opacity)) > 0.9 && /Never drop a ball/.test(await p.locator('.intro-tag').innerText()) && /Connect your Gmail/.test(await p.locator('.intro-close .outro-cta').innerText()), 'it lands on Timmy, “Never drop a ball.” and the CTA');
+
   await p.goto(BASE);
   await p.waitForTimeout(800);
-  assert(await p.evaluate((KEY) => localStorage.getItem(KEY), KEY) === before, 'your saved demo data is untouched by both films');
+  assert(await p.evaluate((KEY) => localStorage.getItem(KEY), KEY) === before, 'your saved demo data is untouched by the films');
+
+  // A thread's linked files open, and a sheet's header lines up with its rows (the phone menu's grid style no longer leaks onto it).
+  await p.click('nav.rail [aria-label="Today & mail"]');
+  await p.click('.nav-item:has-text("Revised quote")');
+  await p.click('[role=tab]:has-text("Files & links")');
+  await p.click('.link-card:has-text("Pricing tiers")');
+  await p.waitForSelector('.sheet-grid', { timeout: 5000 });
+  assert(/Pricing tiers 2026/.test(await p.locator('.doc-title-input').inputValue()), 'a linked file card opens the file');
+  const grid = await p.evaluate(() => {
+    const t = document.querySelector('.sheet-grid');
+    const th = t.querySelector('thead th:nth-child(2)').getBoundingClientRect();
+    const td = t.querySelector('tbody tr:first-child td:nth-child(2)').getBoundingClientRect();
+    return { display: getComputedStyle(t).display, dx: Math.abs(th.left - td.left), first: [...t.querySelectorAll('tbody tr:first-child input')].map((i) => i.value).join(' ') };
+  });
+  assert(grid.display === 'table' && grid.dx < 1 && /Starter/.test(grid.first), 'the sheet is a real table: columns line up and row 1 (Starter) shows');
 
   // ?intro plays on its own and offers the story at the end.
   await p.goto(BASE + '?intro');

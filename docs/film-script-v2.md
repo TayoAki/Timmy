@@ -41,8 +41,19 @@ So your inbox stops deciding your day. <break time="0.4s" /> Timmy sorts it, dra
 | 6. Speed to lead | "When a lead finds you first, speed wins." | Outbound › Speed to lead: the connected forms, the live clock, a new form lead, Timmy's first reply, then Book 9:15. | speed-to-lead connections |
 | Close | Recap card: "Sorts it · Drafts it · Files it · Tracks it · Finds your next customers." | The 3D morning film, landing "Never drop a ball." and the CTA on the music's final hit. | recap and CTA |
 
+## As voiced
+
+The take (1:59, ElevenLabs v3) differs from the text above in a few places; the cards and captions follow
+what was said. The line "Then it writes to them." was dropped, so part 5 starts at "Ask for a campaign".
+"ranks what needs you today, with the reason why" became "shows you what needs your attention today and
+why", "your Drive" became "your Google Drive", and the close reads "Timmy, never drop a ball."
+
 ## Truth notes
 
 - Demo mode: nothing is sent or connected for real, and the Gmail and Drive connections need the backend, so the film is a pre-release recreation.
 - "Connect your Gmail" isn't true today; "Try the demo" is. The owner chooses.
-- No vendor names beyond Gmail, Drive and the form sources the product lists (Typeform, HubSpot, Facebook Lead Ads).
+- No vendor names beyond Gmail, Drive and the form sources the product lists. The leads' data partner shows as
+  "your data provider" on the film route.
+- HubSpot: the voice names it as a form source, but Speed to lead's forms are the website form, Typeform,
+  Facebook Lead Ads and a webhook (HubSpot connects as a CRM). The owner decides: keep, re-voice, or add
+  HubSpot forms to the product.

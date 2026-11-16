@@ -149,7 +149,7 @@
   padding: 6px 4px 10px;
   font-size: 15px;
 }
-.sheet-grid {
+.more-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;

@@ -8,6 +8,8 @@
 //   STILLS=8.3,30.2 node scripts/film/render.cjs           stills at those times (stepped at STEP fps)
 //   FPS=30 SCALE=0.5 OUT=out/animatic node ...render.cjs   every frame, as JPEGs for ffmpeg
 //   FPS=60 SCALE=1 OUT=out/master FORMAT=png node ...      the master's frames
+// Render from a static build (vite build + vite preview, then BASE=…): the dev server's hot reload
+// would restart the page mid-capture if a file changed.
 const { chromium } = require('playwright');
 const fs = require('fs');
 const BASE = process.env.BASE || 'http://localhost:5173/';
@@ -47,6 +49,13 @@ const UNTIL = process.env.UNTIL ? Number(process.env.UNTIL) : Infinity;
     }
     for (const k of f.keys) await p.keyboard.press(k);
     if (f.text) await p.keyboard.type(f.text);
+    // An embedded full editor downloads in real time: hold the film clock until it has opened, so a
+    // fast render never films its loading screen.
+    if (await p.$('.craft-overlay')) {
+      const held = Date.now();
+      await p.waitForFunction(() => !document.querySelector('.craft-overlay'), null, { timeout: 15000, polling: 100 }).catch(() => warnings.push(`[film] the full editor was still opening at ${t.toFixed(2)}`));
+      if (Date.now() - held > 50) console.log(`held ${Date.now() - held} ms at ${t.toFixed(2)} for the full editor`);
+    }
     if (want && !want.has(i)) continue;
     // Let React commit what this frame's input changed, then draw the overlays for it.
     if (f.presses.length || f.keys.length || f.text) await p.evaluate((t) => window.__film.frame(t), t);

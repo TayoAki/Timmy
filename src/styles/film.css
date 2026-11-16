@@ -6,6 +6,20 @@
   background: var(--bg);
 }
 /* One virtual camera over the whole app. */
+.film.void {
+  background: #0c0d12;
+}
+/* The stage carries the reveal's 3D swing; the camera inside it frames the app. */
+.film-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  transform-origin: 50% 50%;
+  background: var(--bg);
+}
+.film-stage.swinging {
+  box-shadow: 0 60px 160px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
 .film-cam {
   position: absolute;
   inset: 0;
@@ -83,6 +97,31 @@
   margin-top: -14px;
   padding-left: 76px;
   color: #5b5850;
+}
+/* A small label above a chapter's line. */
+.film-line.eye {
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #3f51d9;
+  margin-bottom: -6px;
+}
+.film-card.dark .film-line.eye {
+  color: #8f9bff;
+}
+/* A quiet lead-in to the line that follows. */
+.film-line.lede {
+  font-size: 36px;
+  font-weight: 500;
+  color: #5b5850;
+  margin-bottom: -10px;
+}
+.film-card.dark .film-line.lede {
+  color: #a5acba;
+}
+.film-line .timmy-mark {
+  align-self: center;
 }
 .film-card.dark .film-line.n {
   color: #a5acba;

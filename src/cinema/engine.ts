@@ -111,7 +111,8 @@ export const FILM_H = 900;
  * Plays a film: waits for fonts and layout, calls `setup` (measure anchors),
  * then plays in real time, or, in frames mode, waits for window.__film.seek(t).
  */
-export function useFilm(length: number, frames: boolean, setup: () => void, render: (t: number) => void) {
+/** `cover` fills a frame of another shape (16:9 for the product film), cropping the 16:10 film's edges instead of showing them. */
+export function useFilm(length: number, frames: boolean, setup: () => void, render: (t: number) => void, cover = false) {
   const [ended, setEnded] = useState(false);
   const [scale, setScale] = useState(1);
   const renderRef = useRef(render);
@@ -120,11 +121,11 @@ export function useFilm(length: number, frames: boolean, setup: () => void, rend
   setupRef.current = setup;
 
   useEffect(() => {
-    const fit = () => setScale(Math.min(window.innerWidth / FILM_W, window.innerHeight / FILM_H));
+    const fit = () => setScale((cover ? Math.max : Math.min)(window.innerWidth / FILM_W, window.innerHeight / FILM_H));
     fit();
     window.addEventListener('resize', fit);
     return () => window.removeEventListener('resize', fit);
-  }, []);
+  }, [cover]);
 
   useEffect(() => {
     let raf = 0;
