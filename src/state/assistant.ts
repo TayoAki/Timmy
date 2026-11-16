@@ -123,6 +123,7 @@ const HELP = [
   'Finding time (“find 30 min with Priya Thursday”), blocking focus time, moving a meeting',
   'Changing a deal’s stage or value, after you confirm',
   'Writing a reply in your words (“say yes, Thursday works”) or making a draft shorter',
+  'Outbound: “how’s my campaign doing”, “who replied”, “any new form leads”, “write a campaign for my best leads”',
   'What needs your approval, with the choices to make',
   'Summarize or draft a reply to the email you have open',
   'A pipeline brief from your deals',

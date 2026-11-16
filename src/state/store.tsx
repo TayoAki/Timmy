@@ -7,6 +7,9 @@ import type { WS } from '../data/ws-types';
 import { fmtDate, fmtDay, fmtTime, money } from '../lib/format';
 import type { ApprovalKind, ApprovalRecord } from './approvals';
 import { draftFor } from './drafting';
+import { outbound, type OutOp } from './outbound';
+import { outboundSeed } from '../data/outbound-mock';
+import type { Outbound } from '../data/outbound-types';
 import { DEFAULT_SCHEDULE, fmtClock, nextRun, scheduleRule, whenLabel, daysLabel, type Schedule } from './schedule';
 import { applyOps, decisionOps, firstName, midSentence, patch as wsPatch, personName, put, registerPerson, type WsOp, type WsOptions } from './ws';
 
@@ -31,9 +34,14 @@ export type Route =
   | { view: 'project'; id: string; tab: 'overview' | 'tasks' | 'notes' | 'mail' | 'files' | 'ai' }
   | { view: 'contact'; id: string; tab: 'overview' | 'activity'; filter?: string }
   | { view: 'library'; tab: 'prompts' | 'captured' | 'routines' | 'learned' }
-  | { view: 'approvals'; tab: 'open' | 'history'; filter?: ApprovalKind };
+  | { view: 'approvals'; tab: 'open' | 'history'; filter?: ApprovalKind }
+  | { view: 'outbound'; tab: OutboundTab; list?: string; id?: string; filter?: string }
+  | { view: 'campaign'; id: string; tab: 'analytics' | 'leads' | 'sequence' | 'schedule' | 'options' }
+  | { view: 'social'; tab: 'overview' | 'create' | 'calendar' | 'trends' };
 
-export type Section = 'mail' | 'approvals' | 'activity' | 'people' | 'files' | 'rules' | 'tasks' | 'calendar' | 'docs' | 'projects' | 'library';
+export type OutboundTab = 'leads' | 'campaigns' | 'unibox' | 'speed' | 'templates' | 'channels';
+
+export type Section = 'mail' | 'approvals' | 'activity' | 'people' | 'files' | 'rules' | 'tasks' | 'calendar' | 'docs' | 'projects' | 'library' | 'outbound' | 'social';
 
 export const sectionOf = (r: Route): Section => {
   switch (r.view) {
@@ -62,13 +70,18 @@ export const sectionOf = (r: Route): Section => {
       return 'library';
     case 'approvals':
       return 'approvals';
+    case 'outbound':
+    case 'campaign':
+      return 'outbound';
+    case 'social':
+      return 'social';
     default:
       return 'mail';
   }
 };
 
 /** Detail screens keep the list you came from as the Back target. */
-const isDetail = (r: Route) => r.view === 'thread' || r.view === 'file' || r.view === 'contact' || r.view === 'project';
+const isDetail = (r: Route) => r.view === 'thread' || r.view === 'file' || r.view === 'contact' || r.view === 'project' || r.view === 'campaign';
 
 /** A new email or reply being written in the compose window. */
 export interface ComposeDraft {
@@ -89,6 +102,7 @@ interface Snapshot {
   decisions: Decision[];
   approvalLog: ApprovalRecord[];
   dismissed: string[];
+  out: Outbound;
 }
 
 export interface Toast {
@@ -126,6 +140,8 @@ export interface State {
   focus: boolean;
   /** The project everything is narrowed to, or null for all of them. */
   scope: string | null;
+  /** Outbound: leads, campaigns, the unibox, limits, forms and social. */
+  out: Outbound;
 }
 
 export type Action =
@@ -170,7 +186,9 @@ export type Action =
   | { type: 'setFocus'; on?: boolean }
   | { type: 'setScope'; project: string | null }
   /** Approve or turn down an item in the Approvals queue. */
-  | { type: 'resolve'; key: string; option: string; change?: { deal: string; stage: string; value: number }; via?: 'send' };
+  | { type: 'resolve'; key: string; option: string; change?: { deal: string; stage: string; value: number }; via?: 'send' }
+  /** Outbound: leads, campaigns, sending, forms, social. */
+  | { type: 'out'; op: OutOp };
 
 /** Builds a workspace change: dispatch(ws([put('tasks', task)], { toast: 'Task added', undo: true })). */
 export const ws = (ops: WsOp[], options: WsOptions = {}): Action => ({ type: 'ws', ops, ...options });
@@ -208,7 +226,11 @@ const initial: State = {
   schedule: DEFAULT_SCHEDULE,
   focus: false,
   scope: null,
+  out: outboundSeed(),
 };
+
+// Leads you've met or added to People show up by name on the calendar and in People.
+for (const l of Object.values(initial.out.leads)) if (l.status === 'meeting') registerPerson({ id: l.id, name: `${l.first} ${l.last}`, email: l.email, title: l.title, company: l.company });
 
 let toastSeq = 1;
 let activitySeq = 1;
@@ -223,6 +245,7 @@ const snap = (s: State): Snapshot => ({
   decisions: s.decisions,
   approvalLog: s.approvalLog,
   dismissed: s.dismissed,
+  out: s.out,
 });
 
 const fmtShortClock = (d: Date) => fmtTime(d).replace(':00', '');
@@ -783,6 +806,17 @@ function reducer(s: State, a: Action): State {
       if (kind === 'draft') {
         return reducer(s, a.option === 'send' ? { type: 'sendDraft', id, track: true } : { type: 'discardDraft', id });
       }
+      if (kind === 'camp') {
+        const c = s.out.campaigns[id];
+        if (!c) return s;
+        if (a.option === 'launch') return reducer(s, { type: 'out', op: { op: 'launch', id } });
+        return {
+          ...s,
+          out: { ...s.out, campaigns: { ...s.out.campaigns, [id]: { ...c, status: 'draft' } } },
+          approvalLog: recorded(s, { key: a.key, kind: 'campaign', title: `Launch “${c.name}”`, choice: 'Not yet', approved: false }),
+          toasts: withToast(s, `“${c.name}” moved back to drafts. Launch it from Campaigns when it’s ready.`, snap(s)),
+        };
+      }
       if (kind === 'crm') {
         const deal = s.deals[id];
         if (!deal) return s;
@@ -851,6 +885,12 @@ function reducer(s: State, a: Action): State {
       };
     }
 
+    case 'out':
+      return outbound(s, a.op, {
+        toast: (st, text, o) => withToast(st, text, o?.undo ? snap(st) : undefined, o?.tone),
+        log: (st, text, kind) => logged(st, text, kind),
+      });
+
     case 'reset':
       try {
         localStorage.removeItem(STORAGE_KEY);
@@ -911,7 +951,7 @@ const Ctx = createContext<{ state: State; dispatch: Dispatch<Action> } | null>(n
 
 const STORAGE_KEY = 'timmy-state-v3';
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
-const PERSISTED = ['threads', 'deals', 'activity', 'rules', 'ws', 'highlight', 'highlightDone', 'dismissed', 'route', 'back', 'decisions', 'approvalLog', 'schedule', 'focus', 'scope'] as const;
+const PERSISTED = ['threads', 'deals', 'activity', 'rules', 'ws', 'highlight', 'highlightDone', 'dismissed', 'route', 'back', 'decisions', 'approvalLog', 'schedule', 'focus', 'scope', 'out'] as const;
 
 function load(): State {
   try {
@@ -922,6 +962,8 @@ function load(): State {
     for (const key of PERSISTED) if (saved[key] !== undefined) (next as Record<string, unknown>)[key] = saved[key];
     // Collections added in later versions fall back to the seed.
     next.ws = { ...initial.ws, ...next.ws };
+    next.out = { ...initial.out, ...next.out };
+    for (const l of Object.values(next.out.leads)) if (next.ws.contacts[l.id] || l.status === 'meeting') registerPerson({ id: l.id, name: `${l.first} ${l.last}`, email: l.email, title: l.title, company: l.company });
     for (const c of Object.values(next.ws.contacts)) registerPerson({ id: c.id, name: c.name, email: c.email, title: c.title, company: c.company });
     return next;
   } catch {

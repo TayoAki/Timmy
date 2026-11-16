@@ -382,6 +382,7 @@ const events: WEvent[] = [
   { id: 'hiring-sync', title: 'Hiring sync', start: d(18, 10), end: d(18, 10, 30), kind: 'meeting', with: ['sofia'] },
   { id: 'qbr-prep', title: 'Focus: QBR slides 6–9', start: d(18, 14), end: d(18, 16), kind: 'focus', with: [], task: 't-qbr', docs: ['qbr-deck', 'pipeline-tracker'] },
   { id: 'gym-19', title: 'Gym', start: d(19, 7), end: d(19, 8), kind: 'personal', with: [] },
+  { id: 'ev-out-lead-14', title: 'Intro call: Logan Petrov, Fairhaven Imaging', start: d(19, 16, 30), end: d(19, 17), kind: 'meeting', with: ['lead-14'], note: 'Booked from outbound: Ops pilot, healthcare & services.' },
   { id: 'kickoff-plan', title: 'Northwind kickoff planning', start: d(19, 11), end: d(19, 12), kind: 'meeting', with: ['marcus'], notesDoc: 'northwind-notes' },
   { id: 'weekly-review', title: 'Weekly review', start: d(20, 16), end: d(20, 16, 45), kind: 'review', with: [], note: 'Open the review queue: quick notes, Waiting, CRM check-ins.', docs: ['weekly-template'], recurring: 'weekly' },
 ];

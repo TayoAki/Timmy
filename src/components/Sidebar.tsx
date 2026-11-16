@@ -29,6 +29,8 @@ import { LibrarySide } from '../areas/library';
 import { PeopleSide } from '../areas/people';
 import { ProjectsSide } from '../areas/projects';
 import { TasksSide } from '../areas/tasks';
+import { OutboundSide } from '../areas/outbound';
+import { SocialSide } from '../areas/outbound/Social';
 import type { Box, RuleGroup } from '../data/types';
 import { inBox, sectionOf, useStore } from '../state/store';
 import { useState } from 'react';
@@ -69,6 +71,10 @@ export function Sidebar() {
         <LibrarySide />
       ) : section === 'approvals' ? (
         <ApprovalsSide />
+      ) : section === 'outbound' ? (
+        <OutboundSide />
+      ) : section === 'social' ? (
+        <SocialSide />
       ) : (
         <MailSide />
       )}

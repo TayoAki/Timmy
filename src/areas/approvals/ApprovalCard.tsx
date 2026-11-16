@@ -17,7 +17,7 @@ const names = (ids: string[]) => ids.map((id) => personName(id)).join(', ');
 function useActions(a: Approval) {
   const { dispatch } = useStore();
   const run = (option: string) => dispatch({ type: 'resolve', key: a.key, option, change: a.change });
-  const open = () => a.thread && dispatch({ type: 'openThread', id: a.thread });
+  const open = () => (a.thread ? dispatch({ type: 'openThread', id: a.thread }) : a.route && dispatch({ type: 'navigate', route: a.route }));
   return { run, open };
 }
 
@@ -111,9 +111,9 @@ export function ApprovalCard({ a, inThread }: { a: Approval; inThread?: boolean 
           <UrgencyReasons info={a.urgency} max={2} />
         </div>
         <div className="ap-actions">
-          {a.thread && !inThread && (
+          {(a.thread || a.route) && !inThread && (
             <button className="btn btn-sm btn-ghost" onClick={open}>
-              {a.kind === 'email' ? 'Edit' : 'Open email'}
+              {a.openLabel ?? (a.kind === 'email' ? 'Edit' : 'Open email')}
             </button>
           )}
           {[...a.options].reverse().map((o) => (

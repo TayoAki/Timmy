@@ -8,6 +8,8 @@ import { LibraryView } from './areas/library';
 import { ContactView, PeopleView } from './areas/people';
 import { ProjectsView, ProjectView } from './areas/projects';
 import { TasksView } from './areas/tasks';
+import { CampaignView, OutboundView } from './areas/outbound';
+import { SocialView } from './areas/outbound/Social';
 import { Assistant } from './agent/Assistant';
 import { BottomBar } from './components/BottomBar';
 import { Compose } from './components/Compose';
@@ -92,6 +94,9 @@ function Shell() {
       {r.view === 'files' && <FilesView />}
       {r.view === 'library' && <LibraryView />}
       {r.view === 'approvals' && <ApprovalsView />}
+      {r.view === 'outbound' && <OutboundView />}
+      {r.view === 'campaign' && <CampaignView key={r.id} />}
+      {r.view === 'social' && <SocialView />}
       <RightPanel />
       <BottomBar />
       <div className="scrim" onClick={() => state.drawer && dispatch({ type: 'drawer', drawer: state.drawer })} />

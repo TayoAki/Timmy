@@ -1,4 +1,5 @@
-import { Bell, CalendarDays, FileText, FolderKanban, HardDrive, House, Library, ListChecks, Search, Settings, Stamp, Users } from 'lucide-react';
+import { Bell, CalendarDays, FileText, FolderKanban, HardDrive, House, Library, ListChecks, Megaphone, Rocket, Search, Settings, Stamp, Users } from 'lucide-react';
+import { useOutboundCounts } from '../areas/outbound';
 import { scopedApprovals } from '../state/scope';
 import type { ReactNode } from 'react';
 import { sectionOf, useStore, type Route, type Section } from '../state/store';
@@ -18,6 +19,7 @@ export function LeftRail() {
   const inbox = state.threads.filter((t) => t.box === 'inbox').length;
   const captured = Object.values(state.ws.notes).filter((n) => !n.processed).length;
   const approvals = scopedApprovals(state).length;
+  const out = useOutboundCounts();
 
   const items: Item[] = [
     { section: 'mail', label: 'Today & mail', icon: <House size={20} />, route: { view: 'today', tab: 'brief' } },
@@ -28,6 +30,8 @@ export function LeftRail() {
     { section: 'docs', label: 'Docs', icon: <FileText size={20} />, route: { view: 'docs', tab: 'recent' } },
     { section: 'projects', label: 'Projects', icon: <FolderKanban size={20} />, route: { view: 'projects', tab: 'active' } },
     { section: 'people', label: 'People', icon: <Users size={20} />, route: { view: 'people', tab: 'priority' } },
+    { section: 'outbound', label: 'Outbound', icon: <Rocket size={20} />, route: { view: 'outbound', tab: 'leads' }, badge: out.unread + out.waiting || undefined },
+    { section: 'social', label: 'Social (coming soon)', icon: <Megaphone size={20} />, route: { view: 'social', tab: 'overview' } },
     { section: 'files', label: 'Drive', icon: <HardDrive size={20} />, route: { view: 'files', tab: 'browse', folder: 'f02' } },
     { section: 'library', label: 'AI library', icon: <Library size={20} />, route: { view: 'library', tab: 'prompts' } },
     { section: 'activity', label: 'Timmy’s activity', icon: <Bell size={20} />, route: { view: 'activity', tab: 'all' }, badge: inbox || undefined },

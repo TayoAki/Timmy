@@ -5,20 +5,24 @@
  *
  *   dispatch({ type: 'resolve', key: a.key, option: 'send' })
  */
-import { BadgeDollarSign, CalendarCheck, Scale, Send, type LucideIcon } from 'lucide-react';
+import { BadgeDollarSign, CalendarCheck, Rocket, Scale, Send, type LucideIcon } from 'lucide-react';
 import type { Draft, Thread } from '../data/types';
 import { money } from '../lib/format';
-import type { State } from './store';
+import type { Route, State } from './store';
+import { project } from '../lib/outbound';
+import { ctxOf } from './outbound';
+import { fmtDay } from '../lib/format';
 import { firstName, midSentence } from './ws';
 import { URGENCY, urgencyOf, urgencyRank, type Urgency, type UrgencyContext, type UrgencyInfo } from './urgency';
 
-export type ApprovalKind = 'email' | 'decision' | 'crm' | 'calendar';
+export type ApprovalKind = 'email' | 'decision' | 'crm' | 'calendar' | 'campaign';
 
 export const APPROVAL_KINDS: Record<ApprovalKind, { label: string; plural: string; icon: LucideIcon; color: string }> = {
   email: { label: 'Email', plural: 'Emails to send', icon: Send, color: 'var(--accent)' },
   decision: { label: 'Decision', plural: 'Decisions', icon: Scale, color: 'var(--c-violet)' },
   crm: { label: 'CRM update', plural: 'CRM updates', icon: BadgeDollarSign, color: 'var(--c-teal)' },
   calendar: { label: 'Invite', plural: 'Calendar invites', icon: CalendarCheck, color: 'var(--c-green)' },
+  campaign: { label: 'Campaign', plural: 'Campaigns to launch', icon: Rocket, color: 'var(--c-amber)' },
 };
 
 export interface ApprovalOption {
@@ -44,6 +48,9 @@ export interface Approval {
   /** For CRM updates: the change that will be made. */
   change?: { deal: string; stage: string; value: number };
   options: ApprovalOption[];
+  /** Where "Review" goes when the item isn't an email thread. */
+  route?: Route;
+  openLabel?: string;
   /** What else approving this does, or a reason to look twice. */
   notes?: ApprovalNote[];
 }
@@ -209,8 +216,34 @@ export function openApprovals(s: State): Approval[] {
     });
   }
 
+  // Campaigns Timmy prepared wait here until you launch them.
+  for (const c of Object.values(s.out.campaigns)) {
+    if (c.status !== 'review') continue;
+    const plan = project(c, s.out.leads, ctxOf(s));
+    const channels = [...new Set(c.steps.map((st) => (st.channel === 'email' ? 'emails' : st.channel === 'call' ? 'calls' : st.channel === 'sms' ? 'texts' : st.channel)))];
+    list.push({
+      key: `camp:${c.id}`,
+      kind: 'campaign',
+      title: `Launch “${c.name}”?`,
+      why: `Timmy wrote a ${c.steps.length}-step sequence from your offer for ${c.leads.length} leads. Nothing goes out until you launch it.`,
+      facts: [
+        ['Leads', String(c.leads.length)],
+        ['Steps', `${c.steps.length} (${channels.join(', ')})`],
+        ['Daily limit', `${c.options.dailyLimit} new emails`],
+        ['Last step', plan.finish ? fmtDay(plan.finish) : 'Not scheduled'],
+      ],
+      urgency: fixed('soon', 'Leads cool off the longer they wait'),
+      route: { view: 'campaign', id: c.id, tab: 'sequence' },
+      openLabel: 'Review sequence',
+      options: [
+        { id: 'launch', label: 'Launch', primary: true },
+        { id: 'later', label: 'Not yet' },
+      ],
+    });
+  }
+
   // Within a level, decisions come before emails: an email often waits on the decision.
-  const order: Record<ApprovalKind, number> = { decision: 0, calendar: 1, crm: 2, email: 3 };
+  const order: Record<ApprovalKind, number> = { decision: 0, calendar: 1, campaign: 2, crm: 3, email: 4 };
   const due = (a: Approval) => a.due?.getTime() ?? Infinity;
   return list.sort(
     (a, b) =>

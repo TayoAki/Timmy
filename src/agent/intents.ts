@@ -20,6 +20,9 @@ import { scopedApprovals, scopedThreads } from '../state/scope';
 import { counterpart, ws, type Action, type State } from '../state/store';
 import { eventsOn, firstName, isoDay, midSentence, patch, personName, put, uid } from '../state/ws';
 import type { Plan, WidgetCall } from './plan';
+import type { Campaign } from '../data/outbound-types';
+import { fitOf, liveNow, pct, project, statsOf, writeSequence } from '../lib/outbound';
+import { coldToday, ctxOf } from '../state/outbound';
 
 /* ───────────── Reading the request ───────────── */
 
@@ -584,6 +587,101 @@ function cantDo(_s: State, l: string): Plan | null {
   };
 }
 
+/* ───────────── Outbound ───────────── */
+
+/** "How's my campaign doing?" */
+function outboundStats(s: State, l: string): Plan | null {
+  if (!/\b(campaigns?|outbound|cold emails?|sequences?|outreach)\b/.test(l) || !/(how|doing|going|stats|performing|results|numbers|working)/.test(l)) return null;
+  const active = Object.values(s.out.campaigns).filter((c) => c.status === 'active' || c.status === 'paused');
+  if (!active.length) return { steps: ['Checked your campaigns'], text: 'No campaign is running. Ask me to write one for your best-fit leads.', calls: [] };
+  const bullets = active.map((c) => {
+    const st = statsOf(c, s.out.leads, s.out.messages);
+    return `${c.name}${c.status === 'paused' ? ' (paused)' : ''}: ${st.sent} emails, ${pct(st.opened, st.sent - st.bounced)} opened, ${pct(st.replied, st.contacted)} replied, ${st.interested} interested, ${st.meetings} booked.`;
+  });
+  const hot = Object.values(s.out.leads).filter((x) => x.status === 'interested').length;
+  return {
+    steps: [`Read ${plural(active.length, 'campaign')}`, 'Counted sends, opens and replies'],
+    text: `${bullets.length === 1 ? 'Here’s how it’s doing.' : 'Here’s how they’re doing.'}${hot ? ` ${plural(hot, 'lead')} ${hot === 1 ? 'is' : 'are'} interested and waiting on you in the unibox.` : ''}`,
+    calls: [answer({ bullets, links: [...active.map((c) => ({ label: c.name, href: `campaign:${c.id}`, sub: 'Analytics' })), ...(hot ? [{ label: 'Open the unibox', href: 'outbound:unibox' }] : [])] })],
+  };
+}
+
+/** "Who replied?", "any hot leads?" */
+function outboundReplies(s: State, l: string): Plan | null {
+  if (!/(who replied|any replies|new replies|replies from|unibox|hot leads|interested leads|who('?s| is) interested)/.test(l)) return null;
+  const leads = Object.values(s.out.leads).filter((x) => x.unread || x.status === 'interested');
+  if (!leads.length) return { steps: ['Read the unibox'], text: 'No new or open replies from outbound.', calls: [] };
+  return {
+    steps: ['Read the unibox', 'Sorted replies by label'],
+    text: `${plural(leads.length, 'lead')} need${leads.length === 1 ? 's' : ''} a reply. Timmy has a suggested answer ready on each.`,
+    calls: [
+      answer({
+        links: leads.map((x) => ({ label: `${x.first} ${x.last}, ${x.company}`, href: `unibox:${x.id}`, sub: x.label === 'question' ? 'Asked a question' : x.unread ? 'Unread' : 'Interested' })),
+      }),
+    ],
+  };
+}
+
+/** "Any new form leads?", "speed to lead" */
+function formLeads(s: State, l: string): Plan | null {
+  if (!/(form leads?|speed to lead|inbound leads?|website leads?|demo requests?|new leads?)/.test(l)) return null;
+  const waiting = Object.values(s.out.leads).filter((x) => x.source === 'form' && !x.firstReplyAt && x.status !== 'not-interested');
+  const today = Object.values(s.out.leads).filter((x) => x.source === 'form' && x.receivedAt && dayDiff(x.receivedAt) === 0);
+  return {
+    steps: ['Checked your connected forms'],
+    text: waiting.length
+      ? `${plural(waiting.length, 'form lead')} ${waiting.length === 1 ? 'is' : 'are'} waiting for a first reply: ${waiting.map((x) => `${x.first} (${Math.max(1, Math.round((liveNow().getTime() - x.receivedAt!.getTime()) / 60000))} min)`).join(', ')}. Answer inside a few minutes and you’re far more likely to reach them.`
+      : `Nobody is waiting. ${plural(today.length, 'form lead')} came in today, and each got a first reply.`,
+    calls: [answer({ links: [...waiting.map((x) => ({ label: `${x.first} ${x.last}, ${x.company}`, href: 'outbound:speed', sub: 'Waiting' })), { label: 'Open Speed to lead', href: 'outbound:speed' }] })],
+  };
+}
+
+/** "How many cold emails can I send today?" */
+function sendingLimits(s: State, l: string): Plan | null {
+  if (!/(sending limits?|daily limits?|cold emails? (today|left)|how many (cold )?emails|emails? left today)/.test(l)) return null;
+  const t = coldToday(s);
+  return {
+    steps: ['Checked your mailboxes'],
+    text: `${t.sent} of ${t.cap} cold emails sent today across ${plural(Object.keys(s.out.mailboxes).length, 'mailbox', 'mailboxes')}, so ${t.left} left. Each mailbox stays at or under ${s.out.limits.perMailbox} a day, and new ones warm up from ${s.out.limits.rampStart}.`,
+    calls: [answer({ links: [{ label: 'Channels & limits', href: 'outbound:channels' }] })],
+  };
+}
+
+/** "Write a cold campaign for my best leads": Timmy prepares it; you launch it from Approvals. */
+function writeCampaign(s: State, l: string): Plan | null {
+  if (!/(write|draft|start|create|set up|build|launch|prepare)\b.*\b(cold (email|campaign|outreach)|outreach|campaign|sequence|outbound|emails? (to|for) (my )?(best |new )?leads)/.test(l)) return null;
+  const pool = Object.values(s.out.leads)
+    .filter((x) => x.status === 'new' && !x.campaign && x.email && x.source !== 'form')
+    .map((x) => ({ x, fit: fitOf(x, s.out.offer) }))
+    .filter(({ fit }) => fit.score >= 70)
+    .sort((a, b) => b.fit.score - a.fit.score);
+  if (!pool.length) return { steps: ['Looked for net-new leads that fit your offer'], text: 'There are no net-new leads that fit your offer well. Import a list in Outbound › Leads and ask again.', calls: [{ name: 'show_answer', args: { bullets: [], links: [{ label: 'Import leads', href: 'outbound:leads' }], choices: [] } }] };
+  const id = `camp-${Date.now().toString(36)}`;
+  const boxes = Object.values(s.out.mailboxes).filter((m) => !Object.values(s.out.campaigns).some((c) => c.status === 'active' && c.options.mailboxes.includes(m.id)));
+  const c: Campaign = {
+    id,
+    name: `${s.out.offer.name[0]!.toUpperCase()}${s.out.offer.name.slice(1)}: best fits`,
+    status: 'review',
+    byTimmy: true,
+    created: NOW,
+    leads: [],
+    steps: writeSequence(s.out.offer, { call: !!s.out.channels.call?.connected }),
+    schedule: { days: [1, 2, 3, 4, 5], start: '09:00', end: '17:00', tz: 'America/New_York' },
+    options: { dailyLimit: Math.min(s.out.limits.perMailbox, 30), mailboxes: (boxes.length ? boxes : Object.values(s.out.mailboxes)).slice(0, 1).map((m) => m.id), stopOnReply: true, trackOpens: false, unsubscribe: true, plainText: true },
+  };
+  const ids = pool.map(({ x }) => x.id);
+  const plan = project({ ...c, leads: ids }, s.out.leads, ctxOf(s));
+  return {
+    steps: [`Picked ${plural(ids.length, 'net-new lead')} that fit “${s.out.offer.name}”`, `Wrote a ${c.steps.length}-step sequence from your offer`, 'Checked it against your sending limits'],
+    text: `I wrote “${c.name}” for ${plural(ids.length, 'lead')}: ${c.steps.map((x) => (x.channel === 'call' ? 'a call' : 'an email')).join(', ')}. At ${c.options.dailyLimit} a day it finishes ${plan.finish ? fmtDay(plan.finish) : 'within two weeks'}. Nothing goes out until you launch it from Approvals.`,
+    effects: [
+      { type: 'out', op: { op: 'campaign', campaign: c, quiet: true } },
+      { type: 'out', op: { op: 'addToCampaign', id, leads: ids } },
+    ],
+    calls: [answer({ bullets: pool.slice(0, 5).map(({ x, fit }) => `${x.first} ${x.last}, ${x.title} at ${x.company} (fit ${fit.score})`), links: [{ label: 'Review the sequence', href: `campaign:${id}` }, { label: 'Approvals', href: 'approvals:campaign' }] })],
+  };
+}
+
 /** Runs the handlers in order; the first that recognises the request answers it. */
 export function intents(s: State, text: string, thread?: Thread): Plan | null {
   const l = text.trim().toLowerCase();
@@ -592,6 +690,11 @@ export function intents(s: State, text: string, thread?: Thread): Plan | null {
     overnight,
     (st, x) => editOpenDraft(st, x, text, thread),
     newUpdate,
+    outboundStats,
+    outboundReplies,
+    writeCampaign,
+    formLeads,
+    sendingLimits,
     (st, x) => replyToSomething(st, x, thread),
     cantSense,
     nudgePerson,

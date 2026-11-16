@@ -214,6 +214,14 @@ export const routeFromHref = (href: string): Route => {
       return { view: 'docs', tab: 'recent' };
     case 'activity':
       return { view: 'activity', tab: 'all' };
+    case 'campaign':
+      return { view: 'campaign', id: idPart!, tab: 'analytics' };
+    case 'unibox':
+      return { view: 'outbound', tab: 'unibox', id: idPart };
+    case 'outbound':
+      return { view: 'outbound', tab: (idPart as never) || 'leads' };
+    case 'social':
+      return { view: 'social', tab: 'overview' };
     default:
       return { view: 'today', tab: 'brief' };
   }

@@ -13,6 +13,8 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
+import { OutboundContext } from '../areas/outbound';
+import { SocialContext } from '../areas/outbound/Social';
 import type { ReactNode } from 'react';
 import { ARCHIVED_BASE, BOXES, LABEL_GUIDE, NOW, PEOPLE } from '../data/mock';
 import { pathOf, routeFromHref, todaysEvents } from '../state/ws';
@@ -56,6 +58,10 @@ export function RightPanel() {
     body = <ProjectsContext />;
   } else if (r.view === 'library') {
     body = <LibraryContext />;
+  } else if (r.view === 'outbound' || r.view === 'campaign') {
+    body = <OutboundContext />;
+  } else if (r.view === 'social') {
+    body = <SocialContext />;
   } else if (r.view === 'approvals') {
     body = <ApprovalsContext />;
   } else if (r.view === 'rules') {
