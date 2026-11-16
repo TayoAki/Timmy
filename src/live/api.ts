@@ -1,5 +1,6 @@
 import type { Action } from '../state/store';
 import { fromWire, toWire } from './patches';
+import type { TrackedOverview, TrackedThing } from './tracked';
 import type { CommandResult, LiveProfile } from './types';
 
 export class ApiError extends Error {
@@ -79,4 +80,11 @@ export const api = {
   /** Asks the model for a summary of the page as it is on screen. Only lines the page backs come back. */
   summarizePage: (id: string, blocks: unknown[]) => call<{ lines: { text: string; blocks: string[] }[] }>('POST', `/api/v1/pages/${encodeURIComponent(id)}/summarize`, { blocks }),
   audit: () => call<{ entries: { id: number; at: Date; actor: string; action: string; effect_id: string | null; detail: Record<string, unknown> }[] }>('GET', '/api/v1/audit?limit=100'),
+  /** What Timmy offers to track and what it tracks (deals, properties…), for the review screen on People. */
+  tracked: () => call<TrackedOverview>('GET', '/api/v1/tracked'),
+  trackedThings: (id: string) => call<{ things: TrackedThing[] }>('GET', `/api/v1/tracked/${encodeURIComponent(id)}/things`),
+  acceptTracking: (key: string, name?: string) => call('POST', `/api/v1/tracked/proposals/${encodeURIComponent(key)}/accept`, name ? { name } : {}),
+  dismissTracking: (key: string) => call('POST', `/api/v1/tracked/proposals/${encodeURIComponent(key)}/dismiss`, {}),
+  changeTracked: (id: string, change: { name?: string; removeField?: string }) => call('PATCH', `/api/v1/tracked/${encodeURIComponent(id)}`, change),
+  stopTracking: (id: string) => call<{ removed: number }>('DELETE', `/api/v1/tracked/${encodeURIComponent(id)}`),
 };

@@ -35,6 +35,8 @@ import { ThreadRow } from '../../views/MailboxView';
 import { RpSection, SectionHead, TaskLine } from '../projects/ui';
 import { ContactDialog } from './ContactDialog';
 import { LogDialog, NextStepDialog } from './dialogs';
+import { isLive } from '../../live/clock';
+import { Tracked } from './Tracked';
 import {
   CADENCES,
   PRIORITY_LIMIT,
@@ -113,17 +115,28 @@ export function PeopleView() {
   const [adding, setAdding] = useState(false);
 
   const rows = tab === 'priority' ? prio : tab === 'due' ? due : tab === 'tracked' ? all : sugg;
+  const tabs = [
+    { id: 'priority', label: 'Priority', count: prio.length },
+    { id: 'due', label: 'Due for review', count: due.length },
+    { id: 'tracked', label: 'All tracked', count: all.length },
+    { id: 'suggestions', label: 'Suggestions', count: sugg.length },
+    // A real workspace has one more: the kinds of thing Timmy tracks from the mail. The demo never shows it.
+    ...(isLive() ? [{ id: 'tracks', label: 'What Timmy tracks' }] : []),
+  ];
+  const onTab = (id: string) => dispatch({ type: 'navigate', route: { view: 'people', tab: id } });
+  if (isLive() && raw === 'tracks') {
+    return (
+      <Frame tabs={tabs} active="tracks" onTab={onTab} scrollKey="tracks" wide>
+        <Tracked />
+      </Frame>
+    );
+  }
 
   return (
     <Frame
-      tabs={[
-        { id: 'priority', label: 'Priority', count: prio.length },
-        { id: 'due', label: 'Due for review', count: due.length },
-        { id: 'tracked', label: 'All tracked', count: all.length },
-        { id: 'suggestions', label: 'Suggestions', count: sugg.length },
-      ]}
+      tabs={tabs}
       active={tab}
-      onTab={(id) => dispatch({ type: 'navigate', route: { view: 'people', tab: id } })}
+      onTab={onTab}
       scrollKey={tab}
       wide
     >

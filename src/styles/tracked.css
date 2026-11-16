@@ -1,0 +1,172 @@
+/* ───────────── People › What Timmy tracks ─────────────
+   Suggestions reuse the approval card. These are the few extra pieces: a tracked kind's row, the list of
+   things under it, and the sentence each one rests on. */
+
+.trk-list {
+  display: grid;
+  gap: 12px;
+}
+
+.trk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A tracked kind: name and count on the left, its fields, then the menu. */
+
+.trk-kind-head {
+  display: grid;
+  grid-template-columns: minmax(160px, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 12px 14px 12px 12px;
+}
+
+.trk-kind-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 6px;
+  border-radius: var(--r-sm);
+  font-size: 14.5px;
+  text-align: left;
+}
+
+.trk-kind-toggle:hover {
+  background: var(--hover);
+}
+
+.trk-kind-toggle svg {
+  flex: none;
+  color: var(--text-3);
+}
+
+.trk-kind-toggle .muted {
+  font-size: 12.5px;
+  font-weight: 400;
+}
+
+.trk-kind-head .chip .recip-x:disabled {
+  opacity: 0.5;
+}
+
+.trk-kind-body {
+  padding: 4px 18px 14px 20px;
+  border-top: 1px solid var(--line);
+}
+
+.trk-kind-body > .pj-none {
+  padding-top: 12px;
+}
+
+/* The things of a kind, and a suggestion's examples. */
+
+.trk-things {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trk-thing {
+  display: grid;
+  gap: 6px;
+  padding: 12px 0;
+}
+
+.trk-thing + .trk-thing {
+  border-top: 1px solid var(--line);
+}
+
+.ap-card .trk-things {
+  padding: 0 14px;
+  border-radius: var(--r);
+  background: var(--surface-2);
+}
+
+.trk-thing-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 20px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.trk-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 22px;
+  margin: 0;
+}
+
+.trk-fields div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.trk-fields dt {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.trk-fields dd {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The sentence something rests on, and the email it came from. */
+
+.trk-source {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.trk-source svg {
+  flex: none;
+  margin-top: 3px;
+  color: var(--text-3);
+}
+
+.trk-source q {
+  quotes: '“' '”';
+}
+
+.trk-source-from {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.trk-confirm {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+/* ───────────── Narrow main column ───────────── */
+
+@container (max-width: 760px) {
+  .trk-kind-head {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .trk-kind-head .chips {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
