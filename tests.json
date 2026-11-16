@@ -209,7 +209,7 @@
       "id": "live-calendar",
       "file": "e2e/live/live-calendar.cjs",
       "covers": "connect Google Calendar; an event with a guest waits out the undo window, then is created with the guest invited, once, and shows once in Timmy; Undo means nobody is invited",
-      "tests": 12,
+      "tests": 13,
       "status": "pass"
     },
     {
@@ -226,7 +226,7 @@
     },
     {
       "id": "staging-full",
-      "covers": "the nine live suites against the staging deploy on Railway (156 checks on the build with Waiting). The demo suites are not run against a deployed build of this branch: web deploys the older branch.",
+      "covers": "the ten live suites against the staging deploy on Railway (170 checks on the build with the phase 1 review fixes). The demo suites are not run against a deployed build of this branch: web deploys the older branch.",
       "status": "pass"
     },
     {

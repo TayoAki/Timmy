@@ -42,8 +42,14 @@ run('live-calendar', async (browser) => {
   await page.locator('.toast', { hasText: /Event added/ }).waitFor();
   ok((await page.locator('.toast').getByRole('button', { name: 'Undo' }).count()) === 1, 'adding an event with a guest starts an undo window');
   ok((await google()).length === 0, 'during the window nothing is on Google Calendar and nobody is invited');
-  const pending = (await api(page, 'GET', '/api/v1/state')).body.slices.pending;
+  // The notice appears at once; the server's record of the waiting invitation follows when it has answered.
+  let pending = [];
+  for (let i = 0; i < 20 && pending.length === 0; i++) {
+    pending = (await api(page, 'GET', '/api/v1/state')).body.slices.pending;
+    if (pending.length === 0) await page.waitForTimeout(150);
+  }
   ok(pending.length === 1 && pending[0].kind === 'calendar' && /dorothy@nasa\.test/.test(pending[0].title), `the invitation is listed as waiting to go out (${pending[0] && pending[0].title})`);
+  ok((await google()).length === 0, 'and it is still not on Google Calendar while it waits');
   ok(await until(async () => (await google()).length === 1), 'after the window the event is created in Google Calendar');
   const [made] = await google();
   ok(made.summary === 'Wind tunnel review' && made.attendees.join() === 'dorothy@nasa.test' && made.invited === true, 'with the guest invited, as written');

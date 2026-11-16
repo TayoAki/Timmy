@@ -68,8 +68,8 @@ Cost measurement: `server/scripts/measure-cost.ts` (the header says how to run i
 | --- | --- |
 | API unit and integration (`server/test`, 15 files) | 241 of 241 pass |
 | Demo-mode Playwright (`e2e/`, 12 suites, 348 checks) | 12 of 12 pass |
-| Live-mode Playwright (`e2e/live/`, 10 suites, 169 checks) | 10 of 10 pass |
-| Live-mode Playwright against **staging** (Railway) | 10 of 10 pass (168 checks) on the build with calendar writes. To be run again on the build with the review fixes. |
+| Live-mode Playwright (`e2e/live/`, 10 suites, 170 checks) | 10 of 10 pass |
+| Live-mode Playwright against **staging** (Railway) | 10 of 10 pass (170 checks) on the build with the review fixes. The calendar suite failed on its first staging run because the test looked for the waiting invitation before the server had answered; the test now waits for it and passed 3 of 3. |
 | Demo suites against a deployed build of this branch | Not run: `web` deploys the older branch, and I won't change that service without your OK |
 | Real-provider smoke (real Gmail through Composio) | Not run: needs a test Gmail account connected by a person |
 
