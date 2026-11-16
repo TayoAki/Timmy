@@ -43,7 +43,11 @@ export function Film({ children }: { children: ReactNode }) {
   const dimEl = useRef<HTMLDivElement>(null);
   const cardEl = useRef<HTMLDivElement>(null);
   const cursorEl = useRef<HTMLDivElement>(null);
-  const [card, setCard] = useState<{ i: number; n: number } | null>(null);
+  // The card on screen at frame 0 is mounted from the start, so the very first frame is the poster.
+  const [card, setCard] = useState<{ i: number; n: number } | null>(() => {
+    const i = spec.cards.findIndex((c) => c.t0 <= 0 && c.t1 > 0);
+    return i >= 0 ? { i, n: spec.cards[i]!.lines.filter((l) => l.t <= 0).length } : null;
+  });
 
   // Mutable film state: it only moves forward, one frame at a time.
   const st = useRef({
@@ -277,7 +281,8 @@ export function Film({ children }: { children: ReactNode }) {
       if (ci >= 0 && cardEl.current) {
         const c = spec.cards[ci]!;
         // Back-to-back cards swap their words without showing the app between them.
-        const joinIn = spec.cards.some((o) => Math.abs(o.t1 - c.t0) < 0.02);
+        // A card at frame 0 is the poster: it's already up, never fading in over the app.
+        const joinIn = c.t0 <= 0 || spec.cards.some((o) => Math.abs(o.t1 - c.t0) < 0.02);
         const joinOut = spec.cards.some((o) => Math.abs(o.t0 - c.t1) < 0.02);
         cardEl.current.style.opacity = String(Math.min(joinIn ? 1 : clamp((t - c.t0) / 0.22, 0, 1), joinOut ? 1 : clamp((c.t1 - t) / 0.18, 0, 1)));
         cardEl.current.querySelectorAll<HTMLElement>('[data-at]').forEach((el) => {

@@ -264,7 +264,7 @@ export function walkthrough(): Film {
         t1: quotes - 0.12,
         theme: 'dark',
         lines: [
-          { t: 0, text: 'If you run a small business,', size: 'lede' },
+          { t: -0.3, text: 'If you run a small business,', size: 'lede' },
           { t: decides, text: 'your inbox decides your day.', size: 'xl' },
         ],
       },
