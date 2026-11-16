@@ -176,14 +176,18 @@ function AuthScreen({ onDone }: { onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [sent, setSent] = useState(false);
+  /** The address has to be confirmed before anyone is signed in: a link was sent to it. */
+  const [confirm, setConfirm] = useState(false);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError('');
     try {
-      if (mode === 'up') await api.signUp(name.trim(), email.trim(), password);
-      else if (mode === 'in') await api.signIn(email.trim(), password);
+      if (mode === 'up') {
+        const made = await api.signUp(name.trim(), email.trim(), password);
+        if (!made.token) return setConfirm(true);
+      } else if (mode === 'in') await api.signIn(email.trim(), password);
       else {
         await api.magicLink(email.trim());
         setSent(true);
@@ -191,7 +195,9 @@ function AuthScreen({ onDone }: { onDone: () => void }) {
       }
       onDone();
     } catch (err) {
-      setError((err as Error).message);
+      // Signing in before the address is confirmed sends the link again; say that, not just "not verified".
+      if (mode === 'in' && /not verified/i.test((err as Error).message)) setConfirm(true);
+      else setError((err as Error).message);
     } finally {
       setBusy(false);
     }
@@ -200,7 +206,11 @@ function AuthScreen({ onDone }: { onDone: () => void }) {
   return (
     <Centered>
       <h1 className="live-title">{mode === 'up' ? 'Create your account' : mode === 'in' ? 'Sign in to Timmy' : 'Sign in with an email link'}</h1>
-      {sent ? (
+      {confirm ? (
+        <p className="live-note" role="status">
+          Confirm your address to finish. We sent a link to {email}; open it and you are signed in. It works for 24 hours. If it doesn’t arrive, check the address and your spam folder, then sign in here to have it sent again.
+        </p>
+      ) : sent ? (
         <p className="live-note" role="status">If {email} has an account, a sign-in link is on its way. It works once and expires in 10 minutes.</p>
       ) : (
         <form className="live-form" onSubmit={submit} noValidate>
@@ -228,9 +238,9 @@ function AuthScreen({ onDone }: { onDone: () => void }) {
         </form>
       )}
       <div className="live-switch">
-        {mode !== 'in' && <button className="btn btn-ghost btn-sm" onClick={() => { setMode('in'); setSent(false); setError(''); }}>Sign in with a password</button>}
-        {mode !== 'up' && <button className="btn btn-ghost btn-sm" onClick={() => { setMode('up'); setSent(false); setError(''); }}>Create an account</button>}
-        {mode !== 'link' && <button className="btn btn-ghost btn-sm" onClick={() => { setMode('link'); setError(''); }}>Email me a sign-in link</button>}
+        {(mode !== 'in' || confirm) && <button className="btn btn-ghost btn-sm" onClick={() => { setMode('in'); setSent(false); setConfirm(false); setError(''); }}>Sign in with a password</button>}
+        {mode !== 'up' && <button className="btn btn-ghost btn-sm" onClick={() => { setMode('up'); setSent(false); setConfirm(false); setError(''); }}>Create an account</button>}
+        {mode !== 'link' && <button className="btn btn-ghost btn-sm" onClick={() => { setMode('link'); setConfirm(false); setError(''); }}>Email me a sign-in link</button>}
       </div>
       <p className="live-fine">Signing in only proves who you are. Timmy can’t see your mail or calendar until you connect them, one button each.</p>
     </Centered>

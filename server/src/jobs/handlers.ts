@@ -4,6 +4,7 @@ import { dueEffects, executeEffect, expireStaleApprovals, onEffectApproved, onEf
 import { draftFor } from '../agent/draft';
 import { dueWorkspaces, morningRun } from '../agent/morning';
 import { needsReading, readThread } from '../agent/read';
+import { deliverMail, undeliveredMail } from '../providers/email';
 import { modelReady } from '../providers/model';
 import { readState } from '../state/mutate';
 import { abandonedRuns, resumeRun } from '../agent/loop';
@@ -30,9 +31,16 @@ export function registerJobs() {
       // An unconfirmed send is checked against the Sent folder for half an hour; after that it stays unconfirmed for a person to look at.
       const { rows } = await sysPool.query(`select id, workspace_id from effect where status = 'uncertain' and updated_at < now() - interval '1 minute' and executing_at > now() - interval '30 minutes' limit 25`);
       for (const e of rows) enqueueSoon('effect.reconcile', { workspaceId: e.workspace_id, effectId: e.id }, { singletonKey: `rec:${e.id}` });
+      // Account mail whose delivery job was lost is picked up again while its link is still good.
+      for (const id of await undeliveredMail()) enqueueSoon('email.deliver', { id }, { singletonKey: `mail:${id}` });
     },
     '* * * * *',
   );
+
+  // Timmy's own account mail. A failed delivery throws, so the queue tries it again.
+  defineJob('email.deliver', async (d) => {
+    await deliverMail(Number(d.id));
+  });
 
   defineJob('effect.reconcile', async (d) => {
     await reconcileEffect(String(d.workspaceId), String(d.effectId));

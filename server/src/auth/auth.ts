@@ -81,6 +81,17 @@ function build(secret: string) {
         void sendMail({ to: user.email, kind: 'reset', subject: 'Reset your Timmy password', body: `Reset your password:\n${url}\n\nIf you didn't ask for this, ignore this email.` });
       },
     },
+    // Proving an address is yours: a link is sent when the account is made, and opening it signs the person in.
+    // When confirmation is required (see config), an account can't sign in until that link has been opened.
+    emailVerification: {
+      sendOnSignUp: config.requireEmailVerification,
+      sendOnSignIn: config.requireEmailVerification,
+      autoSignInAfterVerification: true,
+      expiresIn: 60 * 60 * 24,
+      sendVerificationEmail: async ({ user, url }) => {
+        void sendMail({ to: user.email, kind: 'verify', subject: 'Confirm your email for Timmy', body: `Confirm this address to finish setting up Timmy:\n${url}\n\nThe link works for 24 hours. If you didn't create a Timmy account, ignore this email.` });
+      },
+    },
     session: { expiresIn: 60 * 60 * 24 * 30, updateAge: 60 * 60 * 24 },
     // Railway's edge sets X-Real-IP to the caller's address. X-Forwarded-For can be sent by anyone, so it is not used:
     // with it, one caller could dodge the sign-in limit, or everyone could share one counter and lock each other out.

@@ -59,7 +59,8 @@ export type { CommandResult };
 
 export const api = {
   me: () => call<Me>('GET', '/api/v1/me').catch((e) => (e instanceof ApiError && e.status === 401 ? null : Promise.reject(e))),
-  signUp: (name: string, email: string, password: string) => call('POST', '/api/auth/sign-up/email', { name, email, password }),
+  /** `token` is null when the address has to be confirmed first: the account exists but nobody is signed in yet. */
+  signUp: (name: string, email: string, password: string) => call<{ token: string | null }>('POST', '/api/auth/sign-up/email', { name, email, password, callbackURL: '/' }),
   signIn: (email: string, password: string) => call('POST', '/api/auth/sign-in/email', { email, password }),
   magicLink: (email: string) => call('POST', '/api/auth/sign-in/magic-link', { email, callbackURL: '/' }),
   signOut: () => call('POST', '/api/auth/sign-out', {}, { repeatable: true }),

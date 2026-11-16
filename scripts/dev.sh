@@ -87,12 +87,22 @@ run_live() {
   stop_on 8787
   psql "$OWNER_URL/postgres" -qc "drop database if exists timmy_e2e with (force)" -c "create database timmy_e2e" >/dev/null
   VITE_TIMMY_LIVE=1 npx vite build --outDir "$LOG_DIR/dist-live" --emptyOutDir >"$LOG_DIR/build-live.log" 2>&1 || { tail -20 "$LOG_DIR/build-live.log"; return 1; }
+  start_api || return 1
+  BASE=http://localhost:8787/ bash e2e/live/run-all.sh; code=$?
+  # One suite needs the setting production uses once Timmy can deliver mail: an address must be confirmed before sign-in.
+  TIMMY_REQUIRE_EMAIL_VERIFICATION=1 start_api || return 1
+  out=$(cd e2e/live && BASE=http://localhost:8787/ node live-verify.cjs 2>&1); vcode=$?
+  if [ $vcode -ne 0 ]; then code=1; echo "FAIL live-verify"; echo "$out" | grep -vE '^ok -' | head -6; else echo "ok   live-verify ($(echo "$out" | grep -cE '^ok -') checks)"; fi
+  stop_on 8787
+  return $code
+}
+
+# Starts the API on port 8787 with the stand-in providers, serving the live app that was just built.
+# Environment variables set on the call (such as TIMMY_REQUIRE_EMAIL_VERIFICATION=1) reach the server.
+start_api() {
   stop_on 8787
   (cd server && DATABASE_URL="$OWNER_URL/timmy_e2e" TIMMY_ENV=development TIMMY_FAKE_PROVIDERS=1 TIMMY_TEST_HOOKS=1 TIMMY_SEND_HOLD_SECONDS=${TIMMY_SEND_HOLD_SECONDS:-4} PORT=8787 PUBLIC_URL=http://localhost:8787 WEB_DIST="$LOG_DIR/dist-live" npx tsx src/index.ts >"$LOG_DIR/api.log" 2>&1 &)
   wait_for http://localhost:8787/api/health || { tail -20 "$LOG_DIR/api.log"; return 1; }
-  BASE=http://localhost:8787/ bash e2e/live/run-all.sh; code=$?
-  stop_on 8787
-  return $code
 }
 
 case "${1:-all}" in

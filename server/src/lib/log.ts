@@ -7,7 +7,7 @@ import { config } from '../config';
  */
 const KEY_SHAPES = [
   /sk-or-v1-[A-Za-z0-9]{16,}/g,
-  /\b(ak|ck|sk|pk|rk)_[A-Za-z0-9_-]{12,}/g,
+  /\b(ak|ck|sk|pk|rk|re)_[A-Za-z0-9_-]{12,}/g,
   /\bBearer\s+[A-Za-z0-9._~+/=-]{12,}/gi,
   /\b(eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{6,})\b/g,
   /(postgres(?:ql)?:\/\/[^:\s/]+:)[^@\s]+@/g,
@@ -19,7 +19,7 @@ export const addSecret = (value: string) => {
   if (value && value.length >= 8) learned.add(value);
 };
 
-const configured = () => [config.openrouter.apiKey, config.composio.apiKey, config.composio.webhookSecret, config.authSecret, config.testToken, ...learned].filter((s) => s && s.length >= 8);
+const configured = () => [config.openrouter.apiKey, config.composio.apiKey, config.composio.webhookSecret, config.mail.resendApiKey, config.authSecret, config.testToken, ...learned].filter((s) => s && s.length >= 8);
 
 export function redact(text: string): string {
   let out = text;

@@ -39,8 +39,22 @@ export const config = {
   testHooks: flag('TIMMY_TEST_HOOKS') && env.TIMMY_ENV !== 'production' && !(env.TIMMY_ENV === undefined && env.NODE_ENV === 'production'),
   /** On any deployed server the test hooks also need this token in the `x-test-token` header. */
   testToken: env.TIMMY_TEST_TOKEN ?? '',
-  /** Turn on once a mail provider delivers Timmy's own mail: sign-ups must then confirm their address before they can sign in. */
-  requireEmailVerification: flag('TIMMY_REQUIRE_EMAIL_VERIFICATION'),
+  /**
+   * Timmy's own account mail (sign-in links, confirmations, invitations, resets), delivered by Resend.
+   * `from` must be an address on a domain verified in Resend, e.g. "Timmy <timmy@mail.example.com>".
+   * With the stand-in providers on, nothing is delivered: messages stay in the outbox table, where tests read them.
+   */
+  mail: {
+    resendApiKey: env.RESEND_API_KEY ?? '',
+    from: env.TIMMY_MAIL_FROM ?? '',
+    resendBaseUrl: (env.RESEND_BASE_URL ?? 'https://api.resend.com').replace(/\/$/, ''),
+    deliver: env.TIMMY_MAIL_DELIVER !== undefined ? flag('TIMMY_MAIL_DELIVER') : !flag('TIMMY_FAKE_PROVIDERS'),
+  },
+  /**
+   * Whether a new account must confirm its address (by opening a link sent to it) before it can sign in.
+   * On by default as soon as Timmy can deliver mail, because until then nobody can prove an address is theirs.
+   */
+  requireEmailVerification: env.TIMMY_REQUIRE_EMAIL_VERIFICATION !== undefined ? flag('TIMMY_REQUIRE_EMAIL_VERIFICATION') : !flag('TIMMY_FAKE_PROVIDERS') && !!env.RESEND_API_KEY && !!env.TIMMY_MAIL_FROM,
 
   authSecret: env.BETTER_AUTH_SECRET ?? '',
 
