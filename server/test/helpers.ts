@@ -20,6 +20,10 @@ let n = 0;
 export async function boot(): Promise<Hono<Env>> {
   if (app) return app;
   await migrate();
+  // Every test file shares one database. Jobs that sweep "every connected mailbox" (the nightly check, the
+  // files pass) would otherwise also see the accounts earlier files left connected, and one such sweep stops
+  // after 200 jobs. Each file starts with none connected and sees only its own.
+  await sysPool.query(`update connection set status = 'disconnected', disconnected_at = now(), updated_at = now() where status in ('active', 'pending')`);
   await initAuth();
   registerJobs();
   app = buildApp();
