@@ -268,7 +268,7 @@
    "id": "live-pages",
    "file": "e2e/live/live-pages.cjs",
    "covers": "in the browser on a real workspace: no sample pages, automations or chats; a page typed with markdown shortcuts and the / menu is saved by the server and survives a reload; a script link is refused; trash and restore; an automation drawn on the canvas, saved, test-run with sample data; switching it or the website chat on is refused with the reason; a made-up visitor conversation is refused; a task is kept; Summarize with Timmy adds lines that come from the page",
-   "checks": 28,
+   "checks": 29,
    "status": "pass"
   },
   {
@@ -308,8 +308,8 @@
   {
    "id": "staging-full",
    "covers": "the live-mode browser suites (e2e/live/run-all.sh, 11 suites, 199 checks) against the staging server on Railway with stand-in providers",
-   "status": "pass",
-   "result": "11 of 11 pass on build 231dc18 (Nov 16, 2026)"
+   "status": "blocked",
+   "result": "Not verified for this branch since the new UI was merged: staging’s app follows the other session’s temporary branch. Last run of this branch on staging: 11 of 11 on build 231dc18 (Nov 16, 2026)."
   },
   {
    "id": "prod-smoke",

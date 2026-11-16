@@ -86,9 +86,9 @@ Cost measurement: `server/scripts/measure-cost.ts` (the header says how to run i
 | Suite | Result |
 | --- | --- |
 | API unit and integration (`server/test`, 20 files) | 331 of 331 pass |
-| Demo-mode Playwright (`e2e/`, 17 suites, 483 checks) | 17 of 17 pass. The frontend branch brought five suites (`e2e-round4`, `e2e-story`, `e2e-intro`, `e2e-pages`, `e2e-uis`). `e2e-round3` failed once during a run in which I was editing source files while the dev server hot-reloaded; it passed 45 of 45 on a clean run. |
-| Live-mode Playwright (`e2e/live/`, 15 suites, 248 checks) | 15 of 15 pass. Fourteen run on one server; `live-verify` runs on a server restarted with address confirmation required. |
-| Live-mode Playwright against **staging** (Railway) | Last full run: 11 of 11 (199 checks) on build `231dc18`, before the new UI was merged. To be re-run on the merged build. |
+| Demo-mode Playwright (`e2e/`, 17 suites, 483 checks) | 17 of 17 pass in one clean run. The frontend branch brought five suites (`e2e-round4`, `e2e-story`, `e2e-intro`, `e2e-pages`, `e2e-uis`). An earlier run had one failure in `e2e-round3`, caused by my editing source files while the dev server hot-reloaded mid-run; nothing was changed for it. |
+| Live-mode Playwright (`e2e/live/`, 15 suites, 249 checks) | 15 of 15 pass, on the combined code after both merges. Fourteen run on one server; `live-verify` runs on a server restarted with address confirmation required. |
+| Live-mode Playwright against **staging** (Railway) | Not verified for this branch. Staging's `app` follows the other session's temporary branch (see below), so a run there on Nov 16 tested that older build: 10 suites passed, and the 3 that failed (`live-outlook`, `live-pages`, `live-decisions`) check features only this branch has. The last run of this branch on staging was 11 of 11 (199 checks) on build `231dc18`, before the new UI. |
 | Composio tool check (`server/scripts/check-composio.mts`, real API, read-only) | Pass: 24 tools and 8 events exist at the pinned versions and take the arguments the code sends. |
 | Real connect links for Outlook and Drive (Composio's real API) | Pass: a link was minted for each through the server's own code, with the pinned versions, and the pending accounts were removed again. Composio accepted the narrower Outlook permission set (`timmy-outlook-a7eae611`: mail and profile only). Nobody has signed in through them yet. |
 | Demo suites against a deployed build of this branch | Not run: `web` deploys the older branch, and I won't change that service without your OK |
