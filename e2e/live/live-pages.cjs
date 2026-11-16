@@ -65,11 +65,14 @@ run('live-pages', async (browser) => {
 
   // Typing that carries on while a save is on its way back is kept. On a real workspace the save's answer is a new
   // copy of the same page; it must not replace what is on screen, or the letters typed in between are lost.
-  // The click goes on the last block itself: a click on the middle of the page can land on the title while the
-  // page is still settling after a reload, and Enter in the title sends the typing to the top of the page.
-  await page.locator('.nb-editor > *').last().click();
-  await page.waitForFunction(() => document.activeElement?.classList.contains('nb-editor'));
-  await page.keyboard.press('Control+End');
+  // The cursor is put at the end of a line by clicking it, then End. The editor reads where a click put the
+  // cursor a moment after the click, not during it. A person cannot press a key in that moment; a test can, and
+  // the key then acts on the old cursor position at the top of the page. So the test lets the page take a turn first.
+  const plain = page.locator('.nb-editor p', { hasText: 'Ship before July.' }).first();
+  await plain.click();
+  await page.waitForFunction(() => document.activeElement?.classList.contains('nb-editor') && /Ship before July\./.test(window.getSelection()?.anchorNode?.textContent || ''));
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(done, 60)))));
+  await page.keyboard.press('End');
   await page.keyboard.press('Enter');
   await page.keyboard.type('Abort modes reviewed');
   // The editor saves after a short pause. Each wait below ends a little later after that pause, so one of them
