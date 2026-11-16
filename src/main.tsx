@@ -15,6 +15,7 @@ import './styles/people.css';
 import './styles/files.css';
 import './styles/library.css';
 import './styles/approvals.css';
+import './styles/focus.css';
 import App from './App';
 
 createRoot(document.getElementById('root')!).render(

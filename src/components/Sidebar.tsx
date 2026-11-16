@@ -34,6 +34,8 @@ import { inBox, sectionOf, useStore } from '../state/store';
 import { useState } from 'react';
 import { Avatar, Folder, Kbd, TimmyMark, tint } from './common';
 import { Modal } from './kit';
+import { ProjectScope } from './ProjectScope';
+import { eventInScope, scopedThreads } from '../state/scope';
 
 const BOX_ICONS: Record<Box, LucideIcon> = {
   inbox: Inbox,
@@ -48,6 +50,7 @@ export function Sidebar() {
   const section = sectionOf(state.route);
   return (
     <aside className="side" aria-label="Sidebar">
+      <ProjectScope />
       {section === 'people' ? (
         <PeopleSide />
       ) : section === 'files' ? (
@@ -79,8 +82,8 @@ function MailSide() {
   const activeBox = r.view === 'box' ? r.box : null;
   const starred = state.threads.filter((t) => t.starred);
   const archived = ARCHIVED_BASE + inBox(state.threads, 'archived').length;
-  const owe = inBox(state.threads, 'follow-up').length;
-  const meetings = todaysEvents(state.ws).filter((e) => e.kind === 'meeting').length;
+  const owe = scopedThreads(state, inBox(state.threads, 'follow-up')).length;
+  const meetings = todaysEvents(state.ws).filter((e) => e.kind === 'meeting' && eventInScope(state, e)).length;
   const projects = Object.values(state.ws.projects).filter((p) => p.status === 'active');
 
   return (
@@ -123,7 +126,7 @@ function MailSide() {
           <div className="side-title">Mail</div>
           {BOXES.filter((b) => b.id !== 'archived').map((b) => {
             const Icon = BOX_ICONS[b.id as Box];
-            const count = inBox(state.threads, b.id).length;
+            const count = scopedThreads(state, inBox(state.threads, b.id)).length;
             return (
               <button
                 key={b.id}
@@ -148,7 +151,7 @@ function MailSide() {
           })}
         </div>
 
-        <div className="side-group">
+        <div className="side-group focus-hide">
           <div className="side-title">Projects</div>
           {projects.map((p) => (
             <button
@@ -167,7 +170,7 @@ function MailSide() {
           ))}
         </div>
 
-        <div className="side-group">
+        <div className="side-group focus-hide">
           <div className="side-title">
             Starred
             <span className="mono" title="Keep starred threads to five or fewer">

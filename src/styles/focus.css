@@ -1,0 +1,391 @@
+/* ───────────── Project picker (top of the sidebar) ───────────── */
+
+.scope {
+  position: relative;
+  padding: 10px 10px 0;
+}
+
+.scope-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 46px;
+  padding: 6px 10px;
+  border-radius: var(--r);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  text-align: left;
+  box-shadow: var(--shadow-sm);
+}
+
+.scope-btn:hover,
+.scope-btn[aria-expanded='true'] {
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+}
+
+.scope-btn.on {
+  border-color: var(--accent-line);
+}
+
+.scope-all-icon {
+  flex: none;
+  margin: 0 1px;
+  color: var(--text-2);
+}
+
+.scope-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.scope-label {
+  font-size: 11px;
+  font-weight: 550;
+  color: var(--text-3);
+}
+
+.scope-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.scope-chev {
+  flex: none;
+  color: var(--text-3);
+}
+
+.scope-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 10px;
+  right: 10px;
+  z-index: 60;
+  display: grid;
+  padding: 6px;
+  border-radius: var(--r);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  animation: pop-in 0.18s var(--ease-out);
+}
+
+.scope-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px;
+  border-radius: var(--r-sm);
+  text-align: left;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.scope-item:hover,
+.scope-item:focus-visible {
+  background: var(--hover);
+}
+
+.scope-item > svg:first-child {
+  flex: none;
+  color: var(--text-2);
+}
+
+.scope-item-text {
+  display: grid;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+  font-weight: 550;
+}
+
+.scope-item-sub {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11.5px;
+  font-weight: 450;
+  color: var(--text-2);
+}
+
+.scope-check {
+  flex: none;
+  color: var(--accent-text);
+}
+
+.scope-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--line);
+}
+
+.scope-item.muted-item .scope-item-text {
+  color: var(--text-2);
+}
+
+.scope-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: var(--r);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.scope-note strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.scope-note .link-btn {
+  margin-left: auto;
+}
+
+/* ───────────── Focus mode ───────────── */
+
+/* The bar's Focus button stays lit while it's on. */
+.bar-focus.on {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.bar-status.focus {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.bar-sub {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.focus-foot {
+  margin-top: 28px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+/* No right panel, no badges, no sidebar extras: just the work in front of you. */
+.app[data-focus] {
+  grid-template-columns: var(--rail-w) var(--side-w) minmax(0, 1fr);
+  grid-template-areas:
+    'rail side main'
+    'bar  bar  bar';
+}
+
+.app[data-focus] .right,
+.app[data-focus] .right-toggle,
+.app[data-focus] .rail-badge,
+.app[data-focus] .focus-hide {
+  display: none !important;
+}
+
+@media (max-width: 899px) {
+  .app[data-focus] {
+    grid-template-columns: var(--rail-w) minmax(0, 1fr);
+    grid-template-areas:
+      'rail main'
+      'bar  bar';
+  }
+}
+
+/* ───────────── Project cockpit (focus mode + a picked project) ───────────── */
+
+.pf-hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.pf-hero-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.pf-goal {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.pf-deal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border-radius: var(--r);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 13px;
+}
+
+.pf-deal > svg {
+  color: var(--c-teal);
+}
+
+.pf-deal strong {
+  font-weight: 600;
+}
+
+.pf-deal-next {
+  color: var(--text-2);
+}
+
+.pf-deal .link-btn {
+  margin-left: auto;
+}
+
+.pf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+  gap: 12px;
+}
+
+.pf-piece {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pf-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 14px 9px;
+  border-bottom: 1px solid var(--line);
+}
+
+.pf-head > svg {
+  flex: none;
+  color: var(--accent-text);
+}
+
+.pf-title {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.pf-count {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+
+.pf-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--accent-text);
+}
+
+.pf-empty {
+  padding: 12px 14px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.pf-list,
+.pf-people {
+  margin: 0;
+  list-style: none;
+  padding: 4px 0;
+}
+
+.pf-line,
+.pf-decision {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 8px;
+  row-gap: 1px;
+  align-items: center;
+  width: 100%;
+  padding: 7px 14px;
+  text-align: left;
+  font-size: 13px;
+}
+
+.pf-line:hover {
+  background: var(--hover);
+}
+
+.pf-line > :only-child,
+.pf-line > .pf-line-main:first-child {
+  grid-column: 1 / -1;
+}
+
+.pf-line-main {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 550;
+  color: var(--text);
+}
+
+.pf-line-sub {
+  grid-column: 2;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.pf-line > .pf-line-main:first-child + .pf-line-sub {
+  grid-column: 1 / -1;
+}
+
+.pf-when {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+}
+
+.pf-decision .pf-line-main {
+  white-space: normal;
+  font-weight: 450;
+  line-height: 1.45;
+}
+
+.pf-people {
+  display: grid;
+  gap: 2px;
+}
+
+.pf-person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 14px;
+  text-align: left;
+}
+
+.pf-person:hover {
+  background: var(--hover);
+}
+
+.pf-person > span {
+  display: grid;
+  min-width: 0;
+}
+
+.pf-person .pf-line-sub {
+  grid-column: auto;
+}

@@ -59,6 +59,9 @@ function Shell() {
       } else if (e.key.toLowerCase() === 'c' && !typing && !mod && !e.altKey && !state.compose && !state.searchOpen) {
         e.preventDefault();
         dispatch({ type: 'compose', draft: { to: [], subject: '', body: '' } });
+      } else if (mod && e.key === '.') {
+        e.preventDefault();
+        dispatch({ type: 'setFocus' });
       } else if (e.key === 'Escape' && state.drawer) {
         dispatch({ type: 'drawer', drawer: state.drawer });
       }
@@ -68,7 +71,7 @@ function Shell() {
   }, [dispatch, state.searchOpen, state.drawer, state.capture, state.compose]);
 
   return (
-    <div className="app" data-drawer={state.drawer ?? undefined}>
+    <div className="app" data-drawer={state.drawer ?? undefined} data-focus={state.focus ? '' : undefined}>
       <LeftRail />
       <Sidebar />
       {r.view === 'today' && <TodayView tab={r.tab} />}

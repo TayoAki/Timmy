@@ -7,7 +7,8 @@ import { ArrowRight, BadgeDollarSign, CalendarDays, Check, CircleCheck, FilePenL
 import type { ReactNode } from 'react';
 import { NOW } from '../data/mock';
 import { dueInfo, fmtTime, money } from '../lib/format';
-import { openApprovals, type ApprovalKind } from '../state/approvals';
+import { type ApprovalKind } from '../state/approvals';
+import { scopedApprovals, scopedThreads } from '../state/scope';
 import { routeForHref, type ChatChoice, type ChatLink } from '../state/assistant';
 import { counterpart, useStore, ws, type Action } from '../state/store';
 import { openThreads, useUrgency } from '../state/urgency';
@@ -57,7 +58,7 @@ function GoTo({ label, onClick }: { label: string; onClick: () => void }) {
 function UrgentWidget({ limit = 6, level = 'urgent' }: { limit?: number; level?: string }) {
   const { state, dispatch } = useStore();
   const { rank } = useUrgency();
-  const all = rank(openThreads(state.threads));
+  const all = rank(scopedThreads(state, openThreads(state.threads)));
   const rows = (level === 'all' ? all : all.filter((x) => x.u.level === 'urgent')).slice(0, limit);
   return (
     <Widget icon={Flame} title={level === 'all' ? 'Open mail, most urgent first' : 'Needs you today'} action={<GoTo label="Daily brief" onClick={() => dispatch({ type: 'navigate', route: { view: 'today', tab: 'brief' } })} />}>
@@ -104,7 +105,7 @@ function UrgentWidget({ limit = 6, level = 'urgent' }: { limit?: number; level?:
 
 function ApprovalsWidget({ limit, kind }: { limit?: number; kind?: ApprovalKind }) {
   const { state, dispatch } = useStore();
-  const all = openApprovals(state).filter((a) => !kind || a.kind === kind);
+  const all = scopedApprovals(state).filter((a) => !kind || a.kind === kind);
   const rows = limit ? all.slice(0, limit) : all;
   return (
     <Widget

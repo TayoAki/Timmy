@@ -1,7 +1,7 @@
-import { Check, Flame, Inbox, Monitor, Moon, Search, Stamp, Sun, type LucideIcon } from 'lucide-react';
+import { Check, Flame, Focus, Inbox, Monitor, Moon, Search, Stamp, Sun, type LucideIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { fmtTime } from '../lib/format';
-import { openApprovals } from '../state/approvals';
+import { scopedApprovals, scopedThreads } from '../state/scope';
 import { LAST_RUN, nextRun, whenLabel } from '../state/schedule';
 import { inBox, useStore } from '../state/store';
 import { openThreads, useUrgency } from '../state/urgency';
@@ -9,25 +9,35 @@ import { MODES, PALETTES, Swatch, useTheme, type Mode } from '../state/theme';
 import { AssistantLauncher } from '../agent/Assistant';
 
 const MODE_ICON: Record<Mode, typeof Sun> = { light: Sun, dark: Moon, system: Monitor };
+const FOCUS_KEY = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘.' : 'Ctrl+.';
 
 export function BottomBar() {
   const { state, dispatch } = useStore();
   const inbox = inBox(state.threads, 'inbox').length;
-  const approvals = openApprovals(state).length;
+  const approvals = scopedApprovals(state).length;
   const next = nextRun(state.schedule);
   const { rank } = useUrgency();
-  const urgent = rank(openThreads(state.threads)).filter((x) => x.u.level === 'urgent').length;
+  const urgent = rank(scopedThreads(state, openThreads(state.threads))).filter((x) => x.u.level === 'urgent').length;
+  const project = state.scope ? state.ws.projects[state.scope] : undefined;
+  const focus = state.focus;
 
   return (
     <footer className="bar">
       <div className="bar-group bar-left">
-        <span className="bar-status" aria-hidden />
-        <span className="bar-status-text">
-          <strong>Timmy is up to date</strong>
-          <button className="bar-link" onClick={() => dispatch({ type: 'navigate', route: { view: 'rules', tab: 'schedule' } })} title="Change the morning run in Settings › Schedule">
-            Last run {fmtTime(LAST_RUN)} · {next ? `next ${whenLabel(next)}` : 'morning run paused'}
-          </button>
-        </span>
+        <span className={`bar-status${focus ? ' focus' : ''}`} aria-hidden />
+        {focus ? (
+          <span className="bar-status-text">
+            <strong>Focus mode{project ? ` · ${project.name}` : ''}</strong>
+            <span className="bar-sub">Only what needs you is showing</span>
+          </span>
+        ) : (
+          <span className="bar-status-text">
+            <strong>{project ? `Showing ${project.name}` : 'Timmy is up to date'}</strong>
+            <button className="bar-link" onClick={() => dispatch({ type: 'navigate', route: { view: 'rules', tab: 'schedule' } })} title="Change the morning run in Settings › Schedule">
+              Last run {fmtTime(LAST_RUN)} · {next ? `next ${whenLabel(next)}` : 'morning run paused'}
+            </button>
+          </span>
+        )}
       </div>
 
       <div className="bar-ask">
@@ -37,15 +47,30 @@ export function BottomBar() {
       <nav className="bar-group bar-right" aria-label="Shortcuts">
         <BarStat icon={Flame} label="Urgent" count={urgent} tone="urgent" onClick={() => dispatch({ type: 'navigate', route: { view: 'today', tab: 'brief' } })} />
         <BarStat icon={Stamp} label="To approve" count={approvals} onClick={() => dispatch({ type: 'navigate', route: { view: 'approvals', tab: 'open' } })} />
-        <BarStat icon={Inbox} label="Unsorted" count={inbox} onClick={() => dispatch({ type: 'navigate', route: { view: 'today', tab: 'triage' } })} />
+        {!focus && <BarStat icon={Inbox} label="Unsorted" count={inbox} onClick={() => dispatch({ type: 'navigate', route: { view: 'today', tab: 'triage' } })} />}
         <span className="bar-sep" aria-hidden />
-        <button className="bar-stat" onClick={() => dispatch({ type: 'search', open: true })} title="Search (⌘K)">
+        <button
+          className={`bar-stat bar-focus${focus ? ' on' : ''}`}
+          aria-pressed={focus}
+          onClick={() => dispatch({ type: 'setFocus' })}
+          title={`${focus ? 'Leave focus mode' : 'Focus mode: hide everything that can wait'} (${FOCUS_KEY})`}
+        >
           <span className="bar-stat-icon">
-            <Search size={19} />
+            <Focus size={19} />
           </span>
-          <span className="bar-stat-label">Search</span>
+          <span className="bar-stat-label">{focus ? 'Focus on' : 'Focus'}</span>
         </button>
-        <ThemeMenu />
+        {!focus && (
+          <>
+            <button className="bar-stat" onClick={() => dispatch({ type: 'search', open: true })} title="Search (⌘K)">
+              <span className="bar-stat-icon">
+                <Search size={19} />
+              </span>
+              <span className="bar-stat-label">Search</span>
+            </button>
+            <ThemeMenu />
+          </>
+        )}
       </nav>
     </footer>
   );

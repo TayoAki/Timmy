@@ -8,6 +8,8 @@ import type { ReactNode } from 'react';
 import { ACTIVITY } from '../../data/mock';
 import { fmtStamp, fmtTime, plural } from '../../lib/format';
 import { APPROVAL_KINDS, openApprovals, type Approval, type ApprovalKind } from '../../state/approvals';
+import { scopedApprovals } from '../../state/scope';
+import { ScopeNote } from '../../components/ProjectScope';
 import { nextRun, whenLabel } from '../../state/schedule';
 import { useStore, type Route } from '../../state/store';
 import { URGENCY, type Urgency } from '../../state/urgency';
@@ -21,9 +23,10 @@ export { ApprovalCard, ApprovalRow } from './ApprovalCard';
 type ApprovalsRoute = Extract<Route, { view: 'approvals' }>;
 const KINDS = Object.keys(APPROVAL_KINDS) as ApprovalKind[];
 
+/** What's waiting on you, narrowed to the picked project. */
 export function useApprovals() {
   const { state } = useStore();
-  return openApprovals(state);
+  return scopedApprovals(state);
 }
 
 export function ApprovalsView() {
@@ -60,6 +63,8 @@ function Queue({ all, filter }: { all: Approval[]; filter?: ApprovalKind }) {
         Timmy prepares, you decide. Emails, invites, CRM changes and calls on price or hiring wait here until you approve them. Every choice is logged and can be undone from
         the notice that follows.
       </p>
+
+      <ScopeNote hidden={openApprovals(state).length - all.length} noun={['approval', 'approvals']} />
 
       <div className="filters" role="group" aria-label="Show">
         <button className="filter" aria-pressed={!filter} onClick={() => dispatch({ type: 'navigate', route: { view: 'approvals', tab: 'open' } })}>

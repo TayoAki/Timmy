@@ -1,6 +1,8 @@
 import { Archive, ArrowDown, ArrowUp, ChevronDown, ChevronRight, FilePenLine, Flame, Sparkles, Star } from 'lucide-react';
 import { UrgencyTag } from '../components/Urgency';
 import { useUrgency } from '../state/urgency';
+import { scopedThreads } from '../state/scope';
+import { ScopeNote } from '../components/ProjectScope';
 import { useMemo, useState } from 'react';
 import { BOXES, LABEL_GUIDE, PEOPLE, PROJECTS } from '../data/mock';
 import type { Box, ProjectId, Thread } from '../data/types';
@@ -50,7 +52,8 @@ export function MailboxView({ box, tab }: { box: Box | ProjectId; tab: string })
   const tabs = TABS[isProject ? 'project' : box]!;
   const active = tabs.find((t) => t.id === tab) ?? tabs[0]!;
 
-  const base = isProject ? state.threads.filter((t) => t.project === box) : inBox(state.threads, box);
+  // The project picker narrows every mail list except the archive's search-style view.
+  const base = isProject ? state.threads.filter((t) => t.project === box) : scopedThreads(state, inBox(state.threads, box));
 
   const [from, setFrom] = useState('');
   const [onlyDrafts, setOnlyDrafts] = useState(false);
@@ -89,6 +92,7 @@ export function MailboxView({ box, tab }: { box: Box | ProjectId; tab: string })
         <h1 className="page-title">{label.name}</h1>
       </div>
       <p className="page-sub">{guide ? guide.body : `Everything for ${label.name}, filed where you’ll use it.`}</p>
+      {!isProject && <ScopeNote hidden={inBox(state.threads, box).length - base.length} />}
 
       <div className="filters">
         <label className="filter">

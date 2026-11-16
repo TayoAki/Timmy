@@ -75,7 +75,8 @@ export function TasksView() {
   const { state, dispatch } = useStore();
   const r = useTasksRoute();
   const tab = r.tab;
-  const project = r.project;
+  // With a project picked in the sidebar, the board shows it unless a project is chosen here.
+  const project = r.project ?? state.scope ?? undefined;
   const [priority, setPriority] = useState<Priority | ''>('');
   const [showDone, setShowDone] = useState(false);
   const [editing, setEditing] = useState<Partial<Task> | null>(null);
@@ -487,6 +488,7 @@ function TaskList({ tasks, onOpen, onNew }: { tasks: Task[]; onOpen: (t: Task) =
 export function TasksSide() {
   const { state, dispatch } = useStore();
   const r = state.route.view === 'tasks' ? state.route : null;
+  const shown = r ? (r.project ?? state.scope ?? undefined) : undefined;
   const [creating, setCreating] = useState(false);
   const closeCreate = useCallback(() => setCreating(false), []);
   const queue = reviewQueue(state.ws).length;
@@ -545,7 +547,11 @@ export function TasksSide() {
 
         <div className="side-group">
           <div className="side-title">Projects</div>
-          <button className="nav-item compact" aria-current={r && r.tab !== 'review' && !r.project ? 'page' : undefined} onClick={() => nav({ view: 'tasks', tab: listTab })}>
+          <button
+            className="nav-item compact"
+            aria-current={r && r.tab !== 'review' && !shown ? 'page' : undefined}
+            onClick={() => (state.scope && dispatch({ type: 'setScope', project: null }), nav({ view: 'tasks', tab: listTab }))}
+          >
             <Layers size={15} className="tk-nav-glyph" aria-hidden />
             <span className="nav-name">All projects</span>
             <span className="nav-count">{open.length || ''}</span>
@@ -554,7 +560,7 @@ export function TasksSide() {
             <button
               key={p.id}
               className="nav-item compact"
-              aria-current={r && r.tab !== 'review' && r.project === p.id ? 'page' : undefined}
+              aria-current={r && r.tab !== 'review' && shown === p.id ? 'page' : undefined}
               onClick={() => nav({ view: 'tasks', tab: listTab, project: p.id })}
             >
               <Folder color={p.color} size={17} />

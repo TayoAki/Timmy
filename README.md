@@ -21,11 +21,11 @@ The shell follows the wireframe: **left rail · sidebar · tabs + main content �
 | Area | What it holds |
 | --- | --- |
 | Left rail | Today & mail, Approvals, Search (⌘K), Tasks, Calendar, Docs, Projects, People, Drive, AI library, Timmy's activity, Settings |
-| Sidebar | Changes with the section. For mail it shows numbered labels, project folders, Starred (max 5) and `[99] Archived` |
+| Sidebar | A **project picker** on top, then the section's own navigation. For mail: numbered labels, project folders, Starred (max 5) and `[99] Archived` |
 | Tabs | Views inside the current page (e.g. Daily brief / Triage / Drafts) |
 | Main content | The page itself |
 | Right sidebar | Context for whatever is open: next actions, linked file, CRM record, today's calendar |
-| Bottom bar | A full app bar: Timmy's status and next run, a large **Ask Timmy** field (⌘I), and shortcuts with count badges (Urgent, To approve, Unsorted), Search and Appearance |
+| Bottom bar | A full app bar: Timmy's status and next run, a large **Ask Timmy** field (⌘I), shortcuts with count badges (Urgent, To approve, Unsorted), **Focus** (⌘.), Search and Appearance |
 
 Below 1280px the right sidebar becomes a drawer. Below 900px the sidebar does too.
 
@@ -49,6 +49,11 @@ Files follow a numbered folder structure (`[02] Work › [10] Acme`, at most 5 l
 - **Morning run:** Timmy sorts new mail, ranks it, drafts replies and lines up decisions at the time you pick (default 8:00 AM on weekdays). Change the time from the daily brief or Settings › Schedule; the status bar shows the next run.
 - **Urgency:** every open thread is ranked Urgent, Soon or Can wait, with the reasons shown ("Due today at 5:00 PM · Marcus is a priority contact · Says “today”"). The brief leads with only the urgent ones, or everything open if you prefer. Each signal is a rule in Settings › Urgency, and you can mark any thread urgent or able to wait yourself.
 - **Approvals:** one queue for everything that needs your OK: emails to send, decisions on price or hiring, CRM updates and calendar invites. Each decision shows the numbers and what Timmy will do for each choice. Nothing is sent without approval, every choice is logged under Decided, and Undo is on the notice that follows.
+
+## One project, and focus mode
+
+- **Project picker** (top of the sidebar): pick one project and Timmy narrows to it everywhere: the daily brief, mail lists and their counts, Approvals, Tasks, the bottom bar's badges and Ask Timmy. A note on each screen says what's hidden, with "Show all projects".
+- **Focus mode** (Focus in the bottom bar, or ⌘. / Ctrl+.): a calmer screen. The right panel, badges, quick actions, summary cards and sidebar extras go; the brief keeps only what needs you. With a project picked, focus mode adds **everything moving on that project** under its urgent mail and approvals: the deal and goal, tasks due, what others owe you, this week's meetings, the latest decisions, key files and the people involved, each opening where you'd act on it. Both choices are remembered.
 
 ## Ask Timmy (AG-UI)
 

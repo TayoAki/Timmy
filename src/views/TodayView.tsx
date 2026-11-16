@@ -27,7 +27,10 @@ import { todaysEvents } from '../state/ws';
 import type { Box, Thread } from '../data/types';
 import { dayDiff, dueInfo, fmtDate, fmtLongDate, fmtShortTime, fmtTime, plural } from '../lib/format';
 import { boxTag, byOldest, counterpart, inBox, labelOf, useStore, type TodayTab } from '../state/store';
-import { openApprovals, type Approval } from '../state/approvals';
+import { type Approval } from '../state/approvals';
+import { eventInScope, scopedApprovals, scopedThreads } from '../state/scope';
+import { ScopeNote } from '../components/ProjectScope';
+import { ProjectFocus } from './ProjectFocus';
 import { LAST_RUN, LAST_RUN_COUNT, daysLabel } from '../state/schedule';
 import { openThreads, useUrgency, type UrgencyInfo } from '../state/urgency';
 import { ApprovalRow } from '../areas/approvals/ApprovalCard';
@@ -66,12 +69,14 @@ export function TodayView({ tab }: { tab: TodayTab }) {
 function Brief() {
   const { state, dispatch } = useStore();
   const { rank } = useUrgency();
-  const owe = inBox(state.threads, 'follow-up');
-  const waiting = inBox(state.threads, 'waiting');
+  const owe = scopedThreads(state, inBox(state.threads, 'follow-up'));
+  const waiting = scopedThreads(state, inBox(state.threads, 'waiting'));
   const triage = inBox(state.threads, 'inbox');
-  const ranked = rank(openThreads(state.threads));
+  const ranked = rank(scopedThreads(state, openThreads(state.threads)));
   const urgent = ranked.filter((x) => x.u.level === 'urgent').length;
-  const approvals = openApprovals(state);
+  const approvals = scopedApprovals(state);
+  const focus = state.focus;
+  const scopeProject = state.scope ? state.ws.projects[state.scope] : undefined;
 
   return (
     <>
@@ -84,21 +89,25 @@ function Brief() {
         {urgent ? `${plural(urgent, 'thing')} ${urgent === 1 ? 'is' : 'are'} urgent` : 'Nothing is urgent'}
         {approvals.length ? `, and ${plural(approvals.length, 'item')} ${approvals.length === 1 ? 'needs' : 'need'} your approval.` : '.'}
       </p>
+      <ScopeNote />
 
-      <QuickActions />
+      {!focus && <QuickActions />}
 
       <Highlight />
 
       <UrgentSection ranked={ranked} />
 
-      <ApprovalsSection approvals={approvals} />
+      <ApprovalsSection approvals={focus ? approvals.slice(0, 3) : approvals} total={approvals.length} />
 
-      <div className="tri-grid">
-        <OweCard threads={owe} />
-        <WaitingCard threads={waiting} />
-        <CalendarCard />
-      </div>
+      {!focus && (
+        <div className="tri-grid">
+          <OweCard threads={owe} />
+          <WaitingCard threads={waiting} />
+          <CalendarCard />
+        </div>
+      )}
 
+      {!focus && (
       <section className="section">
         <div className="section-head">
           <h2 className="section-title">This morning’s triage</h2>
@@ -133,6 +142,16 @@ function Brief() {
           )}
         </div>
       </section>
+      )}
+      {focus && scopeProject && <ProjectFocus p={scopeProject} />}
+      {focus && (
+        <p className="focus-foot">
+          {scopeProject ? 'Focus mode is hiding everything outside this project.' : 'Focus mode is hiding the rest of the day. Pick a project at the top of the sidebar to see everything moving on it.'}{' '}
+          <button className="link-btn" onClick={() => dispatch({ type: 'setFocus', on: false })}>
+            Leave focus mode
+          </button>
+        </p>
+      )}
     </>
   );
 }
@@ -232,7 +251,7 @@ function UrgentSection({ ranked }: { ranked: { t: Thread; u: UrgencyInfo }[] }) 
   );
 }
 
-function ApprovalsSection({ approvals }: { approvals: Approval[] }) {
+function ApprovalsSection({ approvals, total }: { approvals: Approval[]; total: number }) {
   const { dispatch } = useStore();
   return (
     <section className="section" aria-labelledby="brief-approvals">
@@ -242,7 +261,7 @@ function ApprovalsSection({ approvals }: { approvals: Approval[] }) {
         </h2>
         {approvals.length > 0 && (
           <button className="btn btn-xs btn-ghost" onClick={() => dispatch({ type: 'navigate', route: { view: 'approvals', tab: 'open' } })}>
-            See all {approvals.length}
+            See all {total}
             <ArrowRight size={13} />
           </button>
         )}
@@ -468,7 +487,7 @@ function WaitingCard({ threads }: { threads: Thread[] }) {
 
 function CalendarCard() {
   const { state, dispatch } = useStore();
-  const events = todaysEvents(state.ws);
+  const events = todaysEvents(state.ws).filter((e) => eventInScope(state, e));
   const startH = 8;
   const endH = 18;
   const pct = (d: Date) => ((d.getHours() + d.getMinutes() / 60 - startH) / (endH - startH)) * 100;

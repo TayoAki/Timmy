@@ -121,6 +121,10 @@ export interface State {
   approvalLog: ApprovalRecord[];
   /** When the morning run happens. */
   schedule: Schedule;
+  /** Focus mode: a calmer screen with only what needs you. */
+  focus: boolean;
+  /** The project everything is narrowed to, or null for all of them. */
+  scope: string | null;
 }
 
 export type Action =
@@ -159,6 +163,8 @@ export type Action =
   | { type: 'capture'; open: boolean }
   | { type: 'setSchedule'; schedule: Partial<Schedule> }
   | { type: 'setUrgency'; id: string; level: 'urgent' | 'later' | null }
+  | { type: 'setFocus'; on?: boolean }
+  | { type: 'setScope'; project: string | null }
   /** Approve or turn down an item in the Approvals queue. */
   | { type: 'resolve'; key: string; option: string; change?: { deal: string; stage: string; value: number } };
 
@@ -196,6 +202,8 @@ const initial: State = {
   decisions: DECISIONS,
   approvalLog: [],
   schedule: DEFAULT_SCHEDULE,
+  focus: false,
+  scope: null,
 };
 
 let toastSeq = 1;
@@ -597,6 +605,23 @@ function reducer(s: State, a: Action): State {
       };
     }
 
+    case 'setFocus': {
+      const on = a.on ?? !s.focus;
+      const where = s.scope ? s.ws.projects[s.scope]?.name : null;
+      return {
+        ...s,
+        focus: on,
+        drawer: null,
+        toasts: withToast(s, on ? `Focus mode on${where ? ` for ${where}` : ''}. Only what needs you is showing.` : 'Focus mode off'),
+      };
+    }
+
+    case 'setScope': {
+      if (a.project === s.scope) return s;
+      const p = a.project ? s.ws.projects[a.project] : null;
+      return { ...s, scope: p ? p.id : null, toasts: withToast(s, p ? `Showing ${p.name} only` : 'Showing all projects') };
+    }
+
     case 'setUrgency': {
       const t = s.threads.find((x) => x.id === a.id);
       if (!t) return s;
@@ -740,7 +765,7 @@ const Ctx = createContext<{ state: State; dispatch: Dispatch<Action> } | null>(n
 
 const STORAGE_KEY = 'timmy-state-v2';
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
-const PERSISTED = ['threads', 'deals', 'activity', 'rules', 'ws', 'highlight', 'highlightDone', 'dismissed', 'route', 'back', 'decisions', 'approvalLog', 'schedule'] as const;
+const PERSISTED = ['threads', 'deals', 'activity', 'rules', 'ws', 'highlight', 'highlightDone', 'dismissed', 'route', 'back', 'decisions', 'approvalLog', 'schedule', 'focus', 'scope'] as const;
 
 function load(): State {
   try {

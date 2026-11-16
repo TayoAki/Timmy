@@ -1,5 +1,5 @@
 import { Bell, CalendarDays, FileText, FolderKanban, HardDrive, House, Library, ListChecks, Search, Settings, Stamp, Users } from 'lucide-react';
-import { openApprovals } from '../state/approvals';
+import { scopedApprovals } from '../state/scope';
 import type { ReactNode } from 'react';
 import { sectionOf, useStore, type Route, type Section } from '../state/store';
 import { Avatar, TimmyMark } from './common';
@@ -17,7 +17,7 @@ export function LeftRail() {
   const current = state.searchOpen ? 'search' : sectionOf(state.route);
   const inbox = state.threads.filter((t) => t.box === 'inbox').length;
   const captured = Object.values(state.ws.notes).filter((n) => !n.processed).length;
-  const approvals = openApprovals(state).length;
+  const approvals = scopedApprovals(state).length;
 
   const items: Item[] = [
     { section: 'mail', label: 'Today & mail', icon: <House size={20} />, route: { view: 'today', tab: 'brief' } },

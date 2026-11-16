@@ -84,7 +84,10 @@ export function Assistant() {
   bridge.route = () => routeRef.current;
   bridge.dispatch = dispatch;
 
-  const screen = contextOf(state, state.route);
+  const here = contextOf(state, state.route);
+  const scopeName = state.scope ? state.ws.projects[state.scope]?.name : undefined;
+  // What Timmy is told you have open: the screen, plus the project you narrowed to.
+  const screen = here || scopeName ? { label: [here?.label, scopeName && scopeName !== here?.label ? scopeName : null].filter(Boolean).join(' · ') } : null;
   const convo = a.convos.find((c) => c.id === a.active) ?? null;
   const running = a.running && a.running.convo === convo?.id ? a.running : null;
 

@@ -6,7 +6,7 @@
  */
 import { NOW } from '../data/mock';
 import { fmtTime, money, plural } from '../lib/format';
-import { openApprovals } from '../state/approvals';
+import { scopedApprovals, scopedThreads } from '../state/scope';
 import { contextOf, freeSlot, reply } from '../state/assistant';
 import type { Action, Route, State } from '../state/store';
 import { openThreads, rankThreads } from '../state/urgency';
@@ -34,9 +34,10 @@ export function plan(s: State, text: string, route: Route | null): Plan {
   const l = text.trim().toLowerCase();
   const ctx = route ? contextOf(s, route) : null;
   const thread = route?.view === 'thread' ? s.threads.find((t) => t.id === route.id) : undefined;
-  const ranked = rankThreads(openThreads(s.threads), { ws: s.ws, deals: s.deals, rules: s.rules });
+  // Timmy works within the project you picked, if any.
+  const ranked = rankThreads(scopedThreads(s, openThreads(s.threads)), { ws: s.ws, deals: s.deals, rules: s.rules });
   const urgent = ranked.filter((x) => x.u.level === 'urgent');
-  const approvals = openApprovals(s);
+  const approvals = scopedApprovals(s);
   const events = todaysEvents(s.ws);
   const upcoming = events.filter((e) => e.end > NOW);
 
