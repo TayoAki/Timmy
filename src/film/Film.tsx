@@ -15,7 +15,8 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { bezier } from '../cinema/engine';
 import { TimmyMark } from '../components/common';
 import { useStore } from '../state/store';
-import { walkthrough, type Card, type Target } from './script';
+import { walkthrough, type Card, type Film as Spec, type Target } from './script';
+import { FEATURES } from './features';
 import '../styles/film.css';
 
 const camEase = bezier(0.65, 0, 0.35, 1);
@@ -36,7 +37,8 @@ interface Pt {
 
 export function Film({ children }: { children: ReactNode }) {
   const { dispatch } = useStore();
-  const spec = useRef(walkthrough()).current;
+  // ?film plays the product film; ?film=<id> plays that feature's 30-second film.
+  const spec = useRef<Spec>((FEATURES[new URLSearchParams(window.location.search).get('film') ?? ''] ?? walkthrough)()).current;
   const filmEl = useRef<HTMLDivElement>(null);
   const stageEl = useRef<HTMLDivElement>(null);
   const camEl = useRef<HTMLDivElement>(null);
@@ -62,6 +64,7 @@ export function Film({ children }: { children: ReactNode }) {
     moveFrom: null as Pt | null,
     scrolls: new Map<number, { el: HTMLElement; from: number; to: number }>(),
     typed: new Map<number, number>(),
+    drags: new Map<number, { a: Pt; b: Pt; up: boolean }>(),
     cardKey: '',
   }).current;
 
@@ -105,6 +108,9 @@ export function Film({ children }: { children: ReactNode }) {
       const prev = st.last;
       st.last = t;
       const view0: View = st.view ?? { cx: W() / 2, cy: H() / 2, s: 1 };
+
+      // The film's own frame never scrolls (scrollIntoView inside an overlay would otherwise move it).
+      for (const el of [filmEl.current, stageEl.current, camEl.current]) if (el && (el.scrollTop || el.scrollLeft)) el.scrollTop = el.scrollLeft = 0;
 
       // Cuts under a card: straight to the next screen.
       for (const c of spec.cuts) if (c.t > prev && c.t <= t) dispatch({ type: 'navigate', route: c.route });
@@ -182,6 +188,9 @@ export function Film({ children }: { children: ReactNode }) {
       spec.moves.forEach((m, i) => {
         if (m.t <= t) mv = i;
       });
+      // After a drag lets go, the cursor stays where it dropped until the next move starts.
+      const dropped = Math.max(-1, ...(spec.drags ?? []).map((d) => d.t + d.d).filter((e) => e <= t));
+      if (mv >= 0 && spec.moves[mv]!.t < dropped) mv = -1;
       if (!st.cursor) st.cursor = toApp({ x: W() + 40, y: H() - 60 }, view);
       if (mv >= 0) {
         const m = spec.moves[mv]!;
@@ -213,9 +222,42 @@ export function Film({ children }: { children: ReactNode }) {
         }
       }
 
+      // Drags: the button goes down on the card, the cursor carries it to the drop zone, and lets go.
+      let dragDown = false;
+      let dragUp = false;
+      let dragging = false;
+      (spec.drags ?? []).forEach((d, i) => {
+        if (t < d.t) return;
+        let run = st.drags.get(i);
+        if (!run) {
+          const from = find(d.from);
+          const to = find(d.to);
+          if (!from || !to) {
+            console.warn('[film] drag target missing at', d.t);
+            return;
+          }
+          const ra = rectApp(from, view);
+          const rb = rectApp(to, view);
+          run = { a: { x: ra.x + ra.w / 2, y: ra.y + Math.min(ra.h / 2, 24) }, b: { x: rb.x + rb.w / 2 + (d.ox ?? 0), y: rb.y + Math.min(rb.h / 2, 60) + (d.oy ?? 0) }, up: false };
+          st.drags.set(i, run);
+          st.cursor = { ...run.a };
+          dragDown = true;
+          dragging = true;
+          return;
+        }
+        if (run.up) return;
+        const p = moveEase(clamp((t - d.t) / d.d, 0, 1));
+        st.cursor = { x: run.a.x + (run.b.x - run.a.x) * p, y: run.a.y + (run.b.y - run.a.y) * p - Math.sin(p * Math.PI) * 30 };
+        dragging = true;
+        if (t >= d.t + d.d) {
+          run.up = true;
+          dragUp = true;
+        }
+      });
+
       // Presses due this frame: the tip goes inside the real control, and the recorder clicks it.
       const presses: Pt[] = [];
-      let down = false;
+      let down = dragging;
       for (const p of spec.presses) {
         if (t >= p.t && t < p.t + 0.12) down = true;
         if (p.t > prev && p.t <= t) {
@@ -295,7 +337,7 @@ export function Film({ children }: { children: ReactNode }) {
       if (cursorEl.current) cursorEl.current.style.opacity = covered ? '0' : '1';
 
       const onScreen = sc.x > -20 && sc.y > -20 && sc.x < W() + 20 && sc.y < H() + 20;
-      return { mouse: onScreen ? { x: clamp(sc.x, 0, W() - 1), y: clamp(sc.y, 0, H() - 1) } : null, presses, text, keys };
+      return { mouse: onScreen ? { x: clamp(sc.x, 0, W() - 1), y: clamp(sc.y, 0, H() - 1) } : null, presses, text, keys, dragDown, dragUp };
     }
 
     const api = { ready: false, length: spec.length, frame };

@@ -8,6 +8,7 @@ import type { Message } from '@ag-ui/core';
 import { ArrowUp, BadgeDollarSign, CalendarDays, Check, ChevronDown, FilePenLine, History, Hourglass, LoaderCircle, Mail, Plus, Stamp, Sun, Trash2, X, type LucideIcon } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { portalRoot } from '../lib/portal';
 import { contextOf } from '../state/assistant';
 import { useStore } from '../state/store';
 import { TimmyMark, Kbd } from '../components/common';
@@ -345,7 +346,7 @@ export function Assistant() {
         </main>
       </div>
     </div>,
-    document.body,
+    portalRoot(),
   );
 }
 

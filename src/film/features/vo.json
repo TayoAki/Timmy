@@ -1,0 +1,114 @@
+[
+  {
+    "id": "inbox",
+    "title": "Mail that files itself",
+    "area": "Inbox and mail",
+    "tell": "Your inbox is a to-do list someone else wrote. Timmy turns it into one you can finish.",
+    "show": "Every morning, Timmy suggests a label for each new email, and says why. Confirm the sure ones in one click. Open a thread, and the reply is already drafted. Send it, and Timmy tracks it in Waiting until they answer.",
+    "recap": "Sorted, answered and tracked. An inbox you can finish."
+  },
+  {
+    "id": "brief",
+    "title": "Your morning, already sorted",
+    "area": "Daily brief",
+    "tell": "Most mornings start with an hour of sorting. With Timmy, it's done before you sit down.",
+    "show": "At eight, Timmy sorts the night's mail and ranks what needs you today, with the reason for each. Jamie confirmed a time, so book it in one click. Marcus needs a pilot date, so his reply is drafted from your files. Your calendar sits right beside it.",
+    "recap": "Sorted, ranked and drafted. You just decide."
+  },
+  {
+    "id": "approvals",
+    "title": "Nothing goes out without you",
+    "area": "Approvals",
+    "tell": "An assistant that acts on its own is a risk. Timmy prepares the work, then waits for you.",
+    "show": "Emails, price calls, CRM updates and invites all land in one queue. Dana wants a lower price. Timmy shows both options side by side, with the yearly difference. Pick one, and the reply and the quote follow your call. Every decision is logged, with undo.",
+    "recap": "Timmy prepares. You decide."
+  },
+  {
+    "id": "ask",
+    "title": "Just ask",
+    "area": "Ask Timmy",
+    "tell": "Finding what matters means digging through mail, meetings and files. Or you could just ask.",
+    "show": "Open Ask Timmy from anywhere and say what you need, like plan my day. Timmy reads your mail, calendar and files, and answers with live cards: what's urgent, what's waiting on you, and your meetings. Anything that affects someone else is a button you press.",
+    "recap": "Ask in plain words. Timmy does the digging."
+  },
+  {
+    "id": "docs",
+    "title": "Docs that write with you",
+    "area": "Docs",
+    "tell": "Notes end up scattered in apps you never open twice. Timmy keeps them in one editor.",
+    "show": "Type slash to add any block: headings, to-do lists, toggles, tables, or a live table from a sheet. Drag blocks around, nest them with Tab, and give the page an icon and a cover. Then ask Timmy to summarize it, and watch it type with its own cursor.",
+    "recap": "One editor for every note, and Timmy writes in it too."
+  },
+  {
+    "id": "files",
+    "title": "Files where you'll look for them",
+    "area": "Drive, sheets and editors",
+    "tell": "Attachments pile up with names like final, final two. Timmy files them where you'll use them.",
+    "show": "For each attachment, Timmy suggests a folder and a dated name. Check it, and click file it. Folders are numbered, so they always sort the same way. Open a sheet, and the figures are real. Need Word or Excel? The full editors open right here.",
+    "recap": "Filed once. Found every time."
+  },
+  {
+    "id": "plan",
+    "title": "Your week on one plan",
+    "area": "Tasks and calendar",
+    "tell": "Tasks live in one app and meetings in another. Timmy puts them on one plan.",
+    "show": "Tasks from your email land on the board, with the project, the due date and who it's for. Drag a card to move it along. Capture a thought before it slips. On the calendar, Timmy blocks focus time for the work that's due, and preps you for your next meeting.",
+    "recap": "Every task on the board, and the time to do it."
+  },
+  {
+    "id": "projects",
+    "title": "Every deal on one page",
+    "area": "Projects and people",
+    "tell": "A deal's story is spread across threads, files and your memory. Timmy keeps it on one page.",
+    "show": "Each project gathers its tasks, mail, files and decisions. See what's due, who owes you what, and the latest numbers. Open a contact, and their next step, deal value and history are right there. Mark the people who matter, and Timmy reminds you to check in.",
+    "recap": "One page per deal. Every person in context."
+  },
+  {
+    "id": "leads",
+    "title": "A lead list in a minute",
+    "area": "Find leads",
+    "tell": "A good lead list usually eats a whole afternoon. Tell Timmy who you're looking for instead.",
+    "show": "Describe the customers you want. Timmy finds matching businesses, scores each one against your offer, and fills in the contact details. The best fits come first, and each lead shows why it fits. Already have a list? Import it, and Timmy scores those too.",
+    "recap": "Describe your customer. Get a scored list back."
+  },
+  {
+    "id": "outreach",
+    "title": "Outreach that sounds like you",
+    "area": "Campaigns and Unibox",
+    "tell": "Most cold email tools blast templates and hope. Timmy writes every step, and you approve the launch.",
+    "show": "Pick your leads, and Timmy writes the whole sequence: a first email, a bump, a call, a case study and a break-up. Launch it, and every mailbox stays inside safe daily limits. When people reply, the Unibox gathers every answer in one place, labelled, with your next message ready.",
+    "recap": "Written by Timmy. Launched by you."
+  },
+  {
+    "id": "speed",
+    "title": "Answer first",
+    "area": "Speed to lead and calls",
+    "tell": "When a lead fills in your form, the first reply has the edge. Timmy puts every new lead on the clock.",
+    "show": "Connect your website form, Typeform or Facebook lead ads. The moment a lead arrives, the clock starts, and Timmy drafts a first reply with times to meet. Rather call? Your call list puts the most urgent first, with a script ready.",
+    "recap": "Every lead answered fast. Every call ready."
+  },
+  {
+    "id": "chat",
+    "title": "A website chat that books calls",
+    "area": "Website chat",
+    "tell": "Visitors leave your site with questions nobody answered. Timmy answers them for you.",
+    "show": "Paste one line of code, then pick a colour, a greeting and the questions Timmy asks. A visitor asks about pricing, and Timmy answers from your help desk, then asks for their email and your questions. Every chat lands here, and you can take over anytime.",
+    "recap": "Questions answered. Leads captured. Calls booked."
+  },
+  {
+    "id": "automations",
+    "title": "Draw it once",
+    "area": "Automations",
+    "tell": "The same follow-ups, every day, by hand. Draw them once instead.",
+    "show": "Pick a trigger, like a form submitted or a meeting ending. Add the steps: draft a reply, ask me first, update the CRM. Branch with if and else, and fill in names from the trigger. Then test run it, and watch each step tick off on sample data.",
+    "recap": "Draw the workflow once. Timmy still asks before anything goes out."
+  },
+  {
+    "id": "setup",
+    "title": "Set up in plain English",
+    "area": "Connections and rules",
+    "tell": "Most assistants take weeks to set up. Timmy needs your apps and a few plain sentences.",
+    "show": "Connect your mail, calendar, Drive and CRM, and each card says what Timmy reads and what it writes. Then teach it in plain English, like anything from Acme legal goes to Follow Up. When you edit a draft, Timmy learns from that too.",
+    "recap": "Connect your apps. Say how you work."
+  }
+]

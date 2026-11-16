@@ -5,6 +5,7 @@
 import { MoreHorizontal, X, type LucideIcon } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { portalRoot } from '../lib/portal';
 import { useStore } from '../state/store';
 import { EMAIL, personName, registerMail } from '../state/ws';
 import { Avatar } from './common';
@@ -78,7 +79,7 @@ export function Modal({
         {footer && <footer className="modal-foot">{footer}</footer>}
       </div>
     </div>,
-    document.body,
+    portalRoot(),
   );
 }
 

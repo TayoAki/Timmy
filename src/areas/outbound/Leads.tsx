@@ -13,6 +13,7 @@ import { downloadCsv } from '../../lib/download';
 import { useStore } from '../../state/store';
 import { Field, Menu, Modal } from '../../components/kit';
 import { EmptyState } from '../../components/kit';
+import { FILM } from '../../lib/film';
 import { FitBadge, LeadMark, StatusChip, name, useFit } from './shared';
 
 type Show = 'all' | 'new' | 'saved' | 'campaign' | 'replied';
@@ -453,7 +454,7 @@ function ImportDialog({ onClose }: { onClose: () => void }) {
           <label className="imp-drop">
             <Upload size={22} aria-hidden />
             <strong>Choose a CSV file</strong>
-            <span>Exports from Apollo, Clay, HubSpot, Sheets or Excel</span>
+            <span>{FILM ? 'Exports from your CRM, lead tools, Sheets or Excel' : 'Exports from Apollo, Clay, HubSpot, Sheets or Excel'}</span>
             <input type="file" accept=".csv,.tsv,.txt,text/csv" onChange={(e) => onFile(e.target.files?.[0])} />
           </label>
           <Field label="Or paste rows, with a header row">

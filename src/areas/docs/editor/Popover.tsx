@@ -5,6 +5,7 @@
 import { Search, Shuffle, Trash2 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { portalRoot, toRoot } from '../../../lib/portal';
 import { EMOJI, randomEmoji, searchEmoji } from './emoji';
 
 export interface Anchor {
@@ -50,7 +51,8 @@ export function Popover({
     left = Math.max(8, Math.min(left, vw - w - 8));
     const below = anchor.bottom + gap;
     const top = below + h > vh - 8 && anchor.top - gap - h > 8 ? anchor.top - gap - h : Math.max(8, Math.min(below, vh - h - 8));
-    setPos({ left, top });
+    const p = toRoot(left, top);
+    setPos({ left: p.x, top: p.y });
   }, [anchor.left, anchor.top, anchor.bottom, anchor.right, align, gap]);
 
   useEffect(() => {
@@ -83,7 +85,7 @@ export function Popover({
     >
       {children}
     </div>,
-    document.body,
+    portalRoot(),
   );
 }
 

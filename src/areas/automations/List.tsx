@@ -5,6 +5,7 @@
 import { Plus, Workflow, X } from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
+import { portalRoot } from '../../lib/portal';
 import { EmptyState } from '../../components/kit';
 import { NOW } from '../../data/mock';
 import type { Automation } from '../../data/ws-types';
@@ -154,6 +155,6 @@ function CreateSheet({ onClose }: { onClose: () => void }) {
         </form>
       </div>
     </div>,
-    document.body,
+    portalRoot(),
   );
 }

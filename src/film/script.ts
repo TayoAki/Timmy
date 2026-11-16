@@ -21,25 +21,37 @@ import type { Route } from '../state/store';
 /* ───────────── Word timing ───────────── */
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9$]/g, '');
-const W = (words as { w: string; s: number; e: number }[]).map((x) => ({ ...x, n: norm(x.w) }));
+export interface Word {
+  w: string;
+  s: number;
+  e: number;
+}
 
-/** When the narration starts saying `phrase` (at or after `after` seconds). */
-export function w(phrase: string, after = 0): number {
-  const want = phrase.split(/\s+/).map(norm).filter(Boolean);
-  for (let i = 0; i < W.length; i++) {
-    if (W[i]!.s < after) continue;
-    if (want.every((p, k) => W[i + k] && W[i + k]!.n.startsWith(p))) return W[i]!.s;
+/** Phrase lookups over one narration's word timings. */
+export function timing(list: Word[], name = 'narration') {
+  const W = list.map((x) => ({ ...x, n: norm(x.w) }));
+  /** When the narration starts saying `phrase` (at or after `after` seconds). */
+  function w(phrase: string, after = 0): number {
+    const want = phrase.split(/\s+/).map(norm).filter(Boolean);
+    for (let i = 0; i < W.length; i++) {
+      if (W[i]!.s < after) continue;
+      if (want.every((p, k) => W[i + k] && W[i + k]!.n.startsWith(p))) return W[i]!.s;
+    }
+    throw new Error(`Film script: "${phrase}" isn't in the ${name} after ${after}s`);
   }
-  throw new Error(`Film script: "${phrase}" isn't in the narration after ${after}s`);
+  /** When the narration finishes `phrase`. */
+  function we(phrase: string, after = 0): number {
+    const start = w(phrase, after);
+    const n = phrase.split(/\s+/).filter((p) => norm(p)).length;
+    const i = W.findIndex((x) => x.s === start);
+    return W[i + n - 1]!.e;
+  }
+  return { w, we, end: W[W.length - 1]!.e, words: W };
 }
-/** When the narration finishes `phrase`. */
-export function we(phrase: string, after = 0): number {
-  const start = w(phrase, after);
-  const n = phrase.split(/\s+/).filter((p) => norm(p)).length;
-  const i = W.findIndex((x) => x.s === start);
-  return W[i + n - 1]!.e;
-}
-export const VOICE_END = W[W.length - 1]!.e;
+const main = timing(words as Word[]);
+export const w = main.w;
+export const we = main.we;
+export const VOICE_END = main.end;
 
 /* ───────────── Targets ───────────── */
 
@@ -60,22 +72,22 @@ export const css = (sel: string): Target => () => {
   return visible(el) ? el : null;
 };
 /** A left-rail section button. */
-const rail = (label: string) => css(`nav.rail [aria-label="${label}"]`);
+export const rail = (label: string) => css(`nav.rail [aria-label="${label}"]`);
 /** A sidebar item by its name ("Follow Up", "Today", "Drafts"). */
-const nav = (name: string): Target => () =>
+export const nav = (name: string): Target => () =>
   ([...document.querySelectorAll('.nav-item')].find((b) => visible(b) && (b.querySelector('.nav-name')?.textContent ?? '').replace(/^\d+/, '').trim().startsWith(name)) as HTMLElement | undefined) ?? null;
-const within = (outer: Target, sel: string, re?: RegExp): Target => () => {
+export const within = (outer: Target, sel: string, re?: RegExp): Target => () => {
   const o = outer();
   if (!o) return null;
   return re ? text(sel, re, () => o)() : ([...o.querySelectorAll(sel)].find(visible) as HTMLElement | undefined) ?? null;
 };
-const closest = (inner: Target, sel: string): Target => () => {
+export const closest = (inner: Target, sel: string): Target => () => {
   const el = inner()?.closest(sel);
   return visible(el ?? null) ? (el as HTMLElement) : null;
 };
-const tab = (re: RegExp) => text('[role="tab"]', re);
+export const tab = (re: RegExp) => text('[role="tab"]', re);
 /** The `i`th visible element matching `sel`. */
-const nth = (sel: string, i: number): Target => () => ([...document.querySelectorAll(sel)].filter(visible)[i] as HTMLElement | undefined) ?? null;
+export const nth = (sel: string, i: number): Target => () => ([...document.querySelectorAll(sel)].filter(visible)[i] as HTMLElement | undefined) ?? null;
 
 const draft = css('section.draft[aria-label="Draft reply"]');
 const priceCard = closest(text('.ap-title', /Give Acme \$58/), '.ap-card');
@@ -151,6 +163,15 @@ export interface Card {
   theme: 'light' | 'dark';
   lines: { t: number; text: string; size?: 'xl' | 'l' | 'm' | 'n' | 'eye' | 'lede'; num?: string; mark?: boolean }[];
 }
+/** A real drag: the button goes down on `from`, the cursor carries it to `to` over `d` seconds, and lets go. */
+export interface Drag {
+  t: number;
+  d: number;
+  from: Target;
+  to: Target;
+  ox?: number;
+  oy?: number;
+}
 /** A cut to a screen, hidden under a card (never a depicted click). */
 export interface Cut {
   t: number;
@@ -176,6 +197,7 @@ export interface Film {
   dims: Dim[];
   cards: Card[];
   cuts: Cut[];
+  drags?: Drag[];
 }
 
 export function walkthrough(): Film {

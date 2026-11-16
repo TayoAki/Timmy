@@ -6,6 +6,7 @@
 // real, so hover states, clicks and typing are the product's own.
 //
 //   STILLS=8.3,30.2 node scripts/film/render.cjs           stills at those times (stepped at STEP fps)
+//   FILM=inbox ...                                           a feature film (src/film/features) instead
 //   FPS=30 SCALE=0.5 OUT=out/animatic node ...render.cjs   every frame, as JPEGs for ffmpeg
 //   FPS=60 SCALE=1 OUT=out/master FORMAT=png node ...      the master's frames
 //   FPS=60 SCALE=1 PIPE=out/master-walk.mov node ...       the master, streamed into ffmpeg (no frames on disk):
@@ -23,6 +24,8 @@ const SCALE = Number(process.env.SCALE || 1);
 const FORMAT = process.env.FORMAT || 'jpeg';
 const UNTIL = process.env.UNTIL ? Number(process.env.UNTIL) : Infinity;
 const PIPE = process.env.PIPE || null;
+// FILM=<id> renders that feature's 30-second film (src/film/features); without it, the product film.
+const FILM = process.env.FILM || '';
 
 (async () => {
   if (!PIPE) fs.mkdirSync(OUT + (STILLS ? '' : '/frames'), { recursive: true });
@@ -37,7 +40,7 @@ const PIPE = process.env.PIPE || null;
   p.on('console', (m) => m.type() === 'warning' && /\[film\]/.test(m.text()) && warnings.push(m.text()));
   p.on('pageerror', (e) => warnings.push('pageerror: ' + e.message));
   await p.clock.install({ time: new Date('2026-11-16T08:12:00') });
-  await p.goto(BASE + '?film');
+  await p.goto(BASE + (FILM ? `?film=${FILM}` : '?film'));
   await p.waitForFunction(() => window.__film && window.__film.ready, null, { timeout: 30000 });
   await p.clock.pauseAt(new Date('2026-11-16T08:12:30'));
   await p.waitForTimeout(600);
@@ -50,6 +53,8 @@ const PIPE = process.env.PIPE || null;
     if (i > 0) await p.clock.runFor(1000 / FPS);
     const f = await p.evaluate((t) => window.__film.frame(t), t);
     if (f.mouse) await p.mouse.move(f.mouse.x, f.mouse.y);
+    if (f.dragDown) await p.mouse.down();
+    if (f.dragUp) await p.mouse.up();
     for (const pr of f.presses) {
       await p.mouse.move(pr.x, pr.y);
       await p.mouse.down();

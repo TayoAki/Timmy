@@ -7,6 +7,7 @@
 import { Check, Clock, Plug, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { APPS, GROUPS, type AppDef } from '../../data/connections';
+import { FILM } from '../../lib/film';
 import { fmtDay } from '../../lib/format';
 import { crmApp, enrichApp } from '../../state/connect';
 import { useStore } from '../../state/store';
@@ -23,8 +24,8 @@ export function ConnectionsView() {
     <Frame tabs={[{ id: 'apps', label: 'Connections' }]} active="apps" onTab={() => {}}>
       <h1 className="page-title">Connections</h1>
       <p className="page-sub">
-        {on} apps connected. Each one connects through Composio, except Treg, which uses a token. Timmy reads what you connect, and anything it writes waits for approval. In this preview,
-        connecting is simulated and nothing leaves your browser.
+        {on} apps connected.{FILM ? '' : ' Each one connects through Composio, except Treg, which uses a token.'} Timmy reads what you connect, and anything it writes waits for approval. In this
+        preview, connecting is simulated and nothing leaves your browser.
       </p>
 
       {GROUPS.map((g) => (
@@ -121,7 +122,7 @@ function ConnectDialog({ app, onClose }: { app: AppDef; onClose: () => void }) {
       open
       onClose={onClose}
       title={`Connect ${app.name}`}
-      description={app.token ? 'Treg isn’t a Composio app. Timmy connects with its own Treg account, so there’s nothing to sign in to.' : 'You sign in to the app on a secure Composio page. Timmy never sees your password.'}
+      description={FILM ? 'You sign in to the app on its own secure page. Timmy never sees your password.' : app.token ? 'Treg isn’t a Composio app. Timmy connects with its own Treg account, so there’s nothing to sign in to.' : 'You sign in to the app on a secure Composio page. Timmy never sees your password.'}
       width={500}
       footer={
         <>

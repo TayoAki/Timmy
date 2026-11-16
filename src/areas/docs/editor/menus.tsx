@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
+import { portalRoot, toRoot } from '../../../lib/portal';
 import type { BlockColor } from '../../../data/ws-types';
 import { KINDS, TURN_INTO, kindOfNode, type BlockKind } from './catalog';
 import { currentBlock, deleteGroup, duplicateGroup, moveGroup, turnInto } from './extensions';
@@ -84,13 +85,16 @@ export function SlashMenu({ bus }: { bus: SlashBus }) {
   if (!s.open || !s.rect) return null;
   const vh = window.innerHeight;
   const up = s.rect.bottom + 340 > vh && s.rect.top > 360;
+  // In the film's camera, the menu is placed in the camera's own coordinates.
+  const at = toRoot(Math.min(s.rect.left, window.innerWidth - 330), s.rect.top);
+  const below = toRoot(s.rect.left, s.rect.bottom);
   let lastGroup = '';
   return createPortal(
     <div
       className="nb-pop nb-slash"
       role="listbox"
       aria-label="Blocks"
-      style={{ left: Math.min(s.rect.left, window.innerWidth - 330), ...(up ? { bottom: vh - s.rect.top + 6 } : { top: s.rect.bottom + 6 }) }}
+      style={{ left: at.x, ...(up ? { bottom: vh - at.y + 6 } : { top: below.y + 6 }) }}
       onMouseDown={(e) => e.preventDefault()}
     >
       <div ref={list} className="nb-slash-list">
@@ -133,7 +137,7 @@ export function SlashMenu({ bus }: { bus: SlashBus }) {
         </span>
       </div>
     </div>,
-    document.body,
+    portalRoot(),
   );
 }
 
