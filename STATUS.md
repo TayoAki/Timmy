@@ -75,6 +75,7 @@ Cost measurement: `server/scripts/measure-cost.ts` (the header says how to run i
 | Live-mode Playwright (`e2e/live/`, 12 suites, 205 checks) | 12 of 12 pass. Eleven run on one server; `live-verify` runs on a server restarted with address confirmation required. |
 | Live-mode Playwright against **staging** (Railway) | Being re-run on this build; the result is recorded in the next commit. |
 | Composio tool check (`server/scripts/check-composio.mts`, real API, read-only) | Pass: 21 tools and 8 events exist at the pinned versions and take the arguments the code sends. |
+| Real connect links for Outlook and Drive (Composio's real API) | Pass: a link was minted for each through the server's own code, with the pinned versions, and the pending accounts were removed again. Composio accepted the narrower Outlook permission set (`timmy-outlook-a7eae611`: mail and profile only). Nobody has signed in through them yet. |
 | Demo suites against a deployed build of this branch | Not run: `web` deploys the older branch, and I won't change that service without your OK |
 | Real-provider smoke (a real Gmail or Outlook mailbox, a real Drive, through Composio) | Not run: needs a test account connected by a person |
 | A real email through Resend | Not run: needs `RESEND_API_KEY`, a sender address on a domain verified in Resend, and your OK on who receives it |
