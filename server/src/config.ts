@@ -64,6 +64,8 @@ export const config = {
     } as Record<string, string>,
   },
 
+  /** How long the connect callback waits for the provider to report a new account as active. */
+  connectWaitMs: Number(env.TIMMY_CONNECT_WAIT_MS ?? (env.TIMMY_ENV === 'test' || env.NODE_ENV === 'test' ? 0 : 10_000)),
   /** How long a send waits before it leaves, so it can be undone. */
   sendHoldSeconds: Number(env.TIMMY_SEND_HOLD_SECONDS ?? 30),
   /** First pass of the backfill, done before the first brief. The rest follows in the background. */

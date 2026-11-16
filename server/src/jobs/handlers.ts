@@ -3,6 +3,7 @@ import { sysPool } from '../db/pool';
 import { dueEffects, executeEffect, onEffectApproved, onEffectSettled, reconcileEffect, staleExecuting } from '../gateway/gateway';
 import { abandonedRuns, resumeRun } from '../agent/loop';
 import { log } from '../lib/log';
+import { syncCalendar } from '../sync/calendar';
 import { backfillMail, ingestThread } from '../sync/ingest';
 import { defineJob, enqueueSoon } from './jobs';
 
@@ -39,6 +40,10 @@ export function registerJobs() {
 
   defineJob('mail.ingest', async (d) => {
     await ingestThread(String(d.workspaceId), String(d.connectionId), String(d.threadKey), 'sync', d.seed as Record<string, unknown> | undefined);
+  });
+
+  defineJob('calendar.sync', async (d) => {
+    await syncCalendar(String(d.workspaceId), String(d.connectionId));
   });
 
   defineJob('run.resume', async (d) => {

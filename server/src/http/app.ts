@@ -54,6 +54,8 @@ export function buildApp(): Hono<Env> {
     if (!fresh.rows[0] || !conn) return c.json({ ok: true, duplicate: !fresh.rows[0] });
     const threadKey = String(event.data.thread_id ?? event.data.threadId ?? '');
     if (conn.toolkit === 'gmail' && threadKey) enqueueSoon('mail.ingest', { workspaceId: conn.workspace_id, connectionId: conn.id, threadKey, seed: event.data });
+    // Any calendar event means the window may have changed; one sync per connection covers a burst of them.
+    if (conn.toolkit === 'googlecalendar') enqueueSoon('calendar.sync', { workspaceId: conn.workspace_id, connectionId: conn.id }, { singletonKey: `cal:${conn.id}` });
     await sysPool.query('update webhook_event set processed_at = now() where id = $1', [event.id]);
     return c.json({ ok: true });
   });
@@ -159,6 +161,7 @@ export function buildApp(): Hono<Env> {
     const conn = await finishConnect(ctx, String(c.req.query('c') ?? ''));
     if (!conn || conn.status !== 'active') return c.redirect(`/?connect=failed${conn ? `&app=${conn.app_id}` : ''}`);
     if (TOOLKITS[conn.app_id]?.kind === 'mail') enqueueSoon('mail.backfill', { workspaceId: ctx.workspaceId, connectionId: conn.id, days: config.backfillFastDays }, { singletonKey: `bf:${conn.id}` });
+    if (TOOLKITS[conn.app_id]?.kind === 'calendar') enqueueSoon('calendar.sync', { workspaceId: ctx.workspaceId, connectionId: conn.id }, { singletonKey: `cal:${conn.id}` });
     return c.redirect(`/?connect=ok&app=${conn.app_id}`);
   });
 

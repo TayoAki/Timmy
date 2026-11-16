@@ -16,7 +16,7 @@ import { callTool, meter, type ConnectionRow } from './tools';
 /** The frontend's app ids, and the Composio toolkit behind each. */
 export const TOOLKITS: Record<string, { toolkit: string; kind: 'mail' | 'calendar' | 'files'; triggers: { slug: string; config?: Record<string, unknown> }[] }> = {
   gmail: { toolkit: 'gmail', kind: 'mail', triggers: [{ slug: 'GMAIL_NEW_GMAIL_MESSAGE', config: { labelIds: 'INBOX' } }] },
-  gcal: { toolkit: 'googlecalendar', kind: 'calendar', triggers: [] },
+  gcal: { toolkit: 'googlecalendar', kind: 'calendar', triggers: [{ slug: 'GOOGLECALENDAR_GOOGLE_CALENDAR_EVENT_SYNC_TRIGGER', config: { calendarId: 'primary' } }] },
   gdrive: { toolkit: 'googledrive', kind: 'files', triggers: [] },
   outlook: { toolkit: 'outlook', kind: 'mail', triggers: [{ slug: 'OUTLOOK_MESSAGE_TRIGGER' }] },
 };
@@ -62,10 +62,18 @@ export async function finishConnect(ctx: Ctx, connectionId: string): Promise<Con
   const conn = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => ((await tx.query('select * from connection where id = $1 and workspace_id = $2', [connectionId, ctx.workspaceId])).rows[0] as ConnectionRow | undefined) ?? null);
   if (!conn || !conn.connected_account_id) return null;
   if (conn.status === 'active') return conn;
-  const acct = await composio().account(conn.connected_account_id);
+  let acct = await composio().account(conn.connected_account_id);
+  // Right after consent the provider can still be finishing the account; give it a moment.
+  const deadline = Date.now() + config.connectWaitMs;
+  while (acct.status !== 'ACTIVE' && /^(INITIALIZING|INITIATED|PENDING)$/i.test(acct.status) && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 1000));
+    acct = await composio().account(conn.connected_account_id);
+  }
   if (acct.status !== 'ACTIVE') {
-    await withWorkspace({ workspaceId: ctx.workspaceId }, (tx) => tx.query(`update connection set status = 'failed', updated_at = now() where id = $1`, [connectionId]));
-    return { ...conn, status: 'failed' };
+    // Still in progress is not a failure: opening the callback again later can finish it.
+    const over = !/^(INITIALIZING|INITIATED|PENDING)$/i.test(acct.status);
+    if (over) await withWorkspace({ workspaceId: ctx.workspaceId }, (tx) => tx.query(`update connection set status = 'failed', updated_at = now() where id = $1`, [connectionId]));
+    return { ...conn, status: over ? 'failed' : 'pending' };
   }
   await withWorkspace({ workspaceId: ctx.workspaceId }, (tx) => tx.query(`update connection set status = 'active', updated_at = now() where id = $1`, [connectionId]));
 

@@ -105,10 +105,10 @@ export async function addMember(workspaceId: string, role: string, name = `${rol
   return c;
 }
 
-/** Connects a fake Gmail mailbox the way a person would: start, consent, come back. Returns its Composio account id. */
-export async function connectGmail(c: Client, address: string): Promise<{ connectionId: string; account: string }> {
+/** Connects a fake account for an app the way a person would: start, consent, come back. Returns its Composio account id. */
+export async function connectApp(c: Client, app: string, address: string): Promise<{ connectionId: string; account: string }> {
   fake().nextAddress = address;
-  const start = await c.json<{ redirectUrl: string; connectionId: string }>('POST', '/api/v1/connections/gmail/connect', {});
+  const start = await c.json<{ redirectUrl: string; connectionId: string }>('POST', `/api/v1/connections/${app}/connect`, {});
   const consent = new URL(start.redirectUrl);
   const back = await c.get(consent.pathname + consent.search);
   const callback = new URL(back.headers.get('location')!);
@@ -116,6 +116,7 @@ export async function connectGmail(c: Client, address: string): Promise<{ connec
   const account = new URL(start.redirectUrl).searchParams.get('account')!;
   return { connectionId: start.connectionId, account };
 }
+export const connectGmail = (c: Client, address: string) => connectApp(c, 'gmail', address);
 
 /** Ends the undo window now and runs whatever was waiting on it. */
 export async function releaseHolds(c: Client): Promise<number> {
