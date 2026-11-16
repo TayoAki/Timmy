@@ -1,6 +1,7 @@
 import type { Action } from '../state/store';
 import { clearsAsNull, fromWire, toWire } from './patches';
 import type { CommandResult, LiveProfile } from './types';
+import type { Block, DocCover } from '../data/ws-types';
 
 export class ApiError extends Error {
   constructor(
@@ -57,6 +58,16 @@ export interface Snapshot {
 
 export type { CommandResult };
 
+/** One earlier copy of a page, as the version history lists it: when it was kept, ahead of whose change, and why. */
+export interface PageVersion {
+  number: number;
+  at: Date;
+  by: string;
+  why: 'edit' | 'before-timmy' | 'before-restore';
+  preview: string;
+  blockCount: number;
+}
+
 export const api = {
   me: () => call<Me>('GET', '/api/v1/me').catch((e) => (e instanceof ApiError && e.status === 401 ? null : Promise.reject(e))),
   /** `token` is null when the address has to be confirmed first: the account exists but nobody is signed in yet. */
@@ -78,6 +89,14 @@ export const api = {
   saveSettings: (patch: { model?: string; approvalMode?: 'ask' | 'auto'; killSwitch?: boolean; monthlySpendCapUsd?: number; timezone?: string }) => call('PATCH', '/api/v1/settings', patch),
   /** Asks the model for a summary of the page as it is on screen. Only lines the page backs come back. */
   summarizePage: (id: string, blocks: unknown[]) => call<{ lines: { text: string; blocks: string[] }[] }>('POST', `/api/v1/pages/${encodeURIComponent(id)}/summarize`, { blocks }),
+  /** A page's earlier versions, newest first, without their contents. */
+  pageVersions: (id: string) => call<{ versions: PageVersion[]; canRestore: boolean; keeps: { versions: number; days: number; minutes: number } }>('GET', `/api/v1/pages/${encodeURIComponent(id)}/versions`),
+  /** One version with its contents, for a preview. */
+  pageVersion: (id: string, number: number) => call<PageVersion & { blocks: Block[]; icon?: string; cover?: DocCover }>('GET', `/api/v1/pages/${encodeURIComponent(id)}/versions/${number}`),
+  /** Puts a version back as the page's contents. The server keeps what it replaces as a version too. */
+  restorePageVersion: (id: string, number: number) => call<{ ok: true; changed: boolean }>('POST', `/api/v1/pages/${encodeURIComponent(id)}/versions/${number}/restore`, {}),
+  /** How many days a page stays in the trash before it is deleted for good. */
+  pageTrash: () => call<{ keptDays: number }>('GET', '/api/v1/pages/trash'),
   audit: () => call<{ entries: { id: number; at: Date; actor: string; action: string; effect_id: string | null; detail: Record<string, unknown> }[] }>('GET', '/api/v1/audit?limit=100'),
   /** What an automation has done lately: its runs, newest first, each with its steps. */
   automationRuns: (id: string) => call<AutomationRuns>('GET', `/api/v1/automations/${encodeURIComponent(id)}/runs`),

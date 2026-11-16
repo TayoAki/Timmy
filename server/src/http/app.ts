@@ -30,6 +30,7 @@ import { automationRoutes } from './automations';
 import { membership, workspacesOf } from '../auth/members';
 import { ctxOf, requireRead, requireSession, requireWorkspace, sameOrigin, sessionOf, type Env } from './session';
 import { testRoutes } from './test-hooks';
+import { pageRoutes } from '../pages/routes';
 
 const wire = (body: unknown, status = 200) => new Response(toWire(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
 
@@ -300,6 +301,8 @@ export function buildApp(): Hono<Env> {
   chatRoutes(app);
   // [automations] The test run and the list of runs (http/automations.ts).
   automationRoutes(app);
+  // A page's version history, and how long the trash keeps a page.
+  pageRoutes(app);
 
   if (config.testHooks) testRoutes(app);
 

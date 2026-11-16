@@ -14,6 +14,7 @@ import { patch, put, uid } from '../../state/ws';
 import { ancestors, childPages, purgeOps, restoreOps, rootPages, trashOps, trashedRoots } from './pages';
 import { openFile } from './shared';
 import { bid } from './templates';
+import { useTrashDays } from './trashPolicy';
 
 const SHOW = 8;
 
@@ -25,6 +26,8 @@ export function PagesTree({ onNew }: { onNew: () => void }) {
   const [all, setAll] = useState(false);
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [trash, setTrash] = useState(false);
+  // Asked for here so the trash dialog already knows the number when it opens.
+  useTrashDays();
 
   // Open the way down to the page you're on.
   useEffect(() => {
@@ -155,9 +158,11 @@ export function TrashDialog({ onClose }: { onClose: () => void }) {
   const W = state.ws;
   const [q, setQ] = useState('');
   const [sure, setSure] = useState<string | null>(null);
+  // On a real workspace the server empties the trash; the demo keeps pages until you delete them.
+  const days = useTrashDays();
   const list = useMemo(() => trashedRoots(W).filter((f) => f.name.toLowerCase().includes(q.trim().toLowerCase())), [W, q]);
   return (
-    <Modal open onClose={onClose} title="Trash" description="Pages stay here until you restore them or delete them for good." width={540}>
+    <Modal open onClose={onClose} title="Trash" description={days ? `Pages stay here for ${days} days, then they are deleted for good. Until then you can restore them.` : 'Pages stay here until you restore them or delete them for good.'} width={540}>
       <label className="pt-search">
         <Search size={14} aria-hidden />
         <input autoFocus placeholder="Search pages in the trash" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search the trash" />

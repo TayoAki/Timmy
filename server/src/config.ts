@@ -211,6 +211,16 @@ export const config = {
     /** How long a worker may hold a run before another may take it over, in seconds. A step never takes this long unless its worker died. */
     leaseSeconds: Number(env.TIMMY_AUTOMATION_LEASE_SECONDS ?? 600),
   },
+  /**
+   * How long a page stays in the trash before it is deleted for good. The trash dialog tells people this number.
+   * Never less than a day, so a mistyped setting can't empty everyone's trash at once.
+   */
+  trashRetentionDays: Math.max(1, Number(env.TIMMY_TRASH_RETENTION_DAYS ?? 30)),
+  /** Version history of pages: ordinary editing keeps at most one earlier copy of a page in this many minutes. */
+  pageVersionMinutes: Number(env.TIMMY_PAGE_VERSION_MINUTES ?? 5),
+  /** Version history of pages: how many copies of one page are kept, and for how many days. */
+  pageVersionsKept: Number(env.TIMMY_PAGE_VERSIONS_KEPT ?? 100),
+  pageVersionDays: Number(env.TIMMY_PAGE_VERSION_DAYS ?? 90),
 };
 
 export const isProd = () => config.stage === 'production';

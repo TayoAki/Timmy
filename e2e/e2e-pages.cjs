@@ -195,6 +195,7 @@ const settle = (p) => p.waitForFunction(() => document.querySelector('.pg-save')
 
   // Trash: the page and its sub-page go; restore brings both back.
   await p.locator('.pg-top-right [aria-label^="Actions for"]').click();
+  assert(await p.locator('.menu-item', { hasText: 'Version history' }).count() === 0, 'the demo’s page menu has no Version history: versions are kept by the server on a real workspace');
   await p.locator('.menu-item, [role="menuitem"]', { hasText: 'Move to trash' }).click();
   await p.waitForSelector('.pg-trash');
   assert(/in the trash/.test(await p.locator('.pg-trash').textContent()), 'a trashed page shows the red banner');

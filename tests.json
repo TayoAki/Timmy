@@ -181,8 +181,29 @@
   {
    "id": "api-hardening",
    "file": "server/test/hardening.test.ts",
-   "covers": "inputs that lean on how JavaScript objects work: a record id or collection named after something every object has (“__proto__”, “constructor”, “toString”…) is refused for put, patch and remove, and nothing is saved; a “__proto__” key inside a record changes nothing; ordinary ids with dots, colons and @ still work",
-   "tests": 5,
+   "covers": "inputs that lean on how JavaScript objects work: a record id or collection named after something every object has (“__proto__”, “constructor”, “toString”…) is refused for put, patch and remove, and nothing is saved; a “__proto__” key inside a record changes nothing; ordinary ids with dots, colons and @ still work. Clearing a field: a null in a patch takes a page’s cover or icon off (JSON has no “undefined”), the browser side sends null only inside a patch, and a field that must be there (a page’s blocks) cannot be cleared. Tasks: one without a status, a priority or a created date, or with values the board does not know, is refused for put and patch. The demo’s reload, reset and restore actions are refused on a real workspace and its state is untouched",
+   "tests": 12,
+   "status": "pass"
+  },
+  {
+   "id": "api-chat",
+   "file": "server/test/chat.test.ts",
+   "covers": "the website chat on a real workspace: the workspace comes only from the site key and the conversation only from a signed token (forged, expired, another conversation’s or another site’s token refused); an unknown key, a chat that is off and a workspace with sending switched off all answer the same; replies come from the chat’s own rules with no model call; every reply is an effect record approved by the rule set when an owner or admin switched the chat on, and nothing is shown without one (a database trigger refuses it); a reply is shown once; switching on needs an owner or admin and a website, and only they change settings while it is on; the frame may be embedded only by the named site; a visitor’s text is stored and shown as text; leads from chats never overwrite a lead from elsewhere; take over stops Timmy; limits per visitor, address, conversation and day; streams bounded; retention deletes old conversations; nothing across workspaces",
+   "tests": 43,
+   "status": "pass"
+  },
+  {
+   "id": "api-automations",
+   "file": "server/test/automations.test.ts",
+   "covers": "the automation engine: only an owner or admin switches one on, and only when every block can run; frozen versions; new-email and schedule triggers (inbox mail only, never the mailbox’s own mail or mail an effect sent, one run per trigger event); create a task, notify, draft a reply, add to a doc, if/else, wait; “ask me first” and Send wait in Approvals and nothing goes out without a person (a Send approved by a rule or by Auto mode is refused); Send puts forward only the reply the run drafted, to the address the email came from; no step runs twice (lease checked in every write, ids derived from run and step); retries, then five failures or 100 runs an hour switch it off with the reason; a dry run writes nothing and calls no model; runs and steps readable only in their workspace",
+   "tests": 52,
+   "status": "pass"
+  },
+  {
+   "id": "api-page-versions",
+   "file": "server/test/page-versions.test.ts",
+   "covers": "version history for pages: the previous contents are kept when a page changes, at most one per five minutes for ordinary editing, always one before Timmy’s change and before a restore; listing is newest first with names and no blocks; restore puts the old contents back through the same checks as a save, keeps what it replaced, writes an audit entry and reaches other tabs; a read-only role can list but not restore; a page in the trash cannot be restored to a version; 100 versions and 90 days at most; deleting a page for good removes its versions; nothing across workspaces. The trash: pages trashed more than 30 days ago are deleted for good with their sub-pages, contents, versions and the links to them, and newer ones are left",
+   "tests": 23,
    "status": "pass"
   },
   {
@@ -274,8 +295,15 @@
   {
    "id": "live-pages",
    "file": "e2e/live/live-pages.cjs",
-   "covers": "in the browser on a real workspace: no sample pages, automations or chats; a page typed with markdown shortcuts and the / menu is saved by the server and survives a reload; a script link is refused; trash and restore; an automation drawn on the canvas, saved, test-run with sample data; switching it or the website chat on is refused with the reason; a made-up visitor conversation is refused; a task is kept; Summarize with Timmy adds lines that come from the page",
-   "checks": 29,
+   "covers": "in the browser on a real workspace: no sample pages, automations or chats; a page typed with markdown shortcuts and the / menu is saved by the server and survives a reload; a script link is refused; trash and restore; an automation drawn on the canvas, saved, test-run with sample data; switching it or the website chat on is refused with the reason; a made-up visitor conversation is refused; a task is kept; Summarize with Timmy adds lines that come from the page; typing that carries on while a save comes back from the server is all kept (it fails on the editor as it was); taking a cover off a page sticks across a reload",
+   "checks": 35,
+   "status": "pass"
+  },
+  {
+   "id": "live-versions",
+   "file": "e2e/live/live-versions.cjs",
+   "covers": "in the browser: a page is typed and changed; Version history lists the earlier copy with who and why; the preview is read-only; Restore this version asks first, then the page shows the old text, also after a reload; the trash says pages are deleted for good after 30 days; the demo has no such entry",
+   "checks": 34,
    "status": "pass"
   },
   {
@@ -283,6 +311,20 @@
    "file": "e2e/live/live-decisions.cjs",
    "covers": "in the browser: a question in the mail becomes a card with the answers and the real figure; choosing drafts a reply with a Send button and sends nothing; the same question asked again says what was decided; People suggests the people who wrote, with their company; Ask says who someone is and what they promised",
    "checks": 13,
+   "status": "pass"
+  },
+  {
+   "id": "live-automations",
+   "file": "e2e/live/live-automations.cjs",
+   "covers": "in the browser: an automation is drawn, saved and switched on by the owner; a new email starts a run; a task and a notice appear; the drafted reply waits in Approvals and nothing is sent until the owner approves it, then it is sent once; the Runs tab shows each step; blocks that cannot run yet say so and refuse switching on",
+   "checks": 32,
+   "status": "pass"
+  },
+  {
+   "id": "live-chat",
+   "file": "e2e/live/live-chat.cjs",
+   "covers": "in two browsers: the owner sets the chat up and switches it on; a page of the owner’s website with the real snippet shows the chat and no other site can; a visitor gets the help desk answer word for word, leaves an email (with the privacy notice) and asks for a person; the owner sees the chat marked urgent and the lead, takes over and replies; the visitor sees the reply; a visitor’s markup is shown as text; switching off takes the chat off the site",
+   "checks": 42,
    "status": "pass"
   },
   {
