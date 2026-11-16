@@ -10,8 +10,12 @@
  *   - Bodies arrive as HTML and are stored as text.
  *   - A reply is made as a draft, addressed to exactly the approved people, and then sent. Outlook's own
  *     "reply" would choose the recipients itself, and what was approved is what must go out.
+ *   - Files are added to the draft one at a time, and the draft is checked for exactly the approved files
+ *     before it is sent. The tool that adds a file takes small ones (under 3 MB).
  */
 import { withWorkspace } from '../db/pool';
+import { stageFiles, type FileToSend } from '../files/attachments';
+import { log } from '../lib/log';
 import { LABEL_NAMES } from './labels';
 import type { Mailbox } from './mailbox';
 import { htmlToText, type MailMessage } from './message';
@@ -145,6 +149,45 @@ function addressedAsApproved(draft: GraphMessage, p: { to: string[]; cc?: string
   return (!to || sameSet(to, lower(p.to))) && (!cc || sameSet(cc, lower(p.cc ?? [])));
 }
 
+/**
+ * Whether the draft Outlook holds carries exactly the approved files, by name: none missing, none extra.
+ * Pictures placed inside the body (a quoted message's own) are not attachments and are left out of the count.
+ * Sizes are not compared: Outlook reports an attachment as a little larger than the file. If Outlook can't be
+ * asked, the answer is no, and the email is not sent.
+ */
+async function carriesAsApproved(workspaceId: string, connectionId: string, draftId: string, files: { name: string }[]): Promise<boolean> {
+  const res = await callTool(workspaceId, connectionId, 'OUTLOOK_LIST_OUTLOOK_ATTACHMENTS', { message_id: draftId, response_detail: 'minimal' }, 'send');
+  if (!res.successful) return false;
+  const listed = ((payload(res.data).value ?? []) as { name?: string; isInline?: boolean }[]).filter((a) => !a.isInline).map((a) => String(a.name ?? ''));
+  const sorted = (names: string[]) => [...names].sort().join('\u0000');
+  return listed.length === files.length && sorted(listed) === sorted(files.map((f) => f.name));
+}
+
+/**
+ * Puts the approved files on a draft, one call per file, and then checks that the draft carries exactly those.
+ * The same steps serve a new email and a reply (a reply draft can't be made with files on it), so there is one
+ * way files reach Outlook. Each file is handed to Composio for this tool first. Returns why the draft is not
+ * ready, in words for the person, or null when it is. The draft has not been sent at any point in here, so
+ * every failure, including a call that never came back, is a clean one: nothing went out.
+ */
+async function attachToDraft(workspaceId: string, conn: ConnectionRow, draftId: string, files: FileToSend[]): Promise<string | null> {
+  try {
+    for (const file of files) {
+      const handed = await stageFiles(workspaceId, conn, 'OUTLOOK_ADD_MAIL_ATTACHMENT', [file]);
+      if (!handed.ok) return handed.error;
+      const added = await callTool(workspaceId, conn.id, 'OUTLOOK_ADD_MAIL_ATTACHMENT', { message_id: draftId, attachment: handed.staged[0] }, 'send');
+      if (!added.successful) {
+        log.warn('Outlook refused an attachment', { error: added.error });
+        return `Outlook refused the attached file “${file.name}”, so the email was not sent.`;
+      }
+    }
+    return (await carriesAsApproved(workspaceId, conn.id, draftId, files)) ? null : 'Outlook did not take the attachments as approved, so the email was not sent.';
+  } catch (e) {
+    log.warn('Outlook could not be reached while files were being added to a draft', { error: (e as Error).message });
+    return 'Outlook could not be reached while the files were being added, so the email was not sent.';
+  }
+}
+
 const chunks = <T>(list: T[], n: number): T[][] => Array.from({ length: Math.ceil(list.length / n) }, (_, i) => list.slice(i * n, i * n + n));
 
 export const outlook: Mailbox = {
@@ -176,9 +219,11 @@ export const outlook: Mailbox = {
   // An Outlook event carries a preview only, under an id that changes when the message is moved. The thread is always fetched.
   seed: () => null,
 
-  async send(e, conn, p) {
+  async send(e, conn, p, files = []) {
     const ws = e.workspace_id;
     const reply = e.kind === 'email.reply' && !!p.threadKey;
+    // An email approved with files never goes out without them.
+    if (files.length !== (p.attachments?.length ?? 0)) return { status: 'failed', error: 'The email’s attachments were not ready, so it was not sent.' };
     let draft: GraphMessage;
     if (reply) {
       const thread = await outlook.thread(ws, conn, p.threadKey!, 'send');
@@ -203,6 +248,9 @@ export const outlook: Mailbox = {
       if (!made.successful || !draft.id) return { status: 'failed', error: made.error ?? 'Outlook refused the message.' };
       if (!addressedAsApproved(draft, p)) return { status: 'failed', error: 'Outlook did not take the recipients as approved, so the email was not sent.' };
     }
+    // The approved files go onto the draft, and the draft is checked for them, before anything is sent.
+    const notAttached = files.length ? await attachToDraft(ws, conn, draft.id, files) : null;
+    if (notAttached) return { status: 'failed', error: notAttached };
     const sent = await callTool(ws, conn.id, 'OUTLOOK_SEND_DRAFT', { message_id: draft.id }, 'send');
     if (!sent.successful) return { status: 'failed', error: sent.error ?? 'Outlook refused the message.' };
     return { status: 'completed', result: { via: 'outlook', id: draft.id, threadId: draft.conversationId ?? p.threadKey }, externalId: draft.id };

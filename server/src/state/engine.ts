@@ -23,6 +23,7 @@ import { cancelHeld, decide, GatewayError, onReplay, propose, type EffectRow } f
 import type { WsOp } from '../../../src/state/ws';
 import { checkWsOps } from './ws-check';
 import { assetRefsIn, usablePictures } from '../files/assets';
+import { attachmentsFor } from '../files/attachments';
 import { LIVE_DECISION } from '../agent/read';
 import { prepareMailSend } from '../gateway/mail';
 import { SYNCED_PREFIX, eventProposal } from '../sync/calendar-write';
@@ -223,6 +224,12 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
   // decides when it works. Only an owner or admin changes them.
   if (POLICY_ONLY.has(a.type) && !ctx.rules.policy) return { state, reject: 'Only an owner or admin can change this.' };
 
+  // Files put on a draft are checked as they are put there: each has to be one of this workspace's own uploaded attachments.
+  if (a.type === 'updateDraft' && a.files !== undefined) {
+    const attached = await attachmentsFor(tx, ctx.workspaceId, a.files);
+    if (!attached.ok) return { state, reject: attached.reason };
+  }
+
   // A send names the draft the person was looking at. If someone, or Timmy, changed it since, they read it again first.
   if ((a.type === 'sendDraft' || a.type === 'runStep' || (a.type === 'resolve' && a.key.startsWith('draft:') && a.option === 'send')) && a.seen !== undefined) {
     const threadId = a.type === 'resolve' ? a.key.slice(6) : a.id;
@@ -358,7 +365,9 @@ async function gateSends(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; ac
   let state = next;
   const effects: EffectRow[] = [];
   for (const [i, o] of outgoing.entries()) {
-    if (o.message.attachments?.length) return { state: prev, reject: 'Sending attachments isn’t available yet. Remove the attachment or send it from your mail app.' };
+    // A file attached from the person's computer was uploaded first and goes out with the email (`files`, below).
+    // A file from Timmy's own Files can't be sent yet.
+    if (o.message.attachments?.length) return { state: prev, reject: 'Sending a file from Timmy’s Files isn’t available yet. Attach it from your computer, or send it from your mail app.' };
     // The screen names people by id; an id Timmy has no address for is passed on as it is, and refused as not an address.
     const address = (id: string) => emailOf(loaded, prev, id) ?? id;
     const mail = await prepareMailSend(tx, ctx.workspaceId, {
@@ -369,6 +378,7 @@ async function gateSends(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; ac
       threadId: o.thread.id,
       existing: o.before ? { threadKey: o.before.ext?.threadKey, connectionId: o.before.ext?.connectionId } : undefined,
       localMessageId: o.message.id,
+      files: o.message.files,
     });
     if (!mail.ok) return { state: prev, reject: mail.reason };
     const p = await propose(tx, loaded, state, actorOf(ctx), {

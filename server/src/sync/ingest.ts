@@ -150,10 +150,14 @@ export async function projectThread(tx: Tx, state: State, workspaceId: string, c
   const answered = !!existing.waiting && arrived.some((m) => m.from === existing.waiting!.on);
   // A nudge is dropped only while it is still exactly what Timmy wrote; one the person edited or dictated is theirs.
   const dropNudge = answered && existing.draft?.kind === 'nudge' && !!existing.ext?.nudge?.hash && existing.ext.nudge.hash === draftHash(existing.draft);
+  // A message Timmy sent with files keeps them when its copy comes back from the mailbox: what was uploaded and
+  // approved says more than the names the mailbox reports (and Outlook reports none).
+  const sentWith = new Map(existing.messages.filter((m) => m.files?.length).map((m) => [m.id, m.files!]));
+  const withFiles = messages.map((m) => (sentWith.has(m.id) ? { ...m, attachments: undefined, files: sentWith.get(m.id) } : m));
   const next: LiveThread = {
     ...existing,
     participants: [...new Set([...existing.participants, ...participants])],
-    messages: [...messages, ...local].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime()),
+    messages: [...withFiles, ...local].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime()),
     ext: { ...existing.ext, threadKey, connectionId: conn.id, people: { ...existing.ext?.people, ...people } },
     // A reply brings a thread back to the inbox, whatever it was waiting on.
     ...(reply

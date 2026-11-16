@@ -2,7 +2,9 @@
  * Outlook, connected through Composio like Gmail, and held to the same rules: mail is read into the
  * workspace's own store, and nothing is sent or changed except through an approved effect record.
  */
+import { createHash } from 'node:crypto';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { config } from '../src/config';
 import type { EffectRow } from '../src/gateway/gateway';
 import { executeEffect, reconcileEffect } from '../src/gateway/gateway';
 import type { FakeMessage } from '../src/providers/composio';
@@ -10,7 +12,7 @@ import { backfillMail, ingestThread, reconcileMail } from '../src/sync/ingest';
 import { LABEL_NAMES } from '../src/sync/labels';
 import { htmlToText, type MailMessage } from '../src/sync/message';
 import { fromOutlook, outlookPlan, replyHtml } from '../src/sync/outlook';
-import { boot, connectApp, fake, jobs, model, newWorkspace, releaseHolds, rows, type Client } from './helpers';
+import { boot, connectApp, fake, jobs, model, newWorkspace, releaseHolds, rows, samples, uploadFile, type Client } from './helpers';
 
 let w: Client;
 let box: { connectionId: string; account: string };
@@ -378,5 +380,148 @@ describe('disconnecting Outlook', () => {
     expect((await w.state()).threads.map((t) => t.subject)).not.toContain('Soon gone');
     expect(await rows(`select 1 from item where workspace_id = $1`, [w.workspaceId])).toEqual([]);
     expect((await w.cmd({ type: 'sendNew', draft: { to: ['mail:x@y.test'], subject: 's', body: 'b' } })).error).toMatch(/Connect Gmail or Outlook first/);
+  });
+});
+
+describe('sending files from Outlook', () => {
+  const hash = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
+  const attach = async (name: string, bytes: Uint8Array, type = 'application/pdf') => {
+    const up = await uploadFile(w, { purpose: 'attachment', type, bytes, name });
+    expect(up.status).toBe(200);
+    return { file: { id: up.assetId, name, type, size: bytes.length }, bytes };
+  };
+  const steps = () => calls().map((c) => c.slug).filter((s) => /DRAFT|UPDATE_EMAIL|ATTACHMENT/.test(s));
+  const handovers = (from: number) => fake().calls.slice(from).filter((c) => c.slug === 'FILES_UPLOAD').map((c) => c.args.toolSlug);
+
+  it('a new email is drafted, its files are added, the draft is checked on what Outlook holds, and then it is sent once', async () => {
+    const from = fake().calls.length;
+    const a = await attach('Quote.pdf', samples.pdf('Quote'));
+    const b = await attach('Plan.png', samples.png('plan'), 'image/png');
+    expect((await w.cmd({ type: 'sendNew', draft: { to: ['mail:dana@client.test'], subject: 'Two files', body: 'Both attached.', files: [a.file, b.file] } })).ok).toBe(true);
+    expect(sent()).toHaveLength(0);
+    expect(await releaseHolds(w)).toBe(1);
+    const [m] = sent();
+    expect(m).toMatchObject({ to: ['dana@client.test'], subject: 'Two files', body: 'Both attached.' });
+    expect(m!.attachments).toEqual([
+      { name: 'Quote.pdf', mimetype: 'application/pdf', size: a.bytes.length, sha256: hash(a.bytes) },
+      { name: 'Plan.png', mimetype: 'image/png', size: b.bytes.length, sha256: hash(b.bytes) },
+    ]);
+    // Each file is staged for the tool that takes it and passed by reference; the draft is listed, and only then sent.
+    expect(handovers(from)).toEqual(['OUTLOOK_ADD_MAIL_ATTACHMENT', 'OUTLOOK_ADD_MAIL_ATTACHMENT']);
+    expect(steps()).toEqual(['OUTLOOK_CREATE_DRAFT', 'OUTLOOK_ADD_MAIL_ATTACHMENT', 'OUTLOOK_ADD_MAIL_ATTACHMENT', 'OUTLOOK_LIST_OUTLOOK_ATTACHMENTS', 'OUTLOOK_SEND_DRAFT']);
+    // This tool takes one file, not a list, and it is told which draft.
+    const draftId = (calls('OUTLOOK_SEND_DRAFT')[0]!.args as { message_id: string }).message_id;
+    expect(calls('OUTLOOK_ADD_MAIL_ATTACHMENT').map((c) => c.args)).toEqual([
+      { message_id: draftId, attachment: { name: 'Quote.pdf', mimetype: 'application/pdf', s3key: expect.stringContaining('outlook/OUTLOOK_ADD_MAIL_ATTACHMENT/') } },
+      { message_id: draftId, attachment: { name: 'Plan.png', mimetype: 'image/png', s3key: expect.stringContaining('outlook/OUTLOOK_ADD_MAIL_ATTACHMENT/') } },
+    ]);
+    expect(calls('OUTLOOK_LIST_OUTLOOK_ATTACHMENTS')[0]!.args).toEqual({ message_id: draftId, response_detail: 'minimal' });
+    expect((await effects('email.send'))[0]).toMatchObject({ status: 'completed', external_id: m!.id });
+    await releaseHolds(w);
+    expect(sent()).toHaveLength(1);
+  });
+
+  it('a reply gets each file added to its draft, one call per file', async () => {
+    const t = await deliver({ subject: 'Papers?' });
+    const from = fake().calls.length;
+    const a = await attach('Terms.pdf', samples.pdf('Terms'));
+    const b = await attach('Scope.pdf', samples.pdf('Scope'));
+    await w.cmd({ type: 'reply', id: t.id, body: 'Here they are.', files: [a.file, b.file] });
+    await releaseHolds(w);
+    const m = sent().find((x) => x.threadId === t.ext!.threadKey);
+    expect(m!.attachments!.map((f) => [f.name, f.sha256])).toEqual([['Terms.pdf', hash(a.bytes)], ['Scope.pdf', hash(b.bytes)]]);
+    expect(handovers(from)).toEqual(['OUTLOOK_ADD_MAIL_ATTACHMENT', 'OUTLOOK_ADD_MAIL_ATTACHMENT']);
+    expect(steps()).toEqual(['OUTLOOK_CREATE_DRAFT_REPLY', 'OUTLOOK_UPDATE_EMAIL', 'OUTLOOK_ADD_MAIL_ATTACHMENT', 'OUTLOOK_ADD_MAIL_ATTACHMENT', 'OUTLOOK_LIST_OUTLOOK_ATTACHMENTS', 'OUTLOOK_SEND_DRAFT']);
+    expect(calls('OUTLOOK_ADD_MAIL_ATTACHMENT').map((c) => (c.args.attachment as { name: string }).name)).toEqual(['Terms.pdf', 'Scope.pdf']);
+    expect((await effects('email.reply'))[0]).toMatchObject({ status: 'completed' });
+  });
+
+  it('if the draft Outlook holds does not carry exactly the approved files, it is not sent', async () => {
+    const t = await deliver({ subject: 'Dropped?' });
+    const a = await attach('Kept.pdf', samples.pdf('kept'));
+    const b = await attach('Lost.pdf', samples.pdf('lost'));
+    await w.cmd({ type: 'reply', id: t.id, body: 'Two files.', files: [a.file, b.file] });
+    // Outlook answers "added" for the second file and keeps nothing.
+    const real = fake().execute.bind(fake());
+    let added = 0;
+    fake().execute = async (slug, args, who) => {
+      if (slug === 'OUTLOOK_ADD_MAIL_ATTACHMENT' && ++added === 2) fake().failNext.set(slug, 'dropped');
+      return real(slug, args, who);
+    };
+    try {
+      await releaseHolds(w);
+    } finally {
+      fake().execute = real;
+    }
+    expect(sent()).toHaveLength(0);
+    expect(calls('OUTLOOK_SEND_DRAFT')).toHaveLength(0);
+    const [e] = await effects('email.reply');
+    expect(e).toMatchObject({ status: 'failed' });
+    expect(e!.error).toMatch(/did not take the attachments as approved/);
+
+    // The same when a file nobody approved turns up on the draft, or when Outlook can't say what the draft carries.
+    await w.cmd({ type: 'sendNew', draft: { to: ['mail:dana@client.test'], subject: 'Extra file', body: 'One file.', files: [a.file] } });
+    fake().execute = async (slug, args, who) => {
+      const res = await real(slug, args, who);
+      if (slug === 'OUTLOOK_CREATE_DRAFT') mailbox().messages.find((x) => x.id === res.data.id)!.attachments = [{ name: 'Unasked.pdf', mimetype: 'application/pdf', size: 3, sha256: 'x' }];
+      return res;
+    };
+    try {
+      await releaseHolds(w);
+    } finally {
+      fake().execute = real;
+    }
+    await w.cmd({ type: 'sendNew', draft: { to: ['mail:dana@client.test'], subject: 'Can’t be listed', body: 'One file.', files: [a.file] } });
+    fake().failNext.set('OUTLOOK_LIST_OUTLOOK_ATTACHMENTS', 'error');
+    await releaseHolds(w);
+    expect(sent()).toHaveLength(0);
+    expect(calls('OUTLOOK_SEND_DRAFT')).toHaveLength(0);
+    expect((await effects('email.send')).map((x) => x.status)).toEqual(['failed', 'failed']);
+  });
+
+  it('a file that can’t be handed over, that Outlook refuses, or that never gets an answer stops the email before it is sent', async () => {
+    const a = await attach('Quote.pdf', samples.pdf('Quote'));
+    const failing: [string, string, 'error' | 'timeout', RegExp][] = [
+      ['Not handed over', 'FILES_UPLOAD', 'error', /could not be handed to the mail provider/],
+      ['Refused by Outlook', 'OUTLOOK_ADD_MAIL_ATTACHMENT', 'error', /Outlook refused the attached file “Quote.pdf”/],
+      // The draft was never sent, so a call that did not come back is still a clean failure, not an unknown.
+      ['No answer while adding', 'OUTLOOK_ADD_MAIL_ATTACHMENT', 'timeout', /could not be reached while the files were being added/],
+      ['No answer while checking', 'OUTLOOK_LIST_OUTLOOK_ATTACHMENTS', 'timeout', /could not be reached while the files were being added/],
+    ];
+    for (const [subject, slug, mode, why] of failing) {
+      await w.cmd({ type: 'sendNew', draft: { to: ['mail:dana@client.test'], subject, body: 'x', files: [a.file] } });
+      fake().failNext.set(slug, mode);
+      await releaseHolds(w);
+      const e = (await effects('email.send')).find((x) => (x.payload as { subject: string }).subject === subject)!;
+      expect([subject, e.status]).toEqual([subject, 'failed']);
+      expect(e.error).toMatch(why);
+    }
+    expect(sent()).toHaveLength(0);
+    expect(calls('OUTLOOK_SEND_DRAFT')).toHaveLength(0);
+    // The drafts are still drafts: nothing left the mailbox.
+    expect(mailbox().messages.filter((m) => m.labels.includes('DRAFT')).length).toBe(4);
+  });
+
+  it('a file larger than Outlook takes this way is refused when the email is prepared, not after the wait', async () => {
+    const bytes = new Uint8Array(3 * 1024 * 1024 + 1);
+    bytes.set(samples.pdf('big'));
+    const big = await attach('Big deck.pdf', bytes);
+    const small = await attach('Small.pdf', samples.pdf('small'));
+    const out = await w.cmd({ type: 'sendNew', draft: { to: ['mail:dana@client.test'], subject: 'Too big for Outlook', body: 'x', files: [small.file, big.file] } });
+    expect(out.ok).toBe(false);
+    expect(out.error).toMatch(/“Big deck.pdf” is 3\.0 MB\. From Outlook, Timmy can send files up to 3\.0 MB each/);
+    expect(await effects('email.send')).toHaveLength(0);
+    expect((await w.state()).threads.some((t) => t.subject === 'Too big for Outlook')).toBe(false);
+    // Were the limit set higher than Outlook's tool takes, Outlook's refusal would still stop the email cleanly.
+    const kept = config.files.outlookMaxFileBytes;
+    config.files.outlookMaxFileBytes = 10 * 1024 * 1024;
+    try {
+      expect((await w.cmd({ type: 'sendNew', draft: { to: ['mail:dana@client.test'], subject: 'Limit raised', body: 'x', files: [big.file] } })).ok).toBe(true);
+      await releaseHolds(w);
+    } finally {
+      config.files.outlookMaxFileBytes = kept;
+    }
+    expect((await effects('email.send'))[0]).toMatchObject({ status: 'failed' });
+    expect(sent()).toHaveLength(0);
   });
 });

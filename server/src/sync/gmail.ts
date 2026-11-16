@@ -2,6 +2,7 @@
  * Gmail, through Composio's `gmail` toolkit. A thread's place is a label
  * (see labels.ts); a reply goes into the thread by its id.
  */
+import { stageFiles } from '../files/attachments';
 import { LabelsUnavailable, labelPlan, timmyLabels } from './labels';
 import type { Mailbox } from './mailbox';
 import { normalize, type MailMessage } from './message';
@@ -32,13 +33,19 @@ export const gmail: Mailbox = {
   threadKeyOf: (event) => String(event.thread_id ?? event.threadId ?? ''),
   seed: (event) => normalize(event),
 
-  async send(e, conn, p) {
+  async send(e, conn, p, files = []) {
     const reply = e.kind === 'email.reply' && !!p.threadKey;
     const [first, ...rest] = p.to;
+    // An email approved with files never goes out without them.
+    if (files.length !== (p.attachments?.length ?? 0)) return { status: 'failed', error: 'The email’s attachments were not ready, so it was not sent.' };
+    // Attached files are handed to Composio first, for the tool that will send them. If that fails, nothing has gone out.
+    const handed = await stageFiles(e.workspace_id, conn, reply ? 'GMAIL_REPLY_TO_THREAD' : 'GMAIL_SEND_EMAIL', files);
+    if (!handed.ok) return { status: 'failed', error: handed.error };
+    const attachment = handed.staged.length ? { attachment: handed.staged } : {};
     // What was approved is what goes out: Gmail is told not to add the account's signature to it.
     const res = reply
-      ? await callTool(e.workspace_id, conn.id, 'GMAIL_REPLY_TO_THREAD', { thread_id: p.threadKey, message_body: p.body, recipient_email: first, extra_recipients: rest, cc: p.cc ?? [], is_html: false, include_signature: false }, 'send')
-      : await callTool(e.workspace_id, conn.id, 'GMAIL_SEND_EMAIL', { recipient_email: first, extra_recipients: rest, cc: p.cc ?? [], subject: p.subject, body: p.body, is_html: false, include_signature: false }, 'send');
+      ? await callTool(e.workspace_id, conn.id, 'GMAIL_REPLY_TO_THREAD', { thread_id: p.threadKey, message_body: p.body, recipient_email: first, extra_recipients: rest, cc: p.cc ?? [], is_html: false, include_signature: false, ...attachment }, 'send')
+      : await callTool(e.workspace_id, conn.id, 'GMAIL_SEND_EMAIL', { recipient_email: first, extra_recipients: rest, cc: p.cc ?? [], subject: p.subject, body: p.body, is_html: false, include_signature: false, ...attachment }, 'send');
     if (!res.successful) return { status: 'failed', error: res.error ?? 'Gmail refused the message.' };
     const sent = ((res.data.response_data ?? res.data) as { id?: string; threadId?: string }) ?? {};
     return { status: 'completed', result: { via: 'gmail', id: sent.id, threadId: sent.threadId ?? p.threadKey }, externalId: sent.id };

@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, type Dispatch, type ReactNode } from 'react';
 import { ACTIVITY, BOXES, DEALS, NOW, PROJECTS, RULES, THREADS } from '../data/mock';
-import type { Activity, Box, Deal, Label, ProjectId, Rule, RuleGroup, Thread } from '../data/types';
+import type { Activity, Box, Deal, Label, MailFile, ProjectId, Rule, RuleGroup, Thread } from '../data/types';
 import { DECISIONS, type Decision } from '../data/decisions';
 import { WS_SEED } from '../data/ws-mock';
 import type { WS } from '../data/ws-types';
@@ -100,6 +100,8 @@ export interface ComposeDraft {
   /** Track the reply in [02] Waiting: what they owe you and by when (yyyy-mm-dd). */
   track?: { on?: string; item: string; due?: string } | null;
   project?: string;
+  /** Files attached from the person's computer, already uploaded (real workspaces). */
+  files?: MailFile[];
 }
 
 interface Snapshot {
@@ -178,7 +180,8 @@ export type Action =
   | { type: 'acceptAll'; ids: string[] }
   | { type: 'toggleStar'; id: string }
   | { type: 'markRead'; id: string; unread?: boolean }
-  | { type: 'updateDraft'; id: string; body: string; subject?: string }
+  /** `files`, when given, replaces the files attached to the draft (real workspaces; each was uploaded first). */
+  | { type: 'updateDraft'; id: string; body: string; subject?: string; files?: MailFile[] }
   | { type: 'discardDraft'; id: string }
   | { type: 'sendDraft'; id: string; track: boolean; approved?: boolean; seen?: string }
   | { type: 'toggleStep'; id: string; step: string }
@@ -200,7 +203,7 @@ export type Action =
   | ({ type: 'ws'; ops: WsOp[] } & WsOptions)
   | { type: 'compose'; draft: ComposeDraft | null }
   | { type: 'sendNew'; draft: ComposeDraft }
-  | { type: 'reply'; id: string; body: string; track?: { on: string; item: string; due?: string } | null }
+  | { type: 'reply'; id: string; body: string; track?: { on: string; item: string; due?: string } | null; files?: MailFile[] }
   | { type: 'simulateReply'; id: string }
   /** Timmy drafts a nudge or reply; with `note`, the reply says what you asked it to. */
   | { type: 'makeDraft'; id: string; note?: string }
@@ -495,7 +498,7 @@ export function reducer(s: State, a: Action): State {
       return {
         ...s,
         threads: patch(s.threads, a.id, (x) =>
-          x.draft ? { ...x, draft: { ...x.draft, body: a.body, subject: a.subject ?? x.draft.subject } } : x,
+          x.draft ? { ...x, draft: { ...x.draft, body: a.body, subject: a.subject ?? x.draft.subject, ...(a.files !== undefined ? { files: a.files.length ? a.files : undefined } : {}) } } : x,
         ),
       };
 
@@ -534,6 +537,8 @@ export function reducer(s: State, a: Action): State {
         at: NOW,
         body: draft.body.split(/\n\n+/),
         attachments: draft.attachments,
+        // A thread's draft holds uploaded files (each with its id). The server checks every one before anything is sent.
+        ...(draft.files?.length ? { files: draft.files as MailFile[] } : {}),
       };
       const track = a.track && draft.trackAs;
       const promise = promiseIn(draft.body);
@@ -787,7 +792,7 @@ export function reducer(s: State, a: Action): State {
         box: track ? 'waiting' : 'archived',
         project: d.project,
         participants: [...new Set([...d.to, ...(d.cc ?? []), 'me'])],
-        messages: [{ id: `${tid}-1`, from: 'me', to: d.to, cc: d.cc, at: NOW, body: d.body.split(/\n\n+/) }],
+        messages: [{ id: `${tid}-1`, from: 'me', to: d.to, cc: d.cc, at: NOW, body: d.body.split(/\n\n+/), ...(d.files?.length ? { files: d.files } : {}) }],
         ask: track
           ? `${firstName(on)} owes you: ${lowerFirst(track.item)}${due ? ` by ${fmtDay(due)}` : ''}`
           : `You wrote to ${names}`,
@@ -808,7 +813,7 @@ export function reducer(s: State, a: Action): State {
       const t = s.threads.find((x) => x.id === a.id);
       if (!t) return s;
       const to = [...new Set(t.messages.map((m) => m.from).filter((p) => p !== 'me'))];
-      const msg = { id: `reply-${Date.now().toString(36)}`, from: 'me', to: to.length ? to : t.participants.filter((p) => p !== 'me'), at: NOW, body: a.body.split(/\n\n+/) };
+      const msg = { id: `reply-${Date.now().toString(36)}`, from: 'me', to: to.length ? to : t.participants.filter((p) => p !== 'me'), at: NOW, body: a.body.split(/\n\n+/), ...(a.files?.length ? { files: a.files } : {}) };
       const track = a.track?.item ? a.track : null;
       const due = dueDate(track?.due);
       const box: Box = track ? 'waiting' : t.box === 'follow-up' || t.box === 'inbox' ? 'archived' : t.box;

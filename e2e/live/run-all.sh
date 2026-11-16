@@ -3,7 +3,7 @@
 # with TIMMY_FAKE_PROVIDERS=1 and TIMMY_TEST_HOOKS=1. `bash scripts/dev.sh live` sets all of that up.
 cd "$(dirname "$0")"
 fail=0
-for t in live-signup live-mail live-ask live-settings live-isolation live-holds live-coldmail live-morning live-filing live-calendar live-outlook live-pages live-decisions; do
+for t in live-signup live-mail live-ask live-settings live-isolation live-holds live-coldmail live-morning live-filing live-calendar live-outlook live-pages live-decisions live-files; do
   [ -f "$t.cjs" ] || continue
   out=$(node "$t.cjs" 2>&1); code=$?
   n=$(echo "$out" | grep -cE '^ok -')

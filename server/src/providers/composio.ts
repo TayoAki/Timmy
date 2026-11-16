@@ -23,7 +23,22 @@ export interface ProviderEvent {
   data: Record<string, unknown>;
 }
 
+/**
+ * A file handed to Composio for one tool call. A tool's file argument (an email's `attachment`) takes this
+ * reference, never the bytes: the file is first put in Composio's own store, under a key made for that tool.
+ */
+export interface StagedFile {
+  name: string;
+  mimetype: string;
+  s3key: string;
+}
+
 export interface ComposioProvider {
+  /**
+   * Puts a file in Composio's store for one tool's file argument, as its client's `files.upload` does, and
+   * returns the reference to pass to that tool. Throws when the file could not be handed over.
+   */
+  stageFile(input: { toolSlug: string; toolkit: string; name: string; type: string; bytes: Uint8Array }): Promise<StagedFile>;
   /** Starts a connect flow and returns where to send the person. */
   link(input: { userId: string; toolkit: string; callbackUrl: string }): Promise<{ redirectUrl: string; connectedAccountId: string; authConfigId: string }>;
   account(connectedAccountId: string): Promise<{ status: string; label?: string }>;
@@ -133,6 +148,15 @@ class RealComposio implements ComposioProvider {
     return { successful: !!res.successful, data: (res.data ?? {}) as Record<string, unknown>, error: res.error ?? null };
   }
 
+  async stageFile(input: { toolSlug: string; toolkit: string; name: string; type: string; bytes: Uint8Array }): Promise<StagedFile> {
+    // The client is given the bytes as a File, never a path or an address, so it reads nothing from this
+    // server's disk and fetches nothing. It asks Composio for a one-time upload address and puts the bytes there.
+    const file = new File([input.bytes as BlobPart], input.name, { type: input.type });
+    const out = await this.client.files.upload({ file, toolSlug: input.toolSlug, toolkitSlug: input.toolkit });
+    if (!out?.s3key) throw new Error('Composio returned no reference for the file');
+    return { name: out.name, mimetype: out.mimetype, s3key: out.s3key };
+  }
+
   async createTrigger(slug: string, input: { userId: string; connectedAccountId: string; config?: Record<string, unknown> }) {
     const t = await this.client.triggers.create(input.userId, slug, { connectedAccountId: input.connectedAccountId, triggerConfig: input.config ?? {} });
     return { triggerId: t.triggerId };
@@ -170,6 +194,16 @@ export interface FakeMessage {
   categories?: string[];
   /** Outlook only: the HTML body, when it differs from a plain rendering of `body`. */
   html?: string;
+  /** The files the message carries: what a recipient would get. */
+  attachments?: FakeAttachment[];
+}
+
+/** A file on a stand-in message, described by what arrived: its name, type, size and the SHA-256 of its bytes. */
+export interface FakeAttachment {
+  name: string;
+  mimetype: string;
+  size: number;
+  sha256: string;
 }
 
 export interface FakeFile {
@@ -213,9 +247,11 @@ export class FakeComposio implements ComposioProvider {
   /** Every tool call, for assertions and for counting calls. */
   calls: { slug: string; args: Record<string, unknown>; connectedAccountId: string }[] = [];
   /** Make the next execution of a slug fail: 'error' is a clean refusal, 'timeout' leaves the outcome unknown. */
-  failNext = new Map<string, 'error' | 'timeout' | 'sent-then-timeout' | 'partial'>();
+  failNext = new Map<string, 'error' | 'timeout' | 'sent-then-timeout' | 'partial' | 'dropped'>();
   /** The address the next connect flow will sign in as. */
   nextAddress = '';
+  /** Files handed over with `stageFile`, by the key each was given, with the tool it was handed over for. */
+  staged = new Map<string, { toolSlug: string; toolkit: string; bytes: Uint8Array }>();
 
   reset() {
     this.accounts.clear();
@@ -223,6 +259,43 @@ export class FakeComposio implements ComposioProvider {
     this.calls = [];
     this.failNext.clear();
     this.nextAddress = '';
+    this.staged.clear();
+  }
+
+  /**
+   * What Composio's client does in `files.upload`: the bytes go to Composio's store under a key that names
+   * the toolkit and the tool, and the caller gets the reference a tool's file argument takes.
+   * `failNext.set('FILES_UPLOAD', 'error')` makes the next hand-over fail, as a refused upload does.
+   */
+  async stageFile(input: { toolSlug: string; toolkit: string; name: string; type: string; bytes: Uint8Array }): Promise<StagedFile> {
+    this.calls.push({ slug: 'FILES_UPLOAD', args: { toolSlug: input.toolSlug, toolkit: input.toolkit, name: input.name, type: input.type, size: input.bytes.length }, connectedAccountId: '' });
+    if (this.failNext.get('FILES_UPLOAD')) {
+      this.failNext.delete('FILES_UPLOAD');
+      throw new Error('Failed to upload file (fake)');
+    }
+    const s3key = `fake/${input.toolkit}/${input.toolSlug}/request/${createHash('md5').update(input.bytes).digest('hex')}-${newId('f')}`;
+    this.staged.set(s3key, { toolSlug: input.toolSlug, toolkit: input.toolkit, bytes: new Uint8Array(input.bytes) });
+    return { name: input.name, mimetype: input.type, s3key };
+  }
+
+  /**
+   * Reads a tool's file argument the way the real tools do. Each file must be a reference with a name, a type
+   * with a slash in it and a key, and the key must be one that was handed over for this very tool. Anything
+   * else is refused before the tool does anything. `single` is for a tool that takes one file, not a list.
+   */
+  private filesOf(slug: string, toolkit: string, value: unknown, single = false): { files: FakeAttachment[] } | { error: string } {
+    if (value === undefined || value === null) return { files: [] };
+    if (Array.isArray(value) && single) return { error: 'Invalid request data provided - attachment: Input should be a valid dictionary' };
+    const files: FakeAttachment[] = [];
+    for (const v of Array.isArray(value) ? value : [value]) {
+      const f = v as { name?: unknown; mimetype?: unknown; s3key?: unknown } | null;
+      if (typeof f !== 'object' || f === null || typeof f.name !== 'string' || !f.name || typeof f.mimetype !== 'string' || typeof f.s3key !== 'string') return { error: 'Invalid request data provided - attachment: Input should be a valid FileUploadable (name, mimetype, s3key)' };
+      if (!f.mimetype.includes('/')) return { error: 'Invalid request data provided - attachment: mimetype must contain a "/" separator' };
+      const held = this.staged.get(f.s3key);
+      if (!held || held.toolSlug !== slug || held.toolkit !== toolkit) return { error: 'Invalid request data provided - attachment: no file was uploaded for this tool under that s3key' };
+      files.push({ name: f.name, mimetype: f.mimetype, size: held.bytes.length, sha256: createHash('sha256').update(held.bytes).digest('hex') });
+    }
+    return { files };
   }
 
   async link({ userId, toolkit, callbackUrl }: { userId: string; toolkit: string; callbackUrl: string }) {
@@ -315,7 +388,7 @@ export class FakeComposio implements ComposioProvider {
       subject: m.subject,
       messageText: m.body,
       preview: { body: m.body.slice(0, 160), subject: m.subject },
-      attachmentList: [],
+      attachmentList: (m.attachments ?? []).map((a, i) => ({ attachmentId: `att-${m.id}-${i}`, filename: a.name, mimeType: a.mimetype })),
     };
   }
 
@@ -340,6 +413,7 @@ export class FakeComposio implements ComposioProvider {
       // Outlook hands bodies over as HTML, with a head and styles around the words.
       body: { contentType: 'html', content: m.html ?? `<html><head><style>p { margin: 0 }</style></head><body>${m.body.split(/\n\n+/).map((p) => `<p>${escape(p).replace(/\n/g, '<br>')}</p>`).join('')}</body></html>` },
       bodyPreview: m.body.slice(0, 255),
+      hasAttachments: !!m.attachments?.length,
     };
   }
 
@@ -387,6 +461,8 @@ export class FakeComposio implements ComposioProvider {
       case 'GMAIL_REPLY_TO_THREAD': {
         const reply = slug === 'GMAIL_REPLY_TO_THREAD';
         const first = reply ? box.messages.find((m) => m.threadId === args.thread_id) : undefined;
+        const attached = this.filesOf(slug, 'gmail', args.attachment);
+        if ('error' in attached) return { successful: false, data: {}, error: attached.error };
         const msg: FakeMessage = {
           id: newId('m'),
           threadId: reply ? String(args.thread_id) : newId('t'),
@@ -397,6 +473,7 @@ export class FakeComposio implements ComposioProvider {
           body: String(reply ? args.message_body ?? '' : args.body ?? ''),
           at: new Date(),
           labels: ['SENT'],
+          ...(attached.files.length ? { attachments: attached.files } : {}),
         };
         box.messages.push(msg);
         if (fail === 'sent-then-timeout') {
@@ -470,7 +547,9 @@ export class FakeComposio implements ComposioProvider {
         return ok({ value: page.map((m) => this.graph(m)), ...(start + max < list.length ? { next_page_token: String(start + max) } : {}) });
       }
       case 'OUTLOOK_CREATE_DRAFT': {
-        const msg: FakeMessage = { id: newId('om'), threadId: newId('conv'), from: box.address, to: ((args.to_recipients as string[] | undefined) ?? []).map(String), cc: ((args.cc_recipients as string[] | undefined) ?? []).map(String), subject: String(args.subject ?? ''), body: String(args.body ?? ''), at: new Date(), labels: ['DRAFT'] };
+        const attached = this.filesOf(slug, 'outlook', args.attachment);
+        if ('error' in attached) return { successful: false, data: {}, error: attached.error };
+        const msg: FakeMessage = { id: newId('om'), threadId: newId('conv'), from: box.address, to: ((args.to_recipients as string[] | undefined) ?? []).map(String), cc: ((args.cc_recipients as string[] | undefined) ?? []).map(String), subject: String(args.subject ?? ''), body: String(args.body ?? ''), at: new Date(), labels: ['DRAFT'], ...(attached.files.length ? { attachments: attached.files } : {}) };
         box.messages.push(msg);
         return ok(this.graph(msg));
       }
@@ -499,6 +578,26 @@ export class FakeComposio implements ComposioProvider {
           } else m.body = String(b.content ?? '');
         }
         return ok(this.graph(m));
+      }
+      case 'OUTLOOK_ADD_MAIL_ATTACHMENT': {
+        const m = box.messages.find((x) => x.id === args.message_id);
+        if (!m || !m.labels.includes('DRAFT')) return { successful: false, data: {}, error: 'The specified object was not found in the store' };
+        const attached = this.filesOf(slug, 'outlook', args.attachment, true);
+        if ('error' in attached) return { successful: false, data: {}, error: attached.error };
+        if (attached.files.length !== 1) return { successful: false, data: {}, error: 'Either attachment or contentBytes is required' };
+        // The tool is for small files. Microsoft takes under 3 MB this way; anything larger needs an upload session.
+        if (attached.files[0]!.size >= 3 * 1024 * 1024) return { successful: false, data: {}, error: 'The attachment is too large for this request (3 MB); use an upload session' };
+        // 'dropped' answers as if all went well and keeps nothing, to show the check made before sending.
+        if (fail === 'dropped') this.failNext.delete(slug);
+        else m.attachments = [...(m.attachments ?? []), attached.files[0]!];
+        return ok({ '@odata.type': '#microsoft.graph.fileAttachment', id: newId('att'), name: attached.files[0]!.name, size: attached.files[0]!.size, isInline: false, lastModifiedDateTime: new Date().toISOString() });
+      }
+      case 'OUTLOOK_LIST_OUTLOOK_ATTACHMENTS': {
+        const m = box.messages.find((x) => x.id === args.message_id);
+        if (!m) return { successful: false, data: {}, error: 'The specified object was not found in the store' };
+        // The size given is deliberately not the file's own length: Microsoft's figure can count wrapping around the
+        // file, so the check made before sending goes by name and must not depend on size.
+        return ok({ response_data: { value: (m.attachments ?? []).map((a, i) => ({ '@odata.type': '#microsoft.graph.fileAttachment', id: `att-${m.id}-${i}`, name: a.name, contentType: a.mimetype, size: a.size + 172, isInline: false })) } });
       }
       case 'OUTLOOK_SEND_DRAFT': {
         const m = box.messages.find((x) => x.id === args.message_id);

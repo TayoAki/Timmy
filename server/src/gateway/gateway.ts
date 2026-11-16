@@ -123,7 +123,7 @@ function pendingOf(e: EffectRow): PendingEffect {
     kind: e.kind === 'mail.modify' ? 'filing' : domain === 'mail' ? 'email' : domain,
     title: e.preview.title ?? KINDS[e.kind].label,
     why: e.preview.why ?? '',
-    preview: { from: e.preview.from, to: e.preview.to, cc: e.preview.cc, subject: e.preview.subject, body: e.preview.body, lines: e.preview.lines },
+    preview: { from: e.preview.from, to: e.preview.to, cc: e.preview.cc, subject: e.preview.subject, body: e.preview.body, lines: e.preview.lines, ...(e.preview.attachments?.length ? { attachments: e.preview.attachments } : {}) },
     waitingOn: e.approver_route === 'user' ? 'you' : e.approver_route,
     status: e.status === 'approved' ? 'holding' : 'waiting',
     sendsAt: e.status === 'approved' && e.hold_until ? new Date(e.hold_until) : undefined,
