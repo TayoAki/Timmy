@@ -27,8 +27,8 @@
     {
       "id": "api-unit",
       "file": "server/test/unit.test.ts",
-      "covers": "state patches, policy, redaction, mail parsing, webhook signatures, the data wrapper",
-      "tests": 19,
+      "covers": "state patches, policy, redaction, mail parsing, webhook signatures, the data wrapper, no fallback model unless configured and never for the judge",
+      "tests": 20,
       "status": "pass"
     },
     {
@@ -41,29 +41,29 @@
     {
       "id": "api-gateway",
       "file": "server/test/gateway.test.ts",
-      "covers": "hold and undo, exactly-once send, provider failures, database-enforced order, audit log, approver routing, never-list, rules for unattended runs, demo-only actions refused",
-      "tests": 24,
+      "covers": "hold and undo, exactly-once send, provider failures, database-enforced order, audit log, approver routing (delegate to exec, CRM change to RevOps), approve and decline by id over the API, never-list, rules for unattended runs, demo-only actions refused",
+      "tests": 26,
       "status": "pass"
     },
     {
       "id": "api-sync",
       "file": "server/test/sync.test.ts",
-      "covers": "connect flow, backfill paging and resume, signed webhooks, duplicates, replies",
-      "tests": 12,
+      "covers": "connect flow, backfill paging and resume, the nightly mail check, apps that cannot be connected yet, signed webhooks, duplicates, replies",
+      "tests": 15,
       "status": "pass"
     },
     {
       "id": "api-commands",
       "file": "server/test/commands.test.ts",
-      "covers": "blank workspace, commands, idempotent retry, undo, ordering, stream, model setting",
-      "tests": 11,
+      "covers": "blank workspace, commands, idempotent retry answered only to the sender, undo, ordering, stream, model setting, monthly limit and concurrent-run limit within the server's ceilings",
+      "tests": 15,
       "status": "pass"
     },
     {
       "id": "api-agent",
       "file": "server/test/agent.test.ts",
-      "covers": "Ask over mail, AG-UI stream, pause and resume, injected instructions, judge, credentials, cost log, caps, leases, drafting, reading new mail",
-      "tests": 25,
+      "covers": "Ask over mail, AG-UI stream, pause and resume, injected instructions, judge, credentials, switching the model (with a stand-in second model), cost log, caps including two jobs arriving at once, leases, drafting, reading new mail",
+      "tests": 28,
       "status": "pass"
     },
     {
@@ -97,16 +97,16 @@
     {
       "id": "live-signup",
       "file": "e2e/live/live-signup.cjs",
-      "covers": "sign up, name the workspace, land on an empty Today, sign out and in",
+      "covers": "sign up, name the workspace, land on an empty Today with none of the demo's sample data, Approvals and Connections show the workspace's own state, sign out and in",
       "status": "pass",
-      "tests": 22
+      "tests": 27
     },
     {
       "id": "live-mail",
       "file": "e2e/live/live-mail.cjs",
-      "covers": "connect a mailbox, receive an email, see the thread, reply, undo, audit log",
+      "covers": "connect a mailbox, receive an email, see the thread, Timmy drafts a reply and it is approved and sent from Approvals, send with undo, reply, audit log",
       "status": "pass",
-      "tests": 24
+      "tests": 30
     },
     {
       "id": "live-ask",
@@ -118,9 +118,9 @@
     {
       "id": "live-model",
       "file": "e2e/live/live-settings.cjs",
-      "covers": "switching the model in Settings",
+      "covers": "the model picker (only tested models offered, an unlisted model refused), the monthly limit and its ceiling, no approval mode offered that would do nothing. Switching between two models is covered in server/test/agent.test.ts with a stand-in, because the real list has one model until another passes the eval",
       "status": "pass",
-      "tests": 8
+      "tests": 12
     },
     {
       "id": "live-isolation",
@@ -132,15 +132,15 @@
     {
       "id": "live-holds",
       "file": "e2e/live/live-holds.cjs",
-      "covers": "a delegate's send held for the exec, in two browsers, with invitations. RevOps holds on CRM writes are covered in server/test/gateway.test.ts until the CRM connection exists (phase 2)",
+      "covers": "a delegate's send held for the exec, in two browsers, with invitations. A CRM change held for RevOps is covered in server/test/gateway.test.ts until a CRM can be connected",
       "status": "pass",
       "tests": 14
     },
     {
       "id": "live-coldmail",
       "file": "e2e/live/live-coldmail.cjs",
-      "covers": "a lead email opens Gmail's compose window, nothing is sent through the provider, the lead is contacted once the email is in Sent, the reply shows in the Unibox",
-      "tests": 12,
+      "covers": "a lead email opens Gmail's compose window signed by the signed-in person, nothing is sent through the provider, the lead is contacted once the email is in Sent, the reply shows in the Unibox",
+      "tests": 13,
       "status": "pass"
     },
     {
@@ -151,15 +151,14 @@
     },
     {
       "id": "smoke-composio",
-      "file": "server/test/smoke/composio.smoke.ts",
-      "covers": "real connect link, fetch and send between test accounts behind TIMMY_SMOKE=1",
+      "covers": "real connect, backfill, an email in and a send out between test Gmail accounts. Not written yet: it needs the accounts first",
       "status": "blocked",
       "on": "test Gmail accounts"
     },
     {
       "id": "staging-full",
-      "covers": "the six live suites against the staging deploy on Railway (91 checks). The demo suites are not run against a deployed build of this branch: web deploys the older branch.",
-      "status": "pass"
+      "covers": "the seven live suites against the staging deploy on Railway. The demo suites are not run against a deployed build of this branch: web deploys the older branch.",
+      "status": "todo"
     },
     {
       "id": "prod-smoke",

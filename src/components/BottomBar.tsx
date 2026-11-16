@@ -35,9 +35,14 @@ export function BottomBar() {
         ) : (
           <span className="bar-status-text">
             <strong>{project ? `Showing ${project.name}` : isLive() && !state.conn.apps.gmail?.connected && !state.conn.apps.outlook?.connected ? 'Connect your mail to get started' : 'Timmy is up to date'}</strong>
-            <button className="bar-link" onClick={() => dispatch({ type: 'navigate', route: { view: 'rules', tab: 'schedule' } })} title="Change the morning run in Settings › Schedule">
-              {isLive() ? '' : `Last run ${fmtTime(LAST_RUN)} · `}{next ? `${isLive() ? 'Next morning run' : 'next'} ${whenLabel(next)}` : `${isLive() ? 'Morning' : 'morning'} run paused`}
-            </button>
+            {/* A real workspace has no scheduled run yet: Timmy works on mail as it arrives, so no run time is claimed. */}
+            {isLive() ? (
+              <span className="bar-sub">Timmy reads new mail as it arrives</span>
+            ) : (
+              <button className="bar-link" onClick={() => dispatch({ type: 'navigate', route: { view: 'rules', tab: 'schedule' } })} title="Change the morning run in Settings › Schedule">
+                {`Last run ${fmtTime(LAST_RUN)} · `}{next ? `next ${whenLabel(next)}` : 'morning run paused'}
+              </button>
+            )}
           </span>
         )}
       </div>

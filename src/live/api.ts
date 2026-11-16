@@ -1,6 +1,6 @@
 import type { Action } from '../state/store';
-import { fromWire, toWire, type Patch } from './patches';
-import type { LiveProfile } from './types';
+import { fromWire, toWire } from './patches';
+import type { CommandResult, LiveProfile } from './types';
 
 export class ApiError extends Error {
   constructor(
@@ -37,15 +37,7 @@ export interface Snapshot {
   me: { name: string | null; email: string | null; company: string };
 }
 
-export interface CommandResult {
-  ok: boolean;
-  rev: number;
-  patches: Patch[];
-  toast?: { text: string; tone?: 'warn' };
-  error?: string;
-  redirect?: string;
-  holding?: { effects: string[]; seconds: number };
-}
+export type { CommandResult };
 
 export const api = {
   me: () => call<Me>('GET', '/api/v1/me').catch((e) => (e instanceof ApiError && e.status === 401 ? null : Promise.reject(e))),
@@ -60,7 +52,8 @@ export const api = {
   command: (id: string, action: Action) => call<CommandResult>('POST', '/api/v1/commands', { id, action }),
   connect: (app: string) => call<{ redirectUrl: string }>('POST', `/api/v1/connections/${app}/connect`, {}),
   disconnect: (app: string) => call('POST', `/api/v1/connections/${app}/disconnect`, {}),
-  settings: () => call<{ model: string; models: LiveProfile['models']; approvalMode: 'ask' | 'auto'; killSwitch: boolean }>('GET', '/api/v1/settings'),
-  saveSettings: (patch: { model?: string; approvalMode?: 'ask' | 'auto'; killSwitch?: boolean }) => call('PATCH', '/api/v1/settings', patch),
+  settings: () =>
+    call<{ model: string; models: LiveProfile['models']; killSwitch: boolean; monthlySpendCapUsd: number; maxConcurrentRuns: number; limits: { monthlySpendCapUsd: number; maxConcurrentRuns: number } }>('GET', '/api/v1/settings'),
+  saveSettings: (patch: { model?: string; killSwitch?: boolean; monthlySpendCapUsd?: number }) => call('PATCH', '/api/v1/settings', patch),
   audit: () => call<{ entries: { id: number; at: Date; actor: string; action: string; effect_id: string | null; detail: Record<string, unknown> }[] }>('GET', '/api/v1/audit?limit=100'),
 };

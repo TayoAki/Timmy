@@ -94,11 +94,11 @@ function toWireMessages(messages: ChatMessage[], cache: boolean) {
 
 /** Exposed so tests can check what would be sent without sending it. */
 export function buildRequestBody(req: ModelRequest) {
-  const fallbacks = config.openrouter.fallbacks.filter((m) => m !== req.model);
+  // The judge is pinned: it is never answered by another model. Other routes fall back only to models the owner has approved.
+  const fallbacks = req.route === 'judge' ? [] : config.openrouter.fallbacks.filter((m) => m !== req.model);
   return {
     model: req.model,
-    // Tried in order when the first model's providers are down.
-    models: [req.model, ...fallbacks],
+    ...(fallbacks.length ? { models: [req.model, ...fallbacks] } : {}),
     // Mail only goes to endpoints that keep no data.
     provider: { zdr: true, data_collection: 'deny' },
     usage: { include: true },

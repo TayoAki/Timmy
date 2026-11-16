@@ -6,6 +6,7 @@
 import { ArrowRight, Check, CircleSlash, Inbox, Lock, Stamp } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { ACTIVITY } from '../../data/mock';
+import { isLive } from '../../live/clock';
 import { fmtStamp, fmtTime, plural } from '../../lib/format';
 import { APPROVAL_KINDS, openApprovals, type Approval, type ApprovalKind } from '../../state/approvals';
 import { scopedApprovals } from '../../state/scope';
@@ -152,7 +153,7 @@ function Queue({ all, filter }: { all: Approval[]; filter?: ApprovalKind }) {
           <EmptyState
             icon={Check}
             title={filter ? `No ${APPROVAL_KINDS[filter].plural.toLowerCase()} waiting` : 'Nothing is waiting on you'}
-            body={next ? `Timmy brings new drafts and decisions here after the next run, ${whenLabel(next)}.` : 'The morning run is paused. Turn it back on in Settings › Schedule.'}
+            body={isLive() ? 'Drafts you ask Timmy for, and emails it prepares in the chat, wait here for your OK.' : next ? `Timmy brings new drafts and decisions here after the next run, ${whenLabel(next)}.` : 'The morning run is paused. Turn it back on in Settings › Schedule.'}
             action={
               filter ? (
                 <button className="btn btn-sm" onClick={() => dispatch({ type: 'navigate', route: { view: 'approvals', tab: 'open' } })}>
@@ -295,14 +296,15 @@ function Section({ title, aside, children }: { title: string; aside?: ReactNode;
 export function ApprovalsContext() {
   const { state, dispatch } = useStore();
   const recent = state.approvalLog.slice(0, 5);
-  const auto = ACTIVITY.filter((x) => x.kind === 'triage' || (x.kind === 'file' && /receipt/i.test(x.text))).slice(0, 3);
+  // The demo shows its sample day. A real workspace shows nothing here until Timmy has rules that let it act alone.
+  const auto = isLive() ? [] : ACTIVITY.filter((x) => x.kind === 'triage' || (x.kind === 'file' && /receipt/i.test(x.text))).slice(0, 3);
 
   return (
     <>
       <Section title="How approvals work">
         <ol className="ap-steps">
           <li>
-            <strong>Timmy prepares.</strong> During the morning run it drafts replies, works out the numbers and lines up invites and CRM changes.
+            <strong>Timmy prepares.</strong> {isLive() ? 'It drafts a reply when you ask for one, and prepares the emails you ask for in the chat.' : 'During the morning run it drafts replies, works out the numbers and lines up invites and CRM changes.'}
           </li>
           <li>
             <strong>You decide.</strong> Approve, edit or turn it down here, or on the email it came from.
@@ -314,7 +316,7 @@ export function ApprovalsContext() {
       </Section>
 
       <Section title="Done without asking" aside={<span className="rp-aside">Today</span>}>
-        <p className="rp-text">Routine work your rules allow Timmy to handle on its own:</p>
+        <p className="rp-text">{isLive() && !auto.length ? 'Nothing yet. Timmy asks before every change until you write a rule that lets it act on its own.' : 'Routine work your rules allow Timmy to handle on its own:'}</p>
         <ul className="ap-auto">
           {auto.map((x) => (
             <li key={x.id}>

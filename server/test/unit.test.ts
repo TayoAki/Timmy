@@ -6,6 +6,7 @@ import { rulesFor } from '../src/auth/roles';
 import { redact } from '../src/lib/log';
 import { normalize, paragraphs, parseSender } from '../src/sync/ingest';
 import { signWebhook, verifyWebhookSignature } from '../src/providers/composio';
+import { config } from '../src/config';
 import { buildRequestBody } from '../src/providers/model';
 import { canonical, hashOf } from '../src/lib/ids';
 
@@ -117,14 +118,31 @@ describe('credentials stay out of logs and prompts', () => {
     expect(line).not.toContain('hunter2secret');
     expect(line).toContain('postgres://owner:[redacted]@db.internal');
   });
-  it('a model request carries no key, and asks for zero retention, fallbacks, caching and usage', () => {
+  it('mail goes only to models the owner approved: no fallback unless one is configured, and never for the judge', () => {
+    const req = { workspaceId: 'w', model: 'anthropic/claude-opus-5.5', messages: [{ role: 'user' as const, content: 'hi' }] };
+    // Out of the box there is no fallback: nothing but the chosen model can be sent the request.
+    expect(config.openrouter.fallbacks).toEqual([]);
+    expect(buildRequestBody({ ...req, route: 'ask' })).not.toHaveProperty('models');
+    const before = config.openrouter.fallbacks;
+    config.openrouter.fallbacks = ['example/approved-fallback', 'anthropic/claude-opus-5.5'];
+    try {
+      expect(buildRequestBody({ ...req, route: 'ask' }).models).toEqual(['anthropic/claude-opus-5.5', 'example/approved-fallback']);
+      expect(buildRequestBody({ ...req, route: 'draft' }).models).toEqual(['anthropic/claude-opus-5.5', 'example/approved-fallback']);
+      // The judge is pinned to one model, whatever the fallback list says.
+      const judged = buildRequestBody({ ...req, route: 'judge', model: config.openrouter.judgeModel });
+      expect(judged).not.toHaveProperty('models');
+      expect(judged.model).toBe(config.openrouter.judgeModel);
+    } finally {
+      config.openrouter.fallbacks = before;
+    }
+  });
+  it('a model request carries no key, and asks for zero retention, caching and usage', () => {
     const body = buildRequestBody({ workspaceId: 'w', route: 'ask', model: 'anthropic/claude-opus-5.5', effort: 'low', messages: [{ role: 'system', content: 'sys' }, { role: 'user', content: 'hi' }], tools: [{ name: 't', description: 'd', parameters: { type: 'object' } }] });
     const text = JSON.stringify(body);
     expect(text).not.toContain(process.env.OPENROUTER_API_KEY!);
     expect(text).not.toContain(process.env.COMPOSIO_API_KEY!);
     expect(body.provider.zdr).toBe(true);
-    expect(body.models[0]).toBe('anthropic/claude-opus-5.5');
-    expect(body.models.length).toBeGreaterThan(1);
+    expect(body.model).toBe('anthropic/claude-opus-5.5');
     expect(body.usage.include).toBe(true);
     expect(body.reasoning).toEqual({ effort: 'low' });
     expect(JSON.stringify(body.messages[0])).toContain('cache_control');

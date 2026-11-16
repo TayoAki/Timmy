@@ -121,7 +121,7 @@ export function suggest(last: { sender: string; subject: string; text: string; l
   if (RECEIPT.test(last.subject)) return { box: 'archived', confidence: 'high', reason: 'A receipt or order notice. Nothing to answer.' };
   if (bulk && !RECEIPT.test(last.subject)) return { box: 'read-through', confidence: 'high', reason: 'A newsletter or bulk mailing. Read it when you have time.' };
   if (AUTOMATED.test(local) || last.labels.includes('CATEGORY_UPDATES')) return { box: 'archived', confidence: 'medium', reason: 'An automated notice from a system, not a person.' };
-  return { box: 'follow-up', confidence: 'low', effort: 'quick', reason: 'A person wrote to you. Timmy hasn’t read it closely yet.' };
+  return { box: 'follow-up', confidence: 'low', effort: 'quick', reason: 'A person wrote to you. Timmy hasn’t read it closely yet.', provisional: true };
 }
 
 /* ───────────── Threads the screens show ───────────── */
@@ -220,11 +220,23 @@ export async function ingestThread(workspaceId: string, connectionId: string, th
   const list = raw.map(normalize).filter((m): m is MailMessage => !!m);
   if (!list.length) return 0;
   return mutate(workspaceId, 'sync', async (tx, loaded) => {
-    const fresh: MailMessage[] = [];
-    for (const m of list) if ((await upsertMessage(tx, workspaceId, conn, m)).inserted) fresh.push(m);
-    const projected = await projectThread(tx, loaded.state, workspaceId, conn, threadKey);
-    return { state: noteLeadMail(projected, fresh), result: fresh.length };
+    const stored = await storeMessages(tx, loaded.state, workspaceId, conn, list);
+    return { state: stored.state, result: stored.fresh };
   });
+}
+
+/**
+ * Stores a batch of messages and brings the screens up to date with them: each thread they belong
+ * to is rebuilt, and mail to or from a lead is noted on the lead. Every way mail arrives (a trigger,
+ * the first backfill, the nightly check) ends here, so they can't disagree about what a message means.
+ */
+async function storeMessages(tx: Tx, state: State, workspaceId: string, conn: ConnectionRow, list: MailMessage[]): Promise<{ state: State; fresh: number; threads: number }> {
+  const fresh: MailMessage[] = [];
+  for (const m of list) if ((await upsertMessage(tx, workspaceId, conn, m)).inserted) fresh.push(m);
+  const keys = [...new Set(list.map((m) => m.threadKey))];
+  let next = state;
+  for (const key of keys) next = await projectThread(tx, next, workspaceId, conn, key);
+  return { state: noteLeadMail(next, fresh), fresh: fresh.length, threads: keys.length };
 }
 
 /* ───────────── Mail to and from leads ───────────── */
@@ -299,11 +311,8 @@ export async function backfillMail(workspaceId: string, connectionId: string, op
     progress.pages++;
     progress.messages += list.length;
     await mutate(workspaceId, 'backfill', async (tx, loaded) => {
-      for (const m of list) await upsertMessage(tx, workspaceId, conn, m);
-      let state = loaded.state;
-      const keys = [...new Set(list.map((m) => m.threadKey))];
-      for (const key of keys) state = await projectThread(tx, state, workspaceId, conn, key);
-      progress.threads += keys.length;
+      const { state, threads } = await storeMessages(tx, loaded.state, workspaceId, conn, list);
+      progress.threads += threads;
       await tx.query(`update sync_cursor set cursor = $3::jsonb, items_done = items_done + $4, state = $5, finished_at = case when $5 = 'done' then now() else null end, updated_at = now() where connection_id = $1 and kind = $2`, [
         connectionId,
         kind,
@@ -322,4 +331,34 @@ export async function backfillMail(workspaceId: string, connectionId: string, op
     if (opts.pauseMs ?? 1500) await new Promise((r) => setTimeout(r, opts.pauseMs ?? 1500));
   }
   return progress;
+}
+
+/* ───────────── The nightly check ───────────── */
+
+/**
+ * Triggers can be missed: a webhook lost, a trigger that could not be created. Once a night the last
+ * days of the mailbox are fetched again and anything not yet stored is taken in. Storing is by the
+ * provider's message id, so mail that did arrive the first time is left as it is.
+ */
+export async function reconcileMail(workspaceId: string, connectionId: string, opts: { days?: number; maxPages?: number; pageSize?: number } = {}): Promise<{ pages: number; messages: number; fresh: number }> {
+  const conn = await connectionById(workspaceId, connectionId);
+  const out = { pages: 0, messages: 0, fresh: 0 };
+  if (!conn || conn.status !== 'active' || conn.toolkit !== 'gmail') return out;
+  const after = Math.floor((Date.now() - (opts.days ?? 2) * 86400_000) / 1000);
+  let pageToken: string | undefined;
+  do {
+    const res = await callTool(workspaceId, connectionId, 'GMAIL_FETCH_EMAILS', { query: `after:${after}`, max_results: opts.pageSize ?? 50, include_payload: false, ...(pageToken ? { page_token: pageToken } : {}) }, 'reconcile');
+    if (!res.successful) throw new Error(res.error ?? 'the nightly mail check failed');
+    const list = ((res.data.messages ?? []) as Record<string, unknown>[]).map(normalize).filter((m): m is MailMessage => !!m);
+    out.pages++;
+    out.messages += list.length;
+    if (list.length) {
+      out.fresh += await mutate(workspaceId, 'sync', async (tx, loaded) => {
+        const stored = await storeMessages(tx, loaded.state, workspaceId, conn, list);
+        return { state: stored.state, result: stored.fresh };
+      });
+    }
+    pageToken = (res.data.nextPageToken as string | null | undefined) || undefined;
+  } while (pageToken && out.pages < (opts.maxPages ?? 10));
+  return out;
 }

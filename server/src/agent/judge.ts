@@ -1,5 +1,6 @@
 import { config } from '../config';
 import { reachesSomeoneElse } from '../gateway/policy';
+import { jsonObject } from '../lib/json';
 import { log } from '../lib/log';
 import { complete } from '../providers/model';
 import { JUDGE_SYSTEM } from './prompts';
@@ -43,7 +44,7 @@ export async function judge(input: JudgeInput): Promise<Verdict> {
         { role: 'user', content: JSON.stringify({ action: input.action, user_messages: input.userWords.slice(-12), note: input.readOutside ? 'The assistant has read outside content during this job.' : 'The assistant has not read outside content during this job.' }) },
       ],
     });
-    const parsed = JSON.parse(/\{[\s\S]*\}/.exec(res.content)?.[0] ?? '{}') as { decision?: string; reason?: string };
+    const parsed = jsonObject<{ decision: string; reason: string }>(res.content);
     if (parsed.decision === 'approve') return { verdict: 'approve', reason: String(parsed.reason ?? '').slice(0, 300) };
     return { verdict: 'ask', reason: String(parsed.reason ?? 'The judge was not sure.').slice(0, 300) };
   } catch (e) {

@@ -5,6 +5,7 @@
  * Below the apps: who approves CRM writes, delegate mode, and enrichment.
  */
 import { isLive } from '../../live/clock';
+import { isConnectable } from '../../live/connectable';
 import { Check, Clock, Plug, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { APPS, GROUPS, type AppDef } from '../../data/connections';
@@ -25,7 +26,7 @@ export function ConnectionsView() {
       <h1 className="page-title">Connections</h1>
       <p className="page-sub">
         {on} apps connected. Each one connects through Composio: Timmy reads what you connect, and anything it writes waits for approval.{' '}
-        {isLive() ? 'You sign in on Composio’s page; Timmy never sees your password. Gmail, Google Calendar, Google Drive and Outlook can be connected today.' : 'In this preview, connecting is simulated and nothing leaves your browser.'}
+        {isLive() ? 'You sign in on Composio’s page; Timmy never sees your password. Gmail and Google Calendar can be connected today; the others follow.' : 'In this preview, connecting is simulated and nothing leaves your browser.'}
       </p>
 
       {GROUPS.map((g) => (
@@ -55,6 +56,8 @@ export function ConnectionsView() {
 function AppCard({ app, onConnect }: { app: AppDef; onConnect: () => void }) {
   const { state, dispatch } = useStore();
   const c = state.conn.apps[app.id];
+  // On a real workspace an app is offered only once Timmy can read it or act through it.
+  const soon = app.soon || (isLive() && !isConnectable(app.id));
   return (
     <li className="card conn-card" data-connected={c?.connected ? 'true' : undefined}>
       <header className="conn-head">
@@ -64,7 +67,7 @@ function AppCard({ app, onConnect }: { app: AppDef; onConnect: () => void }) {
         <span className="conn-name">
           <strong>{app.name}</strong>
           <span className="conn-status">
-            {app.soon ? (
+            {soon ? (
               'Coming soon'
             ) : c?.connected ? (
               <>
@@ -94,7 +97,7 @@ function AppCard({ app, onConnect }: { app: AppDef; onConnect: () => void }) {
         </p>
       )}
       <footer className="conn-foot">
-        {app.soon ? null : c?.connected ? (
+        {soon ? null : c?.connected ? (
           <>
             {c.at && <span className="muted">Since {fmtDay(c.at)}</span>}
             <button className="btn btn-sm btn-ghost" onClick={() => dispatch({ type: 'conn', op: { op: 'disconnect', id: app.id } })}>

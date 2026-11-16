@@ -1,6 +1,6 @@
 import type { State } from '../../../src/state/store';
 import { blankState } from '../../../src/live/blank';
-import { SLICES, SLICE_BY_NAME, applyPatches, diffState, fromWire, toWire, type Patch } from '../../../src/live/patches';
+import { SLICES, SLICE_BY_NAME, applyPatches, diffState, fromWire, toWire, writeAt, type Patch } from '../../../src/live/patches';
 import type { Tx } from '../db/pool';
 
 export interface WorkspaceRow {
@@ -153,9 +153,9 @@ export async function loadState(tx: Tx, workspaceId: string): Promise<Loaded> {
       if (values.has(sl.name)) patches.push({ s: sl.name, v: values.get(sl.name) });
     } else if (sl.kind === 'record') {
       // Replace the whole record: the blank's defaults only stand in for slices that were never saved.
-      state = setSlice(state, sl.path, records.get(sl.name) ?? {});
+      state = writeAt(state, sl.path, records.get(sl.name) ?? {});
     } else {
-      state = setSlice(state, sl.path, arrays.get(sl.name) ?? []);
+      state = writeAt(state, sl.path, arrays.get(sl.name) ?? []);
       if (!ords.has(sl.name)) ords.set(sl.name, new Map());
     }
   }
@@ -163,13 +163,6 @@ export async function loadState(tx: Tx, workspaceId: string): Promise<Loaded> {
   const loaded = { workspace, rev: workspace.state_rev, state, ords };
   remember(loaded);
   return loaded;
-}
-
-function setSlice<S>(state: S, path: string[], value: unknown): S {
-  if (path.length === 0) return value as S;
-  const [head, ...rest] = path as [string, ...string[]];
-  const base = (state ?? {}) as Record<string, unknown>;
-  return { ...base, [head]: setSlice(base[head], rest, value) } as S;
 }
 
 /**

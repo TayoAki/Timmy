@@ -5,36 +5,54 @@ import { useProfile } from './LiveApp';
 
 /**
  * Workspace settings that only exist on a real workspace: the model that powers
- * Timmy, how approvals work, and the account. Renders nothing in the demo.
+ * Timmy, the monthly limit on what it may cost, and the account. Renders nothing in the demo.
  */
 export function LiveSettings() {
   const live = useProfile();
   const { dispatch } = useStore();
   const [model, setModel] = useState(live?.profile.model ?? '');
-  const [mode, setMode] = useState(live?.profile.approvalMode ?? 'ask');
+  const [cap, setCap] = useState('');
+  const [savedCap, setSavedCap] = useState('');
+  const [ceiling, setCeiling] = useState(0);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!live) return;
     void api.settings().then((s) => {
       setModel(s.model);
-      setMode(s.approvalMode);
+      setCap(String(s.monthlySpendCapUsd));
+      setSavedCap(String(s.monthlySpendCapUsd));
+      setCeiling(s.limits.monthlySpendCapUsd);
     });
   }, [live]);
   if (!live) return null;
   const { profile, signOut } = live;
   const canChange = profile.can.policy;
 
-  const save = async (patch: { model?: string; approvalMode?: 'ask' | 'auto' }, done: string) => {
+  const save = async (patch: { model?: string; monthlySpendCapUsd?: number }, done: string): Promise<boolean> => {
     setSaving(true);
     try {
       await api.saveSettings(patch);
       dispatch({ type: 'toast', text: done });
+      return true;
     } catch (e) {
       dispatch({ type: 'toast', text: (e as Error).message, tone: 'warn' });
+      return false;
     } finally {
       setSaving(false);
     }
+  };
+
+  const saveCap = async () => {
+    if (cap === savedCap) return;
+    const amount = Number(cap);
+    // The server checks the same range; saying so here saves a round trip. Either way the field goes back to the
+    // limit in force, so it never shows a number that isn't true.
+    if (cap.trim() === '' || !Number.isFinite(amount) || amount < 0 || amount > ceiling) {
+      dispatch({ type: 'toast', text: `The monthly limit can be anything from $0 to ${dollars(ceiling)}.`, tone: 'warn' });
+      setCap(savedCap);
+    } else if (await save({ monthlySpendCapUsd: amount }, `The monthly limit is now ${dollars(amount)}.`)) setSavedCap(cap);
+    else setCap(savedCap);
   };
 
   return (
@@ -62,23 +80,30 @@ export function LiveSettings() {
         </span>
       </label>
       <label className="field">
-        <span className="field-label">Routine changes to your own mailbox</span>
-        <select
+        <span className="field-label">Monthly limit for Timmy’s model, in dollars</span>
+        <input
           className="input"
-          name="approval-mode"
-          value={mode}
+          name="spend-cap"
+          type="number"
+          min={0}
+          max={ceiling}
+          step={1}
+          value={cap}
           disabled={!canChange || saving}
-          onChange={(e) => {
-            const next = e.target.value as 'ask' | 'auto';
-            setMode(next);
-            void save({ approvalMode: next }, next === 'auto' ? 'Timmy will decide routine filing itself and ask when unsure.' : 'Timmy will ask before every change.');
+          onChange={(e) => setCap(e.target.value)}
+          onBlur={() => void saveCap()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.currentTarget.blur();
           }}
-        >
-          <option value="ask">Ask me every time</option>
-          <option value="auto">Let Timmy decide routine filing, and ask when unsure</option>
-        </select>
-        <span className="field-hint">Whatever you choose, anything that reaches another person (an email, an invite, a post) waits for your OK or a rule you wrote. Timmy never moves money, signs documents or deletes accounts.</span>
+        />
+        <span className="field-hint">
+          When this month’s model cost reaches the limit, Timmy stops reading, drafting and answering until next month or until the limit is raised. The most it can be set to is {dollars(ceiling)}.
+          {!canChange && ' An owner or admin can change this.'}
+        </span>
       </label>
+      <p className="field-hint">
+        Timmy asks before every change. Anything that reaches another person (an email, an invite, a post) waits for your OK or a rule you wrote. Timmy never moves money, signs documents or deletes accounts.
+      </p>
       <div className="live-account">
         <span className="muted">
           Signed in as {profile.user.name} ({profile.user.email}) · {profile.workspace.name} · {profile.workspace.role}
@@ -88,3 +113,5 @@ export function LiveSettings() {
     </section>
   );
 }
+
+const dollars = (n: number) => `$${n.toLocaleString('en-US')}`;

@@ -1,4 +1,5 @@
-// Live mode: connect a mailbox, receive an email, see it arrive, send with undo, send for real, check the audit log.
+// Live mode: connect a mailbox, receive an email, see it arrive, have Timmy draft a reply and send it from Approvals,
+// send with undo, send for real, check the audit log.
 const { ok, open, signUp, api, connectGmail, compose, deliver, sentMail, run } = require('./lib.cjs');
 const HOLD = Number(process.env.TIMMY_SEND_HOLD_SECONDS || 4) * 1000;
 
@@ -8,7 +9,7 @@ run('live-mail', async (browser) => {
 
   // Nothing can be sent before a mailbox is connected.
   await compose(page, { to: 'dana@client.test', subject: 'Too early', body: 'This should not go anywhere.' });
-  await page.locator('.toast', { hasText: 'Connect Gmail or Outlook first' }).waitFor();
+  await page.locator('.toast', { hasText: 'Connect Gmail first' }).waitFor();
   ok(true, 'sending without a mailbox is refused with a plain reason');
   await page.keyboard.press('Escape');
 
@@ -40,36 +41,49 @@ run('live-mail', async (browser) => {
   await drafted.waitFor({ timeout: 15000 });
   ok(/Thanks for your message/.test(await drafted.innerText()), 'the draft Timmy wrote appears in Approvals on its own');
   ok((await sentMail(page)).length === 0, 'writing a draft sends nothing');
-  await drafted.getByRole('button', { name: 'Discard' }).click();
-  await page.waitForTimeout(500);
+
+  // Approve the draft from Approvals: it waits out the undo window, then goes out once, as written, in Dana's thread.
+  await drafted.getByRole('button', { name: 'Send', exact: true }).click();
+  await page.locator('.toast', { hasText: /Sending in \d+ seconds/ }).waitFor();
+  ok((await sentMail(page)).length === 0, 'approving the draft does not send it before the undo window ends');
+  let sent = [];
+  for (let i = 0; i < 30 && sent.length === 0; i++) {
+    await page.waitForTimeout(500);
+    sent = await sentMail(page);
+  }
+  ok(sent.length === 1, 'when the window ends the approved draft is sent');
+  ok(sent[0].to[0] === 'dana@client.test' && /^Thanks for your message/.test(sent[0].body), 'what went out is the draft that was approved, to the person who wrote');
+  ok(sent[0].threadId === forDraft.ext.threadKey, 'it went out as a reply in the same mail thread');
+  await page.waitForTimeout(HOLD + 2000);
+  ok((await sentMail(page)).length === 1, 'the approved draft is sent once, not again');
+  ok((await page.locator('.ap-card', { hasText: 'Re: Revised quote for 120 seats' }).count()) === 0, 'the sent draft has left Approvals');
 
   // Send a new email, then undo inside the window: nothing goes out.
   await compose(page, { to: 'dana@client.test', subject: 'Quote attached', body: 'Hi Dana, the revised quote is attached.' });
   const holding = page.locator('.toast', { hasText: /Sending in \d+ seconds/ });
   await holding.waitFor();
   ok(true, 'pressing Send starts the undo window instead of sending at once');
-  ok((await sentMail(page)).length === 0, 'nothing has left during the window');
+  ok((await sentMail(page)).length === 1, 'nothing has left during the window');
   await page.click('button[aria-label="Approvals"]');
   await page.locator('.ap-card', { hasText: 'Quote attached' }).waitFor();
   ok(/goes out when the undo window ends/.test(await page.locator('.ap-card', { hasText: 'Quote attached' }).innerText()), 'the held send is visible in Approvals');
   await page.locator('.toast').getByRole('button', { name: 'Undo' }).click();
   await page.locator('.toast', { hasText: 'Undone. Nothing was sent.' }).waitFor();
   await page.waitForTimeout(HOLD + 2500);
-  ok((await sentMail(page)).length === 0, 'after Undo, the email never goes out');
+  ok((await sentMail(page)).length === 1, 'after Undo, the email never goes out');
   ok((await page.locator('.ap-card', { hasText: 'Quote attached' }).count()) === 0, 'the held send is gone from Approvals');
 
   // Send again and let the window pass: it goes out once.
   await compose(page, { to: 'dana@client.test', subject: 'Quote attached', body: 'Hi Dana, the revised quote is attached.' });
   await page.locator('.toast', { hasText: /Sending in \d+ seconds/ }).waitFor();
-  let sent = [];
-  for (let i = 0; i < 30 && sent.length === 0; i++) {
+  for (let i = 0; i < 30 && sent.length === 1; i++) {
     await page.waitForTimeout(500);
     sent = await sentMail(page);
   }
-  ok(sent.length === 1, 'when the window ends the email is sent');
-  ok(sent[0].to[0] === 'dana@client.test' && sent[0].subject === 'Quote attached' && sent[0].body === 'Hi Dana, the revised quote is attached.', 'what was sent is exactly what was written');
+  ok(sent.length === 2, 'when the window ends the email is sent');
+  ok(sent[1].to[0] === 'dana@client.test' && sent[1].subject === 'Quote attached' && sent[1].body === 'Hi Dana, the revised quote is attached.', 'what was sent is exactly what was written');
   await page.waitForTimeout(HOLD + 2000);
-  ok((await sentMail(page)).length === 1, 'it is sent once, not again');
+  ok((await sentMail(page)).length === 2, 'it is sent once, not again');
 
   // The audit log has the whole story, in order.
   const audit = (await api(page, 'GET', '/api/v1/audit')).body.entries.map((e) => e.action).reverse();
@@ -83,11 +97,11 @@ run('live-mail', async (browser) => {
   const thread = me.slices.threads.find((t) => t.subject === 'Revised quote for 120 seats');
   const r = await api(page, 'POST', '/api/v1/commands', { id: `reply-${Date.now()}`, action: { type: 'reply', id: thread.id, body: 'It is $58 per seat.' } });
   ok(r.body.ok && r.body.holding, 'a reply also waits out the undo window');
-  for (let i = 0; i < 30 && sent.length < 2; i++) {
+  for (let i = 0; i < 30 && sent.length < 3; i++) {
     await page.waitForTimeout(500);
     sent = await sentMail(page);
   }
-  ok(sent.length === 2 && sent[1].threadId === thread.ext.threadKey, 'the reply went out in the same mail thread');
+  ok(sent.length === 3 && sent[2].threadId === thread.ext.threadKey, 'the reply went out in the same mail thread');
 
   ok(errors.length === 0, `no page errors (${errors.join(' | ')})`);
 });

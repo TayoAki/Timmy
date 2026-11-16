@@ -32,11 +32,8 @@ const sendMail: Executor = async (e) => {
   const reply = e.kind === 'email.reply' && !!p.threadKey;
   const [first, ...rest] = p.to;
 
-  if (conn.toolkit === 'outlook') {
-    const res = await callTool(e.workspace_id, conn.id, 'OUTLOOK_SEND_EMAIL', { to: p.to, cc_emails: p.cc ?? [], subject: p.subject, body: p.body, is_html: false, save_to_sent_items: true }, 'send');
-    if (!res.successful) return { status: 'failed', error: res.error ?? 'Outlook refused the message.' };
-    return { status: 'completed', result: { via: 'outlook' } };
-  }
+  // Each mail provider has its own send call; one that isn't wired here is refused, never sent through another's.
+  if (conn.toolkit !== 'gmail') return { status: 'failed', error: 'Sending from this kind of mailbox isn’t available yet.' };
 
   const res = reply
     ? await callTool(e.workspace_id, conn.id, 'GMAIL_REPLY_TO_THREAD', { thread_id: p.threadKey, message_body: p.body, recipient_email: first, extra_recipients: rest, cc: p.cc ?? [], is_html: false }, 'send')
@@ -49,7 +46,6 @@ const sendMail: Executor = async (e) => {
 export const EXECUTORS: Partial<Record<EffectKind, Executor>> = {
   'email.send': sendMail,
   'email.reply': sendMail,
-  'cold_email.send': sendMail,
 };
 
 /**
@@ -58,7 +54,7 @@ export const EXECUTORS: Partial<Record<EffectKind, Executor>> = {
  * failed: absence of evidence is not evidence that nothing was sent.
  */
 export async function reconcile(e: EffectRow): Promise<Outcome> {
-  if (e.kind !== 'email.send' && e.kind !== 'email.reply' && e.kind !== 'cold_email.send') return { status: 'uncertain', error: e.error ?? 'unknown' };
+  if (e.kind !== 'email.send' && e.kind !== 'email.reply') return { status: 'uncertain', error: e.error ?? 'unknown' };
   const p = e.payload as unknown as MailPayload;
   const started = e.executing_at ? new Date(e.executing_at) : new Date(e.created_at);
   const conn = await connectionById(e.workspace_id, p.connectionId);

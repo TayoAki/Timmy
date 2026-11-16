@@ -3,6 +3,7 @@
  * person presses Connect, signs in on Composio's page, and comes back here.
  * Timmy never sees a password or a token.
  */
+import type { ConnectableApp } from '../../../src/live/connectable';
 import { config } from '../config';
 import { withWorkspace } from '../db/pool';
 import { audit } from '../gateway/gateway';
@@ -14,15 +15,17 @@ import type { Ctx } from '../state/engine';
 import { mutate } from '../state/mutate';
 import { callTool, meter, type ConnectionRow } from './tools';
 
-/** The frontend's app ids, and the Composio toolkit behind each. */
-export const TOOLKITS: Record<string, { toolkit: string; kind: 'mail' | 'calendar' | 'files'; triggers: { slug: string; config?: Record<string, unknown> }[] }> = {
+/**
+ * The apps that can be connected, by the frontend's app id, with the Composio toolkit behind each.
+ * An app is listed here only once Timmy reads it or acts through it: a connection that does nothing would be a false promise.
+ */
+const CONNECT: Record<ConnectableApp, { toolkit: string; kind: 'mail' | 'calendar'; triggers: { slug: string; config?: Record<string, unknown> }[] }> = {
   // New mail in the inbox, and mail the person sent themselves (how Timmy learns a hand-sent cold email went out).
   gmail: { toolkit: 'gmail', kind: 'mail', triggers: [{ slug: 'GMAIL_NEW_GMAIL_MESSAGE', config: { labelIds: 'INBOX' } }, { slug: 'GMAIL_EMAIL_SENT_TRIGGER' }] },
   gcal: { toolkit: 'googlecalendar', kind: 'calendar', triggers: [{ slug: 'GOOGLECALENDAR_GOOGLE_CALENDAR_EVENT_SYNC_TRIGGER', config: { calendarId: 'primary' } }] },
-  gdrive: { toolkit: 'googledrive', kind: 'files', triggers: [] },
-  outlook: { toolkit: 'outlook', kind: 'mail', triggers: [{ slug: 'OUTLOOK_MESSAGE_TRIGGER' }] },
 };
-const MAIL_APPS = Object.keys(TOOLKITS).filter((id) => TOOLKITS[id]!.kind === 'mail');
+export const TOOLKITS: Record<string, (typeof CONNECT)[ConnectableApp] | undefined> = CONNECT;
+const MAIL_APPS = Object.entries(CONNECT).filter(([, app]) => app.kind === 'mail').map(([id]) => id);
 
 export class ConnectError extends Error {
   constructor(
@@ -37,11 +40,11 @@ export class ConnectError extends Error {
 const composioUser = (ctx: Ctx) => `${ctx.workspaceId}.${ctx.user.id}`;
 
 /** Starts a connection and returns the page to send the person to. */
-export async function startConnect(ctx: Ctx, appId: string, purpose: 'primary' | 'sending' = 'primary'): Promise<{ redirectUrl: string; connectionId: string }> {
+export async function startConnect(ctx: Ctx, appId: string): Promise<{ redirectUrl: string; connectionId: string }> {
   const app = TOOLKITS[appId];
   if (!app) throw new ConnectError('That app can’t be connected yet.');
   if (!ctx.rules.connect) throw new ConnectError('Your role can’t connect apps in this workspace.', 403);
-  if (app.kind === 'mail' && purpose === 'primary') {
+  if (app.kind === 'mail') {
     // One everyday mailbox per workspace: it is who "me" is, and every send says which mailbox it leaves from.
     const other = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => (await tx.query(`select account_label from connection where workspace_id = $1 and status = 'active' and purpose = 'primary' and app_id = any($2::text[]) limit 1`, [ctx.workspaceId, MAIL_APPS])).rows[0]);
     if (other) throw new ConnectError(`This workspace’s mailbox is ${other.account_label ?? 'already connected'}. Disconnect it before connecting another.`, 409);
@@ -52,11 +55,11 @@ export async function startConnect(ctx: Ctx, appId: string, purpose: 'primary' |
   await meter(ctx.workspaceId, 'connect.link', 'connect', true, Date.now() - started);
   await withWorkspace({ workspaceId: ctx.workspaceId, userId: ctx.user.id }, async (tx) => {
     await tx.query(
-      `insert into connection (id, workspace_id, user_id, app_id, toolkit, composio_user_id, connected_account_id, auth_config_id, status, purpose)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9)`,
-      [id, ctx.workspaceId, ctx.user.id, appId, app.toolkit, composioUser(ctx), link.connectedAccountId, link.authConfigId, purpose],
+      `insert into connection (id, workspace_id, user_id, app_id, toolkit, composio_user_id, connected_account_id, auth_config_id, status)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')`,
+      [id, ctx.workspaceId, ctx.user.id, appId, app.toolkit, composioUser(ctx), link.connectedAccountId, link.authConfigId],
     );
-    await audit(tx, ctx.workspaceId, { actor: ctx.user.id, action: 'connection.started', detail: { app: appId, connectionId: id, purpose } });
+    await audit(tx, ctx.workspaceId, { actor: ctx.user.id, action: 'connection.started', detail: { app: appId, connectionId: id } });
   });
   return { redirectUrl: link.redirectUrl, connectionId: id };
 }
@@ -113,12 +116,11 @@ export async function finishConnect(ctx: Ctx, connectionId: string): Promise<Con
   await mutate(ctx.workspaceId, 'connect', async (tx, loaded) => {
     await tx.query('update connection set account_label = $2, updated_at = now() where id = $1', [connectionId, label]);
     await audit(tx, ctx.workspaceId, { actor: ctx.user.id, action: 'connection.active', detail: { app: conn.app_id, connectionId, account: label, triggers: triggers.length } });
-    if (conn.purpose !== 'primary') return { result: null };
     const s = loaded.state;
     return { state: { ...s, conn: { ...s.conn, apps: { ...s.conn.apps, [conn.app_id]: { connected: true, account: label ?? undefined, at: new Date() } } } }, result: null };
   });
   // The mailbox owner's address is who "me" is in this workspace's mail.
-  if (app.kind === 'mail' && conn.purpose === 'primary' && label) {
+  if (app.kind === 'mail' && label) {
     await withWorkspace({ workspaceId: ctx.workspaceId }, (tx) => tx.query('update workspace set owner_email = $2 where id = $1', [ctx.workspaceId, label]));
   }
   return { ...conn, status: 'active', account_label: label };
@@ -135,10 +137,10 @@ export async function closeConnections(workspaceId: string, filter: { appId?: st
     const { rows } = await tx.query(
       `update connection set status = 'disconnected', disconnected_at = now(), updated_at = now()
        where workspace_id = $1 and status in ('active', 'pending') and ($2::text is null or app_id = $2) and ($3::text is null or user_id = $3)
-       returning id, app_id, purpose, connected_account_id`,
+       returning id, app_id, connected_account_id`,
       [workspaceId, filter.appId ?? null, filter.userId ?? null],
     );
-    const list = rows as { id: string; app_id: string; purpose: string; connected_account_id: string | null }[];
+    const list = rows as { id: string; app_id: string; connected_account_id: string | null }[];
     if (!list.length) return { result: [] as { account: string | null; triggers: string[] }[] };
     const out: { account: string | null; triggers: string[] }[] = [];
     for (const c of list) {
@@ -147,7 +149,7 @@ export async function closeConnections(workspaceId: string, filter: { appId?: st
       await audit(tx, workspaceId, { actor, action: 'connection.removed', detail: { app: c.app_id, connectionId: c.id } });
     }
     const apps = { ...loaded.state.conn.apps };
-    for (const c of list) if (c.purpose === 'primary') apps[c.app_id] = { connected: false };
+    for (const c of list) apps[c.app_id] = { connected: false };
     return { state: { ...loaded.state, conn: { ...loaded.state.conn, apps } }, result: out };
   });
   for (const c of closed) enqueueSoon('connection.revoke', { connectedAccountId: c.account, triggers: c.triggers });

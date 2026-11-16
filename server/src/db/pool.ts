@@ -7,7 +7,6 @@ pg.types.setTypeParser(20, (v) => Number(v));
 pg.types.setTypeParser(1700, (v) => Number(v));
 
 export type Tx = pg.PoolClient;
-export type Queryable = Pick<pg.PoolClient, 'query'>;
 
 /**
  * The system pool connects as the database owner. It runs migrations, Better Auth,
@@ -57,21 +56,6 @@ export async function withWorkspace<T>(scope: Scope, fn: (tx: Tx) => Promise<T>)
     await c.query('begin');
     await c.query("select set_config('app.workspace_id', $1, true), set_config('app.user_id', $2, true)", [scope.workspaceId, scope.userId ?? '']);
     if (scope.lock) await c.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [`ws:${scope.workspaceId}`]);
-    const out = await fn(c);
-    await c.query('commit');
-    return out;
-  } catch (e) {
-    await c.query('rollback').catch(() => {});
-    throw e;
-  } finally {
-    c.release();
-  }
-}
-
-export async function sysTx<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
-  const c = await sysPool.connect();
-  try {
-    await c.query('begin');
     const out = await fn(c);
     await c.query('commit');
     return out;

@@ -21,6 +21,7 @@ import {
 import { clearBlobs } from '../lib/blobs';
 import { assistant } from '../agent/conversations';
 import { ARCHIVED_BASE, BOXES, PEOPLE } from '../data/mock';
+import { isLive } from '../live/clock';
 import { todaysEvents } from '../state/ws';
 import { ApprovalsSide } from '../areas/approvals';
 import { CalendarSide } from '../areas/calendar';
@@ -89,7 +90,7 @@ function MailSide() {
   const r = state.route;
   const activeBox = r.view === 'box' ? r.box : null;
   const starred = state.threads.filter((t) => t.starred);
-  const archived = ARCHIVED_BASE + inBox(state.threads, 'archived').length;
+  const archived = (isLive() ? 0 : ARCHIVED_BASE) + inBox(state.threads, 'archived').length;
   const owe = scopedThreads(state, inBox(state.threads, 'follow-up')).length;
   const meetings = todaysEvents(state.ws).filter((e) => e.kind === 'meeting' && eventInScope(state, e)).length;
   const projects = Object.values(state.ws.projects).filter((p) => p.status === 'active');

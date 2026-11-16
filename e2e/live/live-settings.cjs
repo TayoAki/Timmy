@@ -1,4 +1,4 @@
-// Live mode: the model picker and approval mode in Settings.
+// Live mode: the model picker and the monthly limit in Settings.
 const { ok, open, signUp, api, run } = require('./lib.cjs');
 
 run('live-settings', async (browser) => {
@@ -18,17 +18,29 @@ run('live-settings', async (browser) => {
   await page.locator('.toast', { hasText: /Timmy now runs on/ }).waitFor();
   ok((await api(page, 'GET', '/api/v1/settings')).body.model === options[options.length - 1][0], 'choosing a model in Settings saves it');
 
-  const mode = page.locator('select[name="approval-mode"]');
-  await mode.selectOption('auto');
-  await page.locator('.toast', { hasText: /decide routine filing/ }).waitFor();
+  // The monthly limit: an owner can change it, up to the ceiling the server allows.
+  const cap = page.locator('input[name="spend-cap"]');
+  await page.waitForFunction(() => document.querySelector('input[name="spend-cap"]')?.value === '50');
+  ok(true, 'a new workspace starts with a $50 monthly limit');
+  await cap.fill('120');
+  await cap.press('Enter');
+  await page.locator('.toast', { hasText: 'The monthly limit is now $120.' }).waitFor();
+  ok((await api(page, 'GET', '/api/v1/settings')).body.monthlySpendCapUsd === 120, 'changing the monthly limit in Settings saves it');
+  await cap.fill('5000');
+  await cap.press('Enter');
+  await page.locator('.toast', { hasText: /can be anything from \$0 to \$200/ }).waitFor();
+  await page.waitForFunction(() => document.querySelector('input[name="spend-cap"]')?.value === '120');
+  ok((await api(page, 'GET', '/api/v1/settings')).body.monthlySpendCapUsd === 120, 'a limit above the ceiling is refused, and the field goes back to the limit in force');
   await page.reload();
   await page.locator('.main').waitFor();
   await page.click('button[aria-label="Rules & settings"]');
   await page.getByRole('tab', { name: 'Approvals' }).click();
-  await page.locator('select[name="approval-mode"]').waitFor();
-  await page.waitForTimeout(500);
-  ok((await page.locator('select[name="approval-mode"]').inputValue()) === 'auto', 'the approval mode is still set after a reload');
-  ok(/waits for your OK or a rule you wrote/.test(await page.locator('.live-settings').innerText()), 'Settings says sends always need an OK, whatever the mode');
+  await page.waitForFunction(() => document.querySelector('input[name="spend-cap"]')?.value === '120');
+  ok(true, 'the limit is still set after a reload');
+
+  // Auto mode has nothing it could decide yet, so it is not offered.
+  ok((await page.locator('select[name="approval-mode"]').count()) === 0, 'no approval mode is offered that would do nothing');
+  ok(/waits for your OK or a rule you wrote/.test(await page.locator('.live-settings').innerText()), 'Settings says sends always need an OK');
   const audit = (await api(page, 'GET', '/api/v1/audit')).body.entries.filter((e) => e.action === 'settings.changed');
   ok(audit.length >= 2, 'setting changes are in the audit log');
 

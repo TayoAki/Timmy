@@ -83,6 +83,8 @@ export interface Suggestion {
   effort?: Effort;
   /** A follow-on action Timmy will take, e.g. a CRM update. */
   extra?: string;
+  /** On a real workspace: only plain code has looked at the thread so far, and Timmy's own read is still to come. */
+  provisional?: boolean;
 }
 
 export interface Thread {

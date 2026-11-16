@@ -1,3 +1,5 @@
+import type { Patch } from './patches';
+
 /**
  * A write Timmy proposed that hasn't happened yet. The server owns these: each
  * one mirrors an effect record behind the Action gateway.
@@ -32,4 +34,18 @@ export interface LiveProfile {
   models: { id: string; label: string; note: string }[];
   model: string;
   approvalMode: 'ask' | 'auto';
+}
+
+/** What the server answers to one command. The browser and the server share this definition. */
+export interface CommandResult {
+  ok: boolean;
+  rev: number;
+  patches: Patch[];
+  /** A notice to show in place of the browser's own. */
+  toast?: { text: string; tone?: 'warn' };
+  error?: string;
+  /** Where to send the browser next (an app's connect page). */
+  redirect?: string;
+  /** Sends that are waiting out the undo window, and for how long. */
+  holding?: { effects: string[]; seconds: number };
 }

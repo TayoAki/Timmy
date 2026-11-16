@@ -27,6 +27,20 @@ run('live-signup', async (browser) => {
   ok(!/sorted 33 emails/.test(text), 'no made-up triage numbers');
   ok((await page.locator('.urg-list .urg-row').count()) === 0, 'nothing is listed as urgent yet');
   ok((await page.evaluate(() => localStorage.getItem('timmy-state-v3'))) === null, 'workspace state is not kept in this browser');
+  ok(!/2,4\d\d/.test(text), 'the Archived count is this workspace’s own, not the demo’s');
+
+  // Screens that used to borrow from the demo's sample day show this workspace's own (empty) record instead.
+  await page.click('button[aria-label="Approvals"]');
+  await page.getByText('Done without asking').first().waitFor();
+  const approvals = await page.locator('body').innerText();
+  ok(/Nothing yet\. Timmy asks before every change/.test(approvals), 'Approvals does not list sample work as done without asking');
+  ok(!/morning run/.test(approvals), 'and does not describe a morning run that has not happened');
+  await page.click('button[aria-label="Connections"]');
+  const outlook = page.locator('li.conn-card', { hasText: 'Outlook' }).first();
+  await outlook.waitFor();
+  ok(/Coming soon/.test(await outlook.innerText()) && (await outlook.getByRole('button', { name: 'Connect' }).count()) === 0, 'an app Timmy cannot read yet is shown as coming soon, with no Connect button');
+  const gmail = page.locator('li.conn-card', { has: page.getByText('Gmail', { exact: true }) }).first();
+  ok((await gmail.getByRole('button', { name: 'Connect' }).count()) === 1, 'Gmail can be connected');
 
   // The workspace's settings: the model, approvals and who is signed in.
   await page.click('button[aria-label="Rules & settings"]');

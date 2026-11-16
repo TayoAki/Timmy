@@ -9,9 +9,11 @@
 import type { Thread } from '../../../src/data/types';
 import { withWorkspace, type Tx } from '../db/pool';
 import { propose, type EffectRow } from '../gateway/gateway';
+import { ADDRESS, prepareMailSend, type MailSend } from '../gateway/mail';
 import type { ToolDef } from '../providers/model';
 import { actorOf, emailOf, type Ctx } from '../state/engine';
 import { mutate, readState } from '../state/mutate';
+import { LostLease } from './errors';
 import { untrusted } from './prompts';
 
 export interface ToolRun {
@@ -43,12 +45,11 @@ export interface AgentTool {
 }
 
 const str = (v: unknown, max = 4000) => String(v ?? '').slice(0, max);
-const EMAIL = /^[^\s@,;<>]+@[^\s@,;<>]+\.[a-z]{2,}$/i;
 
 /** A run that lost its lease must not write. Checked inside the same transaction as the write. */
 async function assertFence(tx: Tx, t: ToolRun) {
   const { rows } = await tx.query('select 1 from run where id = $1 and workspace_id = $2 and fence = $3 for share', [t.runId, t.ctx.workspaceId, t.fence]);
-  if (!rows[0]) throw new Error('This run was taken over by another worker.');
+  if (!rows[0]) throw new LostLease();
 }
 
 const searchMail: AgentTool = {
@@ -164,13 +165,14 @@ const sendEmail: AgentTool = {
     parameters: { type: 'object', properties: { to: { type: 'array', items: { type: 'string' }, description: 'Recipient email addresses' }, cc: { type: 'array', items: { type: 'string' } }, subject: { type: 'string' }, body: { type: 'string', description: 'Plain text' } }, required: ['to', 'subject', 'body'] },
   },
   async run(args, t) {
-    const to = ((args.to ?? []) as unknown[]).map((x) => str(x, 320).trim().toLowerCase()).filter((x) => EMAIL.test(x));
-    const cc = ((args.cc ?? []) as unknown[]).map((x) => str(x, 320).trim().toLowerCase()).filter((x) => EMAIL.test(x));
+    const addresses = (v: unknown) => (Array.isArray(v) ? v : []).map((x) => str(x, 320).trim()).filter((x) => ADDRESS.test(x));
+    const to = addresses(args.to);
+    const cc = addresses(args.cc);
     const subject = str(args.subject, 300).trim();
     const body = str(args.body, 50000).trim();
     if (!to.length) return { result: 'That needs at least one valid email address in `to`.' };
     if (!body) return { result: 'The email has no body.' };
-    return proposeMail(t, { kind: 'email.send', to, cc, subject: subject || '(no subject)', body });
+    return proposeMail(t, { to, cc, subject: subject || '(no subject)', body });
   },
 };
 
@@ -194,32 +196,22 @@ const sendReply: AgentTool = {
     const lastFrom = [...thread.messages].reverse().find((m) => m.from !== 'me')?.from;
     const email = lastFrom ? emailOf(workspace, state, lastFrom) : null;
     if (!email) return { result: 'There is nobody to reply to on that thread.' };
-    return proposeMail(t, { kind: 'email.reply', to: [email], cc: [], subject: /^re:/i.test(thread.subject) ? thread.subject : `Re: ${thread.subject}`, body, threadKey: thread.ext.threadKey, thread: thread.id, connectionId: thread.ext.connectionId });
+    return proposeMail(t, { to: [email], cc: [], subject: /^re:/i.test(thread.subject) ? thread.subject : `Re: ${thread.subject}`, body, threadId: thread.id, existing: { threadKey: thread.ext.threadKey, connectionId: thread.ext.connectionId } });
   },
 };
 
-async function proposeMail(t: ToolRun, m: { kind: 'email.send' | 'email.reply'; to: string[]; cc: string[]; subject: string; body: string; threadKey?: string; thread?: string; connectionId?: string }): Promise<ToolOutcome> {
+/** A write tool's only way out: the email becomes a proposal at the gateway, and the run waits for the decision. */
+async function proposeMail(t: ToolRun, m: MailSend): Promise<ToolOutcome> {
   return mutate<ToolOutcome>(t.ctx.workspaceId, 'agent', async (tx, loaded) => {
     await assertFence(tx, t);
-    const boxes = (await tx.query(`select id, account_label from connection where workspace_id = $1 and status = 'active' and purpose = 'primary' and app_id in ('gmail', 'outlook') order by created_at`, [t.ctx.workspaceId])).rows as { id: string; account_label: string | null }[];
-    // A reply leaves from the mailbox its thread arrived in.
-    const box = m.threadKey ? boxes.find((b) => b.id === m.connectionId) : boxes[0];
-    if (!box) return { result: { result: 'No mailbox is connected for that, so nothing can be sent. Ask the user to connect Gmail or Outlook in Connections.' } };
-    if (m.thread) {
-      const live = await tx.query(`select 1 from effect where workspace_id = $1 and preview->>'thread' = $2 and status in ('intended', 'approved', 'executing', 'uncertain') limit 1`, [t.ctx.workspaceId, m.thread]);
-      if (live.rows[0]) return { result: { result: 'That thread already has an email waiting to go out. Nothing new was prepared.' } };
-    }
+    const mail = await prepareMailSend(tx, t.ctx.workspaceId, m);
+    if (!mail.ok) return { result: { result: `${mail.reason} Nothing was prepared.` } };
     const p = await propose(tx, loaded, loaded.state, t.attended ? actorOf(t.ctx) : null, {
-      kind: m.kind,
-      payload: { connectionId: box.id, to: m.to, cc: m.cc, subject: m.subject, body: m.body, threadKey: m.threadKey },
-      preview: { from: box.account_label ?? undefined, to: m.to, cc: m.cc, subject: m.subject, body: m.body },
-      title: `${m.kind === 'email.reply' ? 'Reply' : 'Send'} “${m.subject}” to ${m.to.join(', ')}`,
+      ...mail.proposal,
       why: 'Timmy prepared this from your request in the chat.',
-      target: m.to.join(', '),
       idempotencyKey: `run:${t.runId}:${t.callId}`,
       source: t.attended ? 'agent' : 'routine',
       runId: t.runId,
-      thread: m.thread,
       conversation: t.conversation,
       auto: t.auto,
     });

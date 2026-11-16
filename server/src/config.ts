@@ -50,8 +50,11 @@ export const config = {
     defaultModel: env.TIMMY_MODEL_DEFAULT ?? 'anthropic/claude-opus-5.5',
     /** Pinned: the model that decides Auto-mode approvals. Workspaces cannot change it. */
     judgeModel: env.TIMMY_MODEL_JUDGE ?? 'anthropic/claude-opus-5.5',
-    /** Tried in order when the chosen model's providers are down. */
-    fallbacks: (env.TIMMY_MODEL_FALLBACKS ?? 'anthropic/claude-opus-5').split(',').map((s) => s.trim()).filter(Boolean),
+    /**
+     * Tried in order when the chosen model's providers are down. Empty until the owner picks one:
+     * a fallback reads the same mail as the default, so it needs the same eval and the same OK.
+     */
+    fallbacks: (env.TIMMY_MODEL_FALLBACKS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
   },
 
   composio: {
@@ -68,6 +71,13 @@ export const config = {
       outlook: env.COMPOSIO_AUTH_CONFIG_OUTLOOK ?? '',
     } as Record<string, string>,
   },
+
+  /**
+   * The most a workspace may set its own limits to. The limits guard the workspace against a runaway month;
+   * these ceilings guard whoever pays the model bill until billing exists.
+   */
+  spendCapCeilingUsd: Number(env.TIMMY_SPEND_CAP_CEILING_USD ?? 200),
+  concurrentRunsCeiling: Number(env.TIMMY_CONCURRENT_RUNS_CEILING ?? 4),
 
   /** How long the connect callback waits for the provider to report a new account as active. */
   connectWaitMs: Number(env.TIMMY_CONNECT_WAIT_MS ?? (env.TIMMY_ENV === 'test' || env.NODE_ENV === 'test' ? 0 : 10_000)),

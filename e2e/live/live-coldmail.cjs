@@ -22,6 +22,9 @@ run('live-coldmail', async (browser) => {
   await page.getByRole('button', { name: 'Email', exact: true }).first().click();
   const form = page.locator('.msg-form');
   await form.waitFor();
+  // The starting template is signed by the person using the workspace, not by the demo's sample persona.
+  const starting = await form.locator('textarea.msg-body').inputValue();
+  ok(/\nAda$/.test(starting.trim()) && !/Taylor|Northpeak/.test(starting), `the template signs as the signed-in person (${JSON.stringify(starting.trim().slice(-20))})`);
   await form.locator('input.input').first().fill('Quick idea for LeadCo');
   await form.locator('textarea.msg-body').fill('Hi Lee,\n\nA quick idea for LeadCo.\n\nAda');
   ok(/Timmy never sends cold email itself/.test(await page.locator('.modal').last().innerText()), 'the dialog says the email is sent by hand');

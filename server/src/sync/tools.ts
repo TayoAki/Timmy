@@ -12,11 +12,10 @@ export interface ConnectionRow {
   auth_config_id: string | null;
   status: 'pending' | 'active' | 'failed' | 'disconnected';
   account_label: string | null;
-  purpose: 'primary' | 'sending';
   meta: Record<string, unknown>;
 }
 
-export type Phase = 'connect' | 'backfill' | 'sync' | 'agent' | 'send';
+export type Phase = 'connect' | 'backfill' | 'sync' | 'reconcile' | 'agent' | 'send';
 
 export async function connectionById(workspaceId: string, connectionId: string): Promise<ConnectionRow | null> {
   return withWorkspace({ workspaceId }, async (tx) => ((await tx.query('select * from connection where id = $1 and workspace_id = $2', [connectionId, workspaceId])).rows[0] as ConnectionRow | undefined) ?? null);

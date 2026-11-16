@@ -7,8 +7,9 @@
 import type { Draft, Thread } from '../../../src/data/types';
 import { modelFor } from '../config';
 import { withWorkspace } from '../db/pool';
+import { jsonObject } from '../lib/json';
 import { log } from '../lib/log';
-import { complete } from '../providers/model';
+import { BudgetError, complete } from '../providers/model';
 import { mutate, readState } from '../state/mutate';
 import { untrusted } from './prompts';
 
@@ -70,11 +71,11 @@ export async function draftReply(workspaceId: string, threadId: string, opts: { 
         },
       ],
     });
-    const parsed = JSON.parse(/\{[\s\S]*\}/.exec(res.content)?.[0] ?? '{}') as { body?: unknown };
+    const parsed = jsonObject<{ body: unknown }>(res.content);
     body = typeof parsed.body === 'string' ? parsed.body.trim() : '';
   } catch (e) {
     log.warn('draft failed', { workspaceId, error: (e as Error).message });
-    return { ok: false, reason: (e as Error).message.includes('monthly limit') ? (e as Error).message : 'Timmy couldn’t write that draft. Try again in a moment.' };
+    return { ok: false, reason: e instanceof BudgetError ? e.message : 'Timmy couldn’t write that draft. Try again in a moment.' };
   }
   if (!body) return { ok: false, reason: 'Timmy couldn’t write that draft. Try again in a moment.' };
 

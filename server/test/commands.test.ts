@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { subscribe } from '../src/state/hub';
 import { startHub, stopHub } from '../src/state/hub';
 import { forget } from '../src/state/docs';
-import { boot, newWorkspace, rows, type Client } from './helpers';
+import { addMember, boot, newWorkspace, rows, type Client } from './helpers';
 
 let w: Client;
 beforeAll(async () => {
@@ -42,6 +42,19 @@ describe('commands', () => {
     const b = await w.cmd({ type: 'addRule', group: 'triage', text: 'Only once' }, 'same-id');
     expect(b.rev).toBe(a.rev);
     expect((await w.state()).rules.filter((r) => r.text === 'Only once')).toHaveLength(1);
+  });
+
+  it('a recorded answer is only given back to the person who sent the command', async () => {
+    const mine = await w.cmd({ type: 'ws', ops: [{ op: 'put', col: 'notes', item: { id: 'private-retry', text: 'for my eyes' } }] }, 'retry-owner-1');
+    expect(mine.ok).toBe(true);
+    const colleague = await addMember(w.workspaceId, 'member');
+    const client = await addMember(w.workspaceId, 'client');
+    for (const other of [colleague, client]) {
+      const got = await other.cmd({ type: 'ws', ops: [] }, 'retry-owner-1');
+      expect(got.ok).toBe(false);
+      expect(JSON.stringify(got)).not.toContain('for my eyes');
+    }
+    expect((await w.cmd({ type: 'ws', ops: [] }, 'retry-owner-1')).patches).toEqual(mine.patches);
   });
 
   it('ui-only actions change nothing on the server', async () => {
@@ -143,5 +156,34 @@ describe('settings', () => {
     expect((await w.request('PATCH', '/api/v1/settings', { model: 'openai/gpt-anything' })).status).toBe(400);
     expect((await w.request('PATCH', '/api/v1/settings', { model: 'anthropic/claude-opus-5.5' })).status).toBe(200);
     expect((await rows<{ action: string }>(`select action from audit_log where workspace_id = $1 and action = 'settings.changed'`, [w.workspaceId])).length).toBeGreaterThan(0);
+  });
+
+  it('an owner can set the monthly limit and how much runs at once, up to the server’s ceiling; nobody else can', async () => {
+    type Settings = { monthlySpendCapUsd: number; maxConcurrentRuns: number; limits: { monthlySpendCapUsd: number; maxConcurrentRuns: number } };
+    const start = await w.json<Settings>('GET', '/api/v1/settings');
+    expect(start).toMatchObject({ monthlySpendCapUsd: 50, maxConcurrentRuns: 2, limits: { monthlySpendCapUsd: 200, maxConcurrentRuns: 4 } });
+
+    expect((await w.request('PATCH', '/api/v1/settings', { monthlySpendCapUsd: 120, maxConcurrentRuns: 3 })).status).toBe(200);
+    expect(await w.json<Settings>('GET', '/api/v1/settings')).toMatchObject({ monthlySpendCapUsd: 120, maxConcurrentRuns: 3 });
+
+    // Past the ceiling, below zero, or not a number: refused, and the limit stays where it was.
+    for (const bad of [{ monthlySpendCapUsd: 200.01 }, { monthlySpendCapUsd: -1 }, { monthlySpendCapUsd: '500' }, { monthlySpendCapUsd: null }, { maxConcurrentRuns: 5 }, { maxConcurrentRuns: 0 }, { maxConcurrentRuns: 1.5 }]) {
+      const res = await w.request('PATCH', '/api/v1/settings', bad);
+      expect([JSON.stringify(bad), res.status]).toEqual([JSON.stringify(bad), 400]);
+    }
+    expect(await w.json<Settings>('GET', '/api/v1/settings')).toMatchObject({ monthlySpendCapUsd: 120, maxConcurrentRuns: 3 });
+
+    const member = await addMember(w.workspaceId, 'member');
+    expect((await member.request('PATCH', '/api/v1/settings', { monthlySpendCapUsd: 200 })).status).toBe(403);
+    expect(await w.json<Settings>('GET', '/api/v1/settings')).toMatchObject({ monthlySpendCapUsd: 120 });
+
+    const changed = await rows<{ detail: Record<string, unknown> }>(`select detail from audit_log where workspace_id = $1 and action = 'settings.changed' order by id desc limit 1`, [w.workspaceId]);
+    expect(changed[0]!.detail).toMatchObject({ monthlySpendCapUsd: 120, maxConcurrentRuns: 3 });
+  });
+
+  it('a setting the API does not know is neither stored nor written to the audit log', async () => {
+    expect((await w.request('PATCH', '/api/v1/settings', { killSwitch: false, somethingElse: 'x'.repeat(50) })).status).toBe(200);
+    const last = await rows<{ detail: Record<string, unknown> }>(`select detail from audit_log where workspace_id = $1 and action = 'settings.changed' order by id desc limit 1`, [w.workspaceId]);
+    expect(last[0]!.detail).not.toHaveProperty('somethingElse');
   });
 });

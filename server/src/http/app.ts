@@ -3,24 +3,25 @@ import { extname, join, normalize, resolve } from 'node:path';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { auth } from '../auth/auth';
-import { timingSafeEqual } from 'node:crypto';
-import { MODEL_ALLOWLIST, config, isLocal, modelFor } from '../config';
+import { MODEL_ALLOWLIST, config, modelFor } from '../config';
 import { sysPool, withWorkspace } from '../db/pool';
 import { audit } from '../gateway/gateway';
-import { enqueueSoon, inlineJobs } from '../jobs/jobs';
+import { enqueueSoon } from '../jobs/jobs';
+import { sha256 } from '../lib/ids';
 import { log } from '../lib/log';
-import { composio, composioReady, fakeComposio, signWebhook } from '../providers/composio';
-import { lastMailTo } from '../providers/email';
+import { composio, composioReady, fakeComposio } from '../providers/composio';
 import { modelReady } from '../providers/model';
 import { runCommand } from '../state/engine';
 import { stillAllowed, subscribe, type Subscriber } from '../state/hub';
 import { rulesFor } from '../auth/roles';
 import { loadState } from '../state/docs';
 import { ConnectError, TOOLKITS, disconnect, finishConnect, startConnect } from '../sync/connect';
-import { pickSlices, toWire } from '../../../src/live/patches';
+import { fromWire, pickSlices, toWire } from '../../../src/live/patches';
 import type { Action } from '../../../src/state/store';
 import { agentRoutes } from './agent';
-import { ctxOf, membership, requireSession, requireWorkspace, sameOrigin, sessionOf, workspacesOf, type Env } from './session';
+import { membership, workspacesOf } from '../auth/members';
+import { ctxOf, requireRead, requireSession, requireWorkspace, sameOrigin, sessionOf, type Env } from './session';
+import { testRoutes } from './test-hooks';
 
 const wire = (body: unknown, status = 200) => new Response(toWire(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
 
@@ -82,9 +83,8 @@ export function buildApp(): Hono<Env> {
 
   /* ───────────── State ───────────── */
 
-  app.get('/api/v1/state', requireWorkspace, async (c) => {
+  app.get('/api/v1/state', requireWorkspace, requireRead, async (c) => {
     const ctx = ctxOf(c);
-    if (!ctx.rules.read) return c.json({ error: 'Your role can’t read this workspace.' }, 403);
     const loaded = await withWorkspace({ workspaceId: ctx.workspaceId, lock: true }, (tx) => loadState(tx, ctx.workspaceId));
     return wire({ rev: loaded.rev, slices: pickSlices(loaded.state), me: { name: loaded.workspace.owner_name, email: loaded.workspace.owner_email, company: loaded.workspace.name } });
   });
@@ -93,14 +93,12 @@ export function buildApp(): Hono<Env> {
     const body = (await c.req.json().catch(() => null)) as { id?: string; action?: Action } | null;
     if (!body?.id || !body.action) return c.json({ error: 'A command needs an id and an action.' }, 400);
     // Dates in an action arrive as ISO strings; the reducer expects Dates.
-    const { fromWire } = await import('../../../src/live/patches');
     const action = fromWire<Action>(JSON.stringify(body.action));
     return wire(await runCommand(ctxOf(c), { id: body.id, action }));
   });
 
-  app.get('/api/v1/stream', requireWorkspace, (c) => {
+  app.get('/api/v1/stream', requireWorkspace, requireRead, (c) => {
     const ctx = ctxOf(c);
-    if (!ctx.rules.read) return c.json({ error: 'Your role can’t read this workspace.' }, 403);
     const rev = Number(c.req.query('rev') ?? 0);
     return streamSSE(c, async (stream) => {
       let open = true;
@@ -132,28 +130,40 @@ export function buildApp(): Hono<Env> {
 
   /* ───────────── Settings: the model, approvals, limits ───────────── */
 
-  app.get('/api/v1/settings', requireWorkspace, async (c) => {
+  app.get('/api/v1/settings', requireWorkspace, requireRead, async (c) => {
     const ctx = ctxOf(c);
-    if (!ctx.rules.read) return c.json({ error: 'Your role can’t read this workspace.' }, 403);
     const ws = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => (await tx.query('select model_id, approval_mode, max_concurrent_runs, monthly_spend_cap_usd, kill_switch, timezone from workspace where id = $1', [ctx.workspaceId])).rows[0]);
-    return c.json({ model: modelFor(ws.model_id), models: MODEL_ALLOWLIST, approvalMode: ws.approval_mode, maxConcurrentRuns: ws.max_concurrent_runs, monthlySpendCapUsd: ws.monthly_spend_cap_usd, killSwitch: ws.kill_switch, timezone: ws.timezone });
+    return c.json({
+      model: modelFor(ws.model_id),
+      models: MODEL_ALLOWLIST,
+      approvalMode: ws.approval_mode,
+      maxConcurrentRuns: ws.max_concurrent_runs,
+      monthlySpendCapUsd: Number(ws.monthly_spend_cap_usd),
+      limits: { monthlySpendCapUsd: config.spendCapCeilingUsd, maxConcurrentRuns: config.concurrentRunsCeiling },
+      killSwitch: ws.kill_switch,
+      timezone: ws.timezone,
+    });
   });
 
   app.patch('/api/v1/settings', requireWorkspace, async (c) => {
     const ctx = ctxOf(c);
     if (!ctx.rules.policy) return c.json({ error: 'Only an owner or admin can change this.' }, 403);
-    const body = (await c.req.json().catch(() => ({}))) as { model?: string; approvalMode?: string; killSwitch?: boolean; timezone?: string };
+    const body = (await c.req.json().catch(() => ({}))) as { model?: string; approvalMode?: string; killSwitch?: boolean; timezone?: string; monthlySpendCapUsd?: number; maxConcurrentRuns?: number };
     if (body.model !== undefined && !MODEL_ALLOWLIST.some((m) => m.id === body.model)) return c.json({ error: 'That model isn’t on the list.' }, 400);
     if (body.approvalMode !== undefined && body.approvalMode !== 'ask' && body.approvalMode !== 'auto') return c.json({ error: 'Approval mode is ask or auto.' }, 400);
+    const cap = body.monthlySpendCapUsd;
+    if (cap !== undefined && !(typeof cap === 'number' && cap >= 0 && cap <= config.spendCapCeilingUsd)) return c.json({ error: `The monthly limit can be anything from $0 to $${config.spendCapCeilingUsd}.` }, 400);
+    const runs = body.maxConcurrentRuns;
+    if (runs !== undefined && !(Number.isInteger(runs) && runs >= 1 && runs <= config.concurrentRunsCeiling)) return c.json({ error: `Timmy can work on 1 to ${config.concurrentRunsCeiling} things at once.` }, 400);
+    // Only the settings named here are stored and logged; anything else in the request is ignored.
+    const change = { model: body.model, approvalMode: body.approvalMode, killSwitch: typeof body.killSwitch === 'boolean' ? body.killSwitch : undefined, timezone: typeof body.timezone === 'string' ? body.timezone.slice(0, 64) : undefined, monthlySpendCapUsd: cap, maxConcurrentRuns: runs };
     await withWorkspace({ workspaceId: ctx.workspaceId, userId: ctx.user.id }, async (tx) => {
-      await tx.query(`update workspace set model_id = coalesce($2, model_id), approval_mode = coalesce($3, approval_mode), kill_switch = coalesce($4, kill_switch), timezone = coalesce($5, timezone) where id = $1`, [
-        ctx.workspaceId,
-        body.model ?? null,
-        body.approvalMode ?? null,
-        body.killSwitch ?? null,
-        body.timezone ?? null,
-      ]);
-      await audit(tx, ctx.workspaceId, { actor: ctx.user.id, action: 'settings.changed', detail: body });
+      await tx.query(
+        `update workspace set model_id = coalesce($2, model_id), approval_mode = coalesce($3, approval_mode), kill_switch = coalesce($4, kill_switch), timezone = coalesce($5, timezone),
+           monthly_spend_cap_usd = coalesce($6, monthly_spend_cap_usd), max_concurrent_runs = coalesce($7, max_concurrent_runs) where id = $1`,
+        [ctx.workspaceId, change.model ?? null, change.approvalMode ?? null, change.killSwitch ?? null, change.timezone ?? null, change.monthlySpendCapUsd ?? null, change.maxConcurrentRuns ?? null],
+      );
+      await audit(tx, ctx.workspaceId, { actor: ctx.user.id, action: 'settings.changed', detail: change });
     });
     return c.json({ ok: true });
   });
@@ -162,9 +172,7 @@ export function buildApp(): Hono<Env> {
 
   app.post('/api/v1/connections/:app/connect', requireWorkspace, async (c) => {
     if (!composioReady()) return c.json({ error: 'App connections aren’t configured on this server yet.' }, 503);
-    const body = (await c.req.json().catch(() => ({}))) as { purpose?: 'primary' | 'sending' };
-    const out = await startConnect(ctxOf(c), c.req.param('app'), body.purpose === 'sending' ? 'sending' : 'primary');
-    return c.json(out);
+    return c.json(await startConnect(ctxOf(c), c.req.param('app')));
   });
 
   app.get('/api/v1/connections/callback', requireWorkspace, async (c) => {
@@ -181,26 +189,38 @@ export function buildApp(): Hono<Env> {
     return c.json({ ok: true });
   });
 
+  /* ───────────── Actions waiting for a decision ───────────── */
+
+  // The same decision the Approvals screen makes with a command, for callers that hold only the action's id.
+  // Deciding the same action the same way twice gives the same answer; who may decide is checked at the gateway.
+  for (const verb of ['approve', 'decline'] as const) {
+    app.post(`/api/v1/actions/:id/${verb}`, requireWorkspace, async (c) => {
+      const id = c.req.param('id');
+      if (!/^[\w-]{1,60}$/.test(id)) return c.json({ error: 'Not found' }, 404);
+      const ctx = ctxOf(c);
+      // One command per person, action and decision: the same person repeating it is a retry, anyone else is a new request.
+      const out = await runCommand(ctx, { id: `decide:${sha256(`${ctx.user.id}:${id}:${verb}`).slice(0, 40)}`, action: { type: 'effect', id, approve: verb === 'approve' } });
+      return wire(out, out.ok ? 200 : 409);
+    });
+  }
+
   /* ───────────── The audit log, effects and usage ───────────── */
 
-  app.get('/api/v1/audit', requireWorkspace, async (c) => {
+  app.get('/api/v1/audit', requireWorkspace, requireRead, async (c) => {
     const ctx = ctxOf(c);
-    if (!ctx.rules.read) return c.json({ error: 'Your role can’t read this workspace.' }, 403);
     const limit = Math.min(Number(c.req.query('limit') ?? 100), 500);
     const rows = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => (await tx.query('select id, at, actor, on_behalf_of, action, effect_id, run_id, detail from audit_log where workspace_id = $1 order by id desc limit $2', [ctx.workspaceId, limit])).rows);
     return c.json({ entries: rows });
   });
 
-  app.get('/api/v1/effects/:id', requireWorkspace, async (c) => {
+  app.get('/api/v1/effects/:id', requireWorkspace, requireRead, async (c) => {
     const ctx = ctxOf(c);
-    if (!ctx.rules.read) return c.json({ error: 'Your role can’t read this workspace.' }, 403);
     const row = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => (await tx.query('select id, kind, status, target, source, requested_by, approved_by, approved_via, approver_route, hold_until, error, external_id, created_at, completed_at from effect where id = $1 and workspace_id = $2', [c.req.param('id'), ctx.workspaceId])).rows[0]);
     return row ? c.json(row) : c.json({ error: 'Not found' }, 404);
   });
 
-  app.get('/api/v1/usage', requireWorkspace, async (c) => {
+  app.get('/api/v1/usage', requireWorkspace, requireRead, async (c) => {
     const ctx = ctxOf(c);
-    if (!ctx.rules.read) return c.json({ error: 'Your role can’t read this workspace.' }, 403);
     const out = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => {
       const models = (await tx.query(`select route, model, count(*)::int as calls, sum(tokens_in)::int as tokens_in, sum(tokens_out)::int as tokens_out, sum(tokens_reasoning)::int as tokens_reasoning, sum(tokens_cached)::int as tokens_cached, sum(cost_usd)::float8 as cost_usd from usage_event where workspace_id = $1 and at >= date_trunc('month', now()) group by route, model order by route`, [ctx.workspaceId])).rows;
       const calls = (await tx.query(`select phase, count(*)::int as calls from provider_call where workspace_id = $1 and at >= date_trunc('month', now()) group by phase order by phase`, [ctx.workspaceId])).rows;
@@ -211,78 +231,7 @@ export function buildApp(): Hono<Env> {
 
   agentRoutes(app);
 
-  /* ───────────── Test hooks ───────────── */
-
-  if (config.testHooks) {
-    // On a deployed server (staging) the hooks need the test token. The one exception is the page that stands in
-    // for the provider's consent screen, which a browser opens by navigation and which only returns to our own callback.
-    app.use('/api/test/*', async (c, next) => {
-      if (!isLocal() && !c.req.path.endsWith('/fake-connect')) {
-        const given = Buffer.from(c.req.header('x-test-token') ?? '');
-        const want = Buffer.from(config.testToken);
-        if (given.length !== want.length || !timingSafeEqual(given, want)) return c.json({ error: 'Not found' }, 404);
-      }
-      await next();
-    });
-
-    app.get('/api/test/outbox', async (c) => c.json({ mail: await lastMailTo(String(c.req.query('to') ?? '')) }));
-
-    // Stands in for the provider's consent screen when the fake provider is on.
-    app.get('/api/test/fake-connect', (c) => {
-      const fake = fakeComposio();
-      if (!fake) return c.json({ error: 'the fake provider is off' }, 404);
-      const to = String(c.req.query('to') ?? '');
-      if (!to.startsWith(`${config.publicUrl}/api/v1/connections/callback?`)) return c.json({ error: 'Not found' }, 404);
-      fake.completeConnect(String(c.req.query('account')));
-      return c.redirect(to);
-    });
-
-    app.post('/api/test/fake', requireWorkspace, async (c) => {
-      const fake = fakeComposio();
-      if (!fake) return c.json({ error: 'the fake provider is off' }, 404);
-      const ctx = ctxOf(c);
-      const body = (await c.req.json()) as { op: string; [k: string]: unknown };
-      const conn = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => (await tx.query(`select id, connected_account_id from connection where workspace_id = $1 and status = 'active' and app_id = 'gmail' order by created_at limit 1`, [ctx.workspaceId])).rows[0]);
-      if (body.op === 'address') {
-        fake.nextAddress = String(body.address);
-        return c.json({ ok: true });
-      }
-      if (!conn) return c.json({ error: 'no connected mailbox' }, 409);
-      if (body.op === 'deliver') {
-        const d = fake.deliver(conn.connected_account_id, body.message as { from: string; subject: string; body: string });
-        const res = await app.request('/api/hooks/composio', { method: 'POST', headers: d.webhook.headers, body: d.webhook.body });
-        await inlineJobs()?.drain('mail.ingest');
-        return c.json({ ok: res.ok, message: d.message });
-      }
-      if (body.op === 'sent') return c.json({ sent: fake.sent(conn.connected_account_id) });
-      // The person sent an email themselves, from their mail app: it appears in Sent and the provider announces it.
-      if (body.op === 'sent-by-hand') {
-        const m = body.message as { to: string; subject: string; body: string };
-        const box = fake.accounts.get(conn.connected_account_id)!;
-        const id = `hand-${Date.now().toString(36)}`;
-        box.messages.push({ id, threadId: `th-${id}`, from: box.address, to: [m.to], subject: m.subject, body: m.body, at: new Date(), labels: ['SENT'] });
-        const payload = JSON.stringify({ id: `evt_${id}`, metadata: { trigger_slug: 'GMAIL_EMAIL_SENT_TRIGGER', connected_account_id: conn.connected_account_id, user_id: box.userId }, data: { thread_id: `th-${id}`, message_id: id } });
-        const ts = String(Math.floor(Date.now() / 1000));
-        const res = await app.request('/api/hooks/composio', { method: 'POST', headers: { 'content-type': 'application/json', 'webhook-id': `wh_${id}`, 'webhook-timestamp': ts, 'webhook-signature': signWebhook(`wh_${id}`, ts, payload, fake.secret) }, body: payload });
-        await inlineJobs()?.drain('mail.ingest');
-        return c.json({ ok: res.ok });
-      }
-      if (body.op === 'fail') {
-        fake.failNext.set(String(body.slug), body.mode as 'error');
-        return c.json({ ok: true });
-      }
-      return c.json({ error: 'unknown op' }, 400);
-    });
-
-    // Lets a test end the undo window now instead of waiting it out.
-    app.post('/api/test/release-holds', requireWorkspace, async (c) => {
-      const ctx = ctxOf(c);
-      const { executeEffect } = await import('../gateway/gateway');
-      const ids = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => (await tx.query(`update effect set hold_until = now() where workspace_id = $1 and status = 'approved' returning id`, [ctx.workspaceId])).rows as { id: string }[]);
-      for (const { id } of ids) await executeEffect(ctx.workspaceId, id);
-      return c.json({ ran: ids.length });
-    });
-  }
+  if (config.testHooks) testRoutes(app);
 
   app.all('/api/*', (c) => c.json({ error: 'Not found' }, 404));
 

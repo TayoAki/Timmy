@@ -157,6 +157,7 @@ export const EVENTS: CalEvent[] = [
   },
 ];
 
+/** Threads archived before the sample data begins. The demo only: a real workspace counts what it has. */
 export const ARCHIVED_BASE = 2418;
 
 export const THREADS: Thread[] = [

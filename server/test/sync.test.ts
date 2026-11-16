@@ -117,6 +117,62 @@ describe('backfill', () => {
   });
 });
 
+describe('the nightly check', () => {
+  it('takes in mail the triggers missed, once, and leaves what already arrived alone', async () => {
+    box = await connectGmail(w, 'ada@sync.test');
+    await jobs().drain();
+    // One message arrives the normal way…
+    const d = fake().deliver(box.account, { from: 'Dana Whitfield <dana@acme.test>', subject: 'Arrived by trigger', body: 'Hello' });
+    await (await boot()).request('/api/hooks/composio', { method: 'POST', headers: d.webhook.headers, body: d.webhook.body });
+    await jobs().drain();
+    // …and two reach the mailbox with no event at all: a lost webhook.
+    const mailbox = fake().accounts.get(box.account)!;
+    mailbox.messages.push({ id: 'missed-1', threadId: 'th-missed', from: 'Sam Rivera <sam@acme.test>', to: [mailbox.address], subject: 'Never announced', body: 'Did you get this?', at: new Date(Date.now() - 3600_000), labels: ['INBOX', 'UNREAD'] });
+    mailbox.messages.push({ id: 'too-old', threadId: 'th-old', from: 'Old Timer <old@acme.test>', to: [mailbox.address], subject: 'From last week', body: 'Old news', at: new Date(Date.now() - 6 * 86400_000), labels: ['INBOX'] });
+    expect((await w.state()).threads.map((t) => t.subject)).toEqual(['Arrived by trigger']);
+    const itemsBefore = (await rows<{ n: number }>('select count(*)::int as n from item where workspace_id = $1', [w.workspaceId]))[0]!.n;
+
+    await jobs().enqueue('mail.reconcile.all', {});
+    await jobs().drain();
+    const s = await w.state();
+    expect(s.threads.map((t) => t.subject).sort()).toEqual(['Arrived by trigger', 'Never announced']);
+    expect((await rows<{ n: number }>('select count(*)::int as n from item where workspace_id = $1', [w.workspaceId]))[0]!.n).toBe(itemsBefore + 1);
+    // The thread it found is read like any other new mail from a person.
+    expect(s.threads.find((t) => t.subject === 'Never announced')!.suggestion).toMatchObject({ confidence: 'medium' });
+
+    // Running it again finds nothing new and stores nothing twice.
+    const reads = model().requests.length;
+    await jobs().enqueue('mail.reconcile.all', {});
+    await jobs().drain();
+    expect((await rows<{ n: number }>('select count(*)::int as n from item where workspace_id = $1', [w.workspaceId]))[0]!.n).toBe(itemsBefore + 1);
+    expect(model().requests.length).toBe(reads);
+    expect((await rows<{ n: number }>(`select count(*)::int as n from provider_call where workspace_id = $1 and phase = 'reconcile'`, [w.workspaceId]))[0]!.n).toBe(2);
+  });
+
+  it('skips a mailbox that has been disconnected', async () => {
+    box = await connectGmail(w, 'ada@sync.test');
+    await jobs().drain();
+    await w.post('/api/v1/connections/gmail/disconnect', {});
+    await jobs().drain();
+    // The job covers every workspace on the server, so only this mailbox's calls are counted.
+    const mine = () => fake().calls.filter((c) => c.connectedAccountId === box.account).length;
+    const before = mine();
+    await jobs().enqueue('mail.reconcile.all', {});
+    await jobs().drain();
+    expect(mine()).toBe(before);
+  });
+});
+
+describe('apps that cannot be connected yet', () => {
+  it('are refused before anything is asked of the provider', async () => {
+    for (const app of ['outlook', 'gdrive', 'hubspot', 'made-up']) {
+      const res = await w.post(`/api/v1/connections/${app}/connect`, {});
+      expect([app, res.status]).toEqual([app, 400]);
+    }
+    expect(await rows('select 1 from connection where workspace_id = $1', [w.workspaceId])).toEqual([]);
+  });
+});
+
 describe('new mail', () => {
   beforeEach(async () => {
     box = await connectGmail(w, 'ada@sync.test');

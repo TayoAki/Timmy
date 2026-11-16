@@ -11,6 +11,7 @@
  * answered from the effect record's stored outcome: the model is not asked
  * again, so exactly what was approved is what ran.
  */
+import { ctxFor } from '../auth/members';
 import { MODEL_ALLOWLIST, modelFor } from '../config';
 import { withWorkspace } from '../db/pool';
 import type { EffectRow } from '../gateway/gateway';
@@ -19,6 +20,7 @@ import { newId } from '../lib/ids';
 import { log } from '../lib/log';
 import { BudgetError, complete, type ChatMessage, type Effort, type ToolCall, type ToolDef } from '../providers/model';
 import type { Ctx } from '../state/engine';
+import { LostLease } from './errors';
 import { judge } from './judge';
 import { TOOLS, TOOL_BY_NAME, type ToolRun } from './tools';
 
@@ -56,7 +58,6 @@ export interface RunResult {
   error?: string;
 }
 
-class LostLease extends Error {}
 
 interface Checkpoint {
   system: string;
@@ -104,7 +105,9 @@ async function finish(workspaceId: string, runId: string, fence: number, status:
 /** Starts a run right away, in this process. The queue is only the crash backup. */
 export async function startRun(ctx: Ctx, input: StartRun, events: RunEvents = {}): Promise<RunResult> {
   const runId = newId('run');
-  const { model, busy, cap } = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => {
+  // Counted and inserted under the workspace's lock, so two requests arriving together can't both take the last place.
+  // The limit is on starting new work: a run that was already let in and is waiting for an approval always resumes.
+  const { model, busy, cap } = await withWorkspace({ workspaceId: ctx.workspaceId, lock: true }, async (tx) => {
     const ws = (await tx.query('select model_id, max_concurrent_runs from workspace where id = $1', [ctx.workspaceId])).rows[0];
     const running = (await tx.query(`select count(*)::int as n from run where workspace_id = $1 and status = 'running' and lease_until > now()`, [ctx.workspaceId])).rows[0].n as number;
     const chosen = modelFor(ws?.model_id);
@@ -218,7 +221,7 @@ async function runTools(ctx: Ctx, run: Driving, cp: Checkpoint, calls: ToolCall[
     try {
       out = await tool.run(args, t);
     } catch (e) {
-      if ((e as Error).message.includes('taken over')) throw new LostLease();
+      if (e instanceof LostLease) throw e;
       log.warn('tool failed', { tool: call.name, error: (e as Error).message });
       out = { result: 'That tool failed. Tell the user it didn’t work; do not guess the answer.' };
     }
@@ -295,7 +298,7 @@ export async function resumeRun(workspaceId: string, runId: string, events: RunE
     state.messages = [...state.messages, { role: 'tool', toolCallId: callId, content: answer }];
     delete state.pending[callId];
   }
-  const ctx = await ctxForRun(workspaceId, run.user_id as string | null);
+  const ctx = await ctxFor(workspaceId, run.user_id as string | null);
   if (undecided || !ctx) {
     await withWorkspace({ workspaceId }, (tx) => tx.query(`update run set status = 'waiting_approval', lease_owner = null, lease_until = null where id = $1 and workspace_id = $2 and fence = $3`, [runId, workspaceId, fence]));
     return { runId, status: 'waiting_approval', text: '' };
@@ -312,19 +315,6 @@ export async function resumeRun(workspaceId: string, runId: string, events: RunE
     }
   }
   return drive(ctx, driving, state, Math.floor(((cp.seq as number) + 2) / 2), events);
-}
-
-/** The person a run acts for, with their current role. Null when they have left the workspace. */
-async function ctxForRun(workspaceId: string, userId: string | null): Promise<Ctx | null> {
-  if (!userId) return null;
-  const { membership } = await import('../http/session');
-  const { rulesFor } = await import('../auth/roles');
-  const { authPool } = await import('../db/pool');
-  const role = await membership(userId, workspaceId);
-  if (!role) return null;
-  const u = (await authPool.query('select id, name, email from "user" where id = $1', [userId])).rows[0];
-  if (!u) return null;
-  return { user: { id: u.id, name: u.name, email: u.email }, workspaceId, role, rules: rulesFor(role) };
 }
 
 /** Runs whose lease ran out while they were working. The sweep resumes them. */

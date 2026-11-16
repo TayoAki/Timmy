@@ -97,7 +97,8 @@ function Brief() {
       <div className="brief-head">
         <h1 className="page-title">Good morning, {state.conn.delegate.on ? state.conn.delegate.me.split(' ')[0] : meFirst()}.</h1>
         {state.conn.delegate.on && <span className="delegate-chip">Working for {state.conn.delegate.exec}</span>}
-        <RunControl />
+        {/* The run-time control comes back on real workspaces with the scheduled morning run (phase 1). */}
+        {!isLive() && <RunControl />}
         <CalmToggle />
       </div>
       <p className="page-sub">

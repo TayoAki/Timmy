@@ -7,6 +7,7 @@
 import type { Thread } from '../../../src/data/types';
 import { modelFor } from '../config';
 import { withWorkspace } from '../db/pool';
+import { jsonObject } from '../lib/json';
 import { log } from '../lib/log';
 import { BudgetError, complete } from '../providers/model';
 import { mutate, readState } from '../state/mutate';
@@ -35,7 +36,7 @@ export interface ReadResult {
 }
 
 /** True when a thread is still waiting on its first proper read: in the inbox, with only the plain-code guess on it. */
-export const needsReading = (t: Thread) => t.box === 'inbox' && t.suggestion?.confidence === 'low' && /hasn’t read it closely/.test(t.suggestion.reason);
+export const needsReading = (t: Thread) => t.box === 'inbox' && !!t.suggestion?.provisional;
 
 export async function readThread(workspaceId: string, threadId: string): Promise<ReadResult> {
   const { state, workspace } = await readState(workspaceId);
@@ -59,7 +60,7 @@ export async function readThread(workspaceId: string, threadId: string): Promise
         { role: 'user', content: `The user is ${workspace.owner_name ?? 'the mailbox owner'}. Today is ${new Date().toISOString().slice(0, 10)}.\n\n${untrusted('mail', { subject: thread.subject, messages })}` },
       ],
     });
-    out = JSON.parse(/\{[\s\S]*\}/.exec(res.content)?.[0] ?? '{}');
+    out = jsonObject(res.content);
   } catch (e) {
     if (!(e instanceof BudgetError)) log.warn('read failed', { workspaceId, error: (e as Error).message });
     return { ok: false, reason: (e as Error).message };

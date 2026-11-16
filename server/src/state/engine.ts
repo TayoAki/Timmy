@@ -15,10 +15,12 @@ import { personFromMail } from '../../../src/state/ws';
 import { enterLive } from '../../../src/live/clock';
 import type { Patch } from '../../../src/live/patches';
 import { applyPatches, fromWire } from '../../../src/live/patches';
+import type { CommandResult } from '../../../src/live/types';
 import type { Thread } from '../../../src/data/types';
 import type { RoleRules } from '../auth/roles';
 import { withWorkspace, type Tx } from '../db/pool';
 import { cancelHeld, decide, GatewayError, onReplay, propose, type EffectRow } from '../gateway/gateway';
+import { prepareMailSend } from '../gateway/mail';
 import { draftHash } from '../../../src/live/hash';
 import type { Actor } from '../gateway/policy';
 import { config } from '../config';
@@ -40,18 +42,7 @@ export interface Ctx {
   rules: RoleRules;
 }
 
-export interface CommandResult {
-  ok: boolean;
-  rev: number;
-  patches: Patch[];
-  /** A notice to show in place of the browser's own. */
-  toast?: { text: string; tone?: 'warn' };
-  error?: string;
-  /** Where to send the browser next (an app's connect page). */
-  redirect?: string;
-  /** Sends that are waiting out the undo window, and for how long. */
-  holding?: { effects: string[]; seconds: number };
-}
+export type { CommandResult };
 
 interface Handled {
   state: State;
@@ -116,8 +107,10 @@ export async function runCommand(ctx: Ctx, cmd: { id: string; action: Action }):
   let commit: Commit | null = null;
   const result = await withWorkspace({ workspaceId: ctx.workspaceId, userId: ctx.user.id, lock: true }, async (tx) => {
     // The same command id always gets the same answer: a retry never applies twice.
-    const dup = await tx.query('select result from command where workspace_id = $1 and id = $2', [ctx.workspaceId, cmd.id]);
-    if (dup.rows[0]) return dup.rows[0].result as CommandResult;
+    const dup = (await tx.query('select result, user_id from command where workspace_id = $1 and id = $2', [ctx.workspaceId, cmd.id])).rows[0];
+    // Only the person who sent it gets the recorded answer: one member can't collect another's by repeating their id.
+    if (dup && dup.user_id !== ctx.user.id) return { ok: false, rev: 0, patches: [], error: 'That command id is already in use.' };
+    if (dup) return dup.result as CommandResult;
 
     const loaded = await loadState(tx, ctx.workspaceId);
     let handled: Handled;
@@ -162,23 +155,16 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
   if (DEMO_ONLY.has(a.type)) return { state, reject: NOT_LIVE };
 
   // Approving or declining is the one thing a read-only role (RevOps) may still do.
-  if (a.type === 'effect') {
-    if (!a.approve) {
+  const decision = decisionIn(a);
+  if (decision) {
+    if (!decision.approve) {
       // Turning down something already approved and still inside its undo window cancels it.
-      const held = await cancelIfHolding(tx, loaded, ctx, a.id);
+      const held = await cancelIfHolding(tx, loaded, ctx, decision.effectId);
       if (held) return held;
     }
-    const d = await decide(tx, loaded, state, actorOf(ctx), a.id, a.approve);
-    return { state: d.state, effects: [d.effect], toast: { text: a.approve ? (d.effect.hold_until ? `Approved. It goes out in ${config.sendHoldSeconds} seconds unless you undo it.` : 'Approved.') : 'Turned down. Nothing was sent.' } };
-  }
-  if (a.type === 'resolve' && a.key.startsWith('eff:')) {
-    const yes = a.option === 'approve' || a.option === 'send';
-    if (!yes) {
-      const held = await cancelIfHolding(tx, loaded, ctx, a.key.slice(4));
-      if (held) return held;
-    }
-    const d = await decide(tx, loaded, state, actorOf(ctx), a.key.slice(4), yes);
-    return { state: d.state, effects: [d.effect], toast: { text: yes ? (d.effect.hold_until ? `Approved. It goes out in ${config.sendHoldSeconds} seconds unless you undo it.` : 'Approved.') : 'Turned down. Nothing was sent.' } };
+    const d = await decide(tx, loaded, state, actorOf(ctx), decision.effectId, decision.approve);
+    const approved = d.effect.hold_until ? `Approved. It goes out in ${config.sendHoldSeconds} seconds unless you undo it.` : 'Approved.';
+    return { state: d.state, effects: [d.effect], toast: { text: decision.approve ? approved : 'Turned down. Nothing was sent.' } };
   }
   if (!ctx.rules.work) return { state, reject: 'Your role can’t make changes in this workspace.' };
   if (a.type === 'undo') return undo(tx, loaded, ctx, a.command);
@@ -227,6 +213,13 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
   return gateSends(tx, loaded, ctx, cmd, state, next);
 }
 
+/** The two ways the screen says yes or no to a waiting action: the Approvals row, and the card in the chat. */
+function decisionIn(a: Action): { effectId: string; approve: boolean } | null {
+  if (a.type === 'effect') return { effectId: a.id, approve: a.approve };
+  if (a.type === 'resolve' && a.key.startsWith('eff:')) return { effectId: a.key.slice(4), approve: a.option === 'approve' || a.option === 'send' };
+  return null;
+}
+
 /** Undo from the Approvals queue: stops an approved send that is still waiting out its hold. */
 async function cancelIfHolding(tx: Tx, loaded: Loaded, ctx: Ctx, effectId: string): Promise<Handled | null> {
   const cur = (await tx.query('select status, requested_by, approved_by, command_id, source from effect where id = $1 and workspace_id = $2', [effectId, ctx.workspaceId])).rows[0];
@@ -270,43 +263,28 @@ async function gateSends(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; ac
   if (!outgoing.length) return { state: next };
   if (!ctx.rules.work) return { state: prev, reject: 'Your role can’t send from this workspace.' };
 
-  const boxes = (await tx.query(`select id, toolkit, account_label from connection where workspace_id = $1 and status = 'active' and purpose = 'primary' and app_id in ('gmail', 'outlook') order by created_at`, [ctx.workspaceId])).rows as { id: string; toolkit: string; account_label: string | null }[];
-  if (!boxes.length) return { state: prev, reject: 'Connect Gmail or Outlook first, then send.' };
-
   let state = next;
   const effects: EffectRow[] = [];
   for (const [i, o] of outgoing.entries()) {
     if (o.message.attachments?.length) return { state: prev, reject: 'Sending attachments isn’t available yet. Remove the attachment or send it from your mail app.' };
-    const to: string[] = [];
-    for (const id of o.message.to) {
-      const email = emailOf(loaded, prev, id);
-      if (!email || !ADDRESS.test(email)) return { state: prev, reject: `“${email ?? id}” isn’t an email address Timmy can send to.` };
-      to.push(email.toLowerCase());
-    }
-    const cc = (o.message.cc ?? []).map((id) => emailOf(loaded, prev, id)).filter((x): x is string => !!x && ADDRESS.test(x)).map((x) => x.toLowerCase());
-    if (!to.length) return { state: prev, reject: 'Add a recipient first.' };
-    // A reply leaves from the mailbox its thread arrived in, in that thread. Anything else leaves from the workspace's mailbox.
-    const ext = o.before?.ext;
-    const mailbox = (ext?.connectionId && boxes.find((b) => b.id === ext.connectionId)) || boxes[0]!;
-    const threadKey = ext?.threadKey && mailbox.id === (ext.connectionId ?? mailbox.id) ? ext.threadKey : undefined;
-    if (o.before) {
-      // One send per thread at a time: a second press while the first is waiting or going out would send it twice.
-      const live = await tx.query(`select 1 from effect where workspace_id = $1 and preview->>'thread' = $2 and status in ('intended', 'approved', 'executing', 'uncertain') limit 1`, [ctx.workspaceId, o.thread.id]);
-      if (live.rows[0]) return { state: prev, reject: 'This thread already has an email waiting to go out. Undo or decide that one first.' };
-    }
-    const subject = o.before?.draft?.subject ?? o.thread.subject;
-    const body = o.message.body.join('\n\n');
+    // The screen names people by id; an id Timmy has no address for is passed on as it is, and refused as not an address.
+    const address = (id: string) => emailOf(loaded, prev, id) ?? id;
+    const mail = await prepareMailSend(tx, ctx.workspaceId, {
+      to: o.message.to.map(address),
+      cc: (o.message.cc ?? []).map(address),
+      subject: o.before?.draft?.subject ?? o.thread.subject,
+      body: o.message.body.join('\n\n'),
+      threadId: o.thread.id,
+      existing: o.before ? { threadKey: o.before.ext?.threadKey, connectionId: o.before.ext?.connectionId } : undefined,
+      localMessageId: o.message.id,
+    });
+    if (!mail.ok) return { state: prev, reject: mail.reason };
     const p = await propose(tx, loaded, state, actorOf(ctx), {
-      kind: threadKey ? 'email.reply' : 'email.send',
-      payload: { connectionId: mailbox.id, to, cc, subject, body, threadKey, localMessageId: o.message.id },
-      preview: { from: mailbox.account_label ?? undefined, to, cc, subject, body },
-      title: `${threadKey ? 'Reply' : 'Send'} “${subject}” to ${to.join(', ')}`,
+      ...mail.proposal,
       why: 'You pressed Send.',
-      target: to.join(', '),
       idempotencyKey: `cmd:${cmd.id}:${i}`,
       source: 'user',
       commandId: cmd.id,
-      thread: o.thread.id,
       // Kept so the thread can be shown as sent once someone else has approved it.
       replay: cmd.action,
     });
@@ -321,8 +299,6 @@ async function gateSends(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; ac
   }
   return { state, effects, toast: { text: `Sending in ${config.sendHoldSeconds} seconds. Undo to stop it.` } };
 }
-
-const ADDRESS = /^[^\s@,;<>"']+@[^\s@,;<>"']+\.[a-z]{2,}$/i;
 
 /* ───────────── Undo ───────────── */
 

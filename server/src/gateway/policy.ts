@@ -15,8 +15,6 @@ export const KINDS = {
   'calendar.create': { domain: 'calendar', outbound: true, hold: true, autoEligible: false, label: 'Create a calendar event' },
   /** A change to a deal, contact or activity in the connected CRM. */
   'crm.write': { domain: 'crm', outbound: false, hold: false, autoEligible: false, label: 'Update the CRM' },
-  /** One email of an outbound sequence, sent from a connected mailbox. */
-  'cold_email.send': { domain: 'mail', outbound: true, hold: false, autoEligible: false, label: 'Send a campaign email' },
 } as const;
 
 export type EffectKind = keyof typeof KINDS;

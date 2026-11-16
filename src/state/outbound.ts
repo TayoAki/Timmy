@@ -6,12 +6,13 @@
  * Timmy. Sending checks the limits first: cold email stays under each
  * mailbox's daily cap, texts need consent and respect quiet hours.
  */
-import { NOW } from '../data/mock';
+import { NOW, PEOPLE } from '../data/mock';
 import type { Activity } from '../data/types';
 import type { Campaign, Channel, ChannelConn, FormSource, Lead, LeadList, Limits, Mailbox, Offer, OutMessage, ReplyLabel, SocialPost, Template } from '../data/outbound-types';
 import type { WS } from '../data/ws-types';
 import { fmtDay, fmtTime, plural } from '../lib/format';
-import { addDays, atClock, hash, liveNow, mailboxCap, project, qualify, render, values } from '../lib/outbound';
+import { addDays, atClock, hash, liveNow, mailboxCap, project, qualify, render, values, type Sender } from '../lib/outbound';
+import { isLive } from '../live/clock';
 import { SENDER } from '../data/outbound-mock';
 import { applyOps, eventsOn, put, registerPerson } from './ws';
 import type { State, Toast } from './store';
@@ -101,7 +102,15 @@ export const slotsFor = (ws: WS, leadId?: string) => {
   return [all[a] ?? all[0]!, all[b] ?? all[1]!].filter(Boolean);
 };
 
-export const fill = (s: State, text: string, lead: Partial<Lead>) => render(text, values(lead, s.out.offer, SENDER, slotsFor(s.ws, lead.id)));
+/** Who the templates sign as: the sample persona in the demo, and on a real workspace the person using it. */
+export function sender(): Sender {
+  if (!isLive()) return SENDER;
+  const me = PEOPLE.me;
+  const name = me?.name ?? '';
+  return { first: name.split(/\s+/)[0] ?? '', name, company: me?.company ?? '' };
+}
+
+export const fill = (s: State, text: string, lead: Partial<Lead>) => render(text, values(lead, s.out.offer, sender(), slotsFor(s.ws, lead.id)));
 
 /* ───────────── Limits ───────────── */
 
@@ -483,7 +492,7 @@ export function outbound(s: State, a: OutOp, h: OutHelpers): State {
 
 /* ───────────── Launch checks ───────────── */
 
-export const ctxOf = (s: State) => ({ offer: s.out.offer, sender: SENDER, mailboxes: s.out.mailboxes, limits: s.out.limits });
+export const ctxOf = (s: State) => ({ offer: s.out.offer, sender: sender(), mailboxes: s.out.mailboxes, limits: s.out.limits });
 
 /** When the campaign's next sending window opens. */
 export function nextWindow(c: Campaign): Date {

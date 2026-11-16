@@ -76,11 +76,11 @@ type Item = { id: string };
 const read = (state: unknown, path: string[]): unknown => path.reduce<unknown>((o, k) => (o == null ? undefined : (o as Bag)[k]), state);
 
 /** Returns a copy of `state` with `value` at `path`, copying only the objects on the way down. */
-function write<S>(state: S, path: string[], value: unknown): S {
+export function writeAt<S>(state: S, path: string[], value: unknown): S {
   if (path.length === 0) return value as S;
   const [head, ...rest] = path as [string, ...string[]];
   const base = (state ?? {}) as Bag;
-  return { ...base, [head]: write(base[head], rest, value) } as S;
+  return { ...base, [head]: writeAt(base[head], rest, value) } as S;
 }
 
 /* ───────────── Wire format ───────────── */
@@ -140,7 +140,7 @@ export function applyPatches<S>(state: S, patches: Patch[]): S {
     const sl = SLICE_BY_NAME[p.s];
     if (!sl) continue;
     if (sl.kind === 'value') {
-      if ('v' in p && !('id' in p)) next = write(next, sl.path, p.v);
+      if ('v' in p && !('id' in p)) next = writeAt(next, sl.path, p.v);
       continue;
     }
     if (sl.kind === 'record') {
@@ -148,7 +148,7 @@ export function applyPatches<S>(state: S, patches: Patch[]): S {
       const rec = { ...((read(next, sl.path) ?? {}) as Record<string, unknown>) };
       if ('rm' in p) delete rec[p.id];
       else rec[p.id] = p.v;
-      next = write(next, sl.path, rec);
+      next = writeAt(next, sl.path, rec);
       continue;
     }
     const list = [...((read(next, sl.path) ?? []) as Item[])];
@@ -156,7 +156,7 @@ export function applyPatches<S>(state: S, patches: Patch[]): S {
       const byId = new Map(list.map((x) => [x.id, x]));
       const ordered = p.order.map((id) => byId.get(id)).filter((x): x is Item => !!x);
       const named = new Set(p.order);
-      next = write(next, sl.path, [...ordered, ...list.filter((x) => !named.has(x.id))]);
+      next = writeAt(next, sl.path, [...ordered, ...list.filter((x) => !named.has(x.id))]);
       continue;
     }
     if (!('id' in p)) continue;
@@ -172,7 +172,7 @@ export function applyPatches<S>(state: S, patches: Patch[]): S {
       if (after >= 0) list.splice(after + 1, 0, p.v as Item);
       else list.push(p.v as Item);
     }
-    next = write(next, sl.path, list);
+    next = writeAt(next, sl.path, list);
   }
   return next;
 }
@@ -187,6 +187,6 @@ export function pickSlices(state: unknown): Record<string, unknown> {
 /** Lays a snapshot's slices over a base state. */
 export function withSlices<S>(base: S, slices: Record<string, unknown>): S {
   let next = base;
-  for (const sl of SLICES) if (slices[sl.name] !== undefined) next = write(next, sl.path, slices[sl.name]);
+  for (const sl of SLICES) if (slices[sl.name] !== undefined) next = writeAt(next, sl.path, slices[sl.name]);
   return next;
 }

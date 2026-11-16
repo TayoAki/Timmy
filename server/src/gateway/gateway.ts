@@ -119,7 +119,7 @@ function pendingOf(e: EffectRow): PendingEffect {
   const domain = KINDS[e.kind].domain;
   return {
     id: e.id,
-    kind: domain === 'mail' ? (e.kind === 'cold_email.send' ? 'campaign' : 'email') : domain,
+    kind: domain === 'mail' ? 'email' : domain,
     title: e.preview.title ?? KINDS[e.kind].label,
     why: e.preview.why ?? '',
     preview: { from: e.preview.from, to: e.preview.to, cc: e.preview.cc, subject: e.preview.subject, body: e.preview.body, lines: e.preview.lines },

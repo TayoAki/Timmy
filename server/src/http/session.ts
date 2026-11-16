@@ -1,8 +1,8 @@
 import type { Context, MiddlewareHandler } from 'hono';
 import { auth } from '../auth/auth';
+import { membership } from '../auth/members';
 import { rulesFor } from '../auth/roles';
 import { config } from '../config';
-import { authPool } from '../db/pool';
 import type { Ctx } from '../state/engine';
 
 export interface Session {
@@ -20,17 +20,6 @@ export async function sessionOf(headers: Headers): Promise<Session | null> {
     user: { id: s.user.id, name: s.user.name, email: s.user.email },
     activeWorkspaceId: (s.session as { activeOrganizationId?: string | null }).activeOrganizationId ?? null,
   };
-}
-
-/** The person's role in a workspace, straight from the membership table. Null when they aren't a member. */
-export async function membership(userId: string, workspaceId: string): Promise<string | null> {
-  const { rows } = await authPool.query('select role from member where "userId" = $1 and "organizationId" = $2', [userId, workspaceId]);
-  return (rows[0]?.role as string | undefined) ?? null;
-}
-
-export async function workspacesOf(userId: string): Promise<{ id: string; name: string; role: string }[]> {
-  const { rows } = await authPool.query('select o.id, o.name, m.role from member m join organization o on o.id = m."organizationId" where m."userId" = $1 order by m."createdAt"', [userId]);
-  return rows as { id: string; name: string; role: string }[];
 }
 
 /**
@@ -66,6 +55,12 @@ export const requireWorkspace: MiddlewareHandler<Env> = async (c, next) => {
   if (!role) return c.json({ error: 'You are not a member of this workspace.' }, 403);
   c.set('session', s);
   c.set('ctx', { user: s.user, workspaceId: s.activeWorkspaceId, role, rules: rulesFor(role) });
+  await next();
+};
+
+/** For anything that returns the workspace's content. A client role is a member but may not read it. */
+export const requireRead: MiddlewareHandler<Env> = async (c, next) => {
+  if (!c.get('ctx').rules.read) return c.json({ error: 'Your role can’t read this workspace.' }, 403);
   await next();
 };
 

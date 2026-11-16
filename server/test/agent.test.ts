@@ -3,6 +3,7 @@ import { judge } from '../src/agent/judge';
 import { resumeRun, startRun } from '../src/agent/loop';
 import { ASK_SYSTEM } from '../src/agent/prompts';
 import { rulesFor } from '../src/auth/roles';
+import { MODEL_ALLOWLIST, config } from '../src/config';
 import { recent } from '../src/lib/log';
 import type { EffectRow } from '../src/gateway/gateway';
 import { boot, connectGmail, fake, jobs, model, newWorkspace, releaseHolds, rows, sysPool, withWorkspace, type Client } from './helpers';
@@ -301,6 +302,44 @@ describe('credentials', () => {
   });
 });
 
+describe('the workspace’s model', () => {
+  // The real list has one model until another passes the eval and the owner approves it. A stand-in id is put on the
+  // list for the length of the test so that switching can be exercised; the fake provider answers for it.
+  const second = { id: 'example/second-tested-model', label: 'Second model', note: 'A stand-in for this test.' };
+
+  it('switching in Settings changes what Ask, drafting and reading run on, and the judge stays pinned', async () => {
+    MODEL_ALLOWLIST.push(second);
+    try {
+      expect((await w.request('PATCH', '/api/v1/settings', { model: second.id })).status).toBe(200);
+      model().script.push({ content: 'Answered.' });
+      await ask(w, 'Anything new?');
+      expect(model().requests.at(-1)).toMatchObject({ route: 'ask', model: second.id });
+
+      const t = (await w.state()).threads[0]!;
+      await w.cmd({ type: 'makeDraft', id: t.id });
+      await jobs().drain();
+      expect(model().requests.at(-1)).toMatchObject({ route: 'draft', model: second.id });
+
+      await judge({ workspaceId: w.workspaceId, kind: 'mail.modify', payload: {}, action: 'Label or archive mail', userWords: ['archive the newsletters'], readOutside: false });
+      expect(model().requests.at(-1)).toMatchObject({ route: 'judge', model: config.openrouter.judgeModel });
+      const used = await rows<{ model: string }>(`select distinct model from usage_event where workspace_id = $1 and route <> 'judge'`, [w.workspaceId]);
+      expect(used).toEqual([{ model: second.id }]);
+    } finally {
+      MODEL_ALLOWLIST.splice(MODEL_ALLOWLIST.indexOf(second), 1);
+    }
+  });
+
+  it('a model taken off the list is no longer used, even by a workspace that had chosen it', async () => {
+    MODEL_ALLOWLIST.push(second);
+    await w.request('PATCH', '/api/v1/settings', { model: second.id });
+    MODEL_ALLOWLIST.splice(MODEL_ALLOWLIST.indexOf(second), 1);
+    model().script.push({ content: 'Answered.' });
+    await ask(w, 'Anything new?');
+    expect(model().requests.at(-1)).toMatchObject({ route: 'ask', model: 'anthropic/claude-opus-5.5' });
+    expect((await w.json<{ model: string }>('GET', '/api/v1/settings')).model).toBe('anthropic/claude-opus-5.5');
+  });
+});
+
 describe('cost and limits', () => {
   it('every model call is recorded with its tokens and cost, by route', async () => {
     model().script.push({ toolCalls: [{ name: 'list_inbox', arguments: {} }] }, { content: 'One email from Dana.' });
@@ -343,6 +382,30 @@ describe('cost and limits', () => {
     release();
     expect((await first).status).toBe('completed');
     provider.complete = original;
+  });
+
+  it('two jobs that arrive at the same moment cannot both take the last place', async () => {
+    await sysPool.query('update workspace set max_concurrent_runs = 1 where id = $1', [w.workspaceId]);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const provider = model();
+    const original = provider.complete.bind(provider);
+    provider.complete = async (req, onText) => {
+      await gate;
+      return original(req, onText);
+    };
+    try {
+      const both = [ask(w, 'one'), ask(w, 'two'), ask(w, 'three')];
+      await new Promise((r) => setTimeout(r, 200));
+      expect((await rows<{ n: number }>(`select count(*)::int as n from run where workspace_id = $1 and status = 'running'`, [w.workspaceId]))[0]!.n).toBe(1);
+      release();
+      const done = await Promise.all(both);
+      expect(done.filter((r) => r.status === 'completed')).toHaveLength(1);
+      expect(done.filter((r) => /already working/.test(r.error ?? ''))).toHaveLength(2);
+    } finally {
+      release();
+      provider.complete = original;
+    }
   });
 });
 

@@ -417,7 +417,7 @@ function LabelContext({ id }: { id: string }) {
           <div className="rp-card">
             <dl className="kv flush">
               <dt>Threads</dt>
-              <dd className="mono">{(id === 'archived' ? ARCHIVED_BASE + count : count).toLocaleString()}</dd>
+              <dd className="mono">{(id === 'archived' && !isLive() ? ARCHIVED_BASE + count : count).toLocaleString()}</dd>
               <dt>Drafts ready</dt>
               <dd className="mono">{state.threads.filter((t) => t.box === id && t.draft).length}</dd>
               <dt>Late</dt>

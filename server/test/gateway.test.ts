@@ -120,7 +120,7 @@ describe('a person presses Send', () => {
     const lone = await newWorkspace('NoMail');
     const out = await send(lone);
     expect(out.ok).toBe(false);
-    expect(out.error).toMatch(/Connect Gmail or Outlook/);
+    expect(out.error).toMatch(/Connect Gmail first/);
     expect(await effects(lone)).toHaveLength(0);
     expect((await lone.state()).threads).toHaveLength(0);
   });
@@ -357,6 +357,70 @@ describe('who may approve', () => {
     expect((await m1.cmd({ type: 'effect', id: p.effect!.id, approve: true })).ok).toBe(true);
     await releaseHolds(w);
     expect(sent()).toHaveLength(1);
+  });
+
+  it('a CRM change asked for by a member waits for RevOps: the member cannot approve it, RevOps can', async () => {
+    const member = await addMember(w.workspaceId, 'member', 'Sales Rep');
+    const revops = await addMember(w.workspaceId, 'revops', 'Rev Ops');
+    expect((await w.cmd({ type: 'conn', op: { op: 'crm', patch: { approver: 'revops' } } })).ok).toBe(true);
+    const crm = (key: string) => ({ kind: 'crm.write', payload: { record: 'deal-1', set: { stage: 'Won' } }, preview: { lines: ['Deal “Acme”: stage → Won'] }, title: 'Move Acme to Won', why: 'test', target: 'deal-1', idempotencyKey: key, source: 'agent' as const });
+    const p = await run(async (tx, l) => {
+      const r = await propose(tx, l, l.state, actorOf(member, 'member'), crm('crm-1'));
+      return { state: r.state, result: r };
+    });
+    expect(p.outcome).toBe('waiting');
+    expect(p.effect).toMatchObject({ status: 'intended', approver_route: 'revops', requested_by: member.userId, approved_by: null });
+    expect((await revops.state()).pending[0]).toMatchObject({ id: p.effect!.id, kind: 'crm', waitingOn: 'revops', status: 'waiting' });
+
+    // The person who asked, and a colleague with no CRM say, are both refused; the record does not move.
+    const assistant = await addMember(w.workspaceId, 'assistant', 'Jess EA');
+    for (const other of [member, assistant]) {
+      const tried = await other.cmd({ type: 'effect', id: p.effect!.id, approve: true });
+      expect(tried.ok).toBe(false);
+      expect(tried.error).toMatch(/isn’t yours to approve/);
+    }
+    expect((await effects())[0]).toMatchObject({ status: 'intended', approved_by: null });
+
+    // RevOps cannot change the workspace's work, but this decision is theirs.
+    expect((await revops.cmd({ type: 'ws', ops: [{ op: 'put', col: 'notes', item: { id: 'n1', text: 'x' } }] })).ok).toBe(false);
+    expect((await revops.cmd({ type: 'effect', id: p.effect!.id, approve: true })).ok).toBe(true);
+    expect((await effects())[0]).toMatchObject({ approved_by: revops.userId });
+    expect((await audit()).find((x) => x.action === 'effect.approved')).toMatchObject({ actor: revops.userId, effect_id: p.effect!.id });
+  });
+
+  it('an action can be approved or declined by its id over the API, with the same checks and the same answer on a retry', async () => {
+    const member = await addMember(w.workspaceId, 'member', 'Member One');
+    const mk = (key: string) =>
+      run(async (tx, l) => {
+        const r = await propose(tx, l, l.state, actorOf(w, 'owner'), { ...proposal(key), source: 'agent' });
+        return { state: r.state, result: r };
+      });
+    const first = await mk('api-approve');
+    // Someone it doesn't belong to is refused, and so is a request from another site.
+    expect((await member.post(`/api/v1/actions/${first.effect!.id}/approve`)).status).toBe(409);
+    expect((await w.request('POST', `/api/v1/actions/${first.effect!.id}/approve`, {}, { origin: 'https://evil.example' })).status).toBe(403);
+    expect((await effects())[0]!.status).toBe('intended');
+
+    const ok = await w.post(`/api/v1/actions/${first.effect!.id}/approve`);
+    expect(ok.status).toBe(200);
+    // The retry is answered from the record: it does not approve twice or send twice.
+    expect((await w.post(`/api/v1/actions/${first.effect!.id}/approve`)).status).toBe(200);
+    expect((await audit()).filter((x) => x.action === 'effect.approved')).toHaveLength(1);
+    await releaseHolds(w);
+    await releaseHolds(w);
+    expect(sent()).toHaveLength(1);
+
+    const second = await mk('api-decline');
+    expect((await w.post(`/api/v1/actions/${second.effect!.id}/decline`)).status).toBe(200);
+    expect((await effects()).find((e) => e.id === second.effect!.id)!.status).toBe('declined');
+    await releaseHolds(w);
+    expect(sent()).toHaveLength(1);
+    // An id that isn't an action in this workspace changes nothing.
+    expect((await w.post('/api/v1/actions/eff_nope/approve')).status).toBe(409);
+    const other = await newWorkspace('Elsewhere');
+    const third = await mk('api-cross');
+    expect((await other.post(`/api/v1/actions/${third.effect!.id}/approve`)).status).toBe(409);
+    expect((await effects()).find((e) => e.id === third.effect!.id)!.status).toBe('intended');
   });
 
   it('never-list actions are refused outright and leave no effect to approve', async () => {
