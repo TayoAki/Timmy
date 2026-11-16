@@ -1,0 +1,1 @@
+Continue building Timmy's backend. Your full brief is `docs/fable-build-prompt.md`; read it first. Then read `STATUS.md`, the test checklist and the git log to see where things stand. Run `scripts/dev.sh` and fix anything that fails before starting new work. Then continue with the next item in `STATUS.md`.
