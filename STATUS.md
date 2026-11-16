@@ -14,9 +14,10 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 | Sign-in and workspaces (Better Auth: email + password, email link, six roles, invitations) | Built. Email links and invitations are written to an outbox table until a mail provider is chosen. |
 | State sync (`POST /api/v1/commands`, `GET /api/v1/stream`) | Built. The server runs the frontend's own reducer and sends patches. |
 | Action gateway, effect records, audit log, 30-second undo | Built. |
-| Composio: connect, backfill, new-mail webhook, item store | Built and tested against the fake provider. The real key works; a real Gmail account has not been connected yet. |
+| Composio: connect, mail backfill, new-mail webhook, calendar sync, item store | Built and tested against the fake provider. The real key works (connect links were minted against the real API); a real Gmail account has not been connected yet. |
 | Model layer (OpenRouter), model picker, cost log, spend cap | Built. Real calls made on Claude Opus 5.5. |
 | Agent loop (leased runs, checkpoints, pause for approval), Ask over mail | Built. |
+| Reading mail and drafting (phase 1, started early) | Built: the model reads threads people wrote and proposes a sort; the Draft button writes a draft. |
 | Frontend live mode (`VITE_TIMMY_LIVE=1`) | Built: sign-in, onboarding, state from the API, Connect buttons, model picker, approvals for writes Timmy proposes. The demo is unchanged and still the default build. |
 | Railway | `app` (API + live app), `pgvector` and the bucket `timmy-files` exist in **production**. No `staging` environment yet. |
 
@@ -51,9 +52,9 @@ Cost measurement: `server/scripts/measure-cost.ts` (the header says how to run i
 
 | Suite | Result |
 | --- | --- |
-| API unit and integration (`server/test`, 6 files) | 98 of 98 pass |
+| API unit and integration (`server/test`, 7 files) | 108 of 108 pass |
 | Demo-mode Playwright (`e2e/`, 12 suites, 348 checks) | 12 of 12 pass |
-| Live-mode Playwright (`e2e/live/`, 6 suites, 88 checks) | 6 of 6 pass |
+| Live-mode Playwright (`e2e/live/`, 6 suites, 91 checks) | 6 of 6 pass |
 | Suites against staging | Not run: there is no staging environment yet |
 | Real-provider smoke (real Gmail through Composio) | Not run: needs a test Gmail account connected by a person |
 
@@ -61,20 +62,23 @@ Two changes were made to the existing demo suites, both to make them run correct
 - Eight suites ignored `BASE` and always tested `localhost:5173`. They now honor it.
 - `e2e-fixes` was failing before any backend work. Its last block clicked the first row on Today and assumed it was an email; since leads were added to Today the first row is a lead. It now opens a mail row and asserts that it did.
 
-## Measured cost per user (phase 0)
+## Measured cost per user
 
-Measured with `server/scripts/measure-cost.ts`: the real sync code on a 3,000-message mailbox (30 days at 100 a day), and real calls to Claude Opus 5.5 through OpenRouter with reasoning effort "low". The mailbox content is synthetic, so the token counts are a first reading, to be repeated on a real mailbox.
+Measured Nov 16, 2026 with `server/scripts/measure-cost.ts`: the real sync code on a 3,000-message mailbox (30 days at 100 a day), and real calls to Claude Opus 5.5 through OpenRouter with reasoning effort "low". The mailbox content is synthetic, so treat the token counts as a first reading, to be repeated on a real mailbox. The whole measurement cost $1.10.
 
-**Model (real calls)**
+**Model (real calls, averages)**
 
-| Route | Model calls per turn | Input tokens (of which cached) | Output tokens (of which reasoning) | Cost per turn |
-| --- | --- | --- | --- | --- |
-| Ask over mail | 3.2 | 12,572 (8,078) | 548 (52) | $0.035 |
-| Draft a reply from chat | 5.0 | 20,221 (16,213) | 929 (76) | $0.042 |
-| Prepare a send for approval | 1.0 | 1,756 (1,604) | 144 (0) | $0.004 |
-| Read every new item | 0 | 0 | 0 | $0 (plain code only in phase 0) |
+| Route | Model calls | Input tokens (cached) | Output tokens (reasoning) | Cost | Sample |
+| --- | --- | --- | --- | --- | --- |
+| Ask over mail, per turn | 3.2 | 12,572 (8,078) | 548 (52) | $0.035 | 6 turns |
+| Read one thread a person wrote | 1 | 686 (0) | 223 (102) | $0.0079 | 96 threads |
+| Draft a reply (the Draft button) | 1 | 701 (0) | 316 (109) | $0.0098 | 8 drafts |
+| Draft a reply from chat, per turn | 5.0 | 20,221 (16,213) | 929 (76) | $0.042 | 2 turns |
+| Prepare a send for approval | 1 | 1,756 (1,604) | 144 (0) | $0.004 | 1 turn |
 
-Prompt caching is working: 64% to 80% of input tokens were served from the cache.
+Prompt caching works on the chat route: 64% to 80% of its input tokens came from the cache. The read and draft prompts are too short to be cached.
+
+Plain code sorts mail before any model call. In the test mailbox it gave a confident sort to 70% of threads (newsletters, receipts, calendar replies); only mail a person wrote goes to the model. The real share depends on the mailbox.
 
 **Composio calls (counted from the real code paths)**
 
@@ -82,20 +86,20 @@ Prompt caching is working: 64% to 80% of input tokens were served from the cache
 | --- | --- |
 | Connect a mailbox | 3 (link, profile, trigger) |
 | Backfill | 1 per 50 messages: 60 for 30 days, 180 for 90 days |
-| Each new email | 1 (fetches the whole thread). This can drop to about 0 by using the message the trigger already carries; not done yet. |
+| Each new email | 1 (fetches the whole thread). This can drop to about 0 by using the message the trigger already carries, once that payload is checked on a real mailbox. |
 | Each send | 1 |
+| Calendar | 1 per sync of the window (per connect and per calendar change) |
 
 **Per user per month, at 100 emails a day, 150 Ask turns and 300 drafts** (the PRD's volumes)
 
-| Item | Cost |
-| --- | --- |
-| Ask | $5.25 |
-| Drafts | $12.60 (through the chat path; a single-call drafting route in phase 1 should cost less) |
-| Reading items | $0 now. Plain code gave a confident first sort to 70% of threads in the test mailbox; phase 1 sends only the rest to a model. |
-| Composio | about 3,300 calls: $16.50 at the $5 per 1,000 overage price, or about $6 if covered by pooled seats (10,000 calls per $18 seat). About $2 after the new-email change above. |
-| One-time backfill (90 days) | 180 Composio calls (about $0.90 at the overage price); no model cost in phase 0 |
-
-So phase 0 as built is about **$18 of model cost and $2 to $17 of Composio cost per user per month**, in line with the PRD's estimate. The largest lever is the per-email Composio call.
+| Item | All on Claude Opus 5.5 | Notes |
+| --- | --- | --- |
+| Reading mail | $7 to $13 | 900 to 1,650 reads, depending on how much of the mail people wrote (30% to 55%). The same reads on Claude Haiku 5.5 would cost about $0.20 to $0.35 at its list price; that is the PRD's "Option B" and needs the eval and your OK. |
+| Drafts | $2.90 | 300 drafts on the one-call route |
+| Ask | $5.25 | 150 turns |
+| **Model total** | **$15 to $21** | The PRD estimated $56 for all-Opus and $20 for Option B |
+| Composio | $2 to $17 | About 3,300 calls: $16.50 at the $5 per 1,000 overage price, about $6 if covered by pooled seats, about $2 after the new-email change |
+| One-time, per new user | about $1.20 | 180 Composio calls for 90 days of backfill, and up to 40 first reads ($0.32) |
 
 ## Decisions made while building (the PRD is updated to match)
 
@@ -103,7 +107,7 @@ So phase 0 as built is about **$18 of model cost and $2 to $17 of Composio cost 
 2. **The server runs the frontend's reducer.** Each client action is applied by the same reducer code on the stored state, and the difference goes back as patches keyed by entity. An action that would send mail is detected from the reducer's result and turned into an effect record first. Demo-only actions are refused on a real workspace.
 3. **Cold email is sent from mailboxes connected through Composio** (owner's instruction, Nov 16), not from a separate SMTP pool.
 4. **Twilio (texts and the dialer) is skipped for now** (owner's instruction, Nov 16). Texts and calls stay demo-only.
-5. **New mail gets a first sort by plain code** (newsletters, receipts, calendar replies, automated notices), with the reason shown. A model is not called for it in phase 0.
+5. **New mail gets a first sort by plain code** (newsletters, receipts, calendar replies, automated notices), with the reason shown. Only a thread a person wrote is read by the model, once, and the model only proposes: the thread moves when the person accepts it in Triage.
 6. **The outage fallback** after Claude Opus 5.5 is `anthropic/claude-opus-5`. It is not user-selectable.
 
 ## Needs your attention
@@ -126,7 +130,7 @@ So phase 0 as built is about **$18 of model cost and $2 to $17 of Composio cost 
 2. Phase 1: triage with a model for what plain code can't settle, the brief, drafts on their own route, Waiting, decisions, ontology v1, Outlook and Drive.
 
 Known gaps to close in phase 1 (none of them lets anything be sent without approval):
-- Calendar: events added in Timmy are not written to Google Calendar yet, and Google Calendar events are not synced in.
+- Calendar: Google Calendar events are synced in, but events added in Timmy are not written to Google Calendar yet.
 - Labels and archive are not written back to Gmail.
 - Attachments cannot be sent.
 - When someone other than the sender has to approve an email (a delegate's send), the thread shows as sent only after the next sync.

@@ -27,8 +27,8 @@
     {
       "id": "api-unit",
       "file": "server/test/unit.test.ts",
-      "covers": "state patches, policy, redaction, mail parsing, webhook signatures",
-      "tests": 18,
+      "covers": "state patches, policy, redaction, mail parsing, webhook signatures, the data wrapper",
+      "tests": 19,
       "status": "pass"
     },
     {
@@ -62,8 +62,15 @@
     {
       "id": "api-agent",
       "file": "server/test/agent.test.ts",
-      "covers": "Ask over mail, AG-UI stream, pause and resume, injected instructions, judge, credentials, cost log, caps, leases",
-      "tests": 19,
+      "covers": "Ask over mail, AG-UI stream, pause and resume, injected instructions, judge, credentials, cost log, caps, leases, drafting, reading new mail",
+      "tests": 25,
+      "status": "pass"
+    },
+    {
+      "id": "api-calendar",
+      "file": "server/test/calendar.test.ts",
+      "covers": "calendar sync on connect, re-sync on a provider event, cancelled events, isolation",
+      "tests": 3,
       "status": "pass"
     },
     {
@@ -85,7 +92,7 @@
       "file": "e2e/live/live-mail.cjs",
       "covers": "connect a mailbox, receive an email, see the thread, reply, undo, audit log",
       "status": "pass",
-      "tests": 21
+      "tests": 24
     },
     {
       "id": "live-ask",
