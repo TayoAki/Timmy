@@ -9,6 +9,7 @@
 import type { Box } from '../../../src/data/types';
 import type { EffectRow, Outcome } from '../gateway/gateway';
 import { gmail } from './gmail';
+import type { Labelled } from './labels';
 import type { MailMessage } from './message';
 import { outlook } from './outlook';
 import type { ConnectionRow, Phase } from './tools';
@@ -26,6 +27,21 @@ export interface FilePayload {
   connectionId: string;
   threadKey: string;
   box: Box;
+}
+
+/**
+ * Where one message sits in the mailbox right now, and nothing of what it says. `labels` uses the same words
+ * as `MailMessage.labels`. `filedAs` names which of Timmy's three places the message is marked with there: a
+ * Gmail label, an Outlook category. `mine` is true for the mailbox owner's own message: it sits in Sent, or it
+ * was written from the mailbox's own address (a reply still in the outbox, or scheduled for later).
+ */
+export interface MessageState {
+  id: string;
+  threadKey: string;
+  at: Date;
+  labels: string[];
+  filedAs: Labelled[];
+  mine: boolean;
 }
 
 export interface Mailbox {
@@ -49,6 +65,15 @@ export interface Mailbox {
   file(e: EffectRow, conn: ConnectionRow, p: FilePayload): Promise<Outcome>;
   /** Whether the mailbox already shows the filing. Null when that could not be found out. */
   filed(e: EffectRow, conn: ConnectionRow, p: FilePayload): Promise<boolean | null>;
+  /**
+   * Where recent mail sits now: one page of the messages received since a moment, newest first, each with the
+   * labels it carries at this moment and none of its words. Mail in the trash and in spam is included, because
+   * having been put there is one of the things this is asked for. It only reads. One call per page, however
+   * many threads the page touches. Throws when the provider refuses, so the caller can look again later.
+   */
+  recentStates(workspaceId: string, conn: ConnectionRow, q: { since: Date; pageToken?: string; pageSize: number; phase: Phase }): Promise<{ messages: MessageState[]; next?: string }>;
+  /** The same reading of messages that were already fetched (a whole thread, when new mail arrives). It only reads. */
+  statesOf(workspaceId: string, conn: ConnectionRow, messages: MailMessage[], phase: Phase): Promise<MessageState[]>;
 }
 
 const MAILBOXES: Record<string, Mailbox> = { gmail, outlook };

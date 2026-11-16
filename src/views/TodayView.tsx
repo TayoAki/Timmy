@@ -794,8 +794,10 @@ function Triage({ threads }: { threads: Thread[] }) {
 
       <div className="triage-list">
         {queue.map((t) => {
-          const s = t.suggestion!;
-          const target = labelOf(s.box);
+          // A thread can sit in the inbox with no suggestion: one moved back by hand, or one Timmy has not read yet.
+          // It is listed with every place to choose from, and no suggestion to accept.
+          const s = t.suggestion;
+          const target = s ? labelOf(s.box) : null;
           const from = t.messages[0]!.from;
           return (
             <article key={t.id} className="card triage-item">
@@ -812,23 +814,25 @@ function Triage({ threads }: { threads: Thread[] }) {
                   <p className="timmy-line" style={{ fontSize: 13, marginTop: 4 }}>
                     <Sparkles size={13} />
                     <span>
-                      {s.reason}
-                      {s.extra && <strong> {s.extra}.</strong>}
+                      {s ? s.reason : 'No suggestion for this one. Pick where it goes.'}
+                      {s?.extra && <strong> {s.extra}.</strong>}
                     </span>
                   </p>
                 </div>
               </div>
               <div className="triage-actions">
-                <button className="suggest-pill" style={tint(target.color)} onClick={() => dispatch({ type: 'acceptSuggestion', id: t.id })}>
-                  <Check size={14} />
-                  <span>
-                    {s.box === 'archived' ? 'Archive' : `Move to ${boxTag(s.box)}`}
-                  </span>
-                  <span className={`conf conf-${s.confidence}`}>{s.confidence === 'high' ? 'Sure' : s.confidence === 'medium' ? 'Likely' : 'Unsure'}</span>
-                </button>
-                {s.effort && <EffortChip effort={s.effort} />}
+                {s && target && (
+                  <button className="suggest-pill" style={tint(target.color)} onClick={() => dispatch({ type: 'acceptSuggestion', id: t.id })}>
+                    <Check size={14} />
+                    <span>
+                      {s.box === 'archived' ? 'Archive' : `Move to ${boxTag(s.box)}`}
+                    </span>
+                    <span className={`conf conf-${s.confidence}`}>{s.confidence === 'high' ? 'Sure' : s.confidence === 'medium' ? 'Likely' : 'Unsure'}</span>
+                  </button>
+                )}
+                {s?.effort && <EffortChip effort={s.effort} />}
                 <div className="triage-alt" role="group" aria-label="Or move to">
-                  {MOVES.filter((m) => m.box !== s.box).map((m) => (
+                  {MOVES.filter((m) => m.box !== s?.box).map((m) => (
                     <button key={m.box} className="btn btn-xs btn-ghost" onClick={() => dispatch({ type: 'move', id: t.id, box: m.box })} title={`${m.label} (${m.key})`}>
                       {m.icon}
                       {m.label}

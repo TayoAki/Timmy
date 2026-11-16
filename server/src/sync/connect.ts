@@ -206,6 +206,8 @@ export async function purgeConnection(workspaceId: string, connectionId: string,
     if (n < batch) break;
   }
   await withWorkspace({ workspaceId }, (tx) => tx.query(`delete from sync_cursor where connection_id = $1 and exists (select 1 from connection c where c.id = $1 and c.status <> 'active')`, [connectionId]));
+  // What the mailbox last showed for each thread (kept to pick up changes made there) goes with the mail.
+  await withWorkspace({ workspaceId }, (tx) => tx.query(`delete from mailbox_seen where connection_id = $1 and exists (select 1 from connection c where c.id = $1 and c.status <> 'active')`, [connectionId]));
   return total;
 }
 

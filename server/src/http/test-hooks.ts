@@ -11,6 +11,7 @@ import { executeEffect } from '../gateway/gateway';
 import { inlineJobs } from '../jobs/jobs';
 import { fakeComposio, signWebhook } from '../providers/composio';
 import { MAIL_TOOLKITS } from '../sync/mailbox';
+import { checkMailbox } from '../sync/mailbox-check';
 import { lastMailTo } from '../providers/email';
 import { ctxOf, requireWorkspace, type Env } from './session';
 import { pageTestRoutes } from '../pages/routes';
@@ -111,6 +112,28 @@ export function testRoutes(app: Hono<Env>): void {
       await inlineJobs()?.drain('mail.ingest');
       return c.json({ ok: res.ok });
     }
+    // The person does something to a thread in their own mail app: takes it out of the inbox, puts a label on it,
+    // reads it, deletes it. `add` and `remove` are label words (INBOX, UNREAD, TRASH, …) or the names of labels;
+    // `categories`, for Outlook, replaces the categories on the thread's messages.
+    if (body.op === 'in-mailbox') {
+      const box = fake.accounts.get(conn.connected_account_id)!;
+      const idOf = (name: string) => {
+        if (/^[A-Z_]+$/.test(name)) return name;
+        // A label the person made by hand gets an id the way Gmail gives one.
+        if (!box.labels.has(name)) box.labels.set(name, `Label_${box.labels.size + 1}`);
+        return box.labels.get(name)!;
+      };
+      const add = ((body.add as string[] | undefined) ?? []).map(idOf);
+      const remove = ((body.remove as string[] | undefined) ?? []).map(idOf);
+      const touched = box.messages.filter((m) => m.subject.replace(/^Re: /, '') === String(body.subject));
+      for (const m of touched) {
+        m.labels = [...new Set([...m.labels.filter((l) => !remove.includes(l)), ...add])];
+        if (Array.isArray(body.categories)) m.categories = (body.categories as string[]).map(String);
+      }
+      return c.json({ ok: touched.length > 0 });
+    }
+    // Looks at the mailbox for what the person changed there, now, instead of waiting for the next scheduled look.
+    if (body.op === 'check-mailbox') return c.json({ checked: await checkMailbox(ctx.workspaceId, conn.id) });
     if (body.op === 'fail') {
       fake.failNext.set(String(body.slug), body.mode as 'error');
       return c.json({ ok: true });

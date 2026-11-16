@@ -221,6 +221,27 @@ export const config = {
   /** Version history of pages: how many copies of one page are kept, and for how many days. */
   pageVersionsKept: Number(env.TIMMY_PAGE_VERSIONS_KEPT ?? 100),
   pageVersionDays: Number(env.TIMMY_PAGE_VERSION_DAYS ?? 90),
+  /**
+   * Picking up what the person changed in the mailbox itself (sync/mailbox-check.ts). One look lists the messages
+   * received in the last `days`, with their labels and no bodies, in at most `maxPages` provider calls; mail older
+   * than that is left as it is. Opening the app gets a look; after that one is made every `everySeconds` while a tab
+   * stays open and someone did something in Timmy within `idleSeconds`. A thread Timmy itself filed is left alone
+   * until `settleSeconds` after the filing completed, so the mailbox has time to show it.
+   */
+  mailboxCheck: {
+    days: Number(env.TIMMY_MAILBOX_CHECK_DAYS ?? 3),
+    maxPages: Number(env.TIMMY_MAILBOX_CHECK_PAGES ?? 2),
+    /**
+     * Messages per call. Gmail's tool takes up to 500 and Outlook's up to 1,000. The Gmail tool fetches each
+     * message's labels one by one behind the call and leaves out any it could not get, so its page starts at 250
+     * until a real mailbox shows a full page holds. A mailbox with more mail in `days` than one page costs two
+     * calls a look.
+     */
+    pageSize: { gmail: Number(env.TIMMY_MAILBOX_CHECK_PAGE_GMAIL ?? 250), outlook: Number(env.TIMMY_MAILBOX_CHECK_PAGE_OUTLOOK ?? 500) } as Record<string, number>,
+    everySeconds: Number(env.TIMMY_MAILBOX_CHECK_EVERY_SECONDS ?? 600),
+    idleSeconds: Number(env.TIMMY_MAILBOX_CHECK_IDLE_SECONDS ?? 1800),
+    settleSeconds: Number(env.TIMMY_MAILBOX_SETTLE_SECONDS ?? 300),
+  },
 };
 
 export const isProd = () => config.stage === 'production';
