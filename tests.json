@@ -1,0 +1,29 @@
+{
+  "updated": "2026-11-16",
+  "how": "bash scripts/dev.sh runs everything. status is pass, fail, todo or blocked.",
+  "safetyProperties": {
+    "no outside write without an approved effect record or a rule": ["server/test/gateway.test.ts", "server/test/agent.test.ts"],
+    "no action runs twice": ["server/test/gateway.test.ts", "server/test/agent.test.ts"],
+    "no cross-workspace reads": ["server/test/isolation.test.ts", "server/test/agent.test.ts"],
+    "no real credential inside a prompt, the sandbox or logs": ["server/test/unit.test.ts", "server/test/agent.test.ts"],
+    "unattended runs send only what a rule covers": ["server/test/gateway.test.ts", "server/test/agent.test.ts"]
+  },
+  "suites": [
+    { "id": "api-unit", "file": "server/test/unit.test.ts", "covers": "state patches, policy, redaction, mail parsing, webhook signatures", "tests": 18, "status": "pass" },
+    { "id": "api-isolation", "file": "server/test/isolation.test.ts", "covers": "row-level security as the app role; cross-workspace ids through the API; roles; webhook routing", "tests": 15, "status": "pass" },
+    { "id": "api-gateway", "file": "server/test/gateway.test.ts", "covers": "hold and undo, exactly-once send, provider failures, database-enforced order, audit log, approver routing, never-list, rules for unattended runs, demo-only actions refused", "tests": 23, "status": "pass" },
+    { "id": "api-sync", "file": "server/test/sync.test.ts", "covers": "connect flow, backfill paging and resume, signed webhooks, duplicates, replies", "tests": 12, "status": "pass" },
+    { "id": "api-commands", "file": "server/test/commands.test.ts", "covers": "blank workspace, commands, idempotent retry, undo, ordering, stream, model setting", "tests": 11, "status": "pass" },
+    { "id": "api-agent", "file": "server/test/agent.test.ts", "covers": "Ask over mail, AG-UI stream, pause and resume, injected instructions, judge, credentials, cost log, caps, leases", "tests": 19, "status": "pass" },
+    { "id": "demo-e2e", "file": "e2e/run-all.sh", "covers": "the 12 demo-mode Playwright suites", "tests": 12, "status": "pass" },
+    { "id": "live-signup", "file": "e2e/live/live-signup.cjs", "covers": "sign up, name the workspace, land on an empty Today, sign out and in", "status": "todo" },
+    { "id": "live-mail", "file": "e2e/live/live-mail.cjs", "covers": "connect a mailbox, receive an email, see the thread, reply, undo, audit log", "status": "todo" },
+    { "id": "live-ask", "file": "e2e/live/live-ask.cjs", "covers": "Ask over mail; a send proposed in chat needs the Send button", "status": "todo" },
+    { "id": "live-model", "file": "e2e/live/live-settings.cjs", "covers": "switching the model in Settings", "status": "todo" },
+    { "id": "live-isolation", "file": "e2e/live/live-isolation.cjs", "covers": "two workspaces in two browsers never see each other's data", "status": "todo" },
+    { "id": "live-holds", "file": "e2e/live/live-holds.cjs", "covers": "delegate holds and RevOps holds in the browser", "status": "todo" },
+    { "id": "smoke-openrouter", "file": "server/test/smoke/openrouter.smoke.ts", "covers": "one real model call behind TIMMY_SMOKE=1", "status": "todo" },
+    { "id": "smoke-composio", "file": "server/test/smoke/composio.smoke.ts", "covers": "real connect link, fetch and send between test accounts behind TIMMY_SMOKE=1", "status": "blocked", "on": "test Gmail accounts" },
+    { "id": "staging-full", "covers": "every suite against the staging deploy", "status": "todo" }
+  ]
+}
