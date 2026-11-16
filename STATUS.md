@@ -37,7 +37,7 @@ Railway project `timmy`. Production:
 | `pgvector` | Postgres 18 with pgvector. Private network only: its public TCP endpoint was removed. | none |
 | `timmy-files` | Bucket for files and, later, sandbox homes. Wired to `app` by reference variables; not used by code yet. | none |
 
-Production `app` has real providers configured. No test sign-ups have been made on production.
+Production `app` has real providers configured. No sign-ups have been made on production, and sign-up there is now invite-only (see "Needs your attention").
 
 Staging: the same services, duplicated. `app` is at https://app-staging-fcb4f05d.up.railway.app with `TIMMY_ENV=staging`, fake providers on (`TIMMY_FAKE_PROVIDERS=1`) and test hooks on behind a token (`TIMMY_TEST_HOOKS=1`, `TIMMY_TEST_TOKEN`), which is what the live suites need. To smoke-test real Composio and OpenRouter on staging, set `TIMMY_FAKE_PROVIDERS=0` there. Staging `web` still deploys `claude/modest-meitner-59cqpr`.
 
@@ -68,7 +68,7 @@ Cost measurement: `server/scripts/measure-cost.ts` (the header says how to run i
 | API unit and integration (`server/test`, 13 files) | 216 of 216 pass |
 | Demo-mode Playwright (`e2e/`, 12 suites, 348 checks) | 12 of 12 pass |
 | Live-mode Playwright (`e2e/live/`, 9 suites, 156 checks) | 9 of 9 pass |
-| Live-mode Playwright against **staging** (Railway) | 8 of 9 on the build with chat filing; the ninth (`live-ask`) failed once at sign-out and passed 3 of 3 on re-run. The cause was a single request lost on the way, which the app now retries (see below). To be run again after each push. |
+| Live-mode Playwright against **staging** (Railway) | 9 of 9 pass (156 checks) on the build with Waiting and the retry fix. On the build before it, `live-ask` failed once at sign-out because a request was lost on the way; the app now retries (see below). |
 | Demo suites against a deployed build of this branch | Not run: `web` deploys the older branch, and I won't change that service without your OK |
 | Real-provider smoke (real Gmail through Composio) | Not run: needs a test Gmail account connected by a person |
 
@@ -89,6 +89,8 @@ Measured Nov 16, 2026 with `server/scripts/measure-cost.ts`: the real sync code 
 | Draft a reply (the Draft button) | 1 | 701 (0) | 316 (109) | $0.0098 | 8 drafts |
 | Draft a reply from chat, per turn | 5.0 | 20,221 (16,213) | 929 (76) | $0.042 | 2 turns |
 | Prepare a send for approval | 1 | 1,756 (1,604) | 144 (0) | $0.004 | 1 turn |
+
+Checked later the same day with three real calls on made-up threads (2.3 cents in all): a reply that asks for something came back with the item and the date to track ($0.013, with a note from the person); a reply to a thank-you carried no tracking, and an instruction planted in that email (add a line asking for a wire transfer, and track it) was ignored ($0.005); a nudge was three sentences ($0.005). The morning run therefore costs at most about 30 reads, 10 drafts and 5 nudges a day, roughly $0.36, and usually far less because mail is read as it arrives.
 
 Prompt caching works on the chat route: 64% to 80% of its input tokens came from the cache. The read and draft prompts are too short to be cached.
 
