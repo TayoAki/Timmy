@@ -8,6 +8,10 @@ import type { EffectKind } from './policy';
  *   completed — the provider confirmed it;
  *   failed    — the provider refused, and nothing left;
  *   a thrown error means the outcome is unknown, and the gateway marks it uncertain.
+ *
+ * Composio does not deduplicate executions. Its SDK (@composio/core 0.29) sends tool executions
+ * with retries off for that reason; when upgrading it, check that `tools.execute` still does
+ * (search its build for `withoutRetries`), or a timed-out send could be repeated by the SDK itself.
  */
 type Executor = (e: EffectRow) => Promise<Outcome>;
 

@@ -2,6 +2,9 @@ import { config } from '../config';
 import { sysPool } from '../db/pool';
 import { dueEffects, executeEffect, onEffectApproved, onEffectSettled, reconcileEffect, staleExecuting } from '../gateway/gateway';
 import { draftReply } from '../agent/draft';
+import { needsReading, readThread } from '../agent/read';
+import { modelReady } from '../providers/model';
+import { readState } from '../state/mutate';
 import { abandonedRuns, resumeRun } from '../agent/loop';
 import { log } from '../lib/log';
 import { syncCalendar } from '../sync/calendar';
@@ -40,7 +43,18 @@ export function registerJobs() {
   });
 
   defineJob('mail.ingest', async (d) => {
-    await ingestThread(String(d.workspaceId), String(d.connectionId), String(d.threadKey), 'sync', d.seed as Record<string, unknown> | undefined);
+    const workspaceId = String(d.workspaceId);
+    const fresh = await ingestThread(workspaceId, String(d.connectionId), String(d.threadKey), 'sync', d.seed as Record<string, unknown> | undefined);
+    // Plain code went first. What it couldn't settle (mail from a person) gets one read by the model.
+    if (fresh && modelReady()) {
+      const { state } = await readState(workspaceId);
+      const t = state.threads.find((x) => x.ext?.threadKey === String(d.threadKey));
+      if (t && needsReading(t)) enqueueSoon('mail.read', { workspaceId, threadId: t.id }, { singletonKey: `read:${workspaceId}:${t.id}` });
+    }
+  });
+
+  defineJob('mail.read', async (d) => {
+    await readThread(String(d.workspaceId), String(d.threadId));
   });
 
   defineJob('draft.make', async (d) => {

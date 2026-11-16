@@ -120,7 +120,7 @@ describe('new mail', () => {
   it('a signed event becomes a thread within one job', async () => {
     const d = fake().deliver(box.account, { from: 'Dana Whitfield <dana@acme.test>', subject: 'Revised quote', body: 'Can you send the revised quote by Friday?\n\nThanks,\nDana' });
     expect((await post(d.webhook.headers, d.webhook.body)).status).toBe(200);
-    await jobs().drain();
+    await jobs().drain('mail.ingest');
     const t = (await w.state()).threads.find((x) => x.subject === 'Revised quote')!;
     expect(t).toMatchObject({ box: 'inbox', unread: true, participants: ['me', 'mail:dana@acme.test'] });
     expect(t.messages[0]!.body).toEqual(['Can you send the revised quote by Friday?', 'Thanks,\nDana']);

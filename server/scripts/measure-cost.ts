@@ -16,6 +16,7 @@
  * In a cloud session also set NODE_USE_ENV_PROXY=1; the proxy supplies the OpenRouter key.
  */
 import { draftReply } from '../src/agent/draft';
+import { readThread } from '../src/agent/read';
 import { ASK_SYSTEM } from '../src/agent/prompts';
 import { startRun } from '../src/agent/loop';
 import { rulesFor } from '../src/auth/roles';
@@ -130,7 +131,9 @@ async function main() {
     const d = fake.deliver(account, { from: `${name} <${email}>`, subject: `Quick question about ${TOPICS[i % TOPICS.length]} (${company})`, body: `Hi Taylor,\n\n${FILLER.slice(0, 300)}\n\nThanks,\n${name.split(' ')[0]}` });
     await app.request('/api/hooks/composio', { method: 'POST', headers: d.webhook.headers, body: d.webhook.body });
   }
-  await inlineJobs()!.drain();
+  // Only the sync jobs run here; reading the new threads with the model is measured on its own below.
+  await inlineJobs()!.drain('mail.ingest');
+  inlineJobs()!.queue = [];
   const perNew = ((await q<{ n: number }>(`select count(*)::int as n from provider_call where workspace_id = $1`, [workspaceId]))[0]!.n - before) / NEW;
   void signWebhook;
 
@@ -142,6 +145,19 @@ async function main() {
   console.log(`  Calls per new email: ${perNew.toFixed(2)}`);
   console.log('First sort by plain code (no model call):');
   for (const s of sorted) console.log(`  ${String(s.box).padEnd(13)} ${String(s.confidence).padEnd(7)} ${s.n}`);
+
+  /* The read route: one call for each thread plain code could not sort */
+  if (WITH_MODEL) {
+    console.log('\n== Read route (real calls, one model call per thread a person wrote) ==');
+    const todo = await q<{ id: string; subject: string }>(`select id, data->>'subject' as subject from state_doc where workspace_id = $1 and slice = 'threads' and data->'suggestion'->>'confidence' = 'low' order by ord limit 6`, [workspaceId]);
+    for (const t of todo) {
+      const out = await readThread(workspaceId, t.id);
+      const after = (await q<{ s: string; ask: string }>(`select data->'suggestion'::text as s, data->>'ask' as ask from state_doc where workspace_id = $1 and slice = 'threads' and id = $2`, [workspaceId, t.id]))[0]!;
+      console.log(`  [${out.ok ? 'ok' : 'failed: ' + out.reason}] ${t.subject.slice(0, 44).padEnd(44)} → ${String(after.ask).slice(0, 110)}`);
+    }
+    const r = (await q<{ calls: number; tin: number; tout: number; reasoning: number; cached: number; cost: number }>(`select count(*)::int as calls, avg(tokens_in)::int as tin, avg(tokens_out)::int as tout, avg(tokens_reasoning)::int as reasoning, avg(tokens_cached)::int as cached, avg(cost_usd)::float8 as cost from usage_event where workspace_id = $1 and route = 'read'`, [workspaceId]))[0]!;
+    console.log(`  Average per read over ${r.calls} threads: input ${r.tin} (cached ${r.cached})  output ${r.tout} (reasoning ${r.reasoning})  cost ${money(r.cost)}`);
+  }
 
   /* The drafting route: one call per draft */
   if (WITH_MODEL) {

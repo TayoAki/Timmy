@@ -222,6 +222,7 @@ export class FakeModel implements ModelProvider {
 
   private rules(req: ModelRequest): { content?: string; toolCalls?: { name: string; arguments: Record<string, unknown> }[] } {
     if (req.route === 'judge') return { content: '{"decision":"ask","reason":"The fake judge always asks."}' };
+    if (req.route === 'read') return { content: JSON.stringify({ box: 'follow-up', confidence: 'medium', effort: 'quick', ask: 'They wrote to you and are waiting for an answer.', reason: 'A person asked a question.', due: null }) };
     if (req.route === 'draft') return { content: JSON.stringify({ body: 'Thanks for your message. I will come back to you on this shortly.\n\nBest' }) };
     const last = req.messages[req.messages.length - 1]!;
     const has = (name: string) => req.tools?.some((t) => t.name === name);
