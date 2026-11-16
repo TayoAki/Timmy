@@ -442,4 +442,4 @@ The biggest risk is cost, not technology. Model and Composio calls together come
 - The first 30 days of backfill use the regular API, so the first brief stays fast.
 - Unattended runs send only what your rules cover, and the zero-unapproved-sends target says so.
 - The Haiku blended price is explained.
-- The cloud computer is phase 3 in every section, and the beta's 7-day token expiry is noted.
+- The cloud computer is phase 3 in every section. The 7-day token expiry noted then no longer applies while we use Composio's Google app.
