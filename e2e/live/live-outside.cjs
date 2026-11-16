@@ -1,6 +1,7 @@
 // Live mode: the app as someone outside sees it. No source code, no test helpers beyond signing up: just requests
 // an attacker could send. It runs against any server (BASE), so it is also the check to point at staging.
 // Each block is one thing an outsider would try; each check is what must be true whatever they try.
+// OUTSIDE_NO_ACCOUNT=1 stops before anything that needs an account: the form for a server where sign-up is closed.
 const { request } = require('playwright');
 const { BASE, ok, open, signUp, api, run, stamp } = require('./lib.cjs');
 
@@ -78,6 +79,14 @@ run('live-outside', async (browser) => {
     ok((await call(anon, 'POST', '/api/test/fake', { body: { op: 'sent' } })).status === 404, 'the test endpoints answer “not found” without the test token');
     ok((await call(anon, 'POST', '/api/test/fake', { body: { op: 'sent' }, headers: { 'x-test-token': 'guess' } })).status === 404, 'and with a wrong one');
     ok((await call(anon, 'POST', '/api/test/release-holds', { body: {} })).status === 404, 'none of them, not only the first');
+  }
+
+  // A server where nobody may sign up (production, invite-only) gets the checks above and this one, and no account is made.
+  if (process.env.OUTSIDE_NO_ACCOUNT) {
+    const uninvited = await call(anon, 'POST', '/api/auth/sign-up/email', { body: { name: 'Uninvited', email: `uninvited.${stamp()}@example.test`, password: 'correct-horse-battery-9' } });
+    ok(uninvited.status === 403 && /invite-only/.test(uninvited.text), 'an address nobody invited cannot create an account');
+    await anon.dispose();
+    return;
   }
 
   // ── 7. Another site cannot use a signed-in person’s browser ──

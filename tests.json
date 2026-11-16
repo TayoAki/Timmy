@@ -290,7 +290,8 @@
    "file": "e2e/live/live-outside.cjs",
    "covers": "the app as an outsider sees it, by requests alone: every API address refuses a caller with no session; the health check and error answers give nothing away (no stack traces, no provider state on a deployed server); no server file or source map is served; oversized bodies refused; webhooks need a real signature; the test endpoints answer “not found” without the token (deployed servers); writes from another site with the person’s cookies are refused and change nothing; no cross-origin read permission; session cookie flags; built-in object names, script links and disguised pictures refused; naming another workspace in a request changes nothing; a made-up connect callback connects nothing; a wrong password and an unknown address get the same answer; a sign-in link to another site is refused; a copied session dies at sign-out; repeated wrong passwords are slowed down (deployed servers)",
    "checks": 50,
-   "status": "pass"
+   "status": "pass",
+   "result": "Nov 16, 2026: 50 of 50 locally; 56 of 56 on staging (the six extra checks apply only to a deployed server); 39 of 39 on production in the no-account form (OUTSIDE_NO_ACCOUNT=1), which also checks that an uninvited address cannot sign up."
   },
   {
    "id": "live-verify",
