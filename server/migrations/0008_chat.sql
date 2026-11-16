@@ -57,6 +57,32 @@ create table chat_message (
 );
 create index chat_message_seen on chat_message (conversation_id, seq);
 
+-- The rule "nothing is shown to a visitor without an approved effect" lives in the database too, so no code
+-- path can skip it. A reply (anything not written by the visitor) can only take its place in the conversation
+-- while the effect record that carries it is running, which the effect table's own guard only allows after an
+-- approval. And once written, a message's words, sender and place never change.
+create or replace function chat_message_guard() returns trigger language plpgsql as $$
+begin
+  if new.sender <> 'visitor' and new.seq is not null and (tg_op = 'INSERT' or old.seq is null) then
+    if new.effect_id is null or not exists (
+      select 1 from effect e where e.id = new.effect_id and e.workspace_id = new.workspace_id and e.kind = 'chat.reply' and e.status = 'executing'
+    ) then
+      raise exception 'chat message %: a reply is shown only while its approved effect is running', new.id;
+    end if;
+  end if;
+  if tg_op = 'UPDATE' then
+    if new.body is distinct from old.body or new.sender is distinct from old.sender or new.conversation_id is distinct from old.conversation_id
+       or new.workspace_id is distinct from old.workspace_id or new.effect_id is distinct from old.effect_id then
+      raise exception 'chat message %: what was said cannot change', old.id;
+    end if;
+    if old.seq is not null and new.seq is distinct from old.seq then
+      raise exception 'chat message %: its place in the conversation cannot change', old.id;
+    end if;
+  end if;
+  return new;
+end $$;
+create trigger chat_message_guard before insert or update on chat_message for each row execute function chat_message_guard();
+
 -- How many conversations were started and messages received per day, for the daily caps.
 create table chat_counter (
   workspace_id text not null references workspace(id) on delete cascade,

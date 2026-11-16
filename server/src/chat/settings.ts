@@ -30,7 +30,9 @@ const same = (a: unknown, b: unknown) => a === b || toWire(a) === toWire(b);
  * Checks a change to the chat's settings and records it. Returns the state to save (with the site key filled
  * in), or why the change is refused. Call inside the command's transaction, after the reducer has run.
  */
-export async function chatSettingsChanged(tx: Tx, loaded: Loaded, ctx: Ctx, next: State): Promise<{ state: State; reject?: undefined } | { reject: string }> {
+export type ChatChecked = { state: State; toast?: string; reject?: undefined } | { reject: string };
+
+export async function chatSettingsChanged(tx: Tx, loaded: Loaded, ctx: Ctx, next: State): Promise<ChatChecked> {
   const before = loaded.state.ws.chat.site as ChatWidget | undefined;
   const after = next.ws.chat.site as ChatWidget | undefined;
   if (before === after || same(before, after)) return { state: next };
@@ -59,6 +61,7 @@ export async function chatSettingsChanged(tx: Tx, loaded: Loaded, ctx: Ctx, next
   );
 
   const isOn = !!row?.is_on;
+  let toast: string | undefined;
   if (after.on && !isOn) {
     // The rule that covers Timmy's replies from now on. It names the person who switched the chat on.
     await tx.query(`update policy set enabled = false, updated_at = now() where workspace_id = $1 and kind = 'chat.reply' and enabled`, [workspaceId]);
@@ -72,17 +75,19 @@ export async function chatSettingsChanged(tx: Tx, loaded: Loaded, ctx: Ctx, next
       ctx.user.id,
     ]);
     await audit(tx, workspaceId, { actor: ctx.user.id, action: 'chat.switched_on', detail: { domain: after.domain, rule: policyId } });
+    toast = `The chat is on for ${after.domain}. It shows there once the code snippet is on the website.`;
   } else if (!after.on && isOn) {
     await tx.query(`update policy set enabled = false, updated_at = now() where workspace_id = $1 and kind = 'chat.reply' and enabled`, [workspaceId]);
     await audit(tx, workspaceId, { actor: ctx.user.id, action: 'chat.switched_off', detail: {} });
+    toast = 'The chat is off. Visitors no longer see it.';
   } else if (after.on) {
     // What visitors are told changed while the chat was live. The log says which settings, not their contents.
     const changed = (Object.keys({ ...before, ...after }) as (keyof ChatWidget)[]).filter((k) => !same(before?.[k], after[k]));
     await audit(tx, workspaceId, { actor: ctx.user.id, action: 'chat.settings_changed', detail: { changed } });
   }
 
-  if (after.siteKey === siteKey) return { state: next };
-  return { state: { ...next, ws: { ...next.ws, chat: { site: { ...after, siteKey } } } } };
+  if (after.siteKey === siteKey) return { state: next, toast };
+  return { state: { ...next, ws: { ...next.ws, chat: { site: { ...after, siteKey } } } }, toast };
 }
 
 const FLAGS = new Set(['unread', 'starred']);
@@ -97,8 +102,9 @@ export function conversationsRewritten(prev: State, next: State): boolean {
   if (a === b) return false;
   const ids = new Set([...Object.keys(a), ...Object.keys(b)]);
   for (const id of ids) {
-    const x = a[id] as unknown as Record<string, unknown> | undefined;
-    const y = b[id] as unknown as Record<string, unknown> | undefined;
+    // Own entries only: an id such as "constructor" names something every object has, and is not a conversation.
+    const x = (Object.hasOwn(a, id) ? a[id] : undefined) as unknown as Record<string, unknown> | undefined;
+    const y = (Object.hasOwn(b, id) ? b[id] : undefined) as unknown as Record<string, unknown> | undefined;
     if (x === y) continue;
     if (!x || !y) return true;
     for (const k of new Set([...Object.keys(x), ...Object.keys(y)])) if (!FLAGS.has(k) && !same(x[k], y[k])) return true;
@@ -110,7 +116,7 @@ export function conversationsRewritten(prev: State, next: State): boolean {
  * Run on every command's result before it is saved. A conversation changed by anything but a chat command is
  * refused; a change to the chat's settings is checked and recorded.
  */
-export async function chatChecked(tx: Tx, loaded: Loaded, ctx: Ctx, action: { type?: unknown } | null | undefined, next: State): Promise<{ state: State; reject?: undefined } | { reject: string }> {
+export async function chatChecked(tx: Tx, loaded: Loaded, ctx: Ctx, action: { type?: unknown } | null | undefined, next: State): Promise<ChatChecked> {
   if (action?.type !== 'chat' && conversationsRewritten(loaded.state, next)) return { reject: 'A visitor’s conversation can’t be changed that way.' };
   return chatSettingsChanged(tx, loaded, ctx, next);
 }

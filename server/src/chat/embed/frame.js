@@ -347,7 +347,8 @@
   var retryIn = 1000;
 
   function connect() {
-    if (stream || !conversation || !token) return;
+    // No stream while the page is in the background: it is opened again, from where it stopped, when the visitor returns.
+    if (stream || !conversation || !token || document.hidden) return;
     var control = new AbortController();
     stream = control;
     var wait = retryIn;
@@ -376,9 +377,16 @@
         if (stream === control) stream = null;
         historyLoaded = true;
         retryIn = wait;
-        if (conversation && token) window.setTimeout(connect, wait);
+        if (conversation && token && !document.hidden) window.setTimeout(connect, wait);
       });
   }
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) {
+      if (stream) stream.abort();
+    } else {
+      connect();
+    }
+  });
 
   function read(reader) {
     var decoder = new TextDecoder();

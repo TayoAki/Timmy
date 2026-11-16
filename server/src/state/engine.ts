@@ -160,7 +160,7 @@ export async function runCommand(ctx: Ctx, cmd: { id: string; action: Action }):
       // commands rewrites a visitor's conversation. Checked on what the command did, whichever command it was.
       if (!handled.reject) {
         const chat = await chatChecked(tx, loaded, ctx, cmd.action, handled.state);
-        handled = 'state' in chat ? { ...handled, state: chat.state } : { state: loaded.state, reject: chat.reject };
+        handled = 'state' in chat ? { ...handled, state: chat.state, ...(chat.toast ? { toast: { text: chat.toast } } : {}) } : { state: loaded.state, reject: chat.reject };
       }
     } catch (err) {
       if (!(err instanceof GatewayError)) throw err;

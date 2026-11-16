@@ -175,7 +175,7 @@ async function store(tx: Tx, state0: State, loaded: Loaded, knownId: string | nu
     // On a real website no times are offered, and the visitor is told the business will follow up, never a person's name.
     const out = respond(w, { ...talk, handedOff: false }, input.text, { owner: followUpName(w), booking: false });
     const asksForPerson = !!out.st.handedOff;
-    talk = { ...out.st, email: out.st.email ? cleanEmail(out.st.email) : undefined, handedOff: !!talk.handedOff || asksForPerson };
+    talk = kept({ ...out.st, handedOff: !!talk.handedOff || asksForPerson });
     for (const [i, reply] of out.replies.entries()) {
       const id = newId('cm');
       const p = await propose(tx, loaded, state, null, {
@@ -235,7 +235,22 @@ async function store(tx: Tx, state0: State, loaded: Loaded, knownId: string | nu
 }
 
 /** The address as it is kept: lower case, without the full stop that ended the visitor's sentence. */
-const cleanEmail = (raw: string) => raw.toLowerCase().replace(/[.\-]+$/, '').slice(0, 254);
+const cleanEmail = (raw: string) => raw.toLowerCase().replace(/[.\-]+$/, '');
+
+/** The longest answer kept with the conversation and the lead. The whole of what was typed stays in the transcript. */
+const MAX_ANSWER = 500;
+
+/**
+ * What is kept of where the conversation is. A visitor chooses every character of these fields, so each has a
+ * size: an "address" longer than any real one is not kept as one, a name is short, and an answer is cut.
+ */
+function kept(talk: Talk): Talk {
+  const email = talk.email ? cleanEmail(talk.email) : undefined;
+  const real = !!email && email.length <= 254;
+  const answers: Record<string, string> = {};
+  for (const [id, answer] of Object.entries(talk.answers)) answers[id] = answer.length > MAX_ANSWER ? `${answer.slice(0, MAX_ANSWER)}…` : answer;
+  return { ...talk, email: real ? email : undefined, name: real && talk.name ? talk.name.slice(0, 60) : undefined, answers };
+}
 
 /** The answers under the questions' own words, as they show on the lead. */
 function answersByQuestion(w: ChatWidget, answers: Record<string, string>): Record<string, string> {

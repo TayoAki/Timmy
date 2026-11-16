@@ -269,6 +269,10 @@ describe('switching the chat on', () => {
     expect((await v.say('are you there?')).body).toEqual({ ok: false, notice: 'This chat isn’t available right now.' });
     expect((await v.stream()).res.status).toBe(404);
     expect(await count(`select count(*)::int as n from policy where workspace_id = $1 and kind = 'chat.reply' and enabled`, [owner.workspaceId])).toBe(0);
+    // A teammate can't reach the visitor either while it is off, and is told so.
+    await chat(owner, { op: 'takeOver', id: v.conversation, on: true });
+    expect((await chat(owner, { op: 'reply', id: v.conversation, text: 'Still there?', message: 'm-off' })).error).toMatch(/switched off/);
+    await chat(owner, { op: 'takeOver', id: v.conversation, on: false });
 
     // On again: the same key (the snippet on the website keeps working), under a new rule.
     const again = await settings(owner, { on: true });
@@ -561,6 +565,19 @@ describe('every message that reaches a visitor is an effect record', () => {
     expect(await count(`select count(*)::int as n from chat_message where workspace_id = $1 and sender <> 'visitor' and effect_id is null`, [owner.workspaceId])).toBe(0);
   });
 
+  it('without the rule, Timmy says nothing to anyone: the message is turned away and nothing waits for approval', async () => {
+    const { owner, siteKey } = await chatOn('NoRule');
+    // The switch says on, but the rule a person set is gone (as if something had removed it behind the screen's back).
+    await sysPool.query(`update policy set enabled = false where workspace_id = $1 and kind = 'chat.reply'`, [owner.workspaceId]);
+    const v = new Visitor(siteKey);
+    const out = await v.say('What does it cost?');
+    expect([out.status, out.body]).toEqual([404, { ok: false, notice: 'This chat isn’t available right now.' }]);
+    expect(await count('select count(*)::int as n from chat_message where workspace_id = $1', [owner.workspaceId])).toBe(0);
+    expect(await count('select count(*)::int as n from effect where workspace_id = $1', [owner.workspaceId])).toBe(0);
+    expect((await owner.state()).pending).toEqual([]);
+    expect((await owner.state()).ws.chats).toEqual({});
+  });
+
   it('a request sent twice stores one message and sends nothing twice', async () => {
     const { owner, siteKey } = await chatOn('Replay');
     const v = new Visitor(siteKey);
@@ -609,6 +626,30 @@ describe('every message that reaches a visitor is an effect record', () => {
     await stream.close();
   });
 
+  it('the database itself refuses to show a reply whose effect is not running', async () => {
+    const { owner, siteKey } = await chatOn('DbGuard');
+    const v = new Visitor(siteKey);
+    await v.say('hello');
+    const done = (await effects(owner))[0]!;
+    const ids = [owner.workspaceId, v.conversation];
+    // As the app's own database role, inside the right workspace: the most any code path could do.
+    const direct = (sql: string, params: unknown[]) => withWorkspace({ workspaceId: owner.workspaceId }, (tx) => tx.query(sql, params));
+    const refused = /a reply is shown only while its approved effect is running/;
+    // A reply written straight in as visible, with no effect, or with one that has already finished.
+    await expect(direct(`insert into chat_message (id, workspace_id, conversation_id, sender, body, seq, sent_at) values ('cm_planted_1', $1, $2, 'timmy', 'planted', nextval('chat_message_seq'), now())`, ids)).rejects.toThrow(refused);
+    await expect(direct(`insert into chat_message (id, workspace_id, conversation_id, sender, body, effect_id, seq, sent_at) values ('cm_planted_2', $1, $2, 'member', 'planted', $3, nextval('chat_message_seq'), now())`, [...ids, done.id])).rejects.toThrow(refused);
+    // A reply that is waiting can't be made visible by hand either.
+    await direct(`insert into chat_message (id, workspace_id, conversation_id, sender, body, effect_id) values ('cm_waiting', $1, $2, 'timmy', 'waiting', $3)`, [...ids, done.id]);
+    await expect(direct(`update chat_message set seq = nextval('chat_message_seq'), sent_at = now() where id = 'cm_waiting' and workspace_id = $1 and conversation_id = $2`, ids)).rejects.toThrow(refused);
+    // What was shown stays where it is and says what it said.
+    await expect(direct(`update chat_message set seq = seq + 1000 where workspace_id = $1 and conversation_id = $2 and sender = 'timmy' and seq is not null`, ids)).rejects.toThrow(/its place in the conversation cannot change/);
+    await expect(direct(`update chat_message set body = 'rewritten' where workspace_id = $1 and conversation_id = $2 and sender = 'visitor'`, ids)).rejects.toThrow(/what was said cannot change/);
+    const stream = await v.stream();
+    expect(await stream.until((list) => list.length === 2)).toBe(true);
+    expect(stream.messages().map((m) => m.text)).toEqual(['hello', expect.stringMatching(/^Good question/)]);
+    await stream.close();
+  });
+
   it('a reply is not shown late, after the chat was switched off, or once a teammate has taken over', async () => {
     const { owner, siteKey } = await chatOn('Late');
     const v = new Visitor(siteKey);
@@ -623,9 +664,11 @@ describe('every message that reaches a visitor is an effect record', () => {
     const visible = () => count('select count(*)::int as n from chat_message where conversation_id = $1 and seq is not null', [v.conversation]);
     const before = await visible();
 
+    // The words of a stored message can't be changed by anyone, even the database's owner.
     const tampered = await pending('timmy', 'tampered');
-    await sysPool.query(`update chat_message set body = 'something nobody approved' where id = $1`, ['cm_test_tampered']);
-    expect(await sendChatReply(tampered)).toMatchObject({ status: 'failed', error: expect.stringMatching(/not the one that was approved/) });
+    await expect(sysPool.query(`update chat_message set body = 'something nobody approved' where id = $1`, ['cm_test_tampered'])).rejects.toThrow(/what was said cannot change/);
+    // And were they ever not the words that were approved, the reply would not be shown.
+    expect(await sendChatReply({ ...tampered, payload: { ...tampered.payload, mark: 'f'.repeat(64) } } as EffectRow)).toMatchObject({ status: 'failed', error: expect.stringMatching(/not the one that was approved/) });
 
     const stale = await pending('timmy', 'stale');
     await sysPool.query(`update chat_message set created_at = now() - interval '2 hours' where id = $1`, ['cm_test_stale']);
@@ -772,6 +815,23 @@ describe('what a visitor types is only ever text', () => {
     // The owner's own answer with markup in it is sent as written, as text.
     const asked = new Visitor(siteKey);
     expect(asked.replies(await asked.say('markup'))[0]).toBe('We write <b>bold</b> & "quotes" as they are.');
+  });
+
+  it('what is kept of a visitor’s words has a size: no lead from an absurd address, and a long answer is cut', async () => {
+    const { owner, siteKey } = await chatOn('Sizes');
+    const v = new Visitor(siteKey);
+    await v.say(`${'a'.repeat(1900)}@example.test`);
+    expect(Object.values((await owner.state()).out.leads)).toHaveLength(0);
+    expect(await convo(owner, v.conversation!)).not.toHaveProperty('email');
+    expect(await convo(owner, v.conversation!)).not.toHaveProperty('name');
+    await v.say('real@person.example');
+    await v.say('B'.repeat(1500));
+    const s = await owner.state();
+    expect(Object.values(s.out.leads)).toHaveLength(1);
+    expect(Object.values(s.out.leads)[0]!.extra!['What’s your company called']).toHaveLength(501);
+    expect(s.ws.chats[v.conversation!]!.answers!.q1).toHaveLength(501);
+    // The transcript still has all of it.
+    expect((await rows<{ n: number }>(`select char_length(body)::int as n from chat_message where conversation_id = $1 and sender = 'visitor' order by seq desc limit 1`, [v.conversation]))[0]!.n).toBe(1500);
   });
 
   it('a request that isn’t a chat message is refused with a plain sentence', async () => {
@@ -956,6 +1016,12 @@ describe('what members can and cannot do to a conversation', () => {
     expect((await convo(owner, id))!.messages.at(-1)!.text).toBe('On my way');
     // A command the chat doesn't have is refused.
     for (const op of [{ op: 'reply', id, text: 'x' }, { op: 'reply', id, text: 'x', message: 'has space' }, { op: 'impersonate', id }, { op: 'read', id: '../x' }, null]) expect((await member.cmd({ type: 'chat', op })).ok).toBe(false);
+    // Nor is an id that names something every object has: nothing is written under it.
+    for (const odd of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      for (const op of [{ op: 'star', id: odd, on: true }, { op: 'read', id: odd }, { op: 'takeOver', id: odd, on: true }, { op: 'reply', id: odd, text: 'x', message: 'm-odd' }, { op: 'delete', id: odd }]) expect([odd, op.op, (await owner.cmd({ type: 'chat', op })).ok]).toEqual([odd, op.op, false]);
+    }
+    for (const odd of ['constructor', 'toString', '__proto__']) await ops([{ op: 'patch', col: 'chats', id: odd, patch: { unread: false, starred: true } }]);
+    expect(Object.keys((await owner.state()).ws.chats)).toEqual([id]);
   });
 
   it('deleting a conversation removes the stored copy and every other place its words were kept', async () => {

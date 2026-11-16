@@ -31,10 +31,11 @@ export function withConversation(state: State, convo: ChatConvo): State {
   const chats: Record<string, ChatConvo> = { ...state.ws.chats, [convo.id]: { ...convo, messages, ...(earlier ? { earlier } : {}) } };
   const over = Object.keys(chats).length - config.chat.shownConversations;
   if (over > 0) {
-    // Starred conversations are the last to go; among the rest, the ones nobody has written in for longest.
+    // Conversations a teammate starred or took over are the last to go; among the rest, the ones nobody has written in for longest.
+    const kept = (c: ChatConvo) => Number(!!c.starred || c.live);
     const oldest = Object.values(chats)
       .filter((c) => c.id !== convo.id)
-      .sort((a, b) => Number(!!a.starred) - Number(!!b.starred) || lastAt(a) - lastAt(b))
+      .sort((a, b) => kept(a) - kept(b) || lastAt(a) - lastAt(b))
       .slice(0, over);
     for (const c of oldest) delete chats[c.id];
   }
@@ -43,7 +44,7 @@ export function withConversation(state: State, convo: ChatConvo): State {
 
 /** Takes conversations out of the state (they were deleted, or their retention period ended). */
 export function withoutConversations(state: State, ids: string[]): State {
-  if (!ids.some((id) => state.ws.chats[id])) return state;
+  if (!ids.some((id) => Object.hasOwn(state.ws.chats, id))) return state;
   const chats = { ...state.ws.chats };
   for (const id of ids) delete chats[id];
   return { ...state, ws: { ...state.ws, chats } };
@@ -51,7 +52,7 @@ export function withoutConversations(state: State, ids: string[]): State {
 
 /** Changes one message of a conversation in the state, if it is still listed there. */
 export function withMessage(state: State, conversationId: string, messageId: string, change: Partial<ChatMsg>): State {
-  const c = state.ws.chats[conversationId];
+  const c = Object.hasOwn(state.ws.chats, conversationId) ? state.ws.chats[conversationId] : undefined;
   if (!c || !c.messages.some((m) => m.id === messageId)) return state;
   return { ...state, ws: { ...state.ws, chats: { ...state.ws.chats, [c.id]: { ...c, messages: c.messages.map((m) => (m.id === messageId ? { ...m, ...change } : m)) } } } };
 }

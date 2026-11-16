@@ -24,7 +24,7 @@ export interface ChatHelpers {
 }
 
 export function chat(s: State, a: ChatOp, h: ChatHelpers): State {
-  const c = s.ws.chats[a.id];
+  const c = Object.hasOwn(s.ws.chats, a.id) ? s.ws.chats[a.id] : undefined;
   if (!c) return s;
   const save = (change: Partial<ChatConvo>, toast?: string): State => ({ ...s, ws: { ...s.ws, chats: { ...s.ws.chats, [c.id]: { ...c, ...change } } }, toasts: toast ? h.toast(s, toast) : s.toasts });
   switch (a.op) {

@@ -146,11 +146,11 @@ export function chatRoutes(app: Hono<Env>): void {
     const exists = async () => !!conversationId && !!(await withWorkspace({ workspaceId }, (tx) => tx.query('select 1 from chat_conversation where id = $1 and workspace_id = $2', [conversationId, workspaceId]))).rowCount;
     if (!conversationId || conversationId !== c.req.query('conversation') || !(await exists())) return refuse(c, ENDED);
 
-    const freeAddress = hold(`stream:address:${address}`, config.chat.streamsPerAddress);
-    if (!freeAddress) return refuse(c, TOO_FAST);
-    const freeConversation = hold(`stream:conversation:${conversationId}`, config.chat.streamsPerConversation);
-    if (!freeConversation) {
-      freeAddress();
+    // Open streams are counted three ways: for this server as a whole, per address and per conversation.
+    const places = [hold('stream:all', config.chat.streamsOpen), hold(`stream:address:${address}`, config.chat.streamsPerAddress), hold(`stream:conversation:${conversationId}`, config.chat.streamsPerConversation)];
+    const free = () => places.forEach((give) => give?.());
+    if (places.some((p) => !p)) {
+      free();
       return refuse(c, TOO_FAST);
     }
     const asked = Number(c.req.query('after') ?? 0);
@@ -170,18 +170,22 @@ export function chatRoutes(app: Hono<Env>): void {
       try {
         // A stream is closed after a while whatever happens; the chat window opens a new one from where it stopped.
         const until = Date.now() + config.chat.streamSeconds * 1000;
+        let checked = Date.now();
         while (open && Date.now() < until) {
-          await pause(Math.min(20_000, Math.max(0, until - Date.now())), (w) => (wake = w));
+          await pause(Math.min(25_000, Math.max(0, until - Date.now())), (w) => (wake = w));
           if (!open) break;
           // The chat may have been switched off, or the conversation deleted, while the stream was open.
-          if (!(await siteOf(siteKey)) || !(await exists())) break;
+          // Looked up once a minute: many streams may be open, and each look is a read of the database.
+          if (Date.now() - checked >= 60_000) {
+            if (!(await siteOf(siteKey)) || !(await exists())) break;
+            checked = Date.now();
+          }
           write('ping', {});
         }
       } finally {
         open = false;
         off();
-        freeAddress();
-        freeConversation();
+        free();
       }
     });
   });

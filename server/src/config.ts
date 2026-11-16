@@ -180,10 +180,11 @@ export const config = {
     /** Messages a minute from one visitor and from one address; new conversations an hour from one address. */
     visitorMessagesPerMinute: Number(env.TIMMY_CHAT_VISITOR_PER_MINUTE ?? 12),
     addressMessagesPerMinute: Number(env.TIMMY_CHAT_ADDRESS_PER_MINUTE ?? 60),
-    addressConversationsPerHour: Number(env.TIMMY_CHAT_ADDRESS_CONVERSATIONS_PER_HOUR ?? 10),
+    addressConversationsPerHour: Number(env.TIMMY_CHAT_ADDRESS_CONVERSATIONS_PER_HOUR ?? 30),
     /** Reads of the public settings and stream connects a minute from one address. */
     addressReadsPerMinute: Number(env.TIMMY_CHAT_ADDRESS_READS_PER_MINUTE ?? 120),
-    /** Streams open at once from one address, and for one conversation. */
+    /** Streams open at once on one server, from one address, and for one conversation. */
+    streamsOpen: Number(env.TIMMY_CHAT_STREAMS_OPEN ?? 2000),
     streamsPerAddress: Number(env.TIMMY_CHAT_STREAMS_PER_ADDRESS ?? 20),
     streamsPerConversation: 3,
     /** A visitor's stream is closed after this long; the chat window opens a new one. */
@@ -191,9 +192,9 @@ export const config = {
     /** How long a conversation's token works after the visitor's last message, in days. */
     tokenDays: 30,
     /** What the Chats screen holds: this many conversations, and for each the newest messages up to these limits. */
-    shownConversations: Number(env.TIMMY_CHAT_SHOWN_CONVERSATIONS ?? 150),
-    shownMessages: 40,
-    shownChars: 12_000,
+    shownConversations: Number(env.TIMMY_CHAT_SHOWN_CONVERSATIONS ?? 100),
+    shownMessages: 30,
+    shownChars: 8000,
     /** A reply that could not be shown to the visitor within this many seconds is not shown late. */
     replyFreshSeconds: 600,
   },

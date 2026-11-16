@@ -36,7 +36,8 @@ export async function chatCommand(tx: Tx, loaded: Loaded, ctx: Ctx, actor: Actor
   const state = loaded.state;
   const workspaceId = ctx.workspaceId;
   if (!op || typeof op !== 'object' || typeof op.id !== 'string' || !ID.test(op.id)) return { state, reject: 'That isn’t a command.' };
-  const shown = state.ws.chats[op.id];
+  // Only a conversation that is really listed: an id such as "constructor" names something every object has.
+  const shown = Object.hasOwn(state.ws.chats, op.id) ? state.ws.chats[op.id] : undefined;
   const applied = (change: ChatOp): ChatHandled => {
     const next = apply(change);
     return next ? { state: next } : { state, reject: 'That command couldn’t be applied.' };
