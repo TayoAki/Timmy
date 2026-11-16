@@ -52,7 +52,7 @@ This agreement is between **[FILL IN: company legal name and address]** ("Timmy"
 
 ## 7. Moving data between countries
 
-7.1 We store and process data in **[FILL IN: region — see Annex 3]**.
+7.1 We store and process data in the United States (our hosting provider's US West region; see Annex 3). Our subprocessors may process it in the United States.
 
 7.2 Where your data is subject to EU, UK or Swiss law and is transferred to a country without an adequacy decision, the EU Standard Contractual Clauses (module two, controller to processor; module three where you are a processor), the UK Addendum and the Swiss amendments apply and are incorporated by reference, with the details in the annexes. **[LAWYER]** complete: governing law and forum for the clauses, the docking clause, the option chosen for subprocessors (general authorisation, clause 9(a) option 2, 30 days), and whether we rely on the EU–US Data Privacy Framework for any subprocessor.
 

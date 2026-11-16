@@ -77,4 +77,4 @@ These are known and planned; none is hidden behind a claim above.
 - **A real mailbox** has not yet been connected end to end; everything above is tested against stand-ins for Google, Microsoft and the model, and against Composio's real tool definitions.
 - **Uploaded files are not scanned for malware.**
 - **A full content-security policy for scripts** is not set yet: the app forbids being framed by other sites and sends the standard headers, but does not yet restrict where scripts may load from.
-- **Region**: one region, US **[CONFIRM]**. No EU region.
+- **Region**: one region. The server and the database run in Railway's US West region (California); the bucket's region is **[CONFIRM]**. There is no EU region.
