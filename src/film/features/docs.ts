@@ -43,7 +43,7 @@ export default function docs(): Film {
       { t: icon - 0.3, d: 0.7, target: css('.pg-titlebox'), zoom: 1.35, dy: -60 },
       { t: cover + 0.2, d: 0.5, target: 'full' },
       { t: ask + 0.2, d: 0.7, target: addBlock, zoom: 1.35, dy: -220 },
-      { t: watch - 0.3, d: 0.7, target: addBlock, zoom: 1.65, dx: 120, dy: -170 },
+      { t: watch - 0.3, d: 0.7, target: addBlock, zoom: 1.65, dx: 120, dy: -70 },
     ],
     dims: [{ t0: live + 0.6, t1: drag - 0.55, target: linked }],
     scrolls: [
