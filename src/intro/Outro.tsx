@@ -21,8 +21,12 @@ import { useStore } from '../state/store';
 import { CalendarNow, WaitingNow } from '../views/TodayView';
 import '../styles/intro.css';
 
-export const OUTRO_LENGTH = 15;
-const FRAMES = new URLSearchParams(window.location.search).get('outro') === 'frames';
+const PARAMS = new URLSearchParams(window.location.search);
+const FRAMES = PARAMS.get('outro') === 'frames';
+/** ?outro&open: the cold open of the product film. Frame 0 is already moving (1.4 s in), with no fade from black and no CTA. */
+const OPEN = PARAMS.has('open');
+const SKIP = OPEN ? 1.4 : 0;
+export const OUTRO_LENGTH = OPEN ? 13.6 : 15;
 
 const PLANE: P = { x: 140, y: 60, z: -320 };
 const WAIT: P = { x: -220, y: -40, z: 40 };
@@ -63,7 +67,8 @@ export function Outro({ children }: { children: ReactNode }) {
     if (yes) dispatch({ type: 'out', op: { op: 'book', lead: yes.lead.id, start: yes.at, end: new Date(yes.at.getTime() + 30 * 60000) } });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function render(t: number) {
+  function render(tt: number) {
+    const t = tt + SKIP;
     const a = anchors.current;
     if (!a || !rig.current) return;
 
@@ -123,7 +128,7 @@ export function Outro({ children }: { children: ReactNode }) {
       sign.current.style.opacity = String(kf(t, [[12.2, 0], [12.9, 1]]));
       sign.current.style.transform = `translateY(${kf(t, [[12.2, 12], [12.9, 0]]).toFixed(2)}px)`;
     }
-    if (fade.current) fade.current.style.opacity = String(kf(t, [[0, 1], [0.5, 0], [14.3, 0], [15, 1]]));
+    if (fade.current) fade.current.style.opacity = String(OPEN ? kf(t, [[13.6, 0], [15, 1]]) : kf(t, [[0, 1], [0.5, 0], [14.3, 0], [15, 1]]));
   }
 
   function setup() {
@@ -168,10 +173,12 @@ export function Outro({ children }: { children: ReactNode }) {
               <TimmyMark size={44} />
               Timmy
             </span>
-            <span className="outro-cta">
-              <Plug size={18} />
-              Connect your Gmail
-            </span>
+            {!OPEN && (
+              <span className="outro-cta">
+                <Plug size={18} />
+                Connect your Gmail
+              </span>
+            )}
           </div>
         </div>
         <div className="intro-fade" ref={fade} />

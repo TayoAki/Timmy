@@ -1,0 +1,31 @@
+# Brief: "Monday, 8:12" (Timmy product film)
+
+- **Format:** Product Film. There's no speaker footage. The narration is a stock ElevenLabs voice ("Liam") the owner generated.
+- **Story:** a walkthrough of one Monday morning. A buried owner gets through it because Timmy has already sorted the mail, drafted the replies and lined up the decisions, and the owner approves what goes out. The arc follows SB7.
+- **Audience:** owner-operators and small sales teams who run the business from Gmail.
+- **Destinations (assumed):** YouTube and a demo page on the site. Cutdowns (a 45 s hero, 9:16) come later, if wanted.
+- **Runtime:** about 3:50, set by the 3:21 narration:
+  - a cold open, about 15 s
+  - the walkthrough, 3:22
+  - the close, about 15 s
+- **Masters and cuts:**
+  - The master is 16:9, 1920×1080, 60 fps.
+  - The animatic for the checkpoint is 960×540 at 30 fps.
+- **Sound:**
+  - Narration: `Liam - Energetic Social Media Creator` (the owner's take).
+  - Music: "Bass First" (the open and the close) and "Calm Confidence" (the bed). Both were supplied by the owner.
+- **Captions:** an SRT file beside the master, with no captions burned in.
+- **Product evidence:** the app's own React components on this branch (`claude/modest-meitner-59cqpr`), running locally on the seeded demo data. The clock is fixed at Monday, Nov 16, 2026, 8:12 AM. Live preview: https://web-production-c4bbfc9c.up.railway.app
+- **Brand:**
+  - Colours and type: `src/styles/tokens.css`. Inter Variable; accent `#3f51d9`; background `#f4f3ef`; surface `#fff`.
+  - Mark: `TimmyMark` in `src/components/common.tsx`.
+- **Truth boundary:**
+  - **May show:** the product in demo mode on its sample data (Taylor, Acme, Dana, Marcus, Jamie), with every click the real control causing its real result.
+  - **Must not show or claim:**
+    - that anything was really sent: the preview sends nothing;
+    - user counts or measured speed;
+    - features that aren't live as if they were. The Gmail connection runs through the backend, which isn't built yet, so the film is a **pre-release recreation**.
+  - **Naming:** Gmail may be named. Don't show vendor names for the data or integration layers (Composio, Treg, OpenRouter).
+  - **CTA:** "Connect your Gmail" is the launch CTA, but it isn't true today. The open choice is below.
+- **CTA and URL:** no URL on screen. The preview has no custom domain yet.
+- **Open question:** which end card? "Connect your Gmail" (the launch CTA, for when the backend is live) or "Try the demo" (true today)?

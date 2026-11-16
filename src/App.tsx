@@ -24,6 +24,7 @@ import { StoreProvider, useStore, type Toast } from './state/store';
 import { StoryPlayer } from './story/StoryPlayer';
 import { Intro } from './intro/Intro';
 import { Outro } from './intro/Outro';
+import { Film } from './film/Film';
 import { ThemeProvider } from './state/theme';
 import { AppearanceView } from './views/AppearanceView';
 import { MailboxView } from './views/MailboxView';
@@ -36,11 +37,12 @@ import { VoiceView } from './views/VoiceView';
 const PARAMS = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
 const INTRO = PARAMS.has('intro');
 const OUTRO = !INTRO && PARAMS.has('outro');
+const FILM = !INTRO && !OUTRO && PARAMS.has('film');
 
 export default function App() {
   return (
     <ThemeProvider>
-      <StoreProvider ephemeral={INTRO || OUTRO}>
+      <StoreProvider ephemeral={INTRO || OUTRO || FILM}>
         {INTRO ? (
           <Intro>
             <Shell />
@@ -49,6 +51,10 @@ export default function App() {
           <Outro>
             <Shell />
           </Outro>
+        ) : FILM ? (
+          <Film>
+            <Shell />
+          </Film>
         ) : (
           <Shell />
         )}

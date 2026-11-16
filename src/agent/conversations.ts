@@ -38,7 +38,11 @@ interface Store {
 const KEY = 'timmy-agent-v1';
 const MAX_CONVOS = 30;
 
+/** The films (?intro, ?outro, ?film) run on demo data that is never saved, chats included. */
+const EPHEMERAL = typeof window !== 'undefined' && /[?&](intro|outro|film)(=|&|$)/.test(window.location.search);
+
 const load = (): Conversation[] => {
+  if (EPHEMERAL) return [];
   try {
     const raw = localStorage.getItem(KEY);
     return raw ? (JSON.parse(raw) as Conversation[]) : [];
@@ -52,7 +56,7 @@ const listeners = new Set<() => void>();
 
 const set = (next: Partial<Store>) => {
   store = { ...store, ...next };
-  if (next.convos) {
+  if (next.convos && !EPHEMERAL) {
     try {
       localStorage.setItem(KEY, JSON.stringify(store.convos.slice(0, MAX_CONVOS)));
     } catch {

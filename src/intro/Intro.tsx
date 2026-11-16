@@ -21,7 +21,7 @@
  * The motion, focus and playback helpers live in src/cinema/engine.ts.
  * The demo data here is fresh and never saved.
  */
-import { Play, RotateCcw } from 'lucide-react';
+import { Play, Plug, RotateCcw } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { blur, camera, depthBlur, FILM_W, kf, place, setLens, useFilm, worldOf, type P } from '../cinema/engine';
 import { ApprovalCard } from '../areas/approvals/ApprovalCard';
@@ -31,8 +31,11 @@ import { useStore } from '../state/store';
 import { UrgentNow } from '../views/TodayView';
 import '../styles/intro.css';
 
-export const INTRO_LENGTH = 17;
-const FRAMES = new URLSearchParams(window.location.search).get('intro') === 'frames';
+const PARAMS = new URLSearchParams(window.location.search);
+const FRAMES = PARAMS.get('intro') === 'frames';
+/** ?intro&close: the close of the product film. The lockup carries one CTA and holds clean; no fade to black. */
+const CLOSE = PARAMS.has('close');
+export const INTRO_LENGTH = CLOSE ? 16.2 : 17;
 
 /** Where each surface sits in the world (the app plane lies behind the floating pieces). */
 const PLANE: P = { x: 140, y: 60, z: -320 };
@@ -172,7 +175,7 @@ export function Intro({ children }: { children: ReactNode }) {
       sub.current.style.opacity = String(kf(t, [[14.6, 0], [15.4, 1]]));
       sub.current.style.transform = `translateY(${kf(t, [[14.6, 10], [15.4, 0]]).toFixed(2)}px)`;
     }
-    if (fade.current) fade.current.style.opacity = String(kf(t, [[0, 1], [0.9, 0], [16.3, 0], [16.9, 1]]));
+    if (fade.current) fade.current.style.opacity = String(CLOSE ? kf(t, [[0, 1], [0.9, 0]]) : kf(t, [[0, 1], [0.9, 0], [16.3, 0], [16.9, 1]]));
   }
 
   // Measure where things are inside the surfaces, then play (or wait for seek).
@@ -226,9 +229,18 @@ export function Intro({ children }: { children: ReactNode }) {
             <TimmyMark size={104} />
             Timmy
           </h1>
-          <p className="intro-sub" ref={sub}>
-            Monday, 8:12
-          </p>
+          {CLOSE ? (
+            <p className="intro-sub" ref={sub}>
+              <span className="outro-cta">
+                <Plug size={18} />
+                Connect your Gmail
+              </span>
+            </p>
+          ) : (
+            <p className="intro-sub" ref={sub}>
+              Monday, 8:12
+            </p>
+          )}
         </div>
         <div className="intro-fade" ref={fade} />
       </div>
