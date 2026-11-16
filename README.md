@@ -28,7 +28,7 @@ The shell follows the wireframe: **left rail · sidebar · tabs + main content �
 
 | Area | What it holds |
 | --- | --- |
-| Left rail | Today & mail, Approvals, Search (⌘K), Tasks, Calendar, Docs, Projects, People, Drive, AI library, Timmy's activity, Settings |
+| Left rail | Today & mail, Approvals, Search (⌘K), Tasks, Calendar, Docs, Projects, People, Drive, AI library (with Automations), Timmy's activity, Settings |
 | Sidebar | A **project picker** on top, then the section's own navigation. For mail: numbered labels, project folders, Starred (max 5) and `[99] Archived` |
 | Tabs | Views inside the current page (e.g. Daily brief / Triage / Drafts) |
 | Main content | The page itself |
@@ -127,6 +127,43 @@ Talk instead of typing, as in [OpenWhispr](https://github.com/OpenWhispr/openwhi
 - **Dictionary:** names and companies from your contacts are corrected after transcription ("dana whitefield at north peak" → "Dana Whitfield at Northpeak").
 
 The microphone needs HTTPS (Railway serves it).
+
+## Docs: the Notion-style editor
+
+Timmy's own docs are block pages, built on [TipTap](https://tiptap.dev) (ProseMirror) with Timmy's own UI. They're still saved as Timmy blocks (with an optional formatted copy of each line), so drafts, “Email the notes”, Ask Timmy and the .docx export read them as before.
+
+- **Blocks:** type `/` for the block menu (text, three heading sizes, to-do, bulleted and numbered lists, toggle, quote, callout, code, divider, page, image, table, linked sheet table, file link, and Summarize with Timmy). Markdown shortcuts work at the start of a line: `#`, `##`, `###`, `-`, `1.`, `[]`, `>` (toggle), `"` (quote), ```` ``` ```` and `---`.
+- **Nesting:** Tab and Shift+Tab indent. Lists number per level (1. a. i.) and a toggle's contents are the indented blocks under it.
+- **Handle:** hover a block for **+** (add below; Alt-click adds above) and **⋮⋮** (drag to move, with a drop line; click for Turn into, Colour, Duplicate, Move up/down and Delete). Ctrl+Shift+↑/↓ move a block, Ctrl+D duplicates it, Ctrl+Alt+0–8 turn it into another kind. Blocks nested under one move with it.
+- **Formatting:** select text for the bar: Turn into, bold, italic, underline, strikethrough, code, link, and text or background colour.
+- **Pages:** each doc has an emoji icon and a cover (gallery, upload or link; images can be repositioned), a big title, and breadcrumbs through the pages above it. The Docs sidebar has a page tree (hover a row to add a page inside or move it to the trash; double-click to rename) and the **Trash**. A trashed page and its sub-pages leave every list, show a red banner, are read-only, and can be restored or deleted for good.
+- **Saving:** edits save 850 ms after you stop typing, with a “Saving… / Saved” badge.
+- **Who's here:** Timmy, while it writes a summary into the page (with its own named cursor; one Ctrl+Z takes it out), and the same doc open in another tab of the browser (kept in sync, with that tab's cursor). Other people's cursors need a server and will come with the backend.
+
+Code: `src/areas/docs/editor/` (extensions.ts: the block nodes, keys, shortcuts and decorations; convert.ts: blocks ⇄ editor; nodeviews.tsx: images, tables, linked tables, file and page links; menus.tsx: “/” menu, formatting bar, block menu; presence.ts: cursors, tab sync and Timmy writing), `PageHeader.tsx`, `PagesTree.tsx`, `pages.ts` (sub-pages and the trash) and `summary.ts`.
+
+## Automations
+
+Library › **Automations**: draw what happens when an email, a form, a file, a meeting, a deal change or a schedule fires. Each card shows the apps it uses and an On/Off switch; **New automation** opens a bottom sheet, then the canvas.
+
+- **Canvas** ([React Flow](https://reactflow.dev), loaded only when an automation opens): drag blocks in from the panel or click them (a clicked block is wired under the selected step), connect handles, pan, zoom, fit, lock, and a mini map. One trigger per automation; If / else has a Yes and a No branch.
+- **Settings:** the selected step's account (connected or not) and settings. Text settings take `{{fields}}` from the trigger: click a chip to insert one and see a preview filled from sample data.
+- **Test run** walks the flow with the trigger's sample data, ticks each step, greys out the branch not taken and logs what each step would do. Nothing is sent. **Save** stores the steps; the switch turns it on once a step is connected to the trigger.
+
+Code: `src/areas/automations/` (catalog.ts: the blocks; Editor.tsx; List.tsx).
+
+## Website chat
+
+Outbound › **Website chat** is the chat bubble for your site.
+
+- **Set up:** turn it on, set the website, copy the code snippet, pick a picture, name, colour and greeting, the questions Timmy asks once a visitor leaves an email, help desk answers (used word for word), what happens when someone asks for a person, and whether to offer a call. A live preview on a mock page answers from these settings: help desk answers, the email, your questions one at a time, three times to book. Nothing in the preview is saved.
+- **Chats:** Unread, All and Starred, with search. A chat shows the visitor's answers and booking; **Take over** stops Timmy so you can reply yourself, and Email starts a follow-up.
+
+Code: `src/areas/outbound/Chat.tsx`.
+
+## Tasks board
+
+The board's lanes now sum up what's late or due this week, each lane has quick add (type, Enter), cards carry tags (from email, meeting or time blocked, notes) and a contact chip with a hover card, and a dragged card shows where it will land. Ask Timmy's Pipeline view also shows deals by stage, sized by value.
 
 ## Files: the full editors
 

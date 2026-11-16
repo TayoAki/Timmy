@@ -1,10 +1,12 @@
 import { X } from 'lucide-react';
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { ApprovalsView } from './areas/approvals';
 import { CalendarView } from './areas/calendar';
 import { DocsView, FileView } from './areas/docs';
 import { FilesView } from './areas/files';
 import { LibraryView } from './areas/library';
+// The canvas (React Flow) loads only when an automation is opened.
+const AutomationEditor = lazy(() => import('./areas/automations/Editor').then((m) => ({ default: m.AutomationEditor })));
 import { ContactView, PeopleView } from './areas/people';
 import { ProjectsView, ProjectView } from './areas/projects';
 import { TasksView } from './areas/tasks';
@@ -98,7 +100,7 @@ function Shell() {
   }, [dispatch, state.searchOpen, state.drawer, state.capture, state.compose]);
 
   return (
-    <div className="app" data-drawer={state.drawer ?? undefined} data-focus={state.focus ? '' : undefined} data-calm={state.calm ? '' : undefined}>
+    <div className="app" data-canvas={state.route.view === 'automation' ? '' : undefined} data-drawer={state.drawer ?? undefined} data-focus={state.focus ? '' : undefined} data-calm={state.calm ? '' : undefined}>
       <LeftRail />
       <Sidebar />
       {r.view === 'today' && <TodayView tab={r.tab} />}
@@ -118,6 +120,11 @@ function Shell() {
       {r.view === 'contact' && <ContactView key={r.id} />}
       {r.view === 'files' && <FilesView />}
       {r.view === 'library' && <LibraryView />}
+      {r.view === 'automation' && (
+        <Suspense fallback={<main className="main" aria-busy="true" />}>
+          <AutomationEditor key={r.id} />
+        </Suspense>
+      )}
       {r.view === 'approvals' && <ApprovalsView />}
       {r.view === 'outbound' && <OutboundView />}
       {r.view === 'campaign' && <CampaignView key={r.id} />}

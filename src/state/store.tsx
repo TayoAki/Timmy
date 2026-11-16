@@ -34,14 +34,15 @@ export type Route =
   | { view: 'projects'; tab: 'active' | 'archived' }
   | { view: 'project'; id: string; tab: 'overview' | 'tasks' | 'notes' | 'mail' | 'files' | 'ai' }
   | { view: 'contact'; id: string; tab: 'overview' | 'activity'; filter?: string }
-  | { view: 'library'; tab: 'prompts' | 'captured' | 'routines' | 'learned' }
+  | { view: 'library'; tab: 'prompts' | 'captured' | 'routines' | 'learned' | 'automations' }
+  | { view: 'automation'; id: string }
   | { view: 'approvals'; tab: 'open' | 'history'; filter?: ApprovalKind }
   | { view: 'outbound'; tab: OutboundTab; list?: string; id?: string; filter?: string }
   | { view: 'campaign'; id: string; tab: 'analytics' | 'leads' | 'sequence' | 'schedule' | 'options' }
   | { view: 'social'; tab: 'overview' | 'create' | 'calendar' | 'trends' }
   | { view: 'connections'; group?: string };
 
-export type OutboundTab = 'leads' | 'campaigns' | 'drafts' | 'unibox' | 'speed' | 'calls' | 'templates' | 'channels';
+export type OutboundTab = 'leads' | 'campaigns' | 'drafts' | 'unibox' | 'speed' | 'chat' | 'calls' | 'templates' | 'channels';
 
 export type Section = 'mail' | 'approvals' | 'activity' | 'people' | 'files' | 'rules' | 'tasks' | 'calendar' | 'docs' | 'projects' | 'library' | 'outbound' | 'social' | 'connections';
 
@@ -69,6 +70,7 @@ export const sectionOf = (r: Route): Section => {
     case 'project':
       return 'projects';
     case 'library':
+    case 'automation':
       return 'library';
     case 'approvals':
       return 'approvals';

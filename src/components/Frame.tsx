@@ -16,6 +16,7 @@ export function Frame({
   children,
   wide,
   scrollKey,
+  bleed,
 }: {
   tabs: TabDef[];
   active: string;
@@ -23,6 +24,8 @@ export function Frame({
   children: ReactNode;
   wide?: boolean;
   scrollKey?: string;
+  /** Edge to edge, no padding or width cap (canvases). */
+  bleed?: boolean;
 }) {
   const { dispatch } = useStore();
   const scroller = useRef<HTMLDivElement>(null);
@@ -57,7 +60,7 @@ export function Frame({
         </div>
       </div>
       <div className="main-scroll" ref={scroller}>
-        <div className={`main-inner${wide ? ' wide' : ''}`}>{children}</div>
+        <div className={`main-inner${wide ? ' wide' : ''}${bleed ? ' bleed' : ''}`}>{children}</div>
       </div>
     </main>
   );

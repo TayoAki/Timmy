@@ -199,6 +199,20 @@ function PipelineWidget() {
   const open = deals.filter((d) => d.stage !== 'Closed won');
   return (
     <Widget icon={BadgeDollarSign} title="Pipeline" action={<span className="aw-meta">{money(open.reduce((n, d) => n + d.value, 0))} open</span>}>
+      <div className="aw-stages" aria-label="Deals by stage">
+        {[...new Set(deals.map((d) => d.stage))].map((stage) => {
+          const inStage = deals.filter((d) => d.stage === stage);
+          const total = inStage.reduce((n, d) => n + d.value, 0);
+          return (
+            <span key={stage} className={`aw-stage${stage === 'Closed won' ? ' won' : ''}`} style={{ flexGrow: Math.max(1, total) }}>
+              <span className="aw-stage-name">{stage}</span>
+              <span className="aw-stage-num">
+                {inStage.length} · {money(total)}
+              </span>
+            </span>
+          );
+        })}
+      </div>
       <table className="aw-table">
         <thead>
           <tr>

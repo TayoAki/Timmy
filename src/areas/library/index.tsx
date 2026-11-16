@@ -16,6 +16,7 @@ import {
   Settings2,
   Sparkles,
   Trash2,
+  Workflow,
   X,
 } from 'lucide-react';
 import { useLayoutEffect, useRef, useState } from 'react';
@@ -33,6 +34,7 @@ import { RpSection } from '../files/pickers';
 import { PromptDialog, RoutineDialog } from './dialogs';
 import { OUTPUTS, capturedPrompts, filedPrompts, linkInfo, outputMeta, slug, useCases, type Output } from './lib';
 import { startRoutine } from './Runner';
+import { Automations, openAutomation } from '../automations/List';
 
 type Tab = Extract<Route, { view: 'library' }>['tab'];
 
@@ -55,6 +57,7 @@ export function LibraryView() {
         { id: 'prompts', label: 'Prompts' },
         { id: 'captured', label: 'Captured', count: capturedPrompts(state.ws).length || undefined },
         { id: 'routines', label: 'Routines' },
+        { id: 'automations', label: 'Automations', count: Object.values(state.ws.automations ?? {}).filter((a) => a.on).length || undefined },
         { id: 'learned', label: 'Learned rules', count: Object.keys(state.ws.learned).length || undefined },
       ]}
       active={tab}
@@ -64,6 +67,7 @@ export function LibraryView() {
       {tab === 'prompts' && <Prompts />}
       {tab === 'captured' && <Captured />}
       {tab === 'routines' && <Routines />}
+      {tab === 'automations' && <Automations />}
       {tab === 'learned' && <Learned />}
     </Frame>
   );
@@ -575,6 +579,20 @@ export function LibrarySide() {
             </span>
             <span className={`nav-count${learned ? ' strong' : ''}`}>{learned || ''}</span>
           </button>
+        </div>
+        <div className="side-group">
+          <div className="side-title">Automations</div>
+          <button className="nav-item compact" aria-current={isLib && tab === 'automations' ? 'page' : undefined} onClick={() => go('automations')}>
+            <Workflow size={15} className="lib-side-icon" />
+            <span className="nav-name">All automations</span>
+            <span className="nav-count">{Object.values(state.ws.automations ?? {}).filter((a) => a.on).length || ''}</span>
+          </button>
+          {Object.values(state.ws.automations ?? {}).map((a) => (
+            <button key={a.id} className="nav-item compact" aria-current={state.route.view === 'automation' && state.route.id === a.id ? 'page' : undefined} onClick={() => dispatch(openAutomation(a.id))}>
+              <span className={`au-side-dot${a.on ? ' on' : ''}`} aria-hidden />
+              <span className="nav-name">{a.name}</span>
+            </button>
+          ))}
         </div>
         <div className="side-group">
           <div className="side-title">Routines</div>

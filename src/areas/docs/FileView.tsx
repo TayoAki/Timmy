@@ -17,6 +17,7 @@ import { MAX_STARRED, patch, pathOf, personName, put } from '../../state/ws';
 import { FileActionsMenu } from '../files/FileActions';
 import { BlockText, DocEditor } from './DocEditor';
 import { DeckView } from './DeckView';
+import { PageHeader } from './PageHeader';
 import { SheetEditor } from './SheetEditor';
 import { shortPath } from './shared';
 import { bid } from './templates';
@@ -46,7 +47,7 @@ export function FileView() {
   const { state, dispatch } = useStore();
   const W = state.ws;
   const id = state.route.view === 'file' ? state.route.id : '';
-  const entry = W.files[id];
+  const entry = W.files[id] ?? W.trash[id];
   const file = entry?.shortcutOf ? W.files[entry.shortcutOf] : entry;
   const [mode, setMode] = useState<'timmy' | 'craft'>('timmy');
   // Full screen for Timmy's own editors (the full editors have their own, same shortcut).
@@ -107,8 +108,8 @@ export function FileView() {
       scrollKey={file.id}
     >
       <div ref={fs.ref} className={`file-stage${fs.full ? ' full' : ''}`}>
-        <FileHeader file={file} shortcut={entry.shortcutOf ? entry : undefined} />
-        {native && app && <ModeSwitch file={file} app={app} mode={mode} onMode={setMode} onFull={nativeView ? fs.toggle : undefined} full={fs.full} />}
+        {doc && !viewer ? <PageHeader file={file} body={doc} shortcut={entry.shortcutOf ? entry : undefined} /> : <FileHeader file={file} shortcut={entry.shortcutOf ? entry : undefined} />}
+        {native && app && !file.trashed && <ModeSwitch file={file} app={app} mode={mode} onMode={setMode} onFull={nativeView ? fs.toggle : undefined} full={fs.full} />}
         {body}
       </div>
     </Frame>
