@@ -251,8 +251,8 @@ export async function decide(tx: Tx, loaded: Loaded, state: State, actor: Actor,
   const next = await tx.query(
     approve
       ? `update effect set status = 'approved', approved_by = $2, approved_via = 'click', approved_at = now(), hold_until = $3 where id = $1 and status = 'intended' returning *`
-      : `update effect set status = 'declined', error = $3 where id = $1 and status = 'intended' returning *`,
-    approve ? [effectId, actor.userId, holdUntil] : [effectId, actor.userId, `Declined by ${actor.name}`],
+      : `update effect set status = 'declined', error = $2 where id = $1 and status = 'intended' returning *`,
+    approve ? [effectId, actor.userId, holdUntil] : [effectId, `Declined by ${actor.name}`],
   );
   const effect = next.rows[0] as EffectRow;
   await tx.query('insert into approval (workspace_id, effect_id, decision, decided_by, via) values ($1, $2, $3, $4, $5)', [workspaceId, effectId, approve ? 'approve' : 'decline', actor.userId, 'click']);

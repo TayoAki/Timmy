@@ -177,6 +177,8 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
   if (a.type === 'resolve' && a.key.startsWith('camp:') && a.option === 'launch') return { state, reject: OUT_NOT_LIVE.launch };
 
   const next = reduce(loaded, state, a);
+  // The reducer has no default case: an action it doesn't know returns nothing.
+  if (!next) return { state, reject: 'That isn’t a command.' };
   return gateSends(tx, loaded, ctx, cmd, state, next);
 }
 
