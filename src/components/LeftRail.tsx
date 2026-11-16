@@ -1,3 +1,4 @@
+import { PEOPLE } from '../data/mock';
 import { Bell, CalendarDays, FileText, FolderKanban, HardDrive, House, Library, ListChecks, Megaphone, Plug, Rocket, Search, Settings, Stamp, Users } from 'lucide-react';
 import { useOutboundCounts } from '../areas/outbound';
 import { scopedApprovals } from '../state/scope';
@@ -78,7 +79,7 @@ export function LeftRail() {
         <Settings size={20} />
         <span className="rail-tip">Rules & settings</span>
       </button>
-      <div className="rail-me" title="Signed in as Taylor Morgan">
+      <div className="rail-me" title={`Signed in as ${PEOPLE.me?.name ?? 'Taylor Morgan'}`}>
         <Avatar id="me" size={30} />
       </div>
     </nav>

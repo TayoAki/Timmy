@@ -158,6 +158,23 @@ function buildApprovals(s: State): Approval[] {
     });
   }
 
+  // Live mode: writes Timmy proposed (an email from the chat) and sends inside their undo window.
+  for (const e of s.pending) {
+    const holding = e.status === 'holding';
+    const mine = e.waitingOn === 'you';
+    list.push({
+      key: `eff:${e.id}`,
+      kind: e.kind === 'campaign' ? 'campaign' : e.kind,
+      title: e.title,
+      why: holding ? 'Approved. It goes out when the undo window ends.' : mine ? e.why : `${e.why} Waiting for ${e.waitingOn === 'exec' ? 'the exec' : 'RevOps'} to approve.`,
+      who: e.preview.to?.[0] ? `mail:${e.preview.to[0]}` : undefined,
+      thread: e.thread,
+      urgency: fixed(holding ? 'soon' : 'urgent', holding ? 'Going out shortly' : 'Waiting for an OK'),
+      email: e.preview.subject !== undefined || e.preview.body !== undefined ? { to: (e.preview.to ?? []).map((x) => `mail:${x}`), cc: e.preview.cc?.map((x) => `mail:${x}`), subject: e.preview.subject ?? '', body: e.preview.body ?? '', sources: [] } : undefined,
+      options: holding ? [{ id: 'undo', label: 'Undo', danger: true }] : [{ id: 'approve', label: e.kind === 'email' ? 'Send' : 'Approve', primary: true }, { id: 'decline', label: e.kind === 'email' ? 'Don’t send' : 'Decline', danger: true }],
+    });
+  }
+
   for (const dec of s.decisions) {
     if (dec.chosen) continue;
     if (dec.whileDraft && !s.threads.find((t) => t.id === dec.thread)?.draft) continue;

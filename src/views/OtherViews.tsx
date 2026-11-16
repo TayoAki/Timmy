@@ -1,3 +1,5 @@
+import { isLive } from '../live/clock';
+import { LiveSettings } from '../live/Settings';
 import {
   ArrowRight,
   BadgeDollarSign,
@@ -155,6 +157,8 @@ export function RulesView({ tab }: { tab: RuleGroup }) {
       <h1 className="page-title">{group.name}</h1>
       <p className="page-sub">{RULE_INTRO[tab]}</p>
 
+      {tab === 'approvals' && <LiveSettings />}
+
       {tab === 'triage' && (
         <div className="loop">
           {[
@@ -221,7 +225,7 @@ export function RulesView({ tab }: { tab: RuleGroup }) {
         </button>
       </form>
       <p className="muted" style={{ fontSize: 12.5, marginTop: 10 }}>
-        Last run {fmtTime(LAST_RUN)} today. Rule counts show how often each rule has fired.
+        {isLive() ? '' : `Last run ${fmtTime(LAST_RUN)} today. `}Rule counts show how often each rule has fired.
       </p>
     </Frame>
   );
@@ -280,7 +284,7 @@ function ScheduleCard() {
         ) : (
           <strong>Paused: pick at least one day.</strong>
         )}{' '}
-        This morning’s run finished at {fmtTime(LAST_RUN)} and sorted {LAST_RUN_COUNT} emails.
+        {isLive() ? '' : `This morning’s run finished at ${fmtTime(LAST_RUN)} and sorted ${LAST_RUN_COUNT} emails.`}
       </p>
     </section>
   );

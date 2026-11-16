@@ -1,3 +1,4 @@
+import { isLive } from '../live/clock';
 import { Check, Flame, Focus, Inbox, Monitor, Moon, Search, Stamp, Sun, type LucideIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { fmtTime } from '../lib/format';
@@ -33,9 +34,9 @@ export function BottomBar() {
           </span>
         ) : (
           <span className="bar-status-text">
-            <strong>{project ? `Showing ${project.name}` : 'Timmy is up to date'}</strong>
+            <strong>{project ? `Showing ${project.name}` : isLive() && !state.conn.apps.gmail?.connected && !state.conn.apps.outlook?.connected ? 'Connect your mail to get started' : 'Timmy is up to date'}</strong>
             <button className="bar-link" onClick={() => dispatch({ type: 'navigate', route: { view: 'rules', tab: 'schedule' } })} title="Change the morning run in Settings › Schedule">
-              Last run {fmtTime(LAST_RUN)} · {next ? `next ${whenLabel(next)}` : 'morning run paused'}
+              {isLive() ? '' : `Last run ${fmtTime(LAST_RUN)} · `}{next ? `${isLive() ? 'Next morning run' : 'next'} ${whenLabel(next)}` : `${isLive() ? 'Morning' : 'morning'} run paused`}
             </button>
           </span>
         )}

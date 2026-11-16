@@ -1,3 +1,4 @@
+import { isLive } from '../live/clock';
 import {
   Archive,
   ArrowRight,
@@ -22,6 +23,9 @@ import { NewDocDialog } from '../areas/docs/NewDocDialog';
 import { TaskDialog } from '../areas/tasks/TaskDialog';
 import { useState, type ReactNode } from 'react';
 import { NOW, PEOPLE } from '../data/mock';
+
+/** The signed-in person's first name. */
+const meFirst = () => PEOPLE.me?.name.split(' ')[0] ?? 'there';
 import { todaysEvents } from '../state/ws';
 import type { Box, Thread } from '../data/types';
 import { dayDiff, dueInfo, fmtDate, fmtLongDate, fmtShortTime, fmtTime, plural } from '../lib/format';
@@ -91,13 +95,18 @@ function Brief() {
   return (
     <>
       <div className="brief-head">
-        <h1 className="page-title">Good morning, {state.conn.delegate.on ? state.conn.delegate.me.split(' ')[0] : 'Taylor'}.</h1>
+        <h1 className="page-title">Good morning, {state.conn.delegate.on ? state.conn.delegate.me.split(' ')[0] : meFirst()}.</h1>
         {state.conn.delegate.on && <span className="delegate-chip">Working for {state.conn.delegate.exec}</span>}
         <RunControl />
         <CalmToggle />
       </div>
       <p className="page-sub">
-        {fmtLongDate(NOW)}. Timmy sorted {LAST_RUN_COUNT} emails this morning.{' '}
+        {fmtLongDate(NOW)}.{' '}
+        {!isLive()
+          ? `Timmy sorted ${LAST_RUN_COUNT} emails this morning.`
+          : state.conn.apps.gmail?.connected || state.conn.apps.outlook?.connected
+            ? `${plural(state.threads.filter((t) => t.box === 'inbox').length, 'thread')} in your inbox.`
+            : 'Connect your mail in Connections and Timmy starts working on it.'}{' '}
         {urgent ? `${plural(urgent, 'thing')} ${urgent === 1 ? 'is' : 'are'} urgent` : 'Nothing is urgent'}
         {approvals.length ? `, and ${plural(approvals.length, 'item')} ${approvals.length === 1 ? 'needs' : 'need'} your approval.` : '.'}
       </p>
@@ -123,7 +132,7 @@ function Brief() {
       )}
 
       {!focus && (
-      <section className="section">
+      <section className="section demo-only">
         <div className="section-head">
           <h2 className="section-title">This morning’s triage</h2>
           <span className="section-sub">6:00 PM – {fmtTime(LAST_RUN)}</span>
@@ -392,7 +401,7 @@ function CalmBrief({ ranked, alerts, approvals }: { ranked: { t: Thread; u: Urge
   return (
     <>
       <div className="brief-head">
-        <h1 className="page-title">Good morning, Taylor.</h1>
+        <h1 className="page-title">Good morning, {meFirst()}.</h1>
         <CalmToggle />
       </div>
       <p className="page-sub">

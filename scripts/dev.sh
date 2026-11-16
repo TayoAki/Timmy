@@ -84,7 +84,8 @@ run_demo() {
 
 run_live() {
   say "Live mode: Playwright suites against the API with fake providers"
-  psql "$OWNER_URL/postgres" -qc "drop database if exists timmy_e2e" -c "create database timmy_e2e" >/dev/null
+  stop_on 8787
+  psql "$OWNER_URL/postgres" -qc "drop database if exists timmy_e2e with (force)" -c "create database timmy_e2e" >/dev/null
   VITE_TIMMY_LIVE=1 npx vite build --outDir "$LOG_DIR/dist-live" --emptyOutDir >"$LOG_DIR/build-live.log" 2>&1 || { tail -20 "$LOG_DIR/build-live.log"; return 1; }
   stop_on 8787
   (cd server && DATABASE_URL="$OWNER_URL/timmy_e2e" TIMMY_ENV=development TIMMY_FAKE_PROVIDERS=1 TIMMY_TEST_HOOKS=1 TIMMY_SEND_HOLD_SECONDS=${TIMMY_SEND_HOLD_SECONDS:-4} PORT=8787 PUBLIC_URL=http://localhost:8787 WEB_DIST="$LOG_DIR/dist-live" npx tsx src/index.ts >"$LOG_DIR/api.log" 2>&1 &)

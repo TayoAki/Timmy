@@ -10,7 +10,8 @@
  * this file has never heard of.
  */
 import { reducer, type Action, type State } from '../../../src/state/store';
-import { PEOPLE, NOW } from '../../../src/data/mock';
+import { PEOPLE, NOW, setUnknownPerson } from '../../../src/data/mock';
+import { personFromMail } from '../../../src/state/ws';
 import { enterLive } from '../../../src/live/clock';
 import type { Patch } from '../../../src/live/patches';
 import { applyPatches, fromWire } from '../../../src/live/patches';
@@ -23,6 +24,8 @@ import { config } from '../config';
 import { commitState, loadState, remember, type Commit, type Loaded, type PreImage } from './docs';
 
 enterLive();
+// Someone the workspace only knows by address still has a name when the reducer asks.
+setUnknownPerson((id) => personFromMail(id) ?? { id, name: id, email: '' });
 // The reducer's name directory is shared module state. On the server it is filled
 // for one workspace at a time, for the length of one reducer call.
 for (const k of Object.keys(PEOPLE)) delete PEOPLE[k];
@@ -152,12 +155,22 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
 
   // Approving or declining is the one thing a read-only role (RevOps) may still do.
   if (a.type === 'effect') {
+    if (!a.approve) {
+      // Turning down something already approved and still inside its undo window cancels it.
+      const held = await cancelIfHolding(tx, loaded, ctx, a.id);
+      if (held) return held;
+    }
     const d = await decide(tx, loaded, state, actorOf(ctx), a.id, a.approve);
     return { state: d.state, effects: [d.effect], toast: { text: a.approve ? (d.effect.hold_until ? `Approved. It goes out in ${config.sendHoldSeconds} seconds unless you undo it.` : 'Approved.') : 'Turned down. Nothing was sent.' } };
   }
   if (a.type === 'resolve' && a.key.startsWith('eff:')) {
-    const d = await decide(tx, loaded, state, actorOf(ctx), a.key.slice(4), a.option === 'approve' || a.option === 'send');
-    return { state: d.state, effects: [d.effect] };
+    const yes = a.option === 'approve' || a.option === 'send';
+    if (!yes) {
+      const held = await cancelIfHolding(tx, loaded, ctx, a.key.slice(4));
+      if (held) return held;
+    }
+    const d = await decide(tx, loaded, state, actorOf(ctx), a.key.slice(4), yes);
+    return { state: d.state, effects: [d.effect], toast: { text: yes ? (d.effect.hold_until ? `Approved. It goes out in ${config.sendHoldSeconds} seconds unless you undo it.` : 'Approved.') : 'Turned down. Nothing was sent.' } };
   }
   if (!ctx.rules.work) return { state, reject: 'Your role can’t make changes in this workspace.' };
   if (a.type === 'undo') return undo(tx, loaded, ctx, a.command);
@@ -180,6 +193,16 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
   // The reducer has no default case: an action it doesn't know returns nothing.
   if (!next) return { state, reject: 'That isn’t a command.' };
   return gateSends(tx, loaded, ctx, cmd, state, next);
+}
+
+/** Undo from the Approvals queue: stops an approved send that is still waiting out its hold. */
+async function cancelIfHolding(tx: Tx, loaded: Loaded, ctx: Ctx, effectId: string): Promise<Handled | null> {
+  const cur = (await tx.query('select status, requested_by, approved_by from effect where id = $1 and workspace_id = $2', [effectId, ctx.workspaceId])).rows[0];
+  if (!cur || cur.status !== 'approved') return null;
+  if (!ctx.rules.policy && cur.requested_by !== ctx.user.id && cur.approved_by !== ctx.user.id) throw new GatewayError('This one isn’t yours to undo.', 403);
+  const r = await cancelHeld(tx, loaded, loaded.state, actorOf(ctx), effectId);
+  if (!r.cancelled) return { state: loaded.state, reject: 'That was already sent, so it can’t be undone.' };
+  return { state: r.state, toast: { text: 'Undone. Nothing was sent.' } };
 }
 
 /* ───────────── Sends ───────────── */

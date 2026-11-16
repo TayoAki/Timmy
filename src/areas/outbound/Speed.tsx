@@ -88,7 +88,7 @@ export function SpeedTab() {
           <p className="page-sub">Leads from your forms, with a clock on each one. Answer inside a few minutes and you’re far more likely to reach them; Timmy can send the first reply for you.</p>
         </div>
         <div className="out-head-actions">
-          <button className="btn" onClick={simulate}>
+          <button className="btn demo-only" onClick={simulate}>
             <Zap size={15} />
             Simulate a form lead
           </button>

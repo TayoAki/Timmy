@@ -22,6 +22,8 @@ import { SearchPalette } from './components/SearchPalette';
 import { Sidebar } from './components/Sidebar';
 import { StoreProvider, useStore, type Toast } from './state/store';
 import { ThemeProvider } from './state/theme';
+import { LIVE } from './live/config';
+import { LiveApp } from './live/LiveApp';
 import { AppearanceView } from './views/AppearanceView';
 import { MailboxView } from './views/MailboxView';
 import { ActivityView, RulesView } from './views/OtherViews';
@@ -32,9 +34,15 @@ import { VoiceView } from './views/VoiceView';
 export default function App() {
   return (
     <ThemeProvider>
-      <StoreProvider>
-        <Shell />
-      </StoreProvider>
+      {LIVE ? (
+        <LiveApp>
+          <Shell />
+        </LiveApp>
+      ) : (
+        <StoreProvider>
+          <Shell />
+        </StoreProvider>
+      )}
     </ThemeProvider>
   );
 }
@@ -126,13 +134,13 @@ function Toasts() {
 function ToastItem({ toast }: { toast: Toast }) {
   const { dispatch } = useStore();
   useEffect(() => {
-    const timer = window.setTimeout(() => dispatch({ type: 'dismissToast', id: toast.id }), 5200);
+    const timer = window.setTimeout(() => dispatch({ type: 'dismissToast', id: toast.id }), toast.ms ?? 5200);
     return () => window.clearTimeout(timer);
-  }, [toast.id, dispatch]);
+  }, [toast.id, toast.ms, dispatch]);
   return (
     <div className={`toast${toast.tone === 'warn' ? ' warn' : ''}`}>
       <span>{toast.text}</span>
-      {toast.undo && <button onClick={() => dispatch({ type: 'restore', toast: toast.id })}>Undo</button>}
+      {(toast.undo || toast.command) && <button onClick={() => dispatch(toast.command ? { type: 'undo', command: toast.command } : { type: 'restore', toast: toast.id })}>Undo</button>}
       <button className="toast-x" aria-label="Dismiss" onClick={() => dispatch({ type: 'dismissToast', id: toast.id })}>
         <X size={14} />
       </button>

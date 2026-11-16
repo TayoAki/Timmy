@@ -228,11 +228,13 @@ export class FakeModel implements ModelProvider {
       const found = /"subject":"([^"]+)"/.exec(last.content)?.[1];
       return { content: found ? `I found it: “${found}”.` : last.content.includes('"results":[]') ? 'I couldn’t find any mail about that.' : 'Done.' };
     }
-    const text = last.content.toLowerCase();
-    const send = /^send (?:an email )?to (\S+@\S+) saying (.+)$/i.exec(last.content.trim());
+    // The chat endpoint puts a context block ahead of the question; the rules look at the question itself.
+    const asked = last.content.replace(/^<context>[\s\S]*?<\/context>\s*/, '').trim();
+    const text = asked.toLowerCase();
+    const send = /^send (?:an email )?to (\S+@\S+) saying (.+)$/i.exec(asked);
     if (send && has('send_email')) return { toolCalls: [{ name: 'send_email', arguments: { to: [send[1]], subject: 'A note from Timmy', body: send[2] } }] };
     if (/urgent/.test(text) && has('show_urgent')) return { content: 'Here is what needs you first.', toolCalls: [{ name: 'show_urgent', arguments: { limit: 5 } }] };
-    if (/(mail|email|inbox|find|about|from)/.test(text) && has('search_mail')) return { toolCalls: [{ name: 'search_mail', arguments: { query: last.content.replace(/[?.!]/g, '').split(/\s+/).slice(-3).join(' ') } }] };
+    if (/(mail|email|inbox|find|about|from)/.test(text) && has('search_mail')) return { toolCalls: [{ name: 'search_mail', arguments: { query: asked.replace(/[?.!]/g, '').split(/\s+/).slice(-3).join(' ') } }] };
     return { content: 'I’m not sure how to help with that yet.' };
   }
 }

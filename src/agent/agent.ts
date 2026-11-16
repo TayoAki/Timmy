@@ -9,6 +9,7 @@
  * VITE_TIMMY_AGENT_URL to an AG-UI endpoint (LangGraph, Mastra, CrewAI,
  * Pydantic AI, or your own) and the same UI talks to that agent instead.
  */
+import { LIVE } from '../live/config';
 import { AbstractAgent, HttpAgent, type AgentConfig } from '@ag-ui/client';
 import { EventType, type BaseEvent, type RunAgentInput } from '@ag-ui/core';
 import { Observable } from 'rxjs';
@@ -88,8 +89,9 @@ export class LocalTimmyAgent extends AbstractAgent {
 
 /** The agent for one conversation: a server agent when configured, otherwise the local one. */
 export function createAgent(config: AgentConfig): AbstractAgent {
-  const url = import.meta.env.VITE_TIMMY_AGENT_URL as string | undefined;
+  // On a real workspace the chat talks to Timmy's own API, on the same origin, so the sign-in cookie goes with it.
+  const url = LIVE ? '/api/v1/agent/runs' : (import.meta.env.VITE_TIMMY_AGENT_URL as string | undefined);
   return url ? new HttpAgent({ url, ...config }) : new LocalTimmyAgent(config);
 }
 
-export const AGENT_KIND = import.meta.env.VITE_TIMMY_AGENT_URL ? 'server' : 'local';
+export const AGENT_KIND = LIVE || import.meta.env.VITE_TIMMY_AGENT_URL ? 'server' : 'local';

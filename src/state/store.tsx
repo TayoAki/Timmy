@@ -116,6 +116,10 @@ export interface Toast {
   text: string;
   tone?: 'default' | 'warn';
   undo?: Snapshot;
+  /** Live mode: the command Undo takes back on the server. */
+  command?: string;
+  /** How long the notice stays, when not the usual few seconds (a send's undo window). */
+  ms?: number;
 }
 
 export interface State {
@@ -211,7 +215,7 @@ export type Action =
   /** The exec or RevOps answered a held action (simulated in this preview). */
   | { type: 'release'; id: string; approve: boolean }
   /** Live mode: the server's confirmed state, laid over what the browser shows. */
-  | { type: 'server'; state: Partial<State>; toast?: { text: string; tone?: Toast['tone'] } }
+  | { type: 'server'; state: Partial<State>; toast?: { text: string; tone?: Toast['tone']; command?: string; ms?: number } }
   /** Live mode: approve or turn down a write Timmy proposed. */
   | { type: 'effect'; id: string; approve: boolean }
   /** Live mode: take back the change a command made (and any send it was holding). */
@@ -891,6 +895,8 @@ export function reducer(s: State, a: Action): State {
 
     case 'resolve': {
       const [kind, id] = a.key.split(':') as [string, string];
+      // Live mode: a write Timmy proposed. The server decides; the card leaves the queue.
+      if (kind === 'eff') return { ...s, pending: s.pending.filter((e) => e.id !== id) };
       if (kind === 'draft') {
         return reducer(s, a.option === 'send' ? { type: 'sendDraft', id, track: true } : { type: 'discardDraft', id });
       }
@@ -1051,7 +1057,7 @@ export function reducer(s: State, a: Action): State {
     }
 
     case 'server':
-      return { ...s, ...a.state, toasts: a.toast ? withToast(s, a.toast.text, undefined, a.toast.tone) : s.toasts };
+      return { ...s, ...a.state, toasts: a.toast ? [{ id: toastSeq++, text: a.toast.text, tone: a.toast.tone, command: a.toast.command, ms: a.toast.ms }] : s.toasts };
 
     case 'effect':
       // The server decides; meanwhile the card leaves the queue.

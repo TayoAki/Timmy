@@ -65,7 +65,7 @@ const searchMail: AgentTool = {
     const words = query.split(/\s+/).filter((w) => w.length > 1).slice(0, 6);
     const rows = await withWorkspace({ workspaceId: t.ctx.workspaceId }, async (tx) => {
       const { rows } = await tx.query(
-        `with q as (select websearch_to_tsquery('english', $2) as q)
+        `with q as (select coalesce(nullif(array_to_string(tsvector_to_array(to_tsvector('english', $2)), ' | '), '')::tsquery, websearch_to_tsquery('english', $2)) as q)
          select i.thread_key, i.occurred_at, i.sender, i.subject, i.snippet, i.direction,
                 ts_rank(to_tsvector('english', coalesce(i.subject, '') || ' ' || coalesce(i.snippet, '') || ' ' || coalesce(i.sender, '')), q.q) * 2 + coalesce(ts_rank(b.tsv, q.q), 0) as rank
          from item i left join item_body b on b.item_id = i.id, q

@@ -568,6 +568,7 @@ export function reply(s: State, text: string, ctx: ChatContext | null): Reply {
 /** Where a chat link goes. */
 export function routeForHref(href: string): Route | null {
   const [kind, id] = href.split(':') as [string, string | undefined];
-  if (kind === 'approvals') return { view: 'approvals', tab: 'open', filter: (id as never) || undefined };
+  // A filter the screen doesn't know (a remote agent can send anything) means no filter.
+  if (kind === 'approvals') return { view: 'approvals', tab: 'open', filter: id && id in APPROVAL_KINDS ? (id as keyof typeof APPROVAL_KINDS) : undefined };
   return null;
 }

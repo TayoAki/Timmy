@@ -19,7 +19,7 @@ describe('state patches', () => {
       ...a,
       threads: [{ id: 't1', subject: 'Hi', box: 'inbox' as const, participants: ['me'], messages: [{ id: 'm1', from: 'me', to: ['mail:x@y.io'], at: new Date('2026-11-16T10:00:00Z'), body: ['hello'] }], ask: 'x' }],
       rules: a.rules.filter((r) => r.id !== 'r2').map((r) => (r.id === 'r1' ? { ...r, enabled: false } : r)),
-      ws: { ...a.ws, tasks: { t9: { id: 't9', title: 'Do it' } } } as typeof a.ws,
+      ws: { ...a.ws, tasks: { t9: { id: 't9', title: 'Do it' } } } as unknown as typeof a.ws,
       schedule: { ...a.schedule, time: '07:30' },
       calm: true,
     };

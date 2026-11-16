@@ -1,3 +1,4 @@
+import { useProfile } from '../live/LiveApp';
 import {
   AlarmClock,
   Archive,
@@ -19,7 +20,7 @@ import {
 } from 'lucide-react';
 import { clearBlobs } from '../lib/blobs';
 import { assistant } from '../agent/conversations';
-import { ARCHIVED_BASE, BOXES } from '../data/mock';
+import { ARCHIVED_BASE, BOXES, PEOPLE } from '../data/mock';
 import { todaysEvents } from '../state/ws';
 import { ApprovalsSide } from '../areas/approvals';
 import { CalendarSide } from '../areas/calendar';
@@ -83,6 +84,7 @@ export function Sidebar() {
 }
 
 function MailSide() {
+  const live = useProfile();
   const { state, dispatch } = useStore();
   const r = state.route;
   const activeBox = r.view === 'box' ? r.box : null;
@@ -98,8 +100,8 @@ function MailSide() {
         <div className="switcher">
           <Avatar id="me" size={28} />
           <span className="switcher-text">
-            <span className="switcher-title">Work inbox</span>
-            <span className="switcher-sub">taylor@northpeak.io</span>
+            <span className="switcher-title">{live ? live.profile.workspace.name : 'Work inbox'}</span>
+            <span className="switcher-sub">{live ? PEOPLE.me?.email || live.profile.user.email : 'taylor@northpeak.io'}</span>
           </span>
         </div>
         <button className="btn btn-primary compose-btn" onClick={() => dispatch({ type: 'compose', draft: { to: [], subject: '', body: '' } })}>
@@ -293,7 +295,7 @@ function RulesSide() {
               <span className="nav-hint">Dictation and push-to-talk</span>
             </span>
           </button>
-          <button className="nav-item" style={tint('var(--c-slate)')} onClick={() => setResetting(true)}>
+          <button className="nav-item demo-only" style={tint('var(--c-slate)')} onClick={() => setResetting(true)}>
             <span className="nav-icon">
               <RotateCcw size={16} />
             </span>

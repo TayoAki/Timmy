@@ -7,7 +7,7 @@ import { ArrowRight, BadgeDollarSign, CalendarDays, Check, CircleCheck, FilePenL
 import type { ReactNode } from 'react';
 import { NOW } from '../data/mock';
 import { dayDiff, dueInfo, fmtDay, fmtTime, money } from '../lib/format';
-import { type ApprovalKind } from '../state/approvals';
+import { APPROVAL_KINDS, type ApprovalKind } from '../state/approvals';
 import { scopedApprovals, scopedThreads } from '../state/scope';
 import { routeForHref, type ChatChoice, type ChatLink } from '../state/assistant';
 import { counterpart, useStore, ws, type Action } from '../state/store';
@@ -404,7 +404,8 @@ export function WidgetFor({ name, args, convo, callId, chosen }: { name: WidgetN
     case 'show_urgent':
       return <UrgentWidget limit={args.limit as number | undefined} level={args.level as string | undefined} />;
     case 'show_approvals':
-      return <ApprovalsWidget limit={args.limit as number | undefined} kind={args.kind as ApprovalKind | undefined} />;
+      // The kind comes from the model; one the screen doesn't know means no filter.
+      return <ApprovalsWidget limit={args.limit as number | undefined} kind={typeof args.kind === 'string' && args.kind in APPROVAL_KINDS ? (args.kind as ApprovalKind) : undefined} />;
     case 'show_day':
       return <DayWidget date={args.date as string | undefined} />;
     case 'show_pipeline':

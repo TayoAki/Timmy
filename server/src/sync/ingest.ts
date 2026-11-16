@@ -99,6 +99,27 @@ export async function upsertMessage(tx: Tx, workspaceId: string, conn: Connectio
   return row;
 }
 
+/* ───────────── A first sort, by plain code ───────────── */
+
+const AUTOMATED = /^(no-?reply|do-?not-?reply|notifications?|notify|mailer|news(letter)?|updates?|digest|marketing|billing|receipts?|invoices?|orders?|accounts?|alerts?|bounce|postmaster|hello|team|info)[+.@_-]?/i;
+const RECEIPT = /\b(receipt|invoice|payment (received|confirmation)|order (confirmation|#|number)|your order|statement is ready|has shipped)\b/i;
+const CALENDAR_REPLY = /^(accepted|declined|tentative(ly accepted)?|updated invitation|invitation):/i;
+
+/**
+ * Where a new thread probably belongs, decided without a model: mail that is
+ * plainly automated gets a confident suggestion, and anything a person wrote is
+ * left for the person to place. The model only looks at what this can't settle.
+ */
+export function suggest(last: { sender: string; subject: string; text: string; labels: string[] }): NonNullable<Thread['suggestion']> {
+  const local = last.sender.split('@')[0] ?? '';
+  const bulk = last.labels.some((l) => /^CATEGORY_(PROMOTIONS|SOCIAL|FORUMS)$/.test(l)) || /\bunsubscribe\b|list-unsubscribe|view (this email )?in (your )?browser/i.test(last.text);
+  if (CALENDAR_REPLY.test(last.subject)) return { box: 'archived', confidence: 'high', reason: 'A calendar reply. Your calendar already has it.' };
+  if (RECEIPT.test(last.subject)) return { box: 'archived', confidence: 'high', reason: 'A receipt or order notice. Nothing to answer.' };
+  if (bulk && !RECEIPT.test(last.subject)) return { box: 'read-through', confidence: 'high', reason: 'A newsletter or bulk mailing. Read it when you have time.' };
+  if (AUTOMATED.test(local) || last.labels.includes('CATEGORY_UPDATES')) return { box: 'archived', confidence: 'medium', reason: 'An automated notice from a system, not a person.' };
+  return { box: 'follow-up', confidence: 'low', effort: 'quick', reason: 'A person wrote to you. Timmy hasn’t read it closely yet.' };
+}
+
 /* ───────────── Threads the screens show ───────────── */
 
 type LiveThread = Thread & { ext?: { threadKey?: string; connectionId?: string; people?: Record<string, { name: string; email: string }> } };
@@ -152,6 +173,7 @@ export async function projectThread(tx: Tx, state: State, workspaceId: string, c
       messages,
       unread,
       ask: snippet || subject,
+      suggestion: suggest({ sender: (lastIn ?? last).sender as string, subject: (lastIn ?? last).subject as string, text: ((lastIn ?? last).text as string | null) ?? '', labels: (lastIn ?? last).labels as string[] }),
       ext: { threadKey, connectionId: conn.id, people },
     };
     return { ...state, threads: [thread, ...state.threads] };
@@ -170,7 +192,15 @@ export async function projectThread(tx: Tx, state: State, workspaceId: string, c
     messages: [...messages, ...local].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime()),
     ext: { ...existing.ext, threadKey, connectionId: conn.id, people: { ...existing.ext?.people, ...people } },
     // A reply brings a thread back to the inbox, whatever it was waiting on.
-    ...(reply ? { box: 'inbox' as const, unread: true, ask: snippet || existing.ask, history: [...(existing.history ?? []), { at: new Date(), text: 'A reply arrived' }] } : {}),
+    ...(reply
+      ? {
+          box: 'inbox' as const,
+          unread: true,
+          ask: snippet || existing.ask,
+          suggestion: suggest({ sender: (lastIn ?? last).sender as string, subject: (lastIn ?? last).subject as string, text: ((lastIn ?? last).text as string | null) ?? '', labels: (lastIn ?? last).labels as string[] }),
+          history: [...(existing.history ?? []), { at: new Date(), text: 'A reply arrived' }],
+        }
+      : {}),
   };
   return { ...state, threads: state.threads.map((t) => (t.id === existing.id ? next : t)) };
 }

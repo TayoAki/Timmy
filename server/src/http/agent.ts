@@ -54,7 +54,7 @@ function approvalWidget(e: EffectRow) {
     preview,
     choices: mine
       ? [
-          { id: 'send', label: 'Send', primary: true, actions: [{ type: 'effect', id: e.id, approve: true }], after: `Approved. It goes out in ${config.sendHoldSeconds} seconds; Undo is in Approvals until then.`, open: 'approvals:all' },
+          { id: 'send', label: 'Send', primary: true, actions: [{ type: 'effect', id: e.id, approve: true }], after: `Approved. It goes out in ${config.sendHoldSeconds} seconds; Undo is in Approvals until then.`, open: 'approvals' },
           { id: 'no', label: 'Don’t send', cancel: true, actions: [{ type: 'effect', id: e.id, approve: false }], after: 'Okay. Nothing was sent.' },
         ]
       : [],

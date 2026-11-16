@@ -18,7 +18,7 @@ const oct = (day: number, h = 9, m = 0) => new Date(2026, 9, day, h, m);
 
 export const ME = 'me';
 
-export const PEOPLE: Record<string, Person> = {
+const people: Record<string, Person> = {
   me: { id: 'me', name: 'Taylor Morgan', email: 'taylor@northpeak.io', title: 'Account Executive', company: 'Northpeak', internal: true },
   dana: { id: 'dana', name: 'Dana Whitfield', email: 'dana.whitfield@acme.com', title: 'Head of Procurement', company: 'Acme Corp' },
   raj: { id: 'raj', name: 'Raj Patel', email: 'raj.patel@acme.com', title: 'IT Director', company: 'Acme Corp' },
@@ -36,6 +36,20 @@ export const PEOPLE: Record<string, Person> = {
   figma: { id: 'figma', name: 'Figma Billing', email: 'billing@figma.com', bot: true },
   linkedin: { id: 'linkedin', name: 'LinkedIn', email: 'notifications@linkedin.com', bot: true },
 };
+
+let unknownPerson: ((id: string) => Person | undefined) | null = null;
+/**
+ * Live mode: how to describe someone who isn't in the directory, such as a
+ * sender Timmy has only seen in mail. The demo leaves this unset, so an unknown id is undefined as before.
+ */
+export const setUnknownPerson = (fn: ((id: string) => Person | undefined) | null) => {
+  unknownPerson = fn;
+};
+
+/** The name directory the mail screens read. */
+export const PEOPLE: Record<string, Person> = new Proxy(people, {
+  get: (target, key, receiver) => (typeof key === 'string' && unknownPerson && !(key in target) ? unknownPerson(key) : Reflect.get(target, key, receiver)),
+});
 
 export const BOXES: Label[] = [
   { id: 'inbox', num: '00', name: 'Inbox', hint: 'Not sorted yet', color: 'var(--c-slate)' },

@@ -6,7 +6,7 @@
 import type { AbstractAgent } from '@ag-ui/client';
 import type { Message } from '@ag-ui/core';
 import { useSyncExternalStore } from 'react';
-import { createAgent } from './agent';
+import { bridge, createAgent } from './agent';
 import { TOOLS } from './tools';
 
 export interface Conversation {
@@ -123,7 +123,7 @@ export const assistant = {
     const progress = () => set({ running: { convo: cid, steps: steps.map((x) => ({ ...x })) } });
     try {
       const result = await agent.runAgent(
-        { tools: TOOLS, context: screen ? [{ description: 'The screen the user has open in Timmy', value: screen }] : [] },
+        { tools: TOOLS, context: screen ? [{ description: 'The screen the user has open in Timmy', value: screen }] : [], forwardedProps: { route: bridge.route() } },
         {
           onStepStartedEvent: ({ event }) => {
             steps.push({ name: event.stepName, done: false });
