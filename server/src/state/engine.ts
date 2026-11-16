@@ -18,7 +18,8 @@ import { applyPatches, fromWire } from '../../../src/live/patches';
 import type { Thread } from '../../../src/data/types';
 import type { RoleRules } from '../auth/roles';
 import { withWorkspace, type Tx } from '../db/pool';
-import { cancelHeld, decide, GatewayError, propose, type EffectRow } from '../gateway/gateway';
+import { cancelHeld, decide, GatewayError, onReplay, propose, type EffectRow } from '../gateway/gateway';
+import { draftHash } from '../../../src/live/hash';
 import type { Actor } from '../gateway/policy';
 import { config } from '../config';
 import { enqueueSoon } from '../jobs/jobs';
@@ -79,6 +80,8 @@ export function withGlobals<T>(loaded: Loaded, state: State, fn: () => T): T {
 }
 
 export const reduce = (loaded: Loaded, state: State, action: Action): State => withGlobals(loaded, state, () => reducer(state, action));
+// The gateway applies a held action to the screen once it has gone out; the reducer lives here.
+onReplay((loaded, state, action) => reduce(loaded, state, action as Action));
 
 /** The address behind a person id, or null when Timmy doesn't know one. */
 export function emailOf(loaded: Loaded, state: State, id: string): string | null {
@@ -118,12 +121,15 @@ export async function runCommand(ctx: Ctx, cmd: { id: string; action: Action }):
 
     const loaded = await loadState(tx, ctx.workspaceId);
     let handled: Handled;
+    // A refused command leaves nothing behind, including an effect proposed before the refusal.
+    await tx.query('savepoint command');
     try {
       handled = await handle(tx, loaded, ctx, cmd);
     } catch (err) {
       if (!(err instanceof GatewayError)) throw err;
       handled = { state: loaded.state, reject: err.message };
     }
+    if (handled.reject) await tx.query('rollback to savepoint command');
     commit = handled.reject ? null : await commitState(tx, loaded, handled.state, 'command');
     const out: CommandResult = {
       ok: !handled.reject,
@@ -177,6 +183,13 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
   if (!ctx.rules.work) return { state, reject: 'Your role can’t make changes in this workspace.' };
   if (a.type === 'undo') return undo(tx, loaded, ctx, a.command);
 
+  // A send names the draft the person was looking at. If someone, or Timmy, changed it since, they read it again first.
+  if ((a.type === 'sendDraft' || a.type === 'runStep' || (a.type === 'resolve' && a.key.startsWith('draft:') && a.option === 'send')) && a.seen !== undefined) {
+    const threadId = a.type === 'resolve' ? a.key.slice(6) : a.id;
+    const draft = state.threads.find((t) => t.id === threadId)?.draft;
+    if (draft && draftHash(draft) !== a.seen) return { state, reject: 'This draft changed after you opened it. Read it again, then send.' };
+  }
+
   if (a.type === 'makeDraft') {
     // Drafting is a model call, so it runs as a job; the draft arrives on the stream when it is written.
     if (!modelReady()) return { state, reject: 'Timmy’s model isn’t configured on this server yet.' };
@@ -187,6 +200,8 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
   if (a.type === 'conn') {
     if (CONN_POLICY_OPS.has(a.op.op)) {
       if (!ctx.rules.policy) return { state, reject: 'Only an owner or admin can change this.' };
+      // On a real workspace, delegate mode is a role: the exec invites their assistant, and the server holds that person's sends.
+      if (a.op.op === 'delegate' && a.op.patch.on) return { state, reject: 'To work with an assistant, invite them with the assistant role. Their sends then wait for your OK.' };
     } else if (a.op.op === 'enrich' || a.op.op === 'find') {
       return { state, reject: 'No enrichment provider is connected yet.' };
     } else {
@@ -205,9 +220,11 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
 
 /** Undo from the Approvals queue: stops an approved send that is still waiting out its hold. */
 async function cancelIfHolding(tx: Tx, loaded: Loaded, ctx: Ctx, effectId: string): Promise<Handled | null> {
-  const cur = (await tx.query('select status, requested_by, approved_by from effect where id = $1 and workspace_id = $2', [effectId, ctx.workspaceId])).rows[0];
+  const cur = (await tx.query('select status, requested_by, approved_by, command_id, source from effect where id = $1 and workspace_id = $2', [effectId, ctx.workspaceId])).rows[0];
   if (!cur || cur.status !== 'approved') return null;
   if (!ctx.rules.policy && cur.requested_by !== ctx.user.id && cur.approved_by !== ctx.user.id) throw new GatewayError('This one isn’t yours to undo.', 403);
+  // A send the person started themselves is undone with the command that made it, so the thread goes back to a draft too.
+  if (cur.command_id && cur.source === 'user') return undo(tx, loaded, ctx, cur.command_id as string, true);
   const r = await cancelHeld(tx, loaded, loaded.state, actorOf(ctx), effectId);
   if (!r.cancelled) return { state: loaded.state, reject: 'That was already sent, so it can’t be undone.' };
   return { state: r.state, toast: { text: 'Undone. Nothing was sent.' } };
@@ -244,9 +261,8 @@ async function gateSends(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; ac
   if (!outgoing.length) return { state: next };
   if (!ctx.rules.work) return { state: prev, reject: 'Your role can’t send from this workspace.' };
 
-  const conn = await tx.query(`select id, toolkit from connection where workspace_id = $1 and status = 'active' and purpose = 'primary' and app_id in ('gmail', 'outlook') order by created_at limit 1`, [ctx.workspaceId]);
-  const mailbox = conn.rows[0] as { id: string; toolkit: string } | undefined;
-  if (!mailbox) return { state: prev, reject: 'Connect Gmail or Outlook first, then send.' };
+  const boxes = (await tx.query(`select id, toolkit, account_label from connection where workspace_id = $1 and status = 'active' and purpose = 'primary' and app_id in ('gmail', 'outlook') order by created_at`, [ctx.workspaceId])).rows as { id: string; toolkit: string; account_label: string | null }[];
+  if (!boxes.length) return { state: prev, reject: 'Connect Gmail or Outlook first, then send.' };
 
   let state = next;
   const effects: EffectRow[] = [];
@@ -255,18 +271,26 @@ async function gateSends(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; ac
     const to: string[] = [];
     for (const id of o.message.to) {
       const email = emailOf(loaded, prev, id);
-      if (!email) return { state: prev, reject: `Timmy has no email address for ${id}.` };
-      to.push(email);
+      if (!email || !ADDRESS.test(email)) return { state: prev, reject: `“${email ?? id}” isn’t an email address Timmy can send to.` };
+      to.push(email.toLowerCase());
     }
-    const cc = (o.message.cc ?? []).map((id) => emailOf(loaded, prev, id)).filter((x): x is string => !!x);
+    const cc = (o.message.cc ?? []).map((id) => emailOf(loaded, prev, id)).filter((x): x is string => !!x && ADDRESS.test(x)).map((x) => x.toLowerCase());
     if (!to.length) return { state: prev, reject: 'Add a recipient first.' };
-    const threadKey = (o.before as { ext?: { threadKey?: string } } | undefined)?.ext?.threadKey;
+    // A reply leaves from the mailbox its thread arrived in, in that thread. Anything else leaves from the workspace's mailbox.
+    const ext = o.before?.ext;
+    const mailbox = (ext?.connectionId && boxes.find((b) => b.id === ext.connectionId)) || boxes[0]!;
+    const threadKey = ext?.threadKey && mailbox.id === (ext.connectionId ?? mailbox.id) ? ext.threadKey : undefined;
+    if (o.before) {
+      // One send per thread at a time: a second press while the first is waiting or going out would send it twice.
+      const live = await tx.query(`select 1 from effect where workspace_id = $1 and preview->>'thread' = $2 and status in ('intended', 'approved', 'executing', 'uncertain') limit 1`, [ctx.workspaceId, o.thread.id]);
+      if (live.rows[0]) return { state: prev, reject: 'This thread already has an email waiting to go out. Undo or decide that one first.' };
+    }
     const subject = o.before?.draft?.subject ?? o.thread.subject;
     const body = o.message.body.join('\n\n');
     const p = await propose(tx, loaded, state, actorOf(ctx), {
       kind: threadKey ? 'email.reply' : 'email.send',
       payload: { connectionId: mailbox.id, to, cc, subject, body, threadKey, localMessageId: o.message.id },
-      preview: { to, cc, subject, body },
+      preview: { from: mailbox.account_label ?? undefined, to, cc, subject, body },
       title: `${threadKey ? 'Reply' : 'Send'} “${subject}” to ${to.join(', ')}`,
       why: 'You pressed Send.',
       target: to.join(', '),
@@ -274,6 +298,8 @@ async function gateSends(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; ac
       source: 'user',
       commandId: cmd.id,
       thread: o.thread.id,
+      // Kept so the thread can be shown as sent once someone else has approved it.
+      replay: cmd.action,
     });
     if (p.outcome === 'blocked') return { state: prev, reject: p.reason };
     if (p.outcome === 'waiting') {
@@ -287,13 +313,17 @@ async function gateSends(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; ac
   return { state, effects, toast: { text: `Sending in ${config.sendHoldSeconds} seconds. Undo to stop it.` } };
 }
 
+const ADDRESS = /^[^\s@,;<>"']+@[^\s@,;<>"']+\.[a-z]{2,}$/i;
+
 /* ───────────── Undo ───────────── */
 
-async function undo(tx: Tx, loaded: Loaded, ctx: Ctx, commandId: string): Promise<Handled> {
+async function undo(tx: Tx, loaded: Loaded, ctx: Ctx, commandId: string, allowed = false): Promise<Handled> {
   const state = loaded.state;
-  const { rows } = await tx.query('select id, pre, rev, undone_at from command where workspace_id = $1 and id = $2', [ctx.workspaceId, commandId]);
-  const c = rows[0] as { id: string; pre: PreImage[]; rev: number | null; undone_at: Date | null } | undefined;
+  const { rows } = await tx.query('select id, user_id, pre, rev, undone_at from command where workspace_id = $1 and id = $2', [ctx.workspaceId, commandId]);
+  const c = rows[0] as { id: string; user_id: string; pre: PreImage[]; rev: number | null; undone_at: Date | null } | undefined;
   if (!c || c.rev === null) return { state, reject: 'There’s nothing to undo.' };
+  // People undo their own actions; an owner or admin may undo anyone's.
+  if (!allowed && c.user_id !== ctx.user.id && !ctx.rules.policy) return { state, reject: 'That isn’t yours to undo.' };
   if (c.undone_at) return { state };
 
   // A send that already left can't be taken back; say so instead of pretending.

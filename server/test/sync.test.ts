@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { signWebhook } from '../src/providers/composio';
-import { boot, connectGmail, fake, jobs, newWorkspace, rows, type Client } from './helpers';
+import { boot, connectGmail, fake, jobs, model, newWorkspace, rows, type Client } from './helpers';
 
 let w: Client;
 let box: { connectionId: string; account: string };
@@ -10,6 +10,8 @@ beforeAll(async () => {
 });
 beforeEach(async () => {
   jobs().queue = [];
+  // Another file's test may have left a scripted model turn behind.
+  model().reset();
   w = await newWorkspace('Sync');
 });
 

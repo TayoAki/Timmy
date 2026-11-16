@@ -24,7 +24,8 @@ export const MODEL_ALLOWLIST: ModelOption[] = [
 ];
 
 export const config = {
-  stage: (env.TIMMY_ENV ?? (env.NODE_ENV === 'test' ? 'test' : 'development')) as Stage,
+  // With no TIMMY_ENV, a production build is production: the safe reading.
+  stage: (env.TIMMY_ENV ?? (env.NODE_ENV === 'production' ? 'production' : env.NODE_ENV === 'test' ? 'test' : 'development')) as Stage,
   port: Number(env.PORT ?? 8787),
   /** The origin people open in the browser. The API and the app share it, so sign-in cookies are first-party. */
   publicUrl: (env.PUBLIC_URL ?? (env.RAILWAY_PUBLIC_DOMAIN ? `https://${env.RAILWAY_PUBLIC_DOMAIN}` : `http://localhost:${env.PORT ?? 8787}`)).replace(/\/$/, ''),
@@ -35,7 +36,11 @@ export const config = {
   /** Deterministic stand-ins for Composio, OpenRouter and mail delivery. Tests and CI run on these. */
   fakeProviders: flag('TIMMY_FAKE_PROVIDERS'),
   /** Lets tests read the mail outbox and drive the fake providers. Never on in production. */
-  testHooks: flag('TIMMY_TEST_HOOKS') && env.TIMMY_ENV !== 'production',
+  testHooks: flag('TIMMY_TEST_HOOKS') && env.TIMMY_ENV !== 'production' && !(env.TIMMY_ENV === undefined && env.NODE_ENV === 'production'),
+  /** On any deployed server the test hooks also need this token in the `x-test-token` header. */
+  testToken: env.TIMMY_TEST_TOKEN ?? '',
+  /** Turn on once a mail provider delivers Timmy's own mail: sign-ups must then confirm their address before they can sign in. */
+  requireEmailVerification: flag('TIMMY_REQUIRE_EMAIL_VERIFICATION'),
 
   authSecret: env.BETTER_AUTH_SECRET ?? '',
 
@@ -77,6 +82,14 @@ export const config = {
 };
 
 export const isProd = () => config.stage === 'production';
+export const isLocal = () => /^https?:\/\/(localhost|127\.0\.0\.1)(:|$)/.test(config.publicUrl);
+
+/** Refuses to start in a state that would be unsafe on a real deployment. Called at boot. */
+export function assertSafeConfig() {
+  if (isProd() && (config.fakeProviders || flag('TIMMY_TEST_HOOKS'))) throw new Error('Fake providers and test hooks cannot be switched on in production.');
+  if (config.testHooks && !isLocal() && config.testToken.length < 24) throw new Error('Test hooks on a deployed server need TIMMY_TEST_TOKEN (24 characters or more).');
+  if (isProd() && !new URL(config.databaseUrl).password) throw new Error('The production database URL must carry a password.');
+}
 
 /** The model a workspace runs on: its own choice if that is still on the list, else the default. */
 export function modelFor(workspaceModel: string | null | undefined): string {

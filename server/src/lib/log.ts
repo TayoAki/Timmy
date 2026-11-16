@@ -13,7 +13,13 @@ const KEY_SHAPES = [
   /(postgres(?:ql)?:\/\/[^:\s/]+:)[^@\s]+@/g,
 ];
 
-const configured = () => [config.openrouter.apiKey, config.composio.apiKey, config.composio.webhookSecret, config.authSecret].filter((s) => s && s.length >= 8);
+const learned = new Set<string>();
+/** Secrets made at run time (a generated signing key, a webhook secret the provider issued) are masked too. */
+export const addSecret = (value: string) => {
+  if (value && value.length >= 8) learned.add(value);
+};
+
+const configured = () => [config.openrouter.apiKey, config.composio.apiKey, config.composio.webhookSecret, config.authSecret, config.testToken, ...learned].filter((s) => s && s.length >= 8);
 
 export function redact(text: string): string {
   let out = text;
@@ -27,7 +33,9 @@ const SENSITIVE_FIELD = /^(authorization|cookie|set-cookie|password|secret|token
 function safe(value: unknown, depth = 0): unknown {
   if (typeof value === 'string') return redact(value.length > 2000 ? `${value.slice(0, 2000)}…` : value);
   if (value instanceof Error) return redact(value.stack ?? value.message);
-  if (value === null || typeof value !== 'object' || depth > 4) return value;
+  if (value === null || typeof value !== 'object') return value;
+  // Deep structures are flattened to text, so nothing skips the masking by being nested.
+  if (depth > 4) return redact(JSON.stringify(value).slice(0, 2000));
   if (Array.isArray(value)) return value.slice(0, 50).map((v) => safe(v, depth + 1));
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(value)) out[k] = SENSITIVE_FIELD.test(k) ? '[redacted]' : safe(v, depth + 1);

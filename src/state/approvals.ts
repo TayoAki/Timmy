@@ -166,7 +166,7 @@ function buildApprovals(s: State): Approval[] {
       key: `eff:${e.id}`,
       kind: e.kind === 'campaign' ? 'campaign' : e.kind,
       title: e.title,
-      why: holding ? 'Approved. It goes out when the undo window ends.' : mine ? e.why : `${e.why} Waiting for ${e.waitingOn === 'exec' ? 'the exec' : 'RevOps'} to approve.`,
+      why: `${holding ? 'Approved. It goes out when the undo window ends.' : mine ? e.why : `${e.why} Waiting for ${e.waitingOn === 'exec' ? 'the exec' : 'RevOps'} to approve.`}${e.preview.from ? ` It will be sent from ${e.preview.from}.` : ''}`,
       who: e.preview.to?.[0] ? `mail:${e.preview.to[0]}` : undefined,
       thread: e.thread,
       urgency: fixed(holding ? 'soon' : 'urgent', holding ? 'Going out shortly' : 'Waiting for an OK'),

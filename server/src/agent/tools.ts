@@ -137,16 +137,20 @@ const draftReply: AgentTool = {
     const id = str(args.id, 200);
     const body = str(args.body, 20000).trim();
     if (!body) return { result: 'The draft was empty, so nothing was saved.' };
+    if (!t.ctx.rules.work) return { result: 'This person’s role can’t change drafts in this workspace. Nothing was saved.' };
     const saved = await mutate(t.ctx.workspaceId, 'agent', async (tx, loaded) => {
       await assertFence(tx, t);
       const thread = loaded.state.threads.find((x) => x.id === id);
-      if (!thread) return { result: false };
+      if (!thread) return { result: 'missing' as const };
+      // A draft someone already wrote or reviewed is never replaced from the chat.
+      if (thread.draft) return { result: 'exists' as const };
       const to = [...new Set(thread.messages.map((m) => m.from).filter((p) => p !== 'me'))].slice(-1);
       const draft = { to: to.length ? to : thread.participants.filter((p) => p !== 'me').slice(0, 1), subject: /^re:/i.test(thread.subject) ? thread.subject : `Re: ${thread.subject}`, body, sources: [], kind: 'reply' as const };
       const history = [...(thread.history ?? []), { at: new Date(), text: 'Timmy drafted a reply from the chat' }];
-      return { state: { ...loaded.state, threads: loaded.state.threads.map((x) => (x.id === id ? { ...x, draft, history } : x)) }, result: true };
+      return { state: { ...loaded.state, threads: loaded.state.threads.map((x) => (x.id === id ? { ...x, draft, history } : x)) }, result: 'saved' as const };
     });
-    return { result: saved ? 'The draft is saved on the thread and is waiting in Approvals. It has not been sent.' : 'There is no thread with that id.' };
+    if (saved === 'exists') return { result: 'That thread already has a draft. It was left as it is; the user can discard it in Approvals if they want a new one.' };
+    return { result: saved === 'saved' ? 'The draft is saved on the thread and is waiting in Approvals. It has not been sent.' : 'There is no thread with that id.' };
   },
 };
 
@@ -190,19 +194,25 @@ const sendReply: AgentTool = {
     const lastFrom = [...thread.messages].reverse().find((m) => m.from !== 'me')?.from;
     const email = lastFrom ? emailOf(workspace, state, lastFrom) : null;
     if (!email) return { result: 'There is nobody to reply to on that thread.' };
-    return proposeMail(t, { kind: 'email.reply', to: [email], cc: [], subject: /^re:/i.test(thread.subject) ? thread.subject : `Re: ${thread.subject}`, body, threadKey: thread.ext.threadKey, thread: thread.id });
+    return proposeMail(t, { kind: 'email.reply', to: [email], cc: [], subject: /^re:/i.test(thread.subject) ? thread.subject : `Re: ${thread.subject}`, body, threadKey: thread.ext.threadKey, thread: thread.id, connectionId: thread.ext.connectionId });
   },
 };
 
-async function proposeMail(t: ToolRun, m: { kind: 'email.send' | 'email.reply'; to: string[]; cc: string[]; subject: string; body: string; threadKey?: string; thread?: string }): Promise<ToolOutcome> {
+async function proposeMail(t: ToolRun, m: { kind: 'email.send' | 'email.reply'; to: string[]; cc: string[]; subject: string; body: string; threadKey?: string; thread?: string; connectionId?: string }): Promise<ToolOutcome> {
   return mutate<ToolOutcome>(t.ctx.workspaceId, 'agent', async (tx, loaded) => {
     await assertFence(tx, t);
-    const conn = await tx.query(`select id from connection where workspace_id = $1 and status = 'active' and purpose = 'primary' and app_id in ('gmail', 'outlook') order by created_at limit 1`, [t.ctx.workspaceId]);
-    if (!conn.rows[0]) return { result: { result: 'No mailbox is connected, so nothing can be sent. Ask the user to connect Gmail or Outlook in Connections.' } };
+    const boxes = (await tx.query(`select id, account_label from connection where workspace_id = $1 and status = 'active' and purpose = 'primary' and app_id in ('gmail', 'outlook') order by created_at`, [t.ctx.workspaceId])).rows as { id: string; account_label: string | null }[];
+    // A reply leaves from the mailbox its thread arrived in.
+    const box = m.threadKey ? boxes.find((b) => b.id === m.connectionId) : boxes[0];
+    if (!box) return { result: { result: 'No mailbox is connected for that, so nothing can be sent. Ask the user to connect Gmail or Outlook in Connections.' } };
+    if (m.thread) {
+      const live = await tx.query(`select 1 from effect where workspace_id = $1 and preview->>'thread' = $2 and status in ('intended', 'approved', 'executing', 'uncertain') limit 1`, [t.ctx.workspaceId, m.thread]);
+      if (live.rows[0]) return { result: { result: 'That thread already has an email waiting to go out. Nothing new was prepared.' } };
+    }
     const p = await propose(tx, loaded, loaded.state, t.attended ? actorOf(t.ctx) : null, {
       kind: m.kind,
-      payload: { connectionId: conn.rows[0].id, to: m.to, cc: m.cc, subject: m.subject, body: m.body, threadKey: m.threadKey },
-      preview: { to: m.to, cc: m.cc, subject: m.subject, body: m.body },
+      payload: { connectionId: box.id, to: m.to, cc: m.cc, subject: m.subject, body: m.body, threadKey: m.threadKey },
+      preview: { from: box.account_label ?? undefined, to: m.to, cc: m.cc, subject: m.subject, body: m.body },
       title: `${m.kind === 'email.reply' ? 'Reply' : 'Send'} “${m.subject}” to ${m.to.join(', ')}`,
       why: 'Timmy prepared this from your request in the chat.',
       target: m.to.join(', '),

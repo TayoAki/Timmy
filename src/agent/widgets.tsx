@@ -3,6 +3,8 @@
  * tools.ts. Widgets read live app state, so they stay current after you act,
  * and they change things only when you press a button.
  */
+import { isEffectDecision, safeChatAction } from '../live/chat-actions';
+import { isLive } from '../live/clock';
 import { ArrowRight, BadgeDollarSign, CalendarDays, Check, CircleCheck, FilePenLine, Flame, Hourglass, Mail, Sparkles, Stamp, type LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { NOW } from '../data/mock';
@@ -350,7 +352,7 @@ function AnswerWidget({ bullets = [], links = [], choices = [], preview, convo, 
   const { dispatch } = useStore();
   const go = (href: string) => dispatch({ type: 'navigate', route: routeForHref(href) ?? routeFromHref(href) });
   const pick = (c: ChatChoice) => {
-    c.actions.forEach((a: Action) => dispatch(a));
+    (isLive() ? c.actions.filter((a) => safeChatAction(a) || isEffectDecision(a)) : c.actions).forEach((a: Action) => dispatch(a));
     assistant.choose(convo, callId, c.after);
     if (c.open) go(c.open);
   };

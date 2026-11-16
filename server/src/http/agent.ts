@@ -11,7 +11,9 @@ import { config } from '../config';
 import type { EffectRow } from '../gateway/gateway';
 import { newId } from '../lib/ids';
 import { log } from '../lib/log';
-import { modelReady, type ChatMessage, type ToolDef } from '../providers/model';
+import { modelReady, type ChatMessage, type ToolCall, type ToolDef } from '../providers/model';
+import { safeChatAction } from '../../../src/live/chat-actions';
+import { untrusted } from '../agent/prompts';
 import { ctxOf, requireWorkspace, type Env } from './session';
 
 interface AgUiMessage {
@@ -33,6 +35,22 @@ interface RunAgentInput {
 
 const text = (v: unknown) => (typeof v === 'string' ? v : v == null ? '' : JSON.stringify(v));
 
+/**
+ * Buttons in an answer are written by the model, which may have been steered by mail it read.
+ * A button that would do more than open something or start a draft is removed before it reaches the browser.
+ */
+export function sanitizeDisplayCall(call: ToolCall): ToolCall {
+  if (call.name !== 'show_answer') return call;
+  try {
+    const args = JSON.parse(call.arguments || '{}') as { choices?: { actions?: unknown[] }[] };
+    if (!Array.isArray(args.choices)) return call;
+    args.choices = args.choices.filter((c) => !!c && typeof c === 'object' && (!Array.isArray(c.actions) || c.actions.every(safeChatAction)));
+    return { ...call, arguments: JSON.stringify(args) };
+  } catch {
+    return { ...call, arguments: '{}' };
+  }
+}
+
 /** The browser sends the whole conversation each time; this is it in the model's terms. */
 function history(messages: AgUiMessage[]): ChatMessage[] {
   const out: ChatMessage[] = [];
@@ -48,7 +66,7 @@ function history(messages: AgUiMessage[]): ChatMessage[] {
 
 function approvalWidget(e: EffectRow) {
   const p = e.preview;
-  const preview = [`To: ${(p.to ?? []).join(', ')}`, ...(p.cc?.length ? [`Cc: ${p.cc.join(', ')}`] : []), `Subject: ${p.subject ?? ''}`, '', p.body ?? ''].join('\n');
+  const preview = [...(p.from ? [`From: ${p.from}`] : []), `To: ${(p.to ?? []).join(', ')}`, ...(p.cc?.length ? [`Cc: ${p.cc.join(', ')}`] : []), `Subject: ${p.subject ?? ''}`, '', p.body ?? ''].join('\n');
   const mine = e.approver_route === 'user';
   return {
     preview,
@@ -78,9 +96,13 @@ export function agentRoutes(app: Hono<Env>) {
         const last = messages[messages.length - 1];
         if (!last || last.role !== 'user') throw new Error('Ask a question first.');
         // What changes per request rides with the question, so the cached prefix stays the same.
-        const screen = (input.context ?? []).map((x) => `${x.description}: ${x.value}`).join('\n');
+        // The judge is given the person's own words only, so they are taken before anything is added to the message.
+        const userWords = messages.filter((m) => m.role === 'user').map((m) => m.content);
+        // What is open on screen includes text other people wrote (an email's subject), so it travels as marked data.
+        const screen = (input.context ?? []).map((x) => `${x.description}: ${x.value}`).join('\n').slice(0, 600);
         const open = input.forwardedProps?.route ? `Open in the app: ${JSON.stringify(input.forwardedProps.route).slice(0, 300)}` : '';
-        last.content = `<context>\nNow: ${new Date().toISOString()}\nUser: ${ctx.user.name}\n${screen}\n${open}\n</context>\n\n${last.content}`;
+        const onScreen = screen || open ? `\n${untrusted('screen', [screen, open].filter(Boolean).join('\n'))}` : '';
+        last.content = `<context>\nNow: ${new Date().toISOString()}\nUser: ${ctx.user.name.replace(/[<>]/g, '')}\n</context>${onScreen}\n\n${last.content}`;
         const displayTools: ToolDef[] = (input.tools ?? []).map((t) => ({ name: t.name, description: t.description ?? '', parameters: t.parameters ?? { type: 'object', properties: {} } }));
 
         const ids = new Map<number, string>();
@@ -91,7 +113,7 @@ export function agentRoutes(app: Hono<Env>) {
 
         const result = await startRun(
           ctx,
-          { kind: 'ask', attended: true, threadId, system: ASK_SYSTEM, messages, displayTools, effort: 'low' },
+          { kind: 'ask', attended: true, threadId, system: ASK_SYSTEM, messages, userWords, displayTools, effort: 'low' },
           {
             step: (name, done) => push({ type: done ? 'STEP_FINISHED' : 'STEP_STARTED', stepName: name }),
             text: (turn, delta) => {
@@ -106,7 +128,7 @@ export function agentRoutes(app: Hono<Env>) {
             turn: (turn, _text, display) => {
               const messageId = ids.get(turn);
               if (started.has(turn)) push({ type: 'TEXT_MESSAGE_END', messageId });
-              for (const call of display) {
+              for (const call of display.map(sanitizeDisplayCall)) {
                 push({ type: 'TOOL_CALL_START', toolCallId: call.id, toolCallName: call.name, ...(started.has(turn) ? { parentMessageId: messageId } : {}) });
                 push({ type: 'TOOL_CALL_ARGS', toolCallId: call.id, delta: call.arguments || '{}' });
                 push({ type: 'TOOL_CALL_END', toolCallId: call.id });

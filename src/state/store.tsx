@@ -175,10 +175,10 @@ export type Action =
   | { type: 'markRead'; id: string; unread?: boolean }
   | { type: 'updateDraft'; id: string; body: string; subject?: string }
   | { type: 'discardDraft'; id: string }
-  | { type: 'sendDraft'; id: string; track: boolean; approved?: boolean }
+  | { type: 'sendDraft'; id: string; track: boolean; approved?: boolean; seen?: string }
   | { type: 'toggleStep'; id: string; step: string }
   /** Do what a next action says (send, update the deal, decide, block time), then tick it. */
-  | { type: 'runStep'; id: string; step: string }
+  | { type: 'runStep'; id: string; step: string; seen?: string }
   | { type: 'applyDeal'; id: string; approved?: boolean }
   /** Change a deal's stage or value (from Ask Timmy, after you press Update). */
   | { type: 'editDeal'; id: string; stage?: string; value?: number; approved?: boolean }
@@ -207,7 +207,7 @@ export type Action =
   | { type: 'setScope'; project: string | null }
   | { type: 'setPrefs'; calm?: boolean; showDeals?: boolean }
   /** Approve or turn down an item in the Approvals queue. */
-  | { type: 'resolve'; key: string; option: string; change?: { deal: string; stage: string; value: number }; via?: 'send'; approved?: boolean }
+  | { type: 'resolve'; key: string; option: string; change?: { deal: string; stage: string; value: number }; via?: 'send'; approved?: boolean; seen?: string }
   /** Outbound: leads, campaigns, sending, forms, social. */
   | { type: 'out'; op: OutOp }
   | { type: 'conn'; op: ConnOp }

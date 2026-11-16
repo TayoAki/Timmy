@@ -1,16 +1,17 @@
 import { serve } from '@hono/node-server';
 import { initAuth } from './auth/auth';
-import { config } from './config';
+import { assertSafeConfig, config } from './config';
 import { migrate } from './db/migrate';
 import { closePools, sysPool } from './db/pool';
 import { buildApp } from './http/app';
 import { registerJobs } from './jobs/handlers';
 import { startBoss, type Jobs } from './jobs/jobs';
-import { log } from './lib/log';
+import { addSecret, log } from './lib/log';
 import { composio, composioReady } from './providers/composio';
 import { startHub, stopHub } from './state/hub';
 
 async function main() {
+  assertSafeConfig();
   const applied = await migrate((line) => log.info(line));
   if (applied.length) log.info('migrations applied', { count: applied.length });
   await initAuth();
@@ -23,6 +24,7 @@ async function main() {
   if (composioReady() && !config.fakeProviders && config.publicUrl.startsWith('https://')) {
     try {
       const { secret } = await composio().ensureWebhook(`${config.publicUrl}/api/hooks/composio`);
+      if (secret) addSecret(secret);
       if (secret && !config.composio.webhookSecret) await sysPool.query('insert into app_secret (name, value) values ($1, $2) on conflict (name) do update set value = excluded.value', ['composio_webhook_secret', secret]);
     } catch (e) {
       log.warn('could not register the Composio webhook', { error: (e as Error).message });

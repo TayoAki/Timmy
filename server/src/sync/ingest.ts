@@ -32,9 +32,12 @@ export const addresses = (v: unknown): string[] => (Array.isArray(v) ? v.join(',
 /** "Dana Whitfield <dana@acme.com>" → { name: "Dana Whitfield", email: "dana@acme.com" } */
 export function parseSender(v: unknown): { name: string; email: string } {
   const s = String(v ?? '');
-  const email = addresses(s)[0] ?? '';
-  const name = s.replace(/<[^>]*>/g, '').replace(/["']/g, '').trim();
-  return { name: name && name.toLowerCase() !== email ? name : '', email };
+  // The address is what sits in the last <…>. The display name is free text the sender chose
+  // and may itself look like an address ("ceo@corp.com" <mallory@evil.test>), so it is never used as one.
+  const angle = [...s.matchAll(/<([^<>]*)>/g)].pop()?.[1];
+  const email = (angle !== undefined ? addresses(angle)[0] : addresses(s)[0]) ?? '';
+  const name = (angle !== undefined ? s.slice(0, s.lastIndexOf('<')) : '').replace(/["']/g, '').trim();
+  return { name: name && name.toLowerCase() !== email ? name.slice(0, 120) : '', email };
 }
 
 /** Accepts the fetch tools' camelCase shape and the trigger's snake_case shape. */
@@ -71,7 +74,8 @@ export function paragraphs(text: string): string[] {
 
 export async function upsertMessage(tx: Tx, workspaceId: string, conn: ConnectionRow, m: MailMessage): Promise<{ id: string; inserted: boolean }> {
   const sender = parseSender(m.from);
-  const mine = !!conn.account_label && sender.email === conn.account_label.toLowerCase();
+  // Sent by the mailbox owner means the provider filed it under Sent. The From header alone can be forged.
+  const mine = m.labels.includes('SENT');
   const { rows } = await tx.query(
     `insert into item (id, workspace_id, connection_id, kind, external_id, thread_key, occurred_at, sender, recipients, subject, snippet, labels, direction, meta)
      values ($1, $2, $3, 'message', $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13::jsonb)
@@ -91,7 +95,7 @@ export async function upsertMessage(tx: Tx, workspaceId: string, conn: Connectio
       m.text.replace(/\s+/g, ' ').slice(0, 300),
       m.labels,
       mine ? 'out' : 'in',
-      JSON.stringify({ senderName: sender.name, attachments: m.attachments }),
+      JSON.stringify({ senderName: sender.name, fromHeader: m.from.slice(0, 300), attachments: m.attachments }),
     ],
   );
   const row = rows[0] as { id: string; inserted: boolean };
@@ -129,7 +133,7 @@ const personId = (email: string, mine: string) => (email === mine ? 'me' : `mail
 /** Builds (or refreshes) the thread a set of stored messages belongs to. Returns the state with it in place. */
 export async function projectThread(tx: Tx, state: State, workspaceId: string, conn: ConnectionRow, threadKey: string): Promise<State> {
   const { rows } = await tx.query(
-    `select i.external_id, i.occurred_at, i.sender, i.recipients, i.subject, i.labels, i.meta, b.text
+    `select i.external_id, i.occurred_at, i.sender, i.recipients, i.subject, i.labels, i.meta, i.direction, b.text
      from item i left join item_body b on b.item_id = i.id
      where i.workspace_id = $1 and i.connection_id = $2 and i.kind = 'message' and i.thread_key = $3
      order by i.occurred_at`,
@@ -139,7 +143,7 @@ export async function projectThread(tx: Tx, state: State, workspaceId: string, c
   const mine = (conn.account_label ?? '').toLowerCase();
   const people: Record<string, { name: string; email: string }> = {};
   const messages = rows.map((r) => {
-    const from = personId(r.sender as string, mine);
+    const from = r.direction === 'out' ? 'me' : `mail:${r.sender as string}`;
     const name = (r.meta as { senderName?: string }).senderName;
     if (from !== 'me' && name) people[from] = { name, email: r.sender as string };
     const rec = r.recipients as { to: string[]; cc: string[] };
@@ -154,7 +158,7 @@ export async function projectThread(tx: Tx, state: State, workspaceId: string, c
     };
   });
   const last = rows[rows.length - 1]!;
-  const lastIn = [...rows].reverse().find((r) => (r.sender as string) !== mine);
+  const lastIn = [...rows].reverse().find((r) => r.direction !== 'out');
   const inInbox = rows.some((r) => (r.labels as string[]).includes('INBOX'));
   const unread = rows.some((r) => (r.labels as string[]).includes('UNREAD'));
   const participants = [...new Set(['me', ...messages.flatMap((m) => [m.from, ...m.to, ...(m.cc ?? [])])])];

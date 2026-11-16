@@ -156,8 +156,8 @@ describe('when the provider fails', () => {
     expect(sent()).toHaveLength(0);
     const t = (await w.state()).threads.find((x) => x.subject === 'Refused')!;
     expect(t.history!.some((h) => /Not sent/.test(h.text))).toBe(true);
-    // A failed effect is final: it can never be run again.
-    await sysPool.query('update effect set hold_until = now() where id = $1', [e!.id]);
+    // A failed effect is final: it can never be run again, and its hold can no longer be touched.
+    await expect(sysPool.query('update effect set hold_until = now() where id = $1', [e!.id])).rejects.toThrow(/hold cannot change/);
     expect(await executeEffect(w.workspaceId, e!.id)).toBeNull();
     expect(sent()).toHaveLength(0);
   });
@@ -176,20 +176,41 @@ describe('when the provider fails', () => {
     expect(sent()).toHaveLength(1);
   });
 
-  it('a timeout before the message left ends as failed once Sent shows nothing', async () => {
+  it('a timeout with no trace in Sent stays unconfirmed: it is never called "not sent", and never sent again', async () => {
     await send(w, 'mail:dana@client.test', 'Never left');
     fake().failNext.set('GMAIL_SEND_EMAIL', 'timeout');
     await releaseHolds(w);
     let [e] = await effects();
     expect(e!.status).toBe('uncertain');
-    // Too soon to call it: it stays uncertain rather than guessing.
+    // Not finding it in Sent proves nothing (Sent can lag, the copy can differ), so Timmy does not claim it was not sent:
+    // that claim would invite a second send. It stays unconfirmed for a person to check.
     await reconcileEffect(w.workspaceId, e!.id);
-    expect((await effects())[0]!.status).toBe('uncertain');
     await sysPool.query(`update effect set executing_at = now() - interval '5 minutes' where id = $1`, [e!.id]);
     await reconcileEffect(w.workspaceId, e!.id);
     [e] = await effects();
-    expect(e!.status).toBe('failed');
+    expect(e!.status).toBe('uncertain');
+    expect(await executeEffect(w.workspaceId, e!.id)).toBeNull();
+    await releaseHolds(w);
     expect(sent()).toHaveLength(0);
+    const t = (await w.state()).threads.find((x) => x.subject === 'Never left')!;
+    expect(t.history!.some((h) => /Check your Sent folder/.test(h.text))).toBe(true);
+    // While it is unconfirmed, the same thread cannot be sent again by pressing Send.
+    const again = await w.cmd({ type: 'reply', id: t.id, body: 'Second try' });
+    expect(again.ok).toBe(false);
+    expect(again.error).toMatch(/already has an email waiting/);
+  });
+
+  it('the copy in Sent is recognised even when its line endings and spacing differ', async () => {
+    await send(w, 'mail:dana@client.test', 'Spacing', 'Hi Dana,\n\nHere is the  quote.\n\nBest');
+    fake().failNext.set('GMAIL_SEND_EMAIL', 'sent-then-timeout');
+    await releaseHolds(w);
+    const box = fake().accounts.get(mailbox.account)!;
+    const copy = box.messages.find((m) => m.subject === 'Spacing')!;
+    copy.body = 'Hi Dana,\r\n\r\nHere is the quote.\r\n\r\nBest\r\n';
+    const [e] = await effects();
+    await reconcileEffect(w.workspaceId, e!.id);
+    expect((await effects())[0]).toMatchObject({ status: 'completed', external_id: copy.id });
+    expect(sent()).toHaveLength(1);
   });
 });
 
@@ -262,8 +283,10 @@ describe('who may approve', () => {
     await releaseHolds(w);
     expect(sent()).toHaveLength(0);
     expect((await effects())[0]!.status).toBe('declined');
-    // Declined is final.
-    expect((await w.cmd({ type: 'effect', id: p.effect!.id, approve: true })).ok).toBe(true);
+    // Declined is final, and the answer says so instead of claiming it was approved.
+    const late = await w.cmd({ type: 'effect', id: p.effect!.id, approve: true });
+    expect(late.ok).toBe(false);
+    expect(late.error).toMatch(/already turned down/);
     await releaseHolds(w);
     expect(sent()).toHaveLength(0);
     expect((await effects())[0]!.status).toBe('declined');
@@ -274,8 +297,8 @@ describe('who may approve', () => {
       const r = await propose(tx, l, l.state, actorOf(w, 'owner'), { ...proposal('agent-2'), source: 'agent' });
       return { state: r.state, result: r };
     });
-    await w.cmd({ type: 'effect', id: p.effect!.id, approve: true });
-    await w.cmd({ type: 'effect', id: p.effect!.id, approve: true });
+    expect((await w.cmd({ type: 'effect', id: p.effect!.id, approve: true })).ok).toBe(true);
+    expect((await w.cmd({ type: 'effect', id: p.effect!.id, approve: true })).error).toMatch(/already approved/);
     expect(sent()).toHaveLength(0);
     expect((await w.state()).pending[0]).toMatchObject({ status: 'holding' });
     await releaseHolds(w);

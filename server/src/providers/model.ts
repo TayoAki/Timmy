@@ -231,7 +231,7 @@ export class FakeModel implements ModelProvider {
       return { content: found ? `I found it: “${found}”.` : last.content.includes('"results":[]') ? 'I couldn’t find any mail about that.' : 'Done.' };
     }
     // The chat endpoint puts a context block ahead of the question; the rules look at the question itself.
-    const asked = last.content.replace(/^<context>[\s\S]*?<\/context>\s*/, '').trim();
+    const asked = last.content.replace(/^<context>[\s\S]*?<\/context>\s*/, '').replace(/^<untrusted source="screen">[\s\S]*?<\/untrusted>\s*/, '').trim();
     const text = asked.toLowerCase();
     const send = /^send (?:an email )?to (\S+@\S+) saying (.+)$/i.exec(asked);
     if (send && has('send_email')) return { toolCalls: [{ name: 'send_email', arguments: { to: [send[1]], subject: 'A note from Timmy', body: send[2] } }] };

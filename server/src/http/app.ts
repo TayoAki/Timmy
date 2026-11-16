@@ -3,7 +3,8 @@ import { extname, join, normalize, resolve } from 'node:path';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { auth } from '../auth/auth';
-import { MODEL_ALLOWLIST, config, modelFor } from '../config';
+import { timingSafeEqual } from 'node:crypto';
+import { MODEL_ALLOWLIST, config, isLocal, modelFor } from '../config';
 import { sysPool, withWorkspace } from '../db/pool';
 import { audit } from '../gateway/gateway';
 import { enqueueSoon, inlineJobs } from '../jobs/jobs';
@@ -12,13 +13,14 @@ import { composio, composioReady, fakeComposio } from '../providers/composio';
 import { lastMailTo } from '../providers/email';
 import { modelReady } from '../providers/model';
 import { runCommand } from '../state/engine';
-import { subscribe } from '../state/hub';
+import { stillAllowed, subscribe, type Subscriber } from '../state/hub';
+import { rulesFor } from '../auth/roles';
 import { loadState } from '../state/docs';
 import { ConnectError, TOOLKITS, disconnect, finishConnect, startConnect } from '../sync/connect';
 import { pickSlices, toWire } from '../../../src/live/patches';
 import type { Action } from '../../../src/state/store';
 import { agentRoutes } from './agent';
-import { ctxOf, requireSession, requireWorkspace, sameOrigin, workspacesOf, type Env } from './session';
+import { ctxOf, membership, requireSession, requireWorkspace, sameOrigin, sessionOf, workspacesOf, type Env } from './session';
 
 const wire = (body: unknown, status = 200) => new Response(toWire(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
 
@@ -72,7 +74,6 @@ export function buildApp(): Hono<Env> {
     let active = null;
     if (activeId) {
       const role = workspaces.find((w) => w.id === activeId)!.role;
-      const { rulesFor } = await import('../auth/roles');
       const ws = await withWorkspace({ workspaceId: activeId }, async (tx) => (await tx.query('select id, name, trade, model_id, approval_mode from workspace where id = $1', [activeId])).rows[0]);
       if (ws) active = { id: ws.id, name: ws.name, trade: ws.trade, role, can: rulesFor(role), model: modelFor(ws.model_id), models: MODEL_ALLOWLIST, approvalMode: ws.approval_mode };
     }
@@ -106,14 +107,23 @@ export function buildApp(): Hono<Env> {
       const send = (event: string, data: unknown) => {
         if (open) void stream.writeSSE({ event, data: toWire(data) }).catch(() => (open = false));
       };
-      const off = subscribe({ workspaceId: ctx.workspaceId, rev, send });
+      // The person may sign out or be removed while the stream is open; it ends when either happens.
+      const headers = c.req.raw.headers;
+      const allowed = async () => {
+        const s = await sessionOf(headers);
+        return !!s && s.user.id === ctx.user.id && rulesFor(await membership(ctx.user.id, ctx.workspaceId)).read;
+      };
+      const sub: Subscriber = { workspaceId: ctx.workspaceId, rev, send, allowed, checkedAt: Date.now(), close: () => (open = false) };
+      const off = subscribe(sub);
       stream.onAbort(() => {
         open = false;
         off();
       });
       send('hello', { rev });
       while (open) {
-        await stream.sleep(25_000);
+        await stream.sleep(15_000);
+        sub.checkedAt = 0;
+        if (!(await stillAllowed(sub))) break;
         send('ping', {});
       }
       off();
@@ -124,6 +134,7 @@ export function buildApp(): Hono<Env> {
 
   app.get('/api/v1/settings', requireWorkspace, async (c) => {
     const ctx = ctxOf(c);
+    if (!ctx.rules.read) return c.json({ error: 'Your role can’t read this workspace.' }, 403);
     const ws = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => (await tx.query('select model_id, approval_mode, max_concurrent_runs, monthly_spend_cap_usd, kill_switch, timezone from workspace where id = $1', [ctx.workspaceId])).rows[0]);
     return c.json({ model: modelFor(ws.model_id), models: MODEL_ALLOWLIST, approvalMode: ws.approval_mode, maxConcurrentRuns: ws.max_concurrent_runs, monthlySpendCapUsd: ws.monthly_spend_cap_usd, killSwitch: ws.kill_switch, timezone: ws.timezone });
   });
@@ -182,12 +193,14 @@ export function buildApp(): Hono<Env> {
 
   app.get('/api/v1/effects/:id', requireWorkspace, async (c) => {
     const ctx = ctxOf(c);
+    if (!ctx.rules.read) return c.json({ error: 'Your role can’t read this workspace.' }, 403);
     const row = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => (await tx.query('select id, kind, status, target, source, requested_by, approved_by, approved_via, approver_route, hold_until, error, external_id, created_at, completed_at from effect where id = $1 and workspace_id = $2', [c.req.param('id'), ctx.workspaceId])).rows[0]);
     return row ? c.json(row) : c.json({ error: 'Not found' }, 404);
   });
 
   app.get('/api/v1/usage', requireWorkspace, async (c) => {
     const ctx = ctxOf(c);
+    if (!ctx.rules.read) return c.json({ error: 'Your role can’t read this workspace.' }, 403);
     const out = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => {
       const models = (await tx.query(`select route, model, count(*)::int as calls, sum(tokens_in)::int as tokens_in, sum(tokens_out)::int as tokens_out, sum(tokens_reasoning)::int as tokens_reasoning, sum(tokens_cached)::int as tokens_cached, sum(cost_usd)::float8 as cost_usd from usage_event where workspace_id = $1 and at >= date_trunc('month', now()) group by route, model order by route`, [ctx.workspaceId])).rows;
       const calls = (await tx.query(`select phase, count(*)::int as calls from provider_call where workspace_id = $1 and at >= date_trunc('month', now()) group by phase order by phase`, [ctx.workspaceId])).rows;
@@ -201,14 +214,27 @@ export function buildApp(): Hono<Env> {
   /* ───────────── Test hooks ───────────── */
 
   if (config.testHooks) {
+    // On a deployed server (staging) the hooks need the test token. The one exception is the page that stands in
+    // for the provider's consent screen, which a browser opens by navigation and which only returns to our own callback.
+    app.use('/api/test/*', async (c, next) => {
+      if (!isLocal() && !c.req.path.endsWith('/fake-connect')) {
+        const given = Buffer.from(c.req.header('x-test-token') ?? '');
+        const want = Buffer.from(config.testToken);
+        if (given.length !== want.length || !timingSafeEqual(given, want)) return c.json({ error: 'Not found' }, 404);
+      }
+      await next();
+    });
+
     app.get('/api/test/outbox', async (c) => c.json({ mail: await lastMailTo(String(c.req.query('to') ?? '')) }));
 
     // Stands in for the provider's consent screen when the fake provider is on.
     app.get('/api/test/fake-connect', (c) => {
       const fake = fakeComposio();
       if (!fake) return c.json({ error: 'the fake provider is off' }, 404);
+      const to = String(c.req.query('to') ?? '');
+      if (!to.startsWith(`${config.publicUrl}/api/v1/connections/callback?`)) return c.json({ error: 'Not found' }, 404);
       fake.completeConnect(String(c.req.query('account')));
-      return c.redirect(String(c.req.query('to')));
+      return c.redirect(to);
     });
 
     app.post('/api/test/fake', requireWorkspace, async (c) => {

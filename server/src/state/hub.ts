@@ -14,6 +14,11 @@ export interface Subscriber {
   /** The last revision this tab has. */
   rev: number;
   send: (event: string, data: unknown) => void;
+  /** Asked before anything is sent: is this tab's person still signed in and still a member? */
+  allowed?: () => Promise<boolean>;
+  checkedAt?: number;
+  /** Ends the stream. */
+  close?: () => void;
   busy?: boolean;
   /** A change was announced while a catch-up was already running. */
   again?: boolean;
@@ -58,6 +63,20 @@ async function flush(workspaceId: string) {
   for (const sub of subscribers.get(workspaceId) ?? []) await catchUp(sub);
 }
 
+/** Membership can end while a stream is open. It is re-checked at most every few seconds, before anything is sent. */
+export async function stillAllowed(sub: Subscriber): Promise<boolean> {
+  if (!sub.allowed) return true;
+  if (sub.checkedAt && Date.now() - sub.checkedAt < 5000) return true;
+  const ok = await sub.allowed().catch(() => false);
+  sub.checkedAt = Date.now();
+  if (!ok) {
+    sub.send('gone', {});
+    sub.close?.();
+    subscribers.get(sub.workspaceId)?.delete(sub);
+  }
+  return ok;
+}
+
 /** Sends a tab everything after the revision it has. The read is scoped to the tab's own workspace. */
 async function catchUp(sub: Subscriber) {
   if (sub.busy) {
@@ -68,6 +87,7 @@ async function catchUp(sub: Subscriber) {
   try {
     do {
       sub.again = false;
+      if (!(await stillAllowed(sub))) return;
       const changes = await withWorkspace({ workspaceId: sub.workspaceId }, (tx) => changesSince(tx, sub.workspaceId, sub.rev));
       if (changes === null) {
         // Too far behind to replay: the tab reloads its snapshot.

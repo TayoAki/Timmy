@@ -1,6 +1,6 @@
 import { config } from '../config';
 import { sysPool } from '../db/pool';
-import { dueEffects, executeEffect, onEffectApproved, onEffectSettled, reconcileEffect, staleExecuting } from '../gateway/gateway';
+import { dueEffects, executeEffect, expireStaleApprovals, onEffectApproved, onEffectSettled, reconcileEffect, staleExecuting } from '../gateway/gateway';
 import { draftReply } from '../agent/draft';
 import { needsReading, readThread } from '../agent/read';
 import { modelReady } from '../providers/model';
@@ -8,6 +8,7 @@ import { readState } from '../state/mutate';
 import { abandonedRuns, resumeRun } from '../agent/loop';
 import { log } from '../lib/log';
 import { syncCalendar } from '../sync/calendar';
+import { revokeAtProvider } from '../sync/connect';
 import { backfillMail, ingestThread } from '../sync/ingest';
 import { defineJob, enqueueSoon } from './jobs';
 
@@ -21,9 +22,11 @@ export function registerJobs() {
   defineJob(
     'effect.sweep',
     async () => {
+      await expireStaleApprovals(sysPool);
       for (const e of await dueEffects(sysPool)) await executeEffect(e.workspace_id, e.id);
       for (const e of await staleExecuting(sysPool)) enqueueSoon('effect.reconcile', { workspaceId: e.workspace_id, effectId: e.id });
-      const { rows } = await sysPool.query(`select id, workspace_id from effect where status = 'uncertain' and updated_at < now() - interval '1 minute' limit 25`);
+      // An unconfirmed send is checked against the Sent folder for half an hour; after that it stays unconfirmed for a person to look at.
+      const { rows } = await sysPool.query(`select id, workspace_id from effect where status = 'uncertain' and updated_at < now() - interval '1 minute' and executing_at > now() - interval '30 minutes' limit 25`);
       for (const e of rows) enqueueSoon('effect.reconcile', { workspaceId: e.workspace_id, effectId: e.id }, { singletonKey: `rec:${e.id}` });
     },
     '* * * * *',
@@ -68,6 +71,11 @@ export function registerJobs() {
 
   defineJob('mail.read', async (d) => {
     await readThread(String(d.workspaceId), String(d.threadId));
+  });
+
+  // Removing an account at the provider is retried until it works; the connection is already unused on our side.
+  defineJob('connection.revoke', async (d) => {
+    await revokeAtProvider((d.connectedAccountId as string | null) ?? null, (d.triggers as string[] | undefined) ?? []);
   });
 
   defineJob('draft.make', async (d) => {

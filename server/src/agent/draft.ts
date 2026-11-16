@@ -62,8 +62,8 @@ export async function draftReply(workspaceId: string, threadId: string, opts: { 
             `The user is ${opts.userName ?? workspace.owner_name ?? 'the mailbox owner'}. Today is ${new Date().toISOString().slice(0, 10)}.`,
             rules.length ? `The user's writing rules:\n${rules.map((r) => `- ${r}`).join('\n')}` : '',
             opts.note?.trim() ? `The user's note on what to say: ${opts.note.trim().slice(0, 2000)}` : 'The user gave no note. Reply to what the last message asks.',
-            `Reply to: ${name(to)}`,
-            untrusted('mail', { subject: thread.subject, messages }),
+            // Names come from mail headers, which the sender controls, so they stay inside the wrapper too.
+            untrusted('mail', { reply_to: name(to), subject: thread.subject, messages }),
           ]
             .filter(Boolean)
             .join('\n\n'),

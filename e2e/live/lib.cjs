@@ -43,7 +43,9 @@ async function signUp(page, { name = 'Ada Lovelace', company = `Analytical ${sta
 /** Calls the API with the page's own session (its cookies), without going through the page's console. */
 async function api(page, method, path, body) {
   // A browser always sends Origin on a write; the API checks it, so the helper sends it too.
-  const r = await page.request.fetch(new URL(path, BASE).toString(), { method, data: body, failOnStatusCode: false, headers: method === 'GET' ? {} : { origin: new URL(BASE).origin } });
+  // Test hooks on a deployed server (staging) need the test token.
+  const headers = { ...(method === 'GET' ? {} : { origin: new URL(BASE).origin }), ...(path.startsWith('/api/test/') && process.env.TEST_TOKEN ? { 'x-test-token': process.env.TEST_TOKEN } : {}) };
+  const r = await page.request.fetch(new URL(path, BASE).toString(), { method, data: body, failOnStatusCode: false, headers });
   const text = await r.text();
   try {
     return { status: r.status(), body: JSON.parse(text) };

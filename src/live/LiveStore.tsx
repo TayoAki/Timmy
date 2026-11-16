@@ -1,3 +1,4 @@
+import { draftHash } from './hash';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { NOW, PEOPLE, PROJECTS, setUnknownPerson } from '../data/mock';
 import { ALL_LABELS, StoreCtx, reducer, type Action, type State } from '../state/store';
@@ -118,6 +119,11 @@ export function LiveStoreProvider({ profile, snapshot, children }: { profile: Li
       if (action.type === 'makeDraft') {
         void send(commandId(), action);
         return;
+      }
+      // A send says which draft the person was looking at; the server refuses if it has changed since.
+      if (action.type === 'sendDraft' || action.type === 'runStep' || (action.type === 'resolve' && action.key.startsWith('draft:'))) {
+        const threadId = action.type === 'resolve' ? action.key.slice(6) : action.id;
+        action = { ...action, seen: draftHash(shown.current.threads.find((t) => t.id === threadId)?.draft) };
       }
       const id = commandId();
       let next = reducer(shown.current, action);

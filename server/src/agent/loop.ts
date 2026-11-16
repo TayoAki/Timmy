@@ -42,6 +42,8 @@ export interface StartRun {
   threadId?: string;
   system: string;
   messages: ChatMessage[];
+  /** What the person typed, and nothing else: the only text Auto mode's judge is shown. Defaults to the user messages. */
+  userWords?: string[];
   /** Tools the browser draws itself (widgets). Their calls are passed to the browser, not run here. */
   displayTools?: ToolDef[];
   effort?: Effort;
@@ -124,7 +126,7 @@ export async function startRun(ctx: Ctx, input: StartRun, events: RunEvents = {}
     displayTools: input.displayTools ?? [],
     pending: {},
     effort: input.effort ?? 'low',
-    userWords: input.messages.filter((m) => m.role === 'user').map((m) => m.content),
+    userWords: input.userWords ?? input.messages.filter((m) => m.role === 'user').map((m) => m.content),
   };
   return drive(ctx, { runId, fence: 1, model, attended: input.attended, threadId: input.threadId, kind: input.kind }, cp, 0, events);
 }

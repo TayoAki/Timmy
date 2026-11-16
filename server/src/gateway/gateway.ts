@@ -22,7 +22,7 @@ export interface EffectRow {
   kind: EffectKind;
   payload: Record<string, unknown>;
   payload_hash: string;
-  preview: PendingEffect['preview'] & { title?: string; why?: string; thread?: string; conversation?: string };
+  preview: PendingEffect['preview'] & { title?: string; why?: string; thread?: string; conversation?: string; replay?: unknown };
   target: string | null;
   idempotency_key: string;
   status: 'intended' | 'approved' | 'executing' | 'completed' | 'uncertain' | 'failed' | 'declined' | 'cancelled';
@@ -59,6 +59,8 @@ export interface Proposal {
   commandId?: string;
   thread?: string;
   conversation?: string;
+  /** The person's own action, kept so it can be applied to the screen once someone else has approved the send. */
+  replay?: unknown;
   onBehalfOf?: string;
   /** Fields a rule's scope is matched against. */
   meta?: Record<string, unknown>;
@@ -99,6 +101,12 @@ let settled: (effect: EffectRow) => void = () => {};
 export const onEffectSettled = (fn: (effect: EffectRow) => void) => {
   settled = fn;
 };
+/** Applies a reducer action to a state. Set by the command engine, which owns the reducer. */
+let replay: (loaded: Loaded, state: State, action: unknown) => State | undefined = () => undefined;
+export const onReplay = (fn: typeof replay) => {
+  replay = fn;
+};
+
 /** Called when an effect is approved, so it can be scheduled for the end of its hold. */
 let approvedHook: (effect: EffectRow) => void = () => {};
 export const onEffectApproved = (fn: (effect: EffectRow) => void) => {
@@ -114,7 +122,7 @@ function pendingOf(e: EffectRow): PendingEffect {
     kind: domain === 'mail' ? (e.kind === 'cold_email.send' ? 'campaign' : 'email') : domain,
     title: e.preview.title ?? KINDS[e.kind].label,
     why: e.preview.why ?? '',
-    preview: { to: e.preview.to, cc: e.preview.cc, subject: e.preview.subject, body: e.preview.body, lines: e.preview.lines },
+    preview: { from: e.preview.from, to: e.preview.to, cc: e.preview.cc, subject: e.preview.subject, body: e.preview.body, lines: e.preview.lines },
     waitingOn: e.approver_route === 'user' ? 'you' : e.approver_route,
     status: e.status === 'approved' ? 'holding' : 'waiting',
     sendsAt: e.status === 'approved' && e.hold_until ? new Date(e.hold_until) : undefined,
@@ -182,7 +190,7 @@ export async function propose(tx: Tx, loaded: Loaded, state: State, actor: Actor
 
   const id = newId('eff');
   const holdUntil = approval && k.hold ? new Date(Date.now() + config.sendHoldSeconds * 1000) : null;
-  const preview = { ...p.preview, title: p.title, why: p.why, thread: p.thread, conversation: p.conversation };
+  const preview = { ...p.preview, title: p.title, why: p.why, thread: p.thread, conversation: p.conversation, ...(p.replay ? { replay: p.replay } : {}) };
   const { rows } = await tx.query(
     `insert into effect (id, workspace_id, kind, payload, payload_hash, preview, target, idempotency_key, status, source, run_id, command_id,
                          requested_by, on_behalf_of, approver_route, approved_by, approved_via, policy_id, approved_at, hold_until)
@@ -243,7 +251,7 @@ export async function decide(tx: Tx, loaded: Loaded, state: State, actor: Actor,
   const { rows } = await tx.query('select * from effect where id = $1 and workspace_id = $2 for update', [effectId, workspaceId]);
   const e = rows[0] as EffectRow | undefined;
   if (!e) throw new GatewayError('That request no longer exists.', 404);
-  if (e.status !== 'intended') return { effect: e, state: withPending(state, e) };
+  if (e.status !== 'intended') throw new GatewayError(alreadyDecided(e), 409);
   if (!mayDecide(e.approver_route, e.kind, actor, e)) throw new GatewayError('This one isn’t yours to approve.', 403);
   if (approve && loaded.workspace.kill_switch) throw new GatewayError('Sending is switched off for this workspace.', 409);
 
@@ -260,6 +268,25 @@ export async function decide(tx: Tx, loaded: Loaded, state: State, actor: Actor,
   if (approve) approvedHook(effect);
   else settled(effect);
   return { effect, state: withPending(state, effect) };
+}
+
+/** What to tell someone who acts on a request that is no longer waiting. */
+function alreadyDecided(e: EffectRow): string {
+  switch (e.status) {
+    case 'approved':
+      return 'That was already approved. It goes out when its undo window ends.';
+    case 'executing':
+    case 'completed':
+      return 'That was already sent.';
+    case 'uncertain':
+      return 'That was approved, but Timmy could not confirm it was sent. Check your Sent folder.';
+    case 'declined':
+      return 'That was already turned down. Nothing was sent.';
+    case 'cancelled':
+      return 'That was already undone. Nothing was sent.';
+    default:
+      return 'That could not be sent, and was not.';
+  }
 }
 
 /** Undo during the hold: an approved effect that hasn't started is cancelled. Returns false when it already left. */
@@ -330,7 +357,7 @@ async function settle(workspaceId: string, claimed: EffectRow, outcome: Outcome)
     await audit(tx, workspaceId, { actor: 'system', action: `effect.${outcome.status}`, effectId: claimed.id, runId: claimed.run_id, detail: outcome.status === 'completed' ? { externalId: outcome.externalId } : { error: outcome.error } });
     const loaded = await loadState(tx, workspaceId);
     let state = withPending(loaded.state, e);
-    state = afterEffect(state, e, outcome);
+    state = afterEffect(loaded, state, e, outcome);
     commit = await commitState(tx, loaded, state, 'effect');
     return e;
   });
@@ -341,10 +368,28 @@ async function settle(workspaceId: string, claimed: EffectRow, outcome: Outcome)
 }
 
 /** What the screens show once a send has gone out, failed, or is unconfirmed. */
-function afterEffect(state: State, e: EffectRow, outcome: Outcome): State {
+function afterEffect(loaded: Loaded, state0: State, e: EffectRow, outcome: Outcome): State {
   const threadId = e.preview.thread;
-  if (!threadId) return state;
-  const local = e.payload.localMessageId as string | undefined;
+  if (!threadId) return state0;
+  let state = state0;
+  let local = e.payload.localMessageId as string | undefined;
+  // A send that waited for someone else's OK was never applied to the screen. Now that it has gone out,
+  // the person's original action is applied, so the thread shows it as sent and the draft is gone.
+  if (outcome.status === 'completed' && e.preview.replay && !state.threads.find((t) => t.id === threadId)?.messages.some((m) => m.id === local)) {
+    const before = new Set(state.threads.flatMap((t) => t.messages.map((m) => m.id)));
+    const next = replay(loaded, state, e.preview.replay);
+    if (next) {
+      state = { ...next, toasts: state.toasts, route: state.route };
+      local = state.threads.find((t) => t.id === threadId)?.messages.find((m) => m.from === 'me' && !before.has(m.id))?.id ?? local;
+    }
+  }
+  // A send Timmy prepared (from chat) has no message on the thread yet: add it, and drop a draft that would send the same thing again.
+  if (outcome.status === 'completed' && !state.threads.find((t) => t.id === threadId)?.messages.some((m) => m.id === local || m.id === outcome.externalId)) {
+    const p = e.payload as { to?: string[]; cc?: string[]; body?: string };
+    const message = { id: outcome.externalId ?? `sent-${e.id}`, from: 'me', to: (p.to ?? []).map((x) => `mail:${x}`), ...(p.cc?.length ? { cc: p.cc.map((x) => `mail:${x}`) } : {}), at: new Date(), body: String(p.body ?? '').split(/\n\n+/) };
+    local = message.id;
+    state = { ...state, threads: state.threads.map((t) => (t.id === threadId ? { ...t, draft: undefined, unread: false, messages: [...t.messages, message], history: [...(t.history ?? []), { at: new Date(), text: 'Sent after approval' }] } : t)) };
+  }
   return {
     ...state,
     threads: state.threads.map((t) => {
@@ -359,7 +404,7 @@ function afterEffect(state: State, e: EffectRow, outcome: Outcome): State {
           ext: { ...ext, threadKey, connectionId: e.payload.connectionId },
         } as typeof t;
       }
-      const note = outcome.status === 'failed' ? `Not sent: ${outcome.error}` : 'Timmy couldn’t confirm this was sent and is checking the Sent folder.';
+      const note = outcome.status === 'failed' ? `Not sent: ${outcome.error}` : 'Timmy couldn’t confirm this was sent. Check your Sent folder before sending it again.';
       return { ...t, history: [...(t.history ?? []), { at: new Date(), text: note }] };
     }),
   };
@@ -382,8 +427,23 @@ export async function reconcileEffect(workspaceId: string, effectId: string): Pr
 
 /** Effects that are approved and past their hold, across workspaces. Ids only. */
 export async function dueEffects(sys: { query: Tx['query'] }, limit = 25): Promise<{ id: string; workspace_id: string }[]> {
-  const { rows } = await sys.query(`select id, workspace_id from effect where status = 'approved' and (hold_until is null or hold_until <= now()) order by approved_at limit $1`, [limit]);
+  const { rows } = await sys.query(
+    `select e.id, e.workspace_id from effect e join workspace w on w.id = e.workspace_id
+     where e.status = 'approved' and (e.hold_until is null or e.hold_until <= now()) and not w.kill_switch
+     order by e.approved_at limit $1`,
+    [limit],
+  );
   return rows as { id: string; workspace_id: string }[];
+}
+
+/**
+ * An approval is for now, not for whenever sending is switched back on. Anything approved
+ * that has sat unsent for a day (the kill switch was on, or the mailbox was gone) is cancelled.
+ */
+export async function expireStaleApprovals(sys: { query: Tx['query'] }): Promise<number> {
+  const { rows } = await sys.query(`update effect set status = 'cancelled', error = 'Approved more than a day ago and never sent, so it was cancelled' where status = 'approved' and approved_at < now() - interval '24 hours' returning id, workspace_id, run_id`);
+  for (const r of rows) await sys.query(`insert into audit_log (workspace_id, actor, action, effect_id, run_id, detail) values ($1, 'system', 'effect.cancelled', $2, $3, '{"reason":"expired"}'::jsonb)`, [r.workspace_id, r.id, r.run_id]);
+  return rows.length;
 }
 
 /** Effects stuck in 'executing' (the process died mid-call) become 'uncertain', then get reconciled. */

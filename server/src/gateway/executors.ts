@@ -54,25 +54,26 @@ export const EXECUTORS: Partial<Record<EffectKind, Executor>> = {
 
 /**
  * For an effect whose outcome is unknown: look for evidence that it happened.
- * Returns completed when found, failed when the provider shows it did not
- * happen, and uncertain when it is too early to tell.
+ * Returns completed when found and uncertain otherwise. It never returns
+ * failed: absence of evidence is not evidence that nothing was sent.
  */
 export async function reconcile(e: EffectRow): Promise<Outcome> {
   if (e.kind !== 'email.send' && e.kind !== 'email.reply' && e.kind !== 'cold_email.send') return { status: 'uncertain', error: e.error ?? 'unknown' };
   const p = e.payload as unknown as MailPayload;
   const started = e.executing_at ? new Date(e.executing_at) : new Date(e.created_at);
-  // Sent mail can take a moment to show up; don't call it a failure too soon.
-  const tooSoon = Date.now() - started.getTime() < 60_000;
   const conn = await connectionById(e.workspace_id, p.connectionId);
   if (!conn || conn.toolkit !== 'gmail') return { status: 'uncertain', error: e.error ?? 'unknown' };
   const after = Math.floor(started.getTime() / 1000) - 120;
   const subject = e.kind === 'email.reply' ? '' : ` subject:"${p.subject.replace(/"/g, '')}"`;
   const res = await callTool(e.workspace_id, conn.id, 'GMAIL_FETCH_EMAILS', { query: `in:sent to:${p.to[0]}${subject} after:${after}`, max_results: 10, include_payload: false }, 'send');
   if (!res.successful) return { status: 'uncertain', error: res.error ?? 'could not check the Sent folder' };
+  // Compare on the words only: line endings and spacing differ between what was sent and what the provider returns.
+  const words = (t: string) => t.replace(/\s+/g, ' ').trim().slice(0, 200);
   const found = ((res.data.messages ?? []) as { messageId: string; threadId: string; to?: string; messageText?: string }[]).find(
-    (m) => (m.to ?? '').toLowerCase().includes(p.to[0]!.toLowerCase()) && (!p.threadKey || m.threadId === p.threadKey) && (m.messageText ?? '').trim().slice(0, 60) === p.body.trim().slice(0, 60),
+    (m) => (m.to ?? '').toLowerCase().includes(p.to[0]!.toLowerCase()) && (!p.threadKey || m.threadId === p.threadKey) && (!m.messageText || words(m.messageText).startsWith(words(p.body).slice(0, 80))),
   );
   if (found) return { status: 'completed', result: { via: 'gmail', id: found.messageId, threadId: found.threadId, reconciled: true }, externalId: found.messageId };
-  if (tooSoon) return { status: 'uncertain', error: e.error ?? 'unknown' };
-  return { status: 'failed', error: 'The message did not reach the Sent folder. It was not sent.' };
+  // Not finding it proves nothing: Sent can lag, and the copy can differ. It stays unconfirmed for a person to check;
+  // calling it "not sent" would invite sending it a second time.
+  return { status: 'uncertain', error: e.error ?? 'unknown' };
 }

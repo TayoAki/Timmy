@@ -6,6 +6,7 @@
 import { config } from '../config';
 import { withWorkspace } from '../db/pool';
 import { audit } from '../gateway/gateway';
+import { enqueueSoon } from '../jobs/jobs';
 import { newId } from '../lib/ids';
 import { log } from '../lib/log';
 import { composio } from '../providers/composio';
@@ -20,6 +21,7 @@ export const TOOLKITS: Record<string, { toolkit: string; kind: 'mail' | 'calenda
   gdrive: { toolkit: 'googledrive', kind: 'files', triggers: [] },
   outlook: { toolkit: 'outlook', kind: 'mail', triggers: [{ slug: 'OUTLOOK_MESSAGE_TRIGGER' }] },
 };
+const MAIL_APPS = Object.keys(TOOLKITS).filter((id) => TOOLKITS[id]!.kind === 'mail');
 
 export class ConnectError extends Error {
   constructor(
@@ -38,6 +40,11 @@ export async function startConnect(ctx: Ctx, appId: string, purpose: 'primary' |
   const app = TOOLKITS[appId];
   if (!app) throw new ConnectError('That app can’t be connected yet.');
   if (!ctx.rules.connect) throw new ConnectError('Your role can’t connect apps in this workspace.', 403);
+  if (app.kind === 'mail' && purpose === 'primary') {
+    // One everyday mailbox per workspace: it is who "me" is, and every send says which mailbox it leaves from.
+    const other = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => (await tx.query(`select account_label from connection where workspace_id = $1 and status = 'active' and purpose = 'primary' and app_id = any($2::text[]) limit 1`, [ctx.workspaceId, MAIL_APPS])).rows[0]);
+    if (other) throw new ConnectError(`This workspace’s mailbox is ${other.account_label ?? 'already connected'}. Disconnect it before connecting another.`, 409);
+  }
   const id = newId('conn');
   const started = Date.now();
   const link = await composio().link({ userId: composioUser(ctx), toolkit: app.toolkit, callbackUrl: `${config.publicUrl}/api/v1/connections/callback?c=${id}` });
@@ -54,14 +61,18 @@ export async function startConnect(ctx: Ctx, appId: string, purpose: 'primary' |
 }
 
 /**
- * The person came back from the connect page. Confirms with Composio that the
- * account is active (the redirect's own query string is not trusted), records
- * the address, and turns on the app's triggers.
+ * The person came back from the connect page. Only the person who started a
+ * connection can finish it, and only a pending one: a connection that was
+ * disconnected or failed is never switched back on from here. Whether the
+ * account is really active is asked of Composio; the redirect's own query
+ * string is not trusted.
  */
 export async function finishConnect(ctx: Ctx, connectionId: string): Promise<ConnectionRow | null> {
   const conn = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => ((await tx.query('select * from connection where id = $1 and workspace_id = $2', [connectionId, ctx.workspaceId])).rows[0] as ConnectionRow | undefined) ?? null);
   if (!conn || !conn.connected_account_id) return null;
   if (conn.status === 'active') return conn;
+  if (conn.status !== 'pending' || conn.user_id !== ctx.user.id || !ctx.rules.connect) return { ...conn, status: 'failed' };
+
   let acct = await composio().account(conn.connected_account_id);
   // Right after consent the provider can still be finishing the account; give it a moment.
   const deadline = Date.now() + config.connectWaitMs;
@@ -72,10 +83,11 @@ export async function finishConnect(ctx: Ctx, connectionId: string): Promise<Con
   if (acct.status !== 'ACTIVE') {
     // Still in progress is not a failure: opening the callback again later can finish it.
     const over = !/^(INITIALIZING|INITIATED|PENDING)$/i.test(acct.status);
-    if (over) await withWorkspace({ workspaceId: ctx.workspaceId }, (tx) => tx.query(`update connection set status = 'failed', updated_at = now() where id = $1`, [connectionId]));
+    if (over) await withWorkspace({ workspaceId: ctx.workspaceId }, (tx) => tx.query(`update connection set status = 'failed', updated_at = now() where id = $1 and status = 'pending'`, [connectionId]));
     return { ...conn, status: over ? 'failed' : 'pending' };
   }
-  await withWorkspace({ workspaceId: ctx.workspaceId }, (tx) => tx.query(`update connection set status = 'active', updated_at = now() where id = $1`, [connectionId]));
+  const won = await withWorkspace({ workspaceId: ctx.workspaceId }, (tx) => tx.query(`update connection set status = 'active', updated_at = now() where id = $1 and status = 'pending'`, [connectionId]));
+  if (!won.rowCount) return { ...conn, status: 'failed' };
 
   let label = acct.label ?? null;
   if (conn.toolkit === 'gmail') {
@@ -111,18 +123,43 @@ export async function finishConnect(ctx: Ctx, connectionId: string): Promise<Con
   return { ...conn, status: 'active', account_label: label };
 }
 
+/**
+ * Stops using a set of the workspace's connections: all of them, one app's, or
+ * one member's. They are marked disconnected here first, so nothing more is
+ * read or sent through them whatever the provider answers. Removing them at
+ * the provider is then retried by a job until it succeeds.
+ */
+export async function closeConnections(workspaceId: string, filter: { appId?: string; userId?: string }, actor: string): Promise<number> {
+  const closed = await mutate(workspaceId, 'connect', async (tx, loaded) => {
+    const { rows } = await tx.query(
+      `update connection set status = 'disconnected', disconnected_at = now(), updated_at = now()
+       where workspace_id = $1 and status in ('active', 'pending') and ($2::text is null or app_id = $2) and ($3::text is null or user_id = $3)
+       returning id, app_id, purpose, connected_account_id`,
+      [workspaceId, filter.appId ?? null, filter.userId ?? null],
+    );
+    const list = rows as { id: string; app_id: string; purpose: string; connected_account_id: string | null }[];
+    if (!list.length) return { result: [] as { account: string | null; triggers: string[] }[] };
+    const out: { account: string | null; triggers: string[] }[] = [];
+    for (const c of list) {
+      const triggers = (await tx.query('delete from trigger_instance where connection_id = $1 returning id', [c.id])).rows.map((r) => r.id as string);
+      out.push({ account: c.connected_account_id, triggers });
+      await audit(tx, workspaceId, { actor, action: 'connection.removed', detail: { app: c.app_id, connectionId: c.id } });
+    }
+    const apps = { ...loaded.state.conn.apps };
+    for (const c of list) if (c.purpose === 'primary') apps[c.app_id] = { connected: false };
+    return { state: { ...loaded.state, conn: { ...loaded.state.conn, apps } }, result: out };
+  });
+  for (const c of closed) enqueueSoon('connection.revoke', { connectedAccountId: c.account, triggers: c.triggers });
+  return closed.length;
+}
+
+/** Removes an account and its triggers at the provider. Throws when the provider refuses, so the job is retried. */
+export async function revokeAtProvider(connectedAccountId: string | null, triggers: string[]): Promise<void> {
+  for (const t of triggers) await composio().deleteTrigger(t).catch((e) => log.warn('could not delete a trigger at the provider', { error: (e as Error).message }));
+  if (connectedAccountId) await composio().disconnect(connectedAccountId);
+}
+
 export async function disconnect(ctx: Ctx, appId: string): Promise<void> {
   if (!ctx.rules.connect) throw new ConnectError('Your role can’t disconnect apps in this workspace.', 403);
-  const conns = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => (await tx.query(`select * from connection where workspace_id = $1 and app_id = $2 and status in ('active', 'pending')`, [ctx.workspaceId, appId])).rows as ConnectionRow[]);
-  for (const conn of conns) {
-    const triggers = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => (await tx.query('delete from trigger_instance where connection_id = $1 returning id', [conn.id])).rows as { id: string }[]);
-    for (const t of triggers) await composio().deleteTrigger(t.id).catch(() => {});
-    if (conn.connected_account_id) await composio().disconnect(conn.connected_account_id).catch((e) => log.warn('disconnect failed at the provider', { error: (e as Error).message }));
-  }
-  await mutate(ctx.workspaceId, 'connect', async (tx, loaded) => {
-    await tx.query(`update connection set status = 'disconnected', disconnected_at = now(), updated_at = now() where workspace_id = $1 and app_id = $2 and status in ('active', 'pending')`, [ctx.workspaceId, appId]);
-    await audit(tx, ctx.workspaceId, { actor: ctx.user.id, action: 'connection.removed', detail: { app: appId } });
-    const s = loaded.state;
-    return { state: { ...s, conn: { ...s.conn, apps: { ...s.conn.apps, [appId]: { connected: false } } } }, result: null };
-  });
+  await closeConnections(ctx.workspaceId, { appId }, ctx.user.id);
 }

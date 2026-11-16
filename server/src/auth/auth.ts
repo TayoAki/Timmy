@@ -6,7 +6,9 @@ import { createAccessControl } from 'better-auth/plugins/access';
 import { adminAc, defaultStatements, memberAc, ownerAc } from 'better-auth/plugins/organization/access';
 import { config } from '../config';
 import { authPool, sysPool } from '../db/pool';
+import { addSecret, log } from '../lib/log';
 import { sendMail } from '../providers/email';
+import { closeConnections } from '../sync/connect';
 
 /**
  * What each role may do beyond Better Auth's own organization permissions.
@@ -39,6 +41,7 @@ async function authSecret(): Promise<string> {
   if (config.authSecret) return config.authSecret;
   await sysPool.query('insert into app_secret (name, value) values ($1, $2) on conflict (name) do nothing', ['auth_secret', randomBytes(32).toString('hex')]);
   const { rows } = await sysPool.query('select value from app_secret where name = $1', ['auth_secret']);
+  addSecret(rows[0].value as string);
   return rows[0].value as string;
 }
 
@@ -54,6 +57,9 @@ function build(secret: string) {
       enabled: true,
       minPasswordLength: 8,
       autoSignIn: true,
+      requireEmailVerification: config.requireEmailVerification,
+      // Whoever held a session before the reset loses it, including someone who registered the address first.
+      revokeSessionsOnPasswordReset: true,
       sendResetPassword: async ({ user, url }) => {
         void sendMail({ to: user.email, kind: 'reset', subject: 'Reset your Timmy password', body: `Reset your password:\n${url}\n\nIf you didn't ask for this, ignore this email.` });
       },
@@ -84,6 +90,14 @@ function build(secret: string) {
           void sendMail({ to: email, kind: 'invite', subject: `${inviter.user.name} invited you to ${org.name} on Timmy`, body: `${inviter.user.name} invited you to join ${org.name} as ${role}.\n\nAccept the invitation:\n${url}` });
         },
         organizationHooks: {
+          // A person who leaves takes their connected accounts with them; a deleted workspace stops reading altogether.
+          afterRemoveMember: async ({ member, organization: org }) => {
+            await closeConnections(org.id, { userId: member.userId }, 'system').catch((e) => log.error('could not close a removed member’s connections', { error: (e as Error).message }));
+          },
+          beforeDeleteOrganization: async ({ organization: org }) => {
+            await closeConnections(org.id, {}, 'system').catch((e) => log.error('could not close a deleted workspace’s connections', { error: (e as Error).message }));
+            await sysPool.query('update workspace set kill_switch = true where id = $1', [org.id]);
+          },
           // Each workspace gets a settings row; its starting state is seeded the first time it loads.
           afterCreateOrganization: async ({ organization: org, user }) => {
             const o = org as { id: string; name: string; trade?: string | null; parentId?: string | null };

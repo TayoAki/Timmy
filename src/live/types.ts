@@ -10,7 +10,7 @@ export interface PendingEffect {
   /** Why Timmy proposed it. */
   why: string;
   /** The email, invite or change exactly as it will go out. */
-  preview: { to?: string[]; cc?: string[]; subject?: string; body?: string; lines?: string[] };
+  preview: { from?: string; to?: string[]; cc?: string[]; subject?: string; body?: string; lines?: string[] };
   /** Whose OK it needs. */
   waitingOn: 'you' | 'exec' | 'revops';
   who?: string;

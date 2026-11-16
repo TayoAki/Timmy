@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Composio } from '@composio/core';
 import { config } from '../config';
 import { newId } from '../lib/ids';
@@ -164,7 +164,8 @@ export interface FakeMailbox {
  * send code paths run unchanged in tests.
  */
 export class FakeComposio implements ComposioProvider {
-  readonly secret = 'fake-webhook-secret';
+  /** Random per process, so a deployed server running the fake cannot be fed events by someone who read the code. */
+  readonly secret = `fake-${randomBytes(16).toString('hex')}`;
   accounts = new Map<string, FakeMailbox>();
   triggers = new Map<string, { slug: string; connectedAccountId: string; userId: string }>();
   /** Every tool call, for assertions and for counting calls. */
