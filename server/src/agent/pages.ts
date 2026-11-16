@@ -15,6 +15,7 @@ import { complete } from '../providers/model';
 import type { Ctx } from '../state/engine';
 import { readState } from '../state/mutate';
 import { blocksProblem } from '../state/ws-check';
+import { contentsOf, keepBeforeTimmy } from '../pages/versions';
 import { untrusted } from './prompts';
 
 /** The words of one block, on one line. Tables become their rows; a picture or a divider has none. */
@@ -137,6 +138,9 @@ export async function summarizePage(ctx: Ctx, pageId: string, onScreen?: unknown
     .join('\n')
     .slice(0, MAX_PAGE_TEXT);
   if (!listed.trim()) return { ok: true, lines: [] };
+  // Timmy is about to write into this page, so what it holds now is kept as a version first: what is on screen when
+  // the editor sent it (that is what the summary is typed into), otherwise the saved copy.
+  await keepBeforeTimmy(ctx.workspaceId, ctx.user.id, pageId, contentsOf({ ...state.ws.docs[pageId]!, blocks: (onScreen as Block[] | undefined) ?? page.blocks }));
   const model = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => modelFor((await tx.query('select model_id from workspace where id = $1', [ctx.workspaceId])).rows[0]?.model_id));
   const res = await complete({ workspaceId: ctx.workspaceId, route: 'summary', model, effort: 'low', maxTokens: 700, messages: [{ role: 'system', content: SUMMARY_SYSTEM }, { role: 'user', content: untrusted('page', listed) }] });
   const lines = backedLines(jsonObject<{ lines?: unknown }>(res.content).lines, blocks, name);

@@ -160,6 +160,17 @@ export const config = {
   morningNudgeLimit: Number(env.TIMMY_MORNING_NUDGE_LIMIT ?? 5),
   /** Working days someone has to deliver what they were asked for, when the email named no date. */
   waitingDefaultDays: Number(env.TIMMY_WAITING_DEFAULT_DAYS ?? 3),
+
+  /**
+   * How long a page stays in the trash before it is deleted for good. The trash dialog tells people this number.
+   * Never less than a day, so a mistyped setting can't empty everyone's trash at once.
+   */
+  trashRetentionDays: Math.max(1, Number(env.TIMMY_TRASH_RETENTION_DAYS ?? 30)),
+  /** Version history of pages: ordinary editing keeps at most one earlier copy of a page in this many minutes. */
+  pageVersionMinutes: Number(env.TIMMY_PAGE_VERSION_MINUTES ?? 5),
+  /** Version history of pages: how many copies of one page are kept, and for how many days. */
+  pageVersionsKept: Number(env.TIMMY_PAGE_VERSIONS_KEPT ?? 100),
+  pageVersionDays: Number(env.TIMMY_PAGE_VERSION_DAYS ?? 90),
 };
 
 export const isProd = () => config.stage === 'production';
