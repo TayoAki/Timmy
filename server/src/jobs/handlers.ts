@@ -15,6 +15,7 @@ import { closeOrphanedConnections, purgeConnection, revokeAtProvider } from '../
 import { removeFile, syncFiles } from '../sync/files';
 import { backfillMail, ingestThread, reconcileMail } from '../sync/ingest';
 import { MAIL_TOOLKITS } from '../sync/mailbox';
+import { checkMailbox, checkWorkspaceMailboxes } from '../sync/mailbox-check';
 import { noteItems, pruneOntology } from '../ontology/ontology';
 import { projectPeople } from '../ontology/people';
 import { defineJob, enqueueSoon } from './jobs';
@@ -94,11 +95,21 @@ export function registerJobs() {
   defineJob('mail.reconcile', async (d) => {
     const workspaceId = String(d.workspaceId);
     const found = await reconcileMail(workspaceId, String(d.connectionId));
+    // The same night, what the person changed in the mailbox itself (archived, labelled, read, deleted) is picked up.
+    await checkMailbox(workspaceId, String(d.connectionId)).catch((e) => log.warn('the nightly look at the mailbox for changes failed', { workspaceId, error: (e as Error).message }));
     if (found.fresh) learn(workspaceId);
     if (found.fresh) {
       log.info('the nightly check found mail the triggers missed', { workspaceId, ...found });
       if (modelReady()) await readNewest(workspaceId, 2, 20);
     }
+  });
+
+  // A look at a workspace's mailbox for what the person changed there. Queued when the app opens and while a tab
+  // stays open (see sync/mailbox-check.ts): `gap` keeps several tabs from multiplying the looks, and `idle` stops
+  // them for a tab that is only left open. A look that fails is not retried: the next one sees the same mailbox.
+  defineJob('mail.changes', async (d) => {
+    const workspaceId = String(d.workspaceId);
+    await checkWorkspaceMailboxes(workspaceId, { minGapSeconds: Number(d.gap ?? 0), idleSeconds: Number(d.idle ?? 0) }).catch((e) => log.warn('the look at the mailbox for changes failed', { workspaceId, error: (e as Error).message }));
   });
 
   defineJob('mail.read', async (d) => {

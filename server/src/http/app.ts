@@ -20,6 +20,7 @@ import { rulesFor } from '../auth/roles';
 import { loadState } from '../state/docs';
 import { ConnectError, TOOLKITS, closeConnections, disconnect, finishConnect, startConnect } from '../sync/connect';
 import { mailboxFor } from '../sync/mailbox';
+import { appLoaded, checkWhileOpen } from '../sync/mailbox-check';
 import { summarizePage } from '../agent/pages';
 import { BudgetError } from '../providers/model';
 import { fromWire, pickSlices, toWire } from '../../../src/live/patches';
@@ -124,6 +125,8 @@ export function buildApp(): Hono<Env> {
   app.get('/api/v1/state', requireWorkspace, requireRead, async (c) => {
     const ctx = ctxOf(c);
     const loaded = await withWorkspace({ workspaceId: ctx.workspaceId, lock: true }, (tx) => loadState(tx, ctx.workspaceId));
+    // A page that opens loads its state here, once. The stream it opens next uses that to tell a real opening from a reconnect.
+    appLoaded(ctx.workspaceId);
     return wire({ rev: loaded.rev, slices: pickSlices(loaded.state), me: { name: loaded.workspace.owner_name, email: loaded.workspace.owner_email, company: loaded.workspace.name } });
   });
 
@@ -157,10 +160,13 @@ export function buildApp(): Hono<Env> {
         off();
       });
       send('hello', { rev });
+      // What the person changes in the mailbox itself is picked up when the app opens, and every few minutes while Timmy is in use.
+      checkWhileOpen(ctx.workspaceId);
       while (open) {
         await stream.sleep(15_000);
         sub.checkedAt = 0;
         if (!(await stillAllowed(sub))) break;
+        checkWhileOpen(ctx.workspaceId);
         send('ping', {});
       }
       off();
