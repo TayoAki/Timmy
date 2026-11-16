@@ -11,6 +11,7 @@ import { abandonedRuns, resumeRun } from '../agent/loop';
 import { log } from '../lib/log';
 import { syncCalendar } from '../sync/calendar';
 import { purgeDeletedWorkspaces } from '../db/purge';
+import { forgetAbandonedUploads, removeWorkspaceFiles } from '../files/assets';
 import { closeOrphanedConnections, purgeConnection, revokeAtProvider } from '../sync/connect';
 import { removeFile, syncFiles } from '../sync/files';
 import { backfillMail, ingestThread, reconcileMail } from '../sync/ingest';
@@ -198,6 +199,12 @@ export function registerJobs() {
     await projectPeople(String(d.workspaceId));
   });
 
+  // A deleted workspace's uploaded files leave the bucket right away. The purge clears the prefix again later, in case this was missed.
+  defineJob('assets.remove', async (d) => {
+    const gone = await removeWorkspaceFiles(String(d.workspaceId));
+    if (gone) log.info('removed a deleted workspace’s uploaded files', { workspaceId: d.workspaceId, files: gone });
+  });
+
   // A connection belongs to a member. If the membership ended some way the hooks did not see, it is closed here.
   defineJob(
     'connection.sweep',
@@ -217,7 +224,9 @@ export function registerJobs() {
       await sysPool.query(`delete from email_outbox where created_at < now() - interval '7 days'`);
       // A command's stored answer is only needed for a retry or an undo, both long past after a month.
       await sysPool.query(`delete from command where at < now() - interval '30 days'`);
-      const purged = await purgeDeletedWorkspaces(sysPool, config.mailRetentionDays);
+      // An upload that was announced and never arrived is of no use to anyone.
+      await forgetAbandonedUploads();
+      const purged = await purgeDeletedWorkspaces(sysPool, config.mailRetentionDays, removeWorkspaceFiles);
       if (purged) log.info('removed the data of deleted workspaces', { workspaces: purged });
     },
     '17 3 * * *',

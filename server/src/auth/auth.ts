@@ -7,6 +7,7 @@ import { createAccessControl } from 'better-auth/plugins/access';
 import { adminAc, defaultStatements, memberAc, ownerAc } from 'better-auth/plugins/organization/access';
 import { config } from '../config';
 import { authPool, sysPool } from '../db/pool';
+import { enqueueSoon } from '../jobs/jobs';
 import { addSecret, log } from '../lib/log';
 import { sendMail } from '../providers/email';
 import { closeConnections } from '../sync/connect';
@@ -144,6 +145,8 @@ function build(secret: string) {
             await closeConnections(org.id, {}, 'system').catch((e) => log.error('could not close a deleted workspace’s connections', { error: (e as Error).message }));
             // Closed now; its data is removed by the purge job once the retention period has passed.
             await sysPool.query('update workspace set kill_switch = true, deleted_at = now() where id = $1', [org.id]);
+            // Its uploaded files don't wait for the purge: they leave the bucket as soon as the job runs.
+            enqueueSoon('assets.remove', { workspaceId: org.id });
           },
           // Each workspace gets a settings row; its starting state is seeded the first time it loads.
           afterCreateOrganization: async ({ organization: org, user }) => {
