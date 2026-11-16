@@ -51,9 +51,8 @@ why", "your Drive" became "your Google Drive", and the close reads "Timmy, never
 ## Truth notes
 
 - Demo mode: nothing is sent or connected for real, and the Gmail and Drive connections need the backend, so the film is a pre-release recreation.
-- "Connect your Gmail" isn't true today; "Try the demo" is. The owner chooses.
+- The CTA is "Try the demo", which is true today (the owner's choice; "Connect your Gmail" waits for the backend).
 - No vendor names beyond Gmail, Drive and the form sources the product lists. The leads' data partner shows as
   "your data provider" on the film route.
 - HubSpot: the voice names it as a form source, but Speed to lead's forms are the website form, Typeform,
-  Facebook Lead Ads and a webhook (HubSpot connects as a CRM). The owner decides: keep, re-voice, or add
-  HubSpot forms to the product.
+  Facebook Lead Ads and a webhook (HubSpot connects as a CRM). The owner chose to keep the line as voiced.

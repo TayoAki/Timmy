@@ -8,10 +8,13 @@
 //   STILLS=8.3,30.2 node scripts/film/render.cjs           stills at those times (stepped at STEP fps)
 //   FPS=30 SCALE=0.5 OUT=out/animatic node ...render.cjs   every frame, as JPEGs for ffmpeg
 //   FPS=60 SCALE=1 OUT=out/master FORMAT=png node ...      the master's frames
+//   FPS=60 SCALE=1 PIPE=out/master-walk.mov node ...       the master, streamed into ffmpeg (no frames on disk):
+//                                                          PNG frames, encoded as near-lossless H.264 (CRF 10)
 // Render from a static build (vite build + vite preview, then BASE=…): the dev server's hot reload
 // would restart the page mid-capture if a file changed.
 const { chromium } = require('playwright');
 const fs = require('fs');
+const { spawn } = require('child_process');
 const BASE = process.env.BASE || 'http://localhost:5173/';
 const OUT = process.env.OUT || 'out/film';
 const STILLS = process.env.STILLS ? process.env.STILLS.split(',').map(Number) : null;
@@ -19,9 +22,14 @@ const FPS = Number(process.env.FPS || (STILLS ? process.env.STEP || 15 : 30));
 const SCALE = Number(process.env.SCALE || 1);
 const FORMAT = process.env.FORMAT || 'jpeg';
 const UNTIL = process.env.UNTIL ? Number(process.env.UNTIL) : Infinity;
+const PIPE = process.env.PIPE || null;
 
 (async () => {
-  fs.mkdirSync(OUT + (STILLS ? '' : '/frames'), { recursive: true });
+  if (!PIPE) fs.mkdirSync(OUT + (STILLS ? '' : '/frames'), { recursive: true });
+  const enc = PIPE
+    ? spawn('ffmpeg', ['-v', 'error', '-y', '-f', 'image2pipe', '-framerate', String(FPS), '-c:v', 'png', '-i', '-', '-c:v', 'libx264', '-preset', 'medium', '-crf', '10', '-pix_fmt', 'yuv420p', '-r', String(FPS), PIPE], { stdio: ['pipe', 'inherit', 'inherit'] })
+    : null;
+  const encDone = enc ? new Promise((r) => enc.on('close', r)) : null;
   const b = await chromium.launch();
   const ctx = await b.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: SCALE, colorScheme: 'light' });
   const p = await ctx.newPage();
@@ -59,9 +67,18 @@ const UNTIL = process.env.UNTIL ? Number(process.env.UNTIL) : Infinity;
     if (want && !want.has(i)) continue;
     // Let React commit what this frame's input changed, then draw the overlays for it.
     if (f.presses.length || f.keys.length || f.text) await p.evaluate((t) => window.__film.frame(t), t);
-    const name = STILLS ? `${OUT}/still-${t.toFixed(2).replace('.', '_')}.png` : `${OUT}/frames/f${String(i).padStart(5, '0')}.${FORMAT === 'png' ? 'png' : 'jpg'}`;
-    await p.screenshot(STILLS || FORMAT === 'png' ? { path: name } : { path: name, type: 'jpeg', quality: 92 });
+    if (enc) {
+      const png = await p.screenshot();
+      if (!enc.stdin.write(png)) await new Promise((r) => enc.stdin.once('drain', r));
+    } else {
+      const name = STILLS ? `${OUT}/still-${t.toFixed(2).replace('.', '_')}.png` : `${OUT}/frames/f${String(i).padStart(5, '0')}.${FORMAT === 'png' ? 'png' : 'jpg'}`;
+      await p.screenshot(STILLS || FORMAT === 'png' ? { path: name } : { path: name, type: 'jpeg', quality: 92 });
+    }
     if (!STILLS && i % 300 === 0) console.log(`frame ${i}/${frames} (${Math.round((Date.now() - t0) / 1000)}s)`);
+  }
+  if (enc) {
+    enc.stdin.end();
+    await encDone;
   }
   console.log(`done: ${STILLS ? STILLS.length + ' stills' : frames + 1 + ' frames'} in ${Math.round((Date.now() - t0) / 1000)}s`);
   if (warnings.length) console.log('warnings:\n  ' + [...new Set(warnings)].join('\n  '));
