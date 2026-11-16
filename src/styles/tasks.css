@@ -705,3 +705,135 @@
     display: none;
   }
 }
+
+/* ── Pipeline-style lanes (lane dot, summary, quick add, tags, contact cards) ── */
+
+.tk-col {
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+  border: 1px solid var(--line);
+  padding: 8px;
+}
+
+.tk-lane-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--lane);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lane) 22%, transparent);
+}
+
+.tk-lane-sum {
+  margin: -4px 6px 2px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.tk-lane-sum.late {
+  color: var(--danger);
+}
+
+.tk-add-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: var(--r);
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+.tk-add-row:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.tk-quick .input {
+  width: 100%;
+}
+
+.tk-ghost {
+  display: grid;
+  place-items: center;
+  height: 52px;
+  border-radius: var(--r);
+  border: 2px dashed var(--accent);
+  color: var(--accent-text);
+  font-size: 12.5px;
+  font-weight: 560;
+  background: color-mix(in srgb, var(--accent-soft) 70%, transparent);
+  animation: nb-fade 0.15s ease-out;
+}
+
+.tk-card[data-dragging] {
+  opacity: 0.55;
+  transform: rotate(1.5deg);
+  box-shadow: var(--shadow-lg);
+}
+
+.tk-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tk-tag {
+  padding: 1px 8px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--tag);
+  background: color-mix(in srgb, var(--tag) 12%, transparent);
+}
+
+.tk-card-links {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tk-contact {
+  position: relative;
+}
+
+.tk-contact-chip {
+  gap: 5px;
+  padding-left: 3px;
+}
+
+.tk-hovercard {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 30;
+  display: none;
+  align-items: center;
+  gap: 10px;
+  width: 250px;
+  padding: 12px;
+  border-radius: var(--r);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-lg);
+  font-size: 12.5px;
+  cursor: default;
+}
+
+.tk-hovercard > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tk-hovercard .muted {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tk-contact:hover .tk-hovercard,
+.tk-contact:focus-within .tk-hovercard {
+  display: flex;
+  animation: nb-pop-in 0.12s var(--ease-out);
+}

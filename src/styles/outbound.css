@@ -2638,3 +2638,141 @@ td.lead-sub {
     min-width: 0;
   }
 }
+
+/* The conversation stacks header, banner, messages and reply box; only the messages scroll. */
+.ubx-convo {
+  display: flex;
+  flex-direction: column;
+}
+.ubx-convo > * {
+  flex: none;
+}
+.ubx-convo > .ubx-msgs {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.ubx-yes {
+  align-items: flex-start;
+}
+.ubx-yes svg {
+  margin-top: 2px;
+}
+
+/* Form cards shrink to their column instead of spilling past it. */
+.form-list {
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+}
+.form-card,
+.form-head > div,
+.form-opt {
+  min-width: 0;
+}
+.form-card {
+  grid-template-columns: minmax(0, 1fr);
+}
+.form-head > .btn {
+  flex: none;
+}
+.form-opts {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+}
+.form-opt select {
+  width: 100%;
+  min-width: 0;
+}
+.form-hook code {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.form-hook .btn {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* ───────────── Drafts ───────────── */
+.odr-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.odr-row {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  min-width: 0;
+}
+.odr-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.odr-who {
+  display: grid;
+  min-width: 0;
+  font-size: 13.5px;
+}
+.odr-who .muted {
+  font-size: 12.5px;
+}
+.odr-where {
+  margin-left: auto;
+  font-size: 12.5px;
+  text-align: right;
+}
+.odr-subject {
+  margin: 0;
+  font-weight: 600;
+  font-size: 14px;
+}
+.odr-body {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--text-2);
+  white-space: pre-line;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.odr-edit {
+  display: grid;
+  gap: 8px;
+}
+.odr-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.odr-room {
+  font-size: 13px;
+  align-self: center;
+}
+@media (max-width: 640px) {
+  .odr-head {
+    flex-wrap: wrap;
+  }
+  .odr-where {
+    margin-left: 0;
+    text-align: left;
+    width: 100%;
+  }
+}
+
+/* The conversation header wraps on narrow panes instead of squeezing the name. */
+.ubx-head {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.ubx-head-text {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+.ubx-head-text strong,
+.ubx-head-text .muted {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

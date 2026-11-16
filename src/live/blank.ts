@@ -32,7 +32,13 @@ export function blankState({ first, company }: BlankOptions): State {
     highlightDone: false,
     dismissed: [],
     toasts: [],
-    ws: Object.fromEntries(WS_COLLECTIONS.map((c) => [c, {}])) as unknown as State['ws'],
+    ws: {
+      ...(Object.fromEntries(WS_COLLECTIONS.map((c) => [c, {}])) as unknown as State['ws']),
+      // The website chat's settings always exist, switched off and empty until the person sets it up.
+      chat: {
+        site: { id: 'site', on: false, domain: '', name: company, color: '#3f51d9', greeting: `Hi! Ask a question, or leave your email and ${first} will follow up.`, questions: [], faq: [], handoff: 'notify', booking: false },
+      },
+    },
     decisions: [],
     approvalLog: [],
     schedule: DEFAULT_SCHEDULE,

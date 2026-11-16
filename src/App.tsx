@@ -1,10 +1,12 @@
 import { X } from 'lucide-react';
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { ApprovalsView } from './areas/approvals';
 import { CalendarView } from './areas/calendar';
 import { DocsView, FileView } from './areas/docs';
 import { FilesView } from './areas/files';
 import { LibraryView } from './areas/library';
+// The canvas (React Flow) loads only when an automation is opened.
+const AutomationEditor = lazy(() => import('./areas/automations/Editor').then((m) => ({ default: m.AutomationEditor })));
 import { ContactView, PeopleView } from './areas/people';
 import { ProjectsView, ProjectView } from './areas/projects';
 import { TasksView } from './areas/tasks';
@@ -21,6 +23,10 @@ import { RightPanel } from './components/RightPanel';
 import { SearchPalette } from './components/SearchPalette';
 import { Sidebar } from './components/Sidebar';
 import { StoreProvider, useStore, type Toast } from './state/store';
+import { StoryPlayer } from './story/StoryPlayer';
+import { Intro } from './intro/Intro';
+import { Outro } from './intro/Outro';
+import { Film } from './film/Film';
 import { ThemeProvider } from './state/theme';
 import { LIVE } from './live/config';
 import { LiveApp } from './live/LiveApp';
@@ -31,6 +37,12 @@ import { ThreadView } from './views/ThreadView';
 import { TodayView } from './views/TodayView';
 import { VoiceView } from './views/VoiceView';
 
+/** ?intro and ?outro play the cinematic films: the real app, filmed in 3D, on demo data that isn't saved. */
+const PARAMS = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
+const INTRO = PARAMS.has('intro');
+const OUTRO = !INTRO && PARAMS.has('outro');
+const FILM = !INTRO && !OUTRO && PARAMS.has('film');
+
 export default function App() {
   return (
     <ThemeProvider>
@@ -39,8 +51,22 @@ export default function App() {
           <Shell />
         </LiveApp>
       ) : (
-        <StoreProvider>
-          <Shell />
+        <StoreProvider ephemeral={INTRO || OUTRO || FILM}>
+          {INTRO ? (
+            <Intro>
+              <Shell />
+            </Intro>
+          ) : OUTRO ? (
+            <Outro>
+              <Shell />
+            </Outro>
+          ) : FILM ? (
+            <Film>
+              <Shell />
+            </Film>
+          ) : (
+            <Shell />
+          )}
         </StoreProvider>
       )}
     </ThemeProvider>
@@ -82,7 +108,7 @@ function Shell() {
   }, [dispatch, state.searchOpen, state.drawer, state.capture, state.compose]);
 
   return (
-    <div className="app" data-drawer={state.drawer ?? undefined} data-focus={state.focus ? '' : undefined} data-calm={state.calm ? '' : undefined}>
+    <div className="app" data-canvas={state.route.view === 'automation' ? '' : undefined} data-drawer={state.drawer ?? undefined} data-focus={state.focus ? '' : undefined} data-calm={state.calm ? '' : undefined}>
       <LeftRail />
       <Sidebar />
       {r.view === 'today' && <TodayView tab={r.tab} />}
@@ -102,6 +128,11 @@ function Shell() {
       {r.view === 'contact' && <ContactView key={r.id} />}
       {r.view === 'files' && <FilesView />}
       {r.view === 'library' && <LibraryView />}
+      {r.view === 'automation' && (
+        <Suspense fallback={<main className="main" aria-busy="true" />}>
+          <AutomationEditor key={r.id} />
+        </Suspense>
+      )}
       {r.view === 'approvals' && <ApprovalsView />}
       {r.view === 'outbound' && <OutboundView />}
       {r.view === 'campaign' && <CampaignView key={r.id} />}
@@ -116,6 +147,7 @@ function Shell() {
       <Assistant />
       <PushToTalk />
       <Toasts />
+      <StoryPlayer />
     </div>
   );
 }

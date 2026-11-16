@@ -245,7 +245,7 @@ export const LIMITS: Limits = {
 };
 
 export const CHANNELS: ChannelConn[] = [
-  { id: 'email', name: 'Email', connected: true, account: '3 sending mailboxes', use: 'Cold email from secondary domains; replies land in the unibox.' },
+  { id: 'email', name: 'Email', connected: true, account: '3 sending mailboxes', use: 'Cold email through the Gmail and Outlook accounts you connect; replies land in the unibox.' },
   { id: 'sms', name: 'Text messages', connected: true, account: '+1 (555) 010-2048', use: 'Texts to leads who opted in, like form leads who ticked “text me”.', dailyLimit: 100, sentToday: 2 },
   { id: 'call', name: 'Phone', connected: true, account: 'Browser dialer · +1 (555) 010-2048', use: 'Call steps become a call list with the script; outcomes are logged.', dailyLimit: 60, sentToday: 0 },
   { id: 'slack', name: 'Slack', connected: true, account: 'Northpeak · #new-leads', use: 'New form leads and hot replies are posted to the channel.' },

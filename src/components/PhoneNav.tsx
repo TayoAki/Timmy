@@ -95,7 +95,7 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
             <X size={18} />
           </button>
         </header>
-        <div className="sheet-grid">
+        <div className="more-grid">
           {sections.map((x) => (
             <button key={x.section} className="sheet-item" aria-current={current === x.section ? 'page' : undefined} onClick={() => go(() => x.route && dispatch({ type: 'navigate', route: x.route }))}>
               <span className="sheet-icon">

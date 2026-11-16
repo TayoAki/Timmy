@@ -13,6 +13,7 @@ import {
   Sparkles,
   FilePlus2,
   ListPlus,
+  Play,
   SquarePen,
   StickyNote,
   Target,
@@ -50,6 +51,7 @@ import { liveNow } from '../lib/outbound';
 import { leadAlerts, whenWords, type LeadAlert } from '../state/leads';
 import { LeadMark } from '../areas/outbound/shared';
 import { speed } from '../areas/outbound/LeadPanel';
+import { playStory } from '../story/StoryPlayer';
 
 export function TodayView({ tab }: { tab: TodayTab }) {
   const { state, dispatch } = useStore();
@@ -103,6 +105,7 @@ function Brief() {
         {/* A real workspace's run only happens once a mailbox is connected, so the control waits for that too. */}
         {(!isLive() || mailConnected) && <RunControl />}
         <CalmToggle />
+        <StoryButton />
       </div>
       <p className="page-sub">
         {fmtLongDate(NOW)}.{' '}
@@ -197,6 +200,25 @@ function RunControl() {
       </button>
     </div>
   );
+}
+
+/** "I'm waiting on" on its own, for the cinematic outro. */
+export function WaitingNow({ limit = 3 }: { limit?: number }) {
+  const { state } = useStore();
+  return <WaitingCard threads={scopedThreads(state, inBox(state.threads, 'waiting'))} limit={limit} />;
+}
+
+/** Today's calendar card on its own, for the cinematic outro. */
+export function CalendarNow() {
+  return <CalendarCard />;
+}
+
+/** The "Needs you today" list on its own, for the cinematic intro. */
+export function UrgentNow({ limit = 5 }: { limit?: number }) {
+  const { state } = useStore();
+  const { rank } = useUrgency();
+  const ranked = rank(scopedThreads(state, openThreads(state.threads)));
+  return <UrgentSection ranked={ranked} alerts={state.scope ? [] : leadAlerts(state)} limit={limit} />;
 }
 
 /** The urgent list: only what needs you today, or everything open ranked. */
@@ -339,6 +361,16 @@ function CalmToggle() {
   );
 }
 
+/** Plays the short story of a Monday morning with Timmy, on fresh demo data. */
+function StoryButton() {
+  return (
+    <button className="btn btn-sm btn-ghost story-btn" onClick={playStory} title="A short story of one Monday morning with Timmy, played in the app">
+      <Play size={14} />
+      Watch the story
+    </button>
+  );
+}
+
 /**
  * The calm brief, for people who want a system, not a cockpit: your highlight,
  * the few things that need you, one line for approvals and your next meeting.
@@ -407,6 +439,7 @@ function CalmBrief({ ranked, alerts, approvals }: { ranked: { t: Thread; u: Urge
       <div className="brief-head">
         <h1 className="page-title">Good morning, {meFirst()}.</h1>
         <CalmToggle />
+        <StoryButton />
       </div>
       <p className="page-sub">
         {fmtLongDate(NOW)}.{' '}
@@ -631,7 +664,7 @@ function OweCard({ threads }: { threads: Thread[] }) {
   );
 }
 
-function WaitingCard({ threads }: { threads: Thread[] }) {
+function WaitingCard({ threads, limit = 3 }: { threads: Thread[]; limit?: number }) {
   const { dispatch } = useStore();
   const overdue = threads.filter((t) => t.waiting?.due && t.waiting.due < NOW).length;
   const nodate = threads.filter((t) => !t.waiting?.due).length;
@@ -653,7 +686,7 @@ function WaitingCard({ threads }: { threads: Thread[] }) {
         ]}
       />
       <ul className="tc-list">
-        {sorted.slice(0, 3).map((t) => (
+        {sorted.slice(0, limit).map((t) => (
           <li key={t.id}>
             <button onClick={() => dispatch({ type: 'openThread', id: t.id })}>
               <Avatar id={t.waiting!.on} size={24} />

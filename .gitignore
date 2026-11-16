@@ -15,3 +15,5 @@ server/node_modules
 server/dist
 .env
 .env.*
+e2e/undefined/
+__pycache__/

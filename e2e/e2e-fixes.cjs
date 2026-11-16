@@ -119,8 +119,8 @@ const assert = (c, m) => { if (!c) { throw new Error('FAIL: ' + m); } console.lo
   await p.evaluate(() => localStorage.clear());
   await p.reload();
   await p.waitForTimeout(700);
-  // The first rows on Today are leads since round 3; this check is about an open email, so open a mail row.
-  await p.locator('.urg-list .urg-row-title', { hasText: 'Confirm the Dec 1 pilot start with Marcus' }).first().click();
+  // The first email row (lead rows can rank above it on Today).
+  await p.locator('.urg-list .urg-row:not(.urg-lead) .urg-row-title').first().click();
   await p.waitForTimeout(300);
   const opened = (await state()).route;
   assert(opened.view === 'thread', `a mail row opens its thread (view ${opened.view})`);

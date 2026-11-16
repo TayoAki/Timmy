@@ -237,7 +237,10 @@ export function noteLeadMail(state: State, fresh: MailMessage[]): State {
     }
   }
   if (!added.length) return state;
-  return { ...state, out: { ...state.out, leads, messages: [...state.out.messages, ...added] } };
+  // An email the person sent to a lead by hand is the draft Timmy wrote for them, now gone out: the draft leaves the list.
+  const sentTo = new Set(added.filter((m) => m.dir === 'out').map((m) => m.lead));
+  const kept = state.out.messages.filter((m) => !(m.status === 'draft' && sentTo.has(m.lead)));
+  return { ...state, out: { ...state.out, leads, messages: [...kept, ...added] } };
 }
 
 /* ───────────── Backfill ───────────── */

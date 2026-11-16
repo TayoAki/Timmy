@@ -167,24 +167,32 @@ const assert = (c, m) => { if (!c) { throw new Error('FAIL: ' + m); } console.lo
   await p.locator('.mb-row').first().locator('input[type=number]').fill('45'); await p.waitForTimeout(200);
   assert(/look like bulk mail/.test(await p.locator('.mb-row').first().innerText()), 'warns above 30 a day');
 
-  /* Ask Timmy prepares a campaign; it waits in Approvals */
+  /* Ask Timmy writes a campaign; its first emails are drafts in the sending account, not an approval card */
   await p.keyboard.press('Control+i'); await p.waitForTimeout(200);
   await p.locator('.ai-input').fill('write a campaign for my best leads'); await p.keyboard.press('Enter');
   await p.waitForTimeout(400); await p.waitForFunction(() => !document.querySelector('.ai-send .ai-spin'), null, { timeout: 8000 }); await p.waitForTimeout(300);
   const said = (await p.locator('.ai-msg').allInnerTexts()).pop();
-  assert(/Nothing goes out until you launch it from Approvals/.test(said), 'Ask Timmy prepares the campaign for approval');
+  assert(/saved each first email as a draft in/.test(said) && /nothing goes out until you send it/.test(said), 'Ask Timmy writes the campaign and saves its emails as drafts');
   await p.locator('.ai-shell button:has-text("New chat")').first().click();
   await p.locator('.ai-input').fill("how's my campaign doing?"); await p.keyboard.press('Enter');
   await p.waitForTimeout(400); await p.waitForFunction(() => !document.querySelector('.ai-send .ai-spin'), null, { timeout: 8000 }); await p.waitForTimeout(300);
   assert(/Ops pilot: healthcare & services: \d+ emails/.test((await p.locator('.ai-msg').allInnerTexts()).pop()), 'campaign stats from Ask Timmy');
   await p.keyboard.press('Escape'); await p.waitForTimeout(200);
   await p.click('button[aria-label="Approvals"]'); await p.waitForTimeout(400);
-  const card = p.locator('.ap-card:has(.ap-title:has-text("best fits"))');
-  assert(await card.count() === 1, 'campaign waits in Approvals');
-  await card.locator('button:has-text("Launch")').click(); await p.waitForTimeout(300);
+  assert(await p.locator('.ap-card:has(.ap-title:has-text("best fits"))').count() === 0, 'no approval card for the campaign');
   s = await state();
-  assert(Object.values(s.out.campaigns).some(c => /best fits/.test(c.name) && c.status === 'active'), 'launched from Approvals');
-  assert(s.approvalLog.some(r => r.kind === 'campaign' && r.choice === 'Launched'), 'launch logged under Decided');
+  const tc = Object.values(s.out.campaigns).find(c => /best fits/.test(c.name));
+  const drafts = s.out.messages.filter(m => m.status === 'draft' && m.campaign === tc.id);
+  assert(tc.status === 'review' && drafts.length === tc.leads.length && drafts.every(d => d.mailbox && d.subject && !/\{\{/.test(d.body)), 'one filled-in draft per lead, each in a sending account');
+  await p.click('button[aria-label="Outbound"]'); await p.waitForTimeout(300);
+  await p.locator('.nav-item:has-text("Drafts")').click(); await p.waitForTimeout(300);
+  assert(await p.locator('.odr-row').count() === drafts.length, 'the drafts show in Outbound › Drafts');
+  await p.click('button:has-text("Send all")'); await p.waitForTimeout(400);
+  assert(/Sent \d+ drafts?/.test(await toast()), `sending the drafts confirms it (${await toast()})`);
+  s = await state();
+  const after = Object.values(s.out.campaigns).find(c => c.id === tc.id);
+  const sent = s.out.messages.filter(m => m.campaign === tc.id && m.dir === 'out' && m.status !== 'draft');
+  assert(after.status === 'active' && sent.length === drafts.length && !s.out.messages.some(m => m.status === 'draft' && m.campaign === tc.id), 'the drafts go out and the campaign is running');
 
   /* Social */
   await p.click('button[aria-label="Social (coming soon)"]'); await p.waitForTimeout(300);

@@ -20,6 +20,8 @@ import type { Thread } from '../../../src/data/types';
 import type { RoleRules } from '../auth/roles';
 import { withWorkspace, type Tx } from '../db/pool';
 import { cancelHeld, decide, GatewayError, onReplay, propose, type EffectRow } from '../gateway/gateway';
+import type { WsOp } from '../../../src/state/ws';
+import { checkWsOps } from './ws-check';
 import { prepareMailSend } from '../gateway/mail';
 import { SYNCED_PREFIX, eventProposal } from '../sync/calendar-write';
 import { filingProposal, isBox } from '../sync/labels';
@@ -86,6 +88,25 @@ export function emailOf(loaded: Loaded, state: State, id: string): string | null
 
 /* ───────────── What the server refuses in live mode ───────────── */
 
+/**
+ * Switching on something that would not really run is refused, with the reason: a switch that says On while
+ * nothing happens would be a false promise. Each entry leaves this list when its engine is built.
+ */
+const NOT_RUNNING: Record<string, string> = {
+  automations: 'You can draw, save and test this automation here. Running automations on a real workspace isn’t switched on yet, so it stays off.',
+  chat: 'You can set the chat up and preview it here. Putting it on a real website isn’t switched on yet, so it stays off.',
+};
+function notRunningYet(state: State, ops: WsOp[]): string | null {
+  for (const o of ops) {
+    const why = NOT_RUNNING[o.col];
+    if (!why) continue;
+    const on = o.op === 'put' ? (o.item as { on?: boolean }).on : o.op === 'patch' ? (o.patch as { on?: boolean }).on : false;
+    const was = (state.ws[o.col as 'automations' | 'chat'] as Record<string, { on?: boolean }>)[o.op === 'put' ? o.item.id : o.id]?.on;
+    if (on === true && !was) return why;
+  }
+  return null;
+}
+
 const NOT_LIVE = 'That isn’t available on a real workspace yet.';
 
 /** Actions that exist only to drive the demo. */
@@ -98,6 +119,7 @@ const OUT_NOT_LIVE: Record<string, string> = {
   submit: NOT_LIVE,
   book: 'Booking a meeting from a lead isn’t switched on for real workspaces yet.',
   mailbox: 'Sending mailboxes are added by connecting them in Connections.',
+  sendDrafts: 'Timmy doesn’t send cold email itself. Open each draft in your mail app and send it from there.',
   channel: 'Channels are connected in Connections.',
 };
 
@@ -187,6 +209,12 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
   }
   if (!ctx.rules.work) return { state, reject: 'Your role can’t make changes in this workspace.' };
   if (a.type === 'undo') return undo(tx, loaded, ctx, a.command);
+  if (a.type === 'ws') {
+    // Docs, pages, tasks, automations and chat settings arrive as plain put / patch / remove operations.
+    // What is acceptable is decided here, before the reducer applies them and before anything is saved.
+    const bad = checkWsOps(state, a.ops) ?? notRunningYet(state, a.ops);
+    if (bad) return { state, reject: bad };
+  }
   // Rules are instructions Timmy follows for everyone (writing rules go into every drafting prompt), and the schedule
   // decides when it works. Only an owner or admin changes them.
   if (POLICY_ONLY.has(a.type) && !ctx.rules.policy) return { state, reject: 'Only an owner or admin can change this.' };
@@ -288,7 +316,8 @@ function newOutgoing(prev: State, next: State): Outgoing[] {
 async function gateSends(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; action: Action }, prev: State, next: State): Promise<Handled> {
   // Fail closed: nothing may appear in the outbound log from a command until the sending service owns it.
   const before = new Set(prev.out.messages.map((m) => m.id));
-  if (next.out.messages.some((m) => !before.has(m.id) && m.dir === 'out' && m.channel !== 'call')) return { state: prev, reject: OUT_NOT_LIVE.send };
+  // A cold email Timmy wrote and kept as a draft is its own record, not a message on its way: the person sends it by hand.
+  if (next.out.messages.some((m) => !before.has(m.id) && m.dir === 'out' && m.channel !== 'call' && m.status !== 'draft')) return { state: prev, reject: OUT_NOT_LIVE.send };
 
   const outgoing = newOutgoing(prev, next);
   if (!outgoing.length) return { state: next };

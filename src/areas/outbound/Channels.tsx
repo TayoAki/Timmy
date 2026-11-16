@@ -60,7 +60,10 @@ export function ChannelsTab() {
             </button>
           </span>
         </div>
-        <p className="field-hint mb-hint">Send cold email from a secondary domain (like trynorthpeak.io), never from your main one, so a bad week can’t touch the mail your customers rely on.</p>
+        <p className="field-hint mb-hint">
+          Cold email goes out through the Gmail and Outlook accounts you connect with Composio, your main one included. Timmy keeps each account under its daily limit. Extra accounts, ideally on
+          a second domain, spread the volume so a bad week can’t touch the mail your customers rely on.
+        </p>
         <ul className="mb-list">
           {Object.values(state.out.mailboxes).map((m) => {
             const cap = mailboxCap(m, limits);
@@ -207,7 +210,7 @@ function AddMailbox({ onClose }: { onClose: () => void }) {
       open
       onClose={onClose}
       title="Add a sending mailbox"
-      description="Connect a Google Workspace or Microsoft 365 mailbox on a secondary domain."
+      description="Connect a Gmail or Outlook account through Composio. It sends cold email alongside your other accounts."
       footer={
         <>
           <button className="btn" onClick={onClose}>
@@ -215,7 +218,7 @@ function AddMailbox({ onClose }: { onClose: () => void }) {
           </button>
           <button
             className="btn btn-primary"
-            disabled={!ok || main}
+            disabled={!ok}
             onClick={() => {
               dispatch({ type: 'out', op: { op: 'mailbox', mailbox: { id: `mb-${Date.now().toString(36)}`, address: address.trim(), name: 'Taylor Morgan', dailyLimit: state.out.limits.perMailbox, warmup: true, health: 80, sentToday: 0, added: NOW } } });
               dispatch({ type: 'toast', text: `Added ${address.trim()}. It warms up from ${state.out.limits.rampStart} a day.` });
@@ -227,7 +230,7 @@ function AddMailbox({ onClose }: { onClose: () => void }) {
         </>
       }
     >
-      <Field label="Email address" hint={main ? 'That’s your main domain. Use a secondary one so cold email can’t hurt your everyday mail.' : `Starts at ${state.out.limits.rampStart} a day and adds ${state.out.limits.rampStep} a day while it warms up.`}>
+      <Field label="Email address" hint={main ? 'That’s your main domain. It works, and Timmy keeps it to its daily limit. A second domain is safer for volume.' : `Starts at ${state.out.limits.rampStart} a day and adds ${state.out.limits.rampStep} a day while it warms up.`}>
         <input className="input" type="email" value={address} placeholder="taylor@trynorthpeak.io" onChange={(e) => setAddress(e.target.value)} />
       </Field>
       <p className="field-hint preview-note">Preview: in this demo the mailbox is added without signing in.</p>
@@ -363,8 +366,8 @@ function BulkMailboxes({ onClose }: { onClose: () => void }) {
       }
     >
       <textarea className="input mono" rows={8} value={text} placeholder={'alex@trynorthpeak.io, Alex Rivera\nsam@getnorthpeak.io, Sam Lee'} aria-label="Mailboxes" onChange={(e) => setText(e.target.value)} data-autofocus />
-      {main.length > 0 && <p className="seq-hint warn">{main.length} on your main domain. Send cold email from a secondary domain instead.</p>}
-      <p className="field-hint">In the product each mailbox connects with its own Google or Microsoft sign-in, or SMTP with an app password.</p>
+      {main.length > 0 && <p className="seq-hint warn">{main.length} on your main domain. That works; keep its daily limit low.</p>}
+      <p className="field-hint">In the product each account connects through Composio with its own Gmail or Outlook sign-in.</p>
     </Modal>
   );
 }

@@ -4,10 +4,11 @@
  * your lists and campaigns and the right panel showing the lead you picked
  * (or what needs you today).
  */
-import { Gauge, Inbox, LayoutTemplate, List, Mail, PhoneCall, Plus, Rocket, Send, Timer, Users } from 'lucide-react';
+import { FilePen, Gauge, Inbox, LayoutTemplate, List, Mail, MessagesSquare, PhoneCall, Plus, Rocket, Send, Timer, Users } from 'lucide-react';
+import { ChatTab } from './Chat';
 import { fmtListDate, plural } from '../../lib/format';
 import { campaignCap, liveNow, project } from '../../lib/outbound';
-import { coldToday, ctxOf } from '../../state/outbound';
+import { coldToday, ctxOf, draftsOf } from '../../state/outbound';
 import { useStore, type OutboundTab } from '../../state/store';
 import { Frame } from '../../components/Frame';
 import { Field, Modal, SideHead } from '../../components/kit';
@@ -17,6 +18,7 @@ import { RpSection } from '../files/pickers';
 import { CampaignView } from './Campaign';
 import { CampaignsTab } from './Campaigns';
 import { CallsTab } from './Calls';
+import { DraftsTab } from './Drafts';
 import { callQueue } from '../../state/leads';
 import { ChannelsTab } from './Channels';
 import { LeadPanel } from './LeadPanel';
@@ -37,6 +39,7 @@ export function useOutboundCounts() {
     unread: leads.filter((l) => l.unread).length,
     waiting: leads.filter((l) => l.source === 'form' && !l.firstReplyAt && l.status !== 'not-interested').length,
     review: Object.values(state.out.campaigns).filter((c) => c.status === 'review').length,
+    drafts: draftsOf(state).length,
   };
 }
 
@@ -50,8 +53,10 @@ export function OutboundView() {
       tabs={[
         { id: 'leads', label: 'Leads', count: Object.keys(state.out.leads).length },
         { id: 'campaigns', label: 'Campaigns', count: n.review || undefined },
+        { id: 'drafts', label: 'Drafts', count: n.drafts || undefined },
         { id: 'unibox', label: 'Unibox', count: n.unread || undefined },
         { id: 'speed', label: 'Speed to lead', count: n.waiting || undefined },
+        { id: 'chat', label: 'Website chat', count: Object.values(state.ws.chats).filter((c) => c.unread).length || undefined },
         { id: 'calls', label: 'Calls', count: callQueue(state).length || undefined },
         { id: 'templates', label: 'Templates & offer' },
         { id: 'channels', label: 'Channels & limits' },
@@ -64,8 +69,10 @@ export function OutboundView() {
       <ClientBar />
       {tab === 'leads' && <LeadsTab />}
       {tab === 'campaigns' && <CampaignsTab />}
+      {tab === 'drafts' && <DraftsTab />}
       {tab === 'unibox' && <UniboxTab />}
       {tab === 'speed' && <SpeedTab />}
+      {tab === 'chat' && <ChatTab />}
       {tab === 'calls' && <CallsTab />}
       {tab === 'templates' && <TemplatesTab />}
       {tab === 'channels' && <ChannelsTab />}
@@ -78,8 +85,10 @@ export function OutboundView() {
 const NAV: { tab: OutboundTab; label: string; icon: typeof Users; hint: string; color: string }[] = [
   { tab: 'leads', label: 'Leads', icon: Users, hint: 'Lists, fit and qualification', color: 'var(--c-sky)' },
   { tab: 'campaigns', label: 'Campaigns', icon: Send, hint: 'Sequences across channels', color: 'var(--c-violet)' },
+  { tab: 'drafts', label: 'Drafts', icon: FilePen, hint: 'Cold emails waiting for you', color: 'var(--c-indigo)' },
   { tab: 'unibox', label: 'Unibox', icon: Inbox, hint: 'Every reply in one place', color: 'var(--c-green)' },
   { tab: 'speed', label: 'Speed to lead', icon: Timer, hint: 'Form leads, on the clock', color: 'var(--c-amber)' },
+  { tab: 'chat', label: 'Website chat', icon: MessagesSquare, hint: 'Timmy answers visitors on your site', color: 'var(--c-teal)' },
   { tab: 'calls', label: 'Calls', icon: PhoneCall, hint: 'Today’s call list', color: 'var(--c-red)' },
   { tab: 'templates', label: 'Templates & offer', icon: LayoutTemplate, hint: 'What Timmy writes from', color: 'var(--c-teal)' },
   { tab: 'channels', label: 'Channels & limits', icon: Gauge, hint: '30 cold emails a mailbox', color: 'var(--c-slate)' },
@@ -92,7 +101,7 @@ export function OutboundSide() {
   const today = coldToday(state);
   const lists = Object.values(state.out.lists);
   const campaigns = Object.values(state.out.campaigns);
-  const countFor: Partial<Record<OutboundTab, number>> = { unibox: n.unread, speed: n.waiting, campaigns: n.review };
+  const countFor: Partial<Record<OutboundTab, number>> = { unibox: n.unread, speed: n.waiting, campaigns: n.review, drafts: n.drafts, chat: Object.values(state.ws.chats).filter((c) => c.unread).length };
   return (
     <>
       <SideHead
@@ -275,7 +284,7 @@ function SendingRules() {
   return (
     <RpSection title="How Timmy keeps you out of spam">
       <ul className="rp-rules">
-        <li>At most {state.out.limits.perMailbox} cold emails a mailbox a day, from a secondary domain, with new mailboxes warming up.</li>
+        <li>At most {state.out.limits.perMailbox} cold emails an account a day, spread across the accounts you connect, with new ones warming up.</li>
         <li>Sends spread through the day, at least {state.out.limits.gapMinutes[0]} minutes apart.</li>
         <li>A reply stops the sequence; bounces over {Math.round(state.out.limits.bouncePause * 100)}% pause it.</li>
         <li>Texts only to people who agreed to them.</li>

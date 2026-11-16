@@ -4,7 +4,7 @@
 #   bash scripts/dev.sh            # set up, then run everything
 #   bash scripts/dev.sh db         # only make sure the database is up
 #   bash scripts/dev.sh server     # unit and integration tests for the API
-#   bash scripts/dev.sh demo       # the 12 demo-mode Playwright suites
+#   bash scripts/dev.sh demo       # the demo-mode Playwright suites
 #   bash scripts/dev.sh live       # the live-mode Playwright suites (fake providers)
 #
 # The database owner is timmy_owner / timmy on localhost:5432, with two
@@ -73,7 +73,7 @@ run_server_tests() {
 }
 
 run_demo() {
-  say "Demo mode: the 12 Playwright suites"
+  say "Demo mode: the Playwright suites"
   stop_on 5173
   (npx vite --port 5173 --strictPort >"$LOG_DIR/vite.log" 2>&1 &)
   wait_for http://localhost:5173/ || return 1

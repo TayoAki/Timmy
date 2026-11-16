@@ -1,6 +1,7 @@
 /* Sidebar and context panel for Docs and for an open file. */
 import { ArrowUpRight, CalendarClock, Clock, FilePlus2, FolderOpen, LayoutTemplate, Link2, Mail, NotebookPen } from 'lucide-react';
 import { useState } from 'react';
+import { PagesTree } from './PagesTree';
 import { Folder as FolderGlyph, tint } from '../../components/common';
 import { DocIcon, DocPath, DocThumb, kindMeta } from '../../components/DocBits';
 import { SideHead } from '../../components/kit';
@@ -83,10 +84,7 @@ export function DocsSide() {
           {tabItem('templates', 'Templates', LayoutTemplate)}
         </div>
 
-        <div className="side-group">
-          <div className="side-title">Recent</div>
-          {files.slice(0, 5).map((f) => fileItem(f))}
-        </div>
+        <PagesTree onNew={() => setNewDoc({})} />
 
         {meetings.length > 0 && (
           <div className="side-group">
