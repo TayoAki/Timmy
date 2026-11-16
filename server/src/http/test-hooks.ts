@@ -9,7 +9,8 @@ import { config, isLocal } from '../config';
 import { withWorkspace } from '../db/pool';
 import { executeEffect } from '../gateway/gateway';
 import { inlineJobs } from '../jobs/jobs';
-import { fakeComposio, signWebhook } from '../providers/composio';
+import { fakeComposio, signWebhook, type FakeEvent } from '../providers/composio';
+import { CALENDAR_TOOLKITS } from '../sync/calendars';
 import { MAIL_TOOLKITS } from '../sync/mailbox';
 import { checkMailbox } from '../sync/mailbox-check';
 import { lastMailTo } from '../providers/email';
@@ -52,10 +53,20 @@ export function testRoutes(app: Hono<Env>): void {
       fake.nextAddress = String(body.address);
       return c.json({ ok: true });
     }
-    // What the stand-in Google Calendar holds for this workspace, so a test can see what was created and who was invited.
-    if (body.op === 'calendar') {
-      const cal = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => (await tx.query(`select connected_account_id from connection where workspace_id = $1 and status = 'active' and app_id = 'gcal' order by created_at limit 1`, [ctx.workspaceId])).rows[0]);
-      return c.json({ events: cal ? (fake.accounts.get(cal.connected_account_id)?.events ?? []) : [] });
+    // What the stand-in calendar (Google's or Outlook's) holds for this workspace, so a test can see what was created,
+    // changed or deleted there, and who was told. `calendar-event` puts an event on it, as if made in the calendar itself,
+    // and has the provider announce it.
+    if (body.op === 'calendar' || body.op === 'calendar-event') {
+      const cal = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => (await tx.query(`select connected_account_id, toolkit from connection where workspace_id = $1 and status = 'active' and toolkit = any($2::text[]) order by created_at limit 1`, [ctx.workspaceId, CALENDAR_TOOLKITS])).rows[0]);
+      const account = cal ? fake.accounts.get(cal.connected_account_id) : undefined;
+      if (body.op === 'calendar') return c.json({ events: account?.events ?? [], notices: account?.notices ?? [] });
+      if (!cal || !account) return c.json({ error: 'no connected calendar' }, 409);
+      const event = body.event as FakeEvent;
+      account.events = [...account.events.filter((e) => e.id !== event.id), event];
+      const said = fake.event(cal.connected_account_id, cal.toolkit === 'outlook' ? 'OUTLOOK_EVENT_CHANGE_TRIGGER' : 'GOOGLECALENDAR_GOOGLE_CALENDAR_EVENT_SYNC_TRIGGER', cal.toolkit === 'outlook' ? { event_type: 'created', id: event.id } : { event_type: 'created', event_id: event.id });
+      const res = await app.request('/api/hooks/composio', { method: 'POST', headers: said.webhook.headers, body: said.webhook.body });
+      await inlineJobs()?.drain('calendar.sync');
+      return c.json({ ok: res.ok });
     }
     // The stand-in Drive: a file is made, changed or thrown away there, and the provider announces it.
     if (body.op === 'file' || body.op === 'file-trash') {

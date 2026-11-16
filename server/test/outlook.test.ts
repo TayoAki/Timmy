@@ -91,7 +91,8 @@ describe('connecting Outlook', () => {
     const [conn] = await rows<{ status: string; toolkit: string; account_label: string; app_id: string }>('select status, toolkit, account_label, app_id from connection where id = $1', [box.connectionId]);
     expect(conn).toEqual({ status: 'active', toolkit: 'outlook', account_label: 'owner@outlook.test', app_id: 'outlook' });
     expect((await w.state()).conn.apps.outlook).toMatchObject({ connected: true, account: 'owner@outlook.test' });
-    expect([...fake().triggers.values()].filter((t) => t.connectedAccountId === box.account).map((t) => t.slug).sort()).toEqual(['OUTLOOK_MESSAGE_TRIGGER', 'OUTLOOK_SENT_MESSAGE_TRIGGER']);
+    // Mail arriving, mail leaving, and (the account being a calendar too) an event made, changed or deleted.
+    expect([...fake().triggers.values()].filter((t) => t.connectedAccountId === box.account).map((t) => t.slug).sort()).toEqual(['OUTLOOK_EVENT_CHANGE_TRIGGER', 'OUTLOOK_MESSAGE_TRIGGER', 'OUTLOOK_SENT_MESSAGE_TRIGGER']);
     expect(await rows('select owner_email from workspace where id = $1', [w.workspaceId])).toEqual([{ owner_email: 'owner@outlook.test' }]);
     // No Gmail tool is ever run on an Outlook account.
     expect(calls().filter((c) => c.slug.startsWith('GMAIL_'))).toEqual([]);

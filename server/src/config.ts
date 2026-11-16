@@ -97,13 +97,14 @@ export const config = {
     } as Record<string, string>,
     /**
      * The permissions asked for at sign-in, per toolkit, when they should be fewer than Composio's managed app asks
-     * for by default. Outlook's default set includes calendars, contacts, Teams chat and mailbox settings; Timmy
-     * reads and sends mail, so it asks for mail and the profile only. A toolkit not listed here (or set to an empty
-     * value) uses Composio's defaults. Google is left at the defaults: Google only lets an app ask for permissions it
-     * has been approved for, and which narrower ones Composio's Google app holds is not published.
+     * for by default. Outlook's default set includes contacts, Teams chat and mailbox settings; Timmy reads and sends
+     * mail and reads and writes the calendar, so it asks for mail, the calendar and the profile only. A toolkit not
+     * listed here (or set to an empty value) uses Composio's defaults. Google is left at the defaults: Google only
+     * lets an app ask for permissions it has been approved for, and which narrower ones Composio's Google app holds
+     * is not published.
      */
     scopes: {
-      outlook: (env.COMPOSIO_SCOPES_OUTLOOK ?? 'Mail.Read,Mail.ReadWrite,Mail.Send,offline_access,User.Read').split(',').map((x) => x.trim()).filter(Boolean),
+      outlook: (env.COMPOSIO_SCOPES_OUTLOOK ?? 'Mail.Read,Mail.ReadWrite,Mail.Send,Calendars.ReadWrite,offline_access,User.Read').split(',').map((x) => x.trim()).filter(Boolean),
       gmail: (env.COMPOSIO_SCOPES_GMAIL ?? '').split(',').map((x) => x.trim()).filter(Boolean),
       googlecalendar: (env.COMPOSIO_SCOPES_GOOGLECALENDAR ?? '').split(',').map((x) => x.trim()).filter(Boolean),
       googledrive: (env.COMPOSIO_SCOPES_GOOGLEDRIVE ?? '').split(',').map((x) => x.trim()).filter(Boolean),
@@ -137,7 +138,7 @@ export const config = {
   unattendedShare: Number(env.TIMMY_UNATTENDED_SHARE ?? 0.5),
   /** The most threads one command may file. Each is a write to the mailbox, so one command can't ask for an unbounded number. */
   maxFilingsPerCommand: Number(env.TIMMY_MAX_FILINGS_PER_COMMAND ?? 100),
-  /** The most calendar events one command may create in the connected calendar, for the same reason. */
+  /** The most calendar events one command may create in the connected calendar, or change or delete there, for the same reason. */
   maxEventsPerCommand: Number(env.TIMMY_MAX_EVENTS_PER_COMMAND ?? 20),
   /** How long synced mail is kept after its mailbox is disconnected or its workspace deleted. */
   mailRetentionDays: Number(env.TIMMY_MAIL_RETENTION_DAYS ?? 30),

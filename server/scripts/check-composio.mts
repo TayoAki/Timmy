@@ -26,6 +26,9 @@ const TOOLS: Record<string, Record<string, string[]>> = {
   googlecalendar: {
     GOOGLECALENDAR_CREATE_EVENT: ['calendar_id', 'summary', 'start_datetime', 'timezone', 'event_duration_hour', 'event_duration_minutes', 'attendees', 'description', 'send_updates', 'create_meeting_room'],
     GOOGLECALENDAR_EVENTS_LIST: ['calendarId', 'timeMin', 'timeMax', 'singleEvents', 'orderBy', 'maxResults', 'pageToken'],
+    GOOGLECALENDAR_EVENTS_GET: ['calendar_id', 'event_id'],
+    GOOGLECALENDAR_PATCH_EVENT: ['calendar_id', 'event_id', 'summary', 'start_time', 'end_time', 'description', 'attendees', 'send_updates'],
+    GOOGLECALENDAR_DELETE_EVENT: ['calendar_id', 'event_id', 'send_updates'],
   },
   outlook: {
     OUTLOOK_GET_PROFILE: [],
@@ -37,6 +40,12 @@ const TOOLS: Record<string, Record<string, string[]>> = {
     OUTLOOK_SEND_DRAFT: ['message_id'],
     OUTLOOK_BATCH_UPDATE_MESSAGES: ['updates'],
     OUTLOOK_BATCH_MOVE_MESSAGES: ['message_ids', 'destination_id'],
+    OUTLOOK_GET_CALENDAR_VIEW: ['start_datetime', 'end_datetime', 'timezone', 'select', 'orderby', 'top', 'page_token'],
+    OUTLOOK_GET_EVENT: ['event_id'],
+    OUTLOOK_CALENDAR_CREATE_EVENT: ['subject', 'start_datetime', 'end_datetime', 'time_zone', 'body', 'is_html', 'attendees_info'],
+    OUTLOOK_UPDATE_CALENDAR_EVENT: ['event_id', 'subject', 'start_datetime', 'end_datetime', 'time_zone', 'body', 'attendees'],
+    OUTLOOK_DELETE_CALENDAR_EVENT: ['event_id'],
+    OUTLOOK_CANCEL_EVENT: ['user_id', 'event_id'],
   },
   googledrive: {
     GOOGLEDRIVE_GET_ABOUT: ['fields'],
@@ -51,7 +60,7 @@ const TOOLS: Record<string, Record<string, string[]>> = {
 const TRIGGERS: Record<string, Record<string, string[]>> = {
   gmail: { GMAIL_NEW_GMAIL_MESSAGE: ['labelIds'], GMAIL_EMAIL_SENT_TRIGGER: [] },
   googlecalendar: { GOOGLECALENDAR_GOOGLE_CALENDAR_EVENT_SYNC_TRIGGER: ['calendarId'] },
-  outlook: { OUTLOOK_MESSAGE_TRIGGER: [], OUTLOOK_SENT_MESSAGE_TRIGGER: [] },
+  outlook: { OUTLOOK_MESSAGE_TRIGGER: [], OUTLOOK_SENT_MESSAGE_TRIGGER: [], OUTLOOK_EVENT_CHANGE_TRIGGER: [] },
   googledrive: { GOOGLEDRIVE_FILE_CREATED_TRIGGER: [], GOOGLEDRIVE_FILE_UPDATED_TRIGGER: [], GOOGLEDRIVE_FILE_DELETED_OR_TRASHED_TRIGGER: [] },
 };
 
@@ -65,6 +74,13 @@ const TYPES: Record<string, Record<string, string>> = {
   GMAIL_REPLY_TO_THREAD: { include_signature: 'boolean' },
   OUTLOOK_CREATE_DRAFT: { to_recipients: 'array' },
   OUTLOOK_BATCH_UPDATE_MESSAGES: { updates: 'array' },
+  // Who is told about a calendar write is a word, and the guest lists are lists; Outlook's event body is text on
+  // create and an object (a kind and the content) on update.
+  GOOGLECALENDAR_PATCH_EVENT: { send_updates: 'string', attendees: 'array', start_time: 'string', end_time: 'string' },
+  GOOGLECALENDAR_DELETE_EVENT: { send_updates: 'string' },
+  OUTLOOK_GET_CALENDAR_VIEW: { select: 'array', top: 'integer', orderby: 'string' },
+  OUTLOOK_CALENDAR_CREATE_EVENT: { attendees_info: 'array', body: 'string', is_html: 'boolean' },
+  OUTLOOK_UPDATE_CALENDAR_EVENT: { attendees: 'array', body: 'object' },
 };
 
 interface Listed {

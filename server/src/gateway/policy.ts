@@ -13,6 +13,10 @@ export const KINDS = {
   'mail.modify': { domain: 'mail', outbound: false, hold: false, autoEligible: true, label: 'Label or archive mail' },
   /** A calendar event; with guests it sends invitations. */
   'calendar.create': { domain: 'calendar', outbound: true, hold: true, autoEligible: false, label: 'Create a calendar event' },
+  /** A change to an event already on the calendar; with guests on it, the calendar tells them. */
+  'calendar.update': { domain: 'calendar', outbound: true, hold: true, autoEligible: false, label: 'Change a calendar event' },
+  /** Taking an event off the calendar; with guests on it, the calendar tells them it is cancelled. */
+  'calendar.delete': { domain: 'calendar', outbound: true, hold: true, autoEligible: false, label: 'Delete a calendar event' },
   /** A change to a deal, contact or activity in the connected CRM. */
   'crm.write': { domain: 'crm', outbound: false, hold: false, autoEligible: false, label: 'Update the CRM' },
   /**

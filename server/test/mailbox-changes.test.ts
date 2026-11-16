@@ -19,7 +19,8 @@ const TIMMY_NAMES: readonly string[] = Object.values(LABEL_NAMES);
 const LIST = { gmail: 'GMAIL_FETCH_EMAILS', outlook: 'OUTLOOK_LIST_MESSAGES' } as const;
 const WRITE = { gmail: 'GMAIL_MODIFY_THREAD_LABELS', outlook: 'OUTLOOK_BATCH_UPDATE_MESSAGES' } as const;
 /** Every call that only reads. Anything else on the list of calls would be a write to the mailbox. */
-const READS = ['GMAIL_FETCH_EMAILS', 'GMAIL_LIST_LABELS', 'GMAIL_FETCH_MESSAGE_BY_THREAD_ID', 'OUTLOOK_LIST_MESSAGES', 'OUTLOOK_GET_MAIL_FOLDER'];
+// An Outlook account is also the person's calendar, so connecting it reads the calendar too.
+const READS = ['GMAIL_FETCH_EMAILS', 'GMAIL_LIST_LABELS', 'GMAIL_FETCH_MESSAGE_BY_THREAD_ID', 'OUTLOOK_LIST_MESSAGES', 'OUTLOOK_GET_MAIL_FOLDER', 'OUTLOOK_GET_CALENDAR_VIEW'];
 
 beforeAll(async () => {
   await boot();

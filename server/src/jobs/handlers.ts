@@ -153,6 +153,11 @@ export function registerJobs() {
   defineJob('calendar.sync', async (d) => {
     const out = await syncCalendar(String(d.workspaceId), String(d.connectionId));
     if (out.events) learn(String(d.workspaceId));
+    // An event the calendar no longer has left the store; what the map knew only from it goes too.
+    if (out.dropped) {
+      await pruneOntology(String(d.workspaceId));
+      await projectPeople(String(d.workspaceId));
+    }
   });
 
   // The list of Drive files: a pass that didn't finish carries on in a new job from where it stopped.
