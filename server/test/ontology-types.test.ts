@@ -12,7 +12,8 @@ import { READ_MAX_TOKENS, READ_SYSTEM } from '../src/agent/read';
 import { TOOL_BY_NAME } from '../src/agent/tools';
 import { rulesFor } from '../src/auth/roles';
 import { pruneOntology } from '../src/ontology/ontology';
-import { TRADE_TYPES, fieldKey, kindKey, nameOf } from '../src/ontology/types';
+import { fieldKey, kindKey, nameOf } from '../src/ontology/type-text';
+import { TRADE_TYPES } from '../src/ontology/types';
 import type { TrackedOverview, TrackedThing } from '../../src/live/tracked';
 import { Client, addMember, appPool, boot, connectGmail, jobs, model, newWorkspace, rows, signUp, sysPool, withWorkspace } from './helpers';
 

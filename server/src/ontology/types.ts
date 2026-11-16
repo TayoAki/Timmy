@@ -20,62 +20,18 @@ import type { Tx } from '../db/pool';
 import { withWorkspace } from '../db/pool';
 import { audit } from '../gateway/gateway';
 import { newId } from '../lib/ids';
-import { quoted, settleThings, words } from './ontology';
+import { quoted, settleThings } from './ontology';
+import { MAX_LABEL, MAX_NAME, MAX_QUOTE, MAX_VALUE, NOT_A_KIND, appears, capital, fieldKey, kindKey, nameOf, plain, sameAs } from './type-text';
 
-/* ───────────── Limits and plain text ───────────── */
+/* ───────────── Limits ───────────── */
 
 /** How many things, and how many untracked kinds, one thread's read may add. The read's prompt asks for the same. */
 const THINGS_PER_THREAD = 3;
 const KINDS_PER_THREAD = 2;
 /** A kind is offered once it has been seen in this many different threads. */
 const PROPOSE_AFTER = 3;
-const MAX_NAME = 40;
-const MAX_LABEL = 30;
-const MAX_VALUE = 120;
-const MAX_QUOTE = 300;
 /** A kind Timmy noticed gets the field that names it and at most this many more. */
 const SEEN_FIELDS = 3;
-
-/** Things Timmy already keeps in their own place, and words too vague to be a kind. Never offered as a kind to track. */
-const NOT_A_KIND = new Set(['person', 'people', 'contact', 'company', 'organization', 'organisation', 'meeting', 'event', 'call', 'document', 'file', 'attachment', 'email', 'message', 'thread', 'commitment', 'promise', 'task', 'thing', 'item', 'other']);
-
-const INVISIBLE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff]/g;
-
-/** One line of plain text, or '' when the value is not text, is empty, is longer than allowed, or carries markup brackets. */
-function plain(v: unknown, max: number): string {
-  if (typeof v !== 'string') return '';
-  const t = v.replace(INVISIBLE, ' ').replace(/\s+/g, ' ').trim();
-  return t.length > 0 && t.length <= max && !/[<>]/.test(t) ? t : '';
-}
-
-/**
- * A name for a kind or a field: up to four plain words (letters, digits, hyphens), or '' when it is anything else.
- * Kind and field names end up in front of a model again, so a sentence is never accepted as a name.
- */
-export function nameOf(v: unknown, max: number): string {
-  const t = plain(v, max);
-  return /^\p{L}[\p{L}\p{N}'’-]*( [\p{L}\p{N}'’-]+){0,3}$/u.test(t) ? t : '';
-}
-
-const singular = (w: string) => (w.length < 4 ? w : w.endsWith('ies') ? `${w.slice(0, -3)}y` : /(sses|xes|ches|shes)$/.test(w) ? w.slice(0, -2) : w.endsWith('s') && !/(ss|us|is)$/.test(w) ? w.slice(0, -1) : w);
-
-/** One spelling for a kind however it was written: "Properties", "property" and " Property" are the same kind. */
-export function kindKey(name: string): string {
-  const parts = name.toLowerCase().replace(/['’]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim().split(' ').filter(Boolean);
-  if (!parts.length) return '';
-  return [...parts.slice(0, -1), singular(parts[parts.length - 1]!)].join(' ');
-}
-
-/** "Close date" → "close_date". */
-export const fieldKey = (label: string) => label.toLowerCase().replace(/['’]/g, '').replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_+|_+$/g, '');
-
-/** True when the value is really somewhere in the text, give or take capitals, spacing and curly quotes. */
-const appears = (text: string, value: string) => words(value).length > 0 && words(text).includes(words(value));
-
-/** What makes two sightings the same thing: the naming value without capitals, spacing or punctuation. "Acme, Inc." is "acme inc". */
-const sameAs = (value: string) => words(value).replace(/[.,;:!?'"()]+/g, '').replace(/\s+/g, ' ').trim();
-
-const capital = (t: string) => (t ? t[0]!.toUpperCase() + t.slice(1) : t);
 
 /* ───────────── The kinds each trade starts with ───────────── */
 
