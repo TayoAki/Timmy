@@ -20,6 +20,8 @@ import { rulesFor } from '../auth/roles';
 import { loadState } from '../state/docs';
 import { ConnectError, TOOLKITS, closeConnections, disconnect, finishConnect, startConnect } from '../sync/connect';
 import { mailboxFor } from '../sync/mailbox';
+import { summarizePage } from '../agent/pages';
+import { BudgetError } from '../providers/model';
 import { fromWire, pickSlices, toWire } from '../../../src/live/patches';
 import type { Action } from '../../../src/state/store';
 import { agentRoutes } from './agent';
@@ -244,6 +246,24 @@ export function buildApp(): Hono<Env> {
       return wire(out, out.ok ? 200 : 409);
     });
   }
+
+  /* ───────────── Pages ───────────── */
+
+  // "Summarize with Timmy": the model writes a few lines from the page; only lines the page backs come back.
+  // The person's editor types them in, so the page itself changes through the normal save.
+  app.post('/api/v1/pages/:id/summarize', requireWorkspace, async (c) => {
+    const id = c.req.param('id');
+    if (!/^[\w.:@+-]{1,200}$/.test(id)) return c.json({ error: 'Not found' }, 404);
+    const body = (await c.req.json().catch(() => ({}))) as { blocks?: unknown };
+    try {
+      const out = await summarizePage(ctxOf(c), id, body.blocks);
+      return out.ok ? c.json({ lines: out.lines }) : c.json({ error: out.reason }, out.status as 400);
+    } catch (e) {
+      if (e instanceof BudgetError) return c.json({ error: e.message }, 429);
+      log.warn('a page could not be summarised', { error: (e as Error).message });
+      return c.json({ error: 'Timmy couldn’t write a summary just now.' }, 503);
+    }
+  });
 
   /* ───────────── The audit log, effects and usage ───────────── */
 

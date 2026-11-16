@@ -22,6 +22,9 @@ import { NotionEditor, type EditorHandle } from './editor/NotionEditor';
 import { fromDoc } from './editor/convert';
 import { timmyWrites } from './editor/presence';
 import { summarize } from './summary';
+import type { Written } from './editor/presence';
+import { api } from '../../live/api';
+import { isLive } from '../../live/clock';
 
 export { BlockText } from './BlockText';
 
@@ -144,12 +147,25 @@ export function DocEditor({ file, body }: { file: WFile; body: DocBody }) {
   const timmySummary = (after: number | null) => {
     const ed = handle.current.editor;
     if (!ed) return;
-    const items = summarize(fromDoc(ed.getJSON()), (id) => state.ws.files[id]?.name);
-    if (!items.length) {
-      dispatch({ type: 'toast', text: 'There’s nothing to summarize yet. Add some notes first.' });
-      return;
-    }
-    timmyWrites(ed, file.id, after, items, () => dispatch({ type: 'toast', text: 'Timmy added a summary. Ctrl+Z takes it out.' }));
+    const onPage = fromDoc(ed.getJSON());
+    const nothing = () => dispatch({ type: 'toast', text: 'There’s nothing to summarize yet. Add some notes first.' });
+    const type = (items: Written[]) => timmyWrites(ed, file.id, after, items, () => dispatch({ type: 'toast', text: 'Timmy added a summary. Ctrl+Z takes it out.' }));
+    // Lines picked from the page itself: the preview's summary, and the stand-in when the model can't be reached.
+    const picked = () => {
+      const items = summarize(onPage, (id) => state.ws.files[id]?.name);
+      if (items.length) type(items);
+      else nothing();
+    };
+    if (!isLive()) return picked();
+    // On a real workspace the model writes the summary from what is on screen, and the server keeps only lines the page backs.
+    void api.summarizePage(file.id, onPage).then(
+      (out) => {
+        if (ed.isDestroyed) return;
+        if (!out.lines.length) return picked();
+        type([{ type: 'callout', attrs: { icon: '✨' }, text: 'Timmy’s summary, from what’s on this page' }, ...out.lines.map((l) => ({ type: 'bullet', attrs: { indent: 0 }, text: l.text }))]);
+      },
+      () => !ed.isDestroyed && picked(),
+    );
   };
 
   const addTodayRow = () => {

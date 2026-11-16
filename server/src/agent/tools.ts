@@ -14,6 +14,8 @@ import type { ToolDef } from '../providers/model';
 import { actorOf, emailOf, type Ctx } from '../state/engine';
 import { mutate, readState } from '../state/mutate';
 import { findPeople, openCommitments } from '../ontology/ontology';
+import { readFileText } from '../sync/files';
+import { readPage, searchPages } from './pages';
 import { BOX_WORDS, filingProposal, isBox } from '../sync/labels';
 import { LostLease } from './errors';
 import { untrusted } from './prompts';
@@ -135,7 +137,7 @@ const searchFiles: AgentTool = {
   def: {
     name: 'search_files',
     description:
-      'Search the names of the files in the user’s connected Google Drive. Returns each match’s name, what kind of file it is, who owns it, when it last changed and a link to open it. Only names are searched: Timmy cannot open a file’s contents yet, so say so if the user asks what a file says.',
+      'Search the names of the files in the user’s connected Google Drive. Returns each match’s name, what kind of file it is, who owns it, when it last changed, a link to open it, and a `file` value for read_file. Only names are searched, not contents.',
     parameters: { type: 'object', properties: { query: { type: 'string', description: 'Words from the file’s name' }, limit: { type: 'integer', description: 'How many results, 1-20. Default 8.' } }, required: ['query'] },
   },
   async run(args, t) {
@@ -147,7 +149,7 @@ const searchFiles: AgentTool = {
     const rows = await withWorkspace({ workspaceId: t.ctx.workspaceId }, async (tx) => {
       // Files matching every word come first, then files matching any of them; newest first among equals.
       const { rows } = await tx.query(
-        `select i.subject, i.snippet, i.sender, i.occurred_at, i.meta->>'link' as link, i.meta->>'ownerName' as owner_name,
+        `select i.external_id, i.subject, i.snippet, i.sender, i.occurred_at, i.meta->>'link' as link, i.meta->>'ownerName' as owner_name,
                 (select count(*) from unnest($2::text[]) w where i.subject ilike w) as hits
          from item i
          where i.workspace_id = $1 and i.kind = 'file' and ${FROM_A_CONNECTED_MAILBOX} and i.subject ilike any($2::text[])
@@ -156,9 +158,58 @@ const searchFiles: AgentTool = {
       );
       return rows;
     });
-    const results = rows.map((r) => ({ name: r.subject, kind: r.snippet, owner: r.owner_name || r.sender || undefined, changed: new Date(r.occurred_at).toISOString(), link: r.link ?? undefined }));
+    const results = rows.map((r) => ({ name: r.subject, kind: r.snippet, owner: r.owner_name || r.sender || undefined, changed: new Date(r.occurred_at).toISOString(), link: r.link ?? undefined, file: r.external_id }));
     // File names are written by whoever made or shared the file, so they are outside content like mail is.
     return { result: untrusted('files', { query, results }), outside: true };
+  },
+};
+
+const searchPagesTool: AgentTool = {
+  kind: 'read',
+  step: 'Looking through your pages',
+  def: {
+    name: 'search_pages',
+    description: 'Search the pages the user has written in Timmy (notes, meeting docs, plans) by the words in their titles and text. Returns each page’s name, the lines that matched and a `page` value for read_page. Pages in the trash are left out.',
+    parameters: { type: 'object', properties: { query: { type: 'string', description: 'Words from the page' } }, required: ['query'] },
+  },
+  async run(args, t) {
+    const query = str(args.query, 200).trim();
+    const { state } = await readState(t.ctx.workspaceId);
+    return { result: untrusted('pages', { query, results: searchPages(state, query) }), outside: true };
+  },
+};
+
+const readPageTool: AgentTool = {
+  kind: 'read',
+  step: 'Reading the page',
+  def: {
+    name: 'read_page',
+    description: 'Read one of the user’s pages in Timmy. Takes the `page` value from search_pages. Long pages are cut off, and the result says so.',
+    parameters: { type: 'object', properties: { page: { type: 'string', description: 'The `page` value from search_pages' } }, required: ['page'] },
+  },
+  async run(args, t) {
+    const { state } = await readState(t.ctx.workspaceId);
+    const page = readPage(state, str(args.page, 200));
+    if (!page) return { result: 'There is no page with that id (it may be in the trash).' };
+    // Pages are typed and pasted by people; what they say is information, never instructions.
+    return { result: untrusted('page', { name: page.name, text: page.text, cut_off: page.truncated }), outside: true };
+  },
+};
+
+const readFile: AgentTool = {
+  kind: 'read',
+  step: 'Reading the file',
+  def: {
+    name: 'read_file',
+    description:
+      'Read what a file in the user’s Google Drive says. Works for Google Docs, Sheets (the first sheet’s first 200 rows) and Slides; other kinds can’t be opened yet. Takes the `file` value from search_files. Long files are cut off, and the result says so.',
+    parameters: { type: 'object', properties: { file: { type: 'string', description: 'The `file` value from search_files' } }, required: ['file'] },
+  },
+  async run(args, t) {
+    const out = await readFileText(t.ctx.workspaceId, str(args.file, 200));
+    if (!out.ok) return { result: out.reason };
+    // A file's contents are written by whoever wrote the file: information, never instructions.
+    return { result: untrusted('file', { name: out.name, kind: out.kind, text: out.text, cut_off: out.truncated }), outside: true };
   },
 };
 
@@ -348,5 +399,5 @@ const fileThread: AgentTool = {
   },
 };
 
-export const TOOLS: AgentTool[] = [searchMail, readThread, listInbox, searchFiles, lookupPerson, listCommitments, draftReply, sendEmail, sendReply, fileThread];
+export const TOOLS: AgentTool[] = [searchMail, readThread, listInbox, searchFiles, readFile, searchPagesTool, readPageTool, lookupPerson, listCommitments, draftReply, sendEmail, sendReply, fileThread];
 export const TOOL_BY_NAME: Record<string, AgentTool> = Object.fromEntries(TOOLS.map((t) => [t.def.name, t]));

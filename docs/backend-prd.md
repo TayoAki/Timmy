@@ -214,6 +214,16 @@ It is Apache-2.0, at version 1.2.0 with 13.1k stars, and it doesn't accept outsi
 
 **Where it lives:** Postgres tables for entities, relationships, terms and evidence, with pgvector for embeddings and row-level security on `workspace_id`.
 
+**As built, first version (Nov 16, 2026).** Four tables (`entity`, `relation`, `evidence`, `term`) with row-level security. The core types Person, Organization, Meeting, Document and Commitment are built; Project, Task and Thread stay where the screens already keep them.
+
+- **Plain code builds the map.** Every stored item is looked at once: who wrote a message, who it was sent to, who was invited to an event, who owns a file. A company comes from an address's domain unless it is a personal-mail domain. Mailboxes nobody sits behind (no-reply, billing, newsletters) are not people. No model is called, so this step costs nothing and cannot be steered by what an email says.
+- **A model adds only promises**, in the same single read each thread already gets. A promise is kept only if the sentence it rests on is really in a stored message from the person said to have made it; otherwise it is dropped.
+- **Evidence is a foreign key.** Each entity and link points at the item it came from. When an account is disconnected or mail passes its retention, the items are deleted, the evidence goes with them, and whatever nothing supports any more is removed.
+- **Where it shows.** People from the mail appear on the People screen as suggestions, with company and how often they wrote; a contact someone typed or tracked is never overwritten. Ask has `lookup_person` and `list_commitments`, both returned as outside content with the sentence behind each promise.
+- **Not built yet:** the trade types (Deal, Property, Candidate…), discovering and certifying new types, matching by embedding, showing conflicts, the batch backfill through a model, and CRM mapping. The seed-by-trade step only records the trade.
+
+**Decisions, as built (Nov 16, 2026).** When an email asks the person to choose or approve something, the read step returns the question, two or three answers and the figures that bear on it. The server keeps a figure only if its sentence is in the thread, and shows the card in Approvals. Timmy never picks. Choosing an answer records it and starts a reply draft that says so; the draft waits for Send like any other. If the person answers the thread themselves, the card closes. A question that was already decided makes no new card: the thread shows what was decided and when.
+
 **Running Auto Ontology itself (phase 3).** For agency and enterprise workspaces that connect a SQL warehouse, we run Auto Ontology as a sidecar behind our own auth, one instance per tenant. It maps warehouse tables onto the same terms.
 
 ## Connections: Composio for every app
@@ -232,7 +242,11 @@ Every app connection is a Composio connect button. That covers Gmail, Google Cal
 
 Mail code is written once against a small mailbox interface (list a page since a date, fetch a thread, send, find in Sent, file) with Gmail and Outlook behind it. Outlook differs in four ways that the interface hides. A thread is a conversation listed by filter. A message's place is a folder, translated into the same words Gmail's labels use. Filing is written as categories with the same three names, and Archived is the Archive folder. A reply is created as a draft, addressed to exactly the approved people, read back, and only then sent, because Outlook's own reply chooses the recipients. Outlook bodies arrive as HTML and are stored as text. Outlook's calendar and OneDrive are not read yet.
 
-Drive is read-only: a list of files changed in the last 90 days and since (name, kind, owner, link), which Ask searches by name. File contents are not read yet.
+Drive is read-only: a list of files changed in the last 90 days and since (name, kind, owner, link), which Ask searches by name. When Ask needs what a file says, the text of a Google Doc, Sheet (first sheet, first 200 rows) or Slides file is fetched at that moment through the same connection and is not stored; only a file already on the workspace's list can be read. PDFs and Office files are not opened yet, and contents are not indexed for search.
+
+**Composio only (owner's decision, Nov 16, 2026).** Every outside app, including CRMs and lead sources in phase 2, connects through Composio. An app Composio does not offer is skipped for now; that includes the enrichment provider that uses its own token.
+
+**The new screens (page editor, automations, website chat, pipeline board)** and how their backends are built are described in [ui-additions-backend.md](ui-additions-backend.md). Their records are stored and checked by the server since Nov 16, 2026; the automation engine and the website chat's public side are being built.
 
 **Composio toolkit versions are pinned in config.** Composio renames tools and changes argument types between versions (Outlook's send tool took `to_email`, then `to`; the calendar tool's `send_updates` went from yes/no to a word). The server runs each toolkit at the version its code was checked against, and a script (`server/scripts/check-composio.mts`) checks every tool and event the server uses against Composio's API before a version moves forward. The nightly reconcile is built for mail: it fetches the last two days of each connected mailbox again and takes in anything the triggers missed. Filing is written back: a thread sorted in Timmy gets a Gmail label or an Outlook category (“Timmy Follow Up”, “Timmy Waiting”, “Timmy Read Through”) and stays in the inbox, and an archived thread leaves it. The write is a `mail.modify` effect approved by the person's own action. It is one-way for now: changes made in the mailbox itself are not read back. Mail is sent exactly as approved: the provider is told not to append the account's signature. A new event added in Timmy is written to Google Calendar as a `calendar.create` effect: it gets the undo window, and with guests it is approved like an email because Google then sends invitations. Changes to and deletions of existing events are not written back yet.
 
@@ -376,6 +390,8 @@ All four keep the agent loop in their own server process and send only tool exec
 ## Roadmap, team and cost
 
 Four phases over about 32 weeks. Paid launch is at week 22, once the sales stack is done. No phase starts until the previous gate is met.
+
+**Changed Nov 16, 2026 (owner's decisions):** the model evaluation is dropped from phase 1, because Timmy uses one model through OpenRouter and the evaluation was only for adding more to the picker; and the "60% of drafts sent" goal is no longer a gate for phase 1.
 
 *Roadmap diagram: see the Claude Docs version. Phase 0 Foundations (weeks 1–4): sign-in and workspaces, Postgres with RLS, Gmail via Composio, agent loop and gateway, Ask on real mail, cost test per user. Gate 1: 10 users live a full day, 0 unapproved sends. Phase 1 Private beta (weeks 5–12): triage, brief, drafts; Waiting and decisions; ontology v1; Outlook and Drive; model allowlist eval; pen test and DPA. Gate 2: 50 workspaces live, 60% of drafts sent. Phase 2 Sales and teams (weeks 13–22): CRM sync and RevOps queue, cold email as drafts, Treg data on by default, lead sources, enrichment and find leads, delegate and agencies. Gate 3: paid launch, sales stack done. Phase 3 Computer and scale (weeks 23–32): cloud computer (browser), routines and channels, social posting, Salesforce listing, SOC 2 Type II window, warehouse ontology.*
 

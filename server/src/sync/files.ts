@@ -3,8 +3,9 @@
  *
  * Timmy keeps a list of the person's files: name, what kind of file, who owns
  * it, when it last changed and a link to open it. That is enough for "find the
- * Acme proposal" to return the right file. It does not read inside files yet,
- * and it writes nothing to Drive.
+ * Acme proposal" to return the right file. When Ask needs what a file says, the
+ * text of a Google Doc, Sheet or Slides file is fetched at that moment, through
+ * the same connection; it is not stored. Timmy writes nothing to Drive.
  */
 import { config } from '../config';
 import { withWorkspace, type Tx } from '../db/pool';
@@ -159,4 +160,72 @@ async function upsertFile(tx: Tx, workspaceId: string, connectionId: string, f: 
 /** A file was deleted or moved to the trash in Drive: it leaves Timmy's list too. */
 export async function removeFile(workspaceId: string, connectionId: string, fileId: string): Promise<number> {
   return withWorkspace({ workspaceId }, async (tx) => (await tx.query(`delete from item where workspace_id = $1 and connection_id = $2 and kind = 'file' and external_id = $3`, [workspaceId, connectionId, fileId])).rowCount ?? 0);
+}
+
+/* ───────────── Reading inside a file ───────────── */
+
+/** The most of one file's text that is handed to the model in one go. */
+export const MAX_FILE_TEXT = 24_000;
+
+export type FileText = { ok: true; name: string; kind: string; text: string; truncated: boolean } | { ok: false; reason: string };
+
+interface DocsElement {
+  paragraph?: { elements?: { textRun?: { content?: string } }[] };
+  table?: { tableRows?: { tableCells?: { content?: DocsElement[] }[] }[] };
+}
+
+/** The words of a Google Doc, from the structure Google returns: paragraphs in order, table rows as lines. */
+export function docText(content: DocsElement[] | undefined): string {
+  const out: string[] = [];
+  for (const el of content ?? []) {
+    if (el.paragraph) out.push((el.paragraph.elements ?? []).map((e) => e.textRun?.content ?? '').join(''));
+    else if (el.table) for (const row of el.table.tableRows ?? []) out.push(`${(row.tableCells ?? []).map((c) => docText(c.content).trim()).join(' | ')}\n`);
+  }
+  return out.join('').replace(/\u0000/g, '').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+interface SlidesPage {
+  pageElements?: { shape?: { text?: { textElements?: { textRun?: { content?: string } }[] } } }[];
+}
+
+const READERS: Record<string, (workspaceId: string, connectionId: string, fileId: string) => Promise<string | null>> = {
+  'application/vnd.google-apps.document': async (ws, conn, id) => {
+    const res = await callTool(ws, conn, 'GOOGLEDRIVE_GET_DOCUMENT', { document_id: id }, 'agent');
+    return res.successful ? docText((payload(res.data).body as { content?: DocsElement[] } | undefined)?.content) : null;
+  },
+  'application/vnd.google-apps.spreadsheet': async (ws, conn, id) => {
+    // The first sheet's top-left corner: enough to see what the sheet is, without pulling a whole workbook.
+    const res = await callTool(ws, conn, 'GOOGLEDRIVE_GET_SPREADSHEET_VALUES', { spreadsheet_id: id, range: 'A1:Z200' }, 'agent');
+    if (!res.successful) return null;
+    const rows = (payload(res.data).values ?? []) as unknown[][];
+    return rows.map((r) => r.map((c) => String(c ?? '').replace(/[\t\n]/g, ' ')).join('\t')).join('\n');
+  },
+  'application/vnd.google-apps.presentation': async (ws, conn, id) => {
+    const res = await callTool(ws, conn, 'GOOGLEDRIVE_GET_PRESENTATION', { presentation_id: id, fields: 'title,slides(pageElements(shape(text(textElements(textRun(content))))))' }, 'agent');
+    if (!res.successful) return null;
+    const slides = (payload(res.data).slides ?? []) as SlidesPage[];
+    return slides.map((s, i) => `Slide ${i + 1}\n${(s.pageElements ?? []).map((e) => (e.shape?.text?.textElements ?? []).map((t) => t.textRun?.content ?? '').join('')).join('').trim()}`).join('\n\n');
+  },
+};
+
+/**
+ * The text of one file on the workspace's list. Only a file Timmy already lists can be read: the id is looked up
+ * in this workspace's own store, on a connection that is still active, before anything is asked of Drive.
+ */
+export async function readFileText(workspaceId: string, fileId: string): Promise<FileText> {
+  const row = await withWorkspace({ workspaceId }, async (tx) =>
+    (
+      await tx.query(
+        `select i.connection_id, i.subject, i.snippet, i.meta->>'mimeType' as mime from item i join connection c on c.id = i.connection_id
+         where i.workspace_id = $1 and i.kind = 'file' and i.external_id = $2 and c.status = 'active' limit 1`,
+        [workspaceId, fileId],
+      )
+    ).rows[0],
+  );
+  if (!row) return { ok: false, reason: 'That file is not on the list of files Timmy can see.' };
+  const read = Object.hasOwn(READERS, String(row.mime)) ? READERS[String(row.mime)] : undefined;
+  if (!read) return { ok: false, reason: `Timmy can read Google Docs, Sheets and Slides. “${row.subject}” is a ${String(row.snippet ?? 'file').toLowerCase()}, which it can’t open yet.` };
+  const text = await read(workspaceId, row.connection_id as string, fileId);
+  if (text === null) return { ok: false, reason: 'Drive would not hand over that file’s contents.' };
+  return { ok: true, name: row.subject as string, kind: row.snippet as string, text: text.slice(0, MAX_FILE_TEXT), truncated: text.length > MAX_FILE_TEXT };
 }

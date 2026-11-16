@@ -57,7 +57,7 @@ function richProblem(rich: unknown): string | null {
   return null;
 }
 
-function blocksProblem(blocks: unknown): string | null {
+export function blocksProblem(blocks: unknown): string | null {
   if (!Array.isArray(blocks)) return 'That page’s contents aren’t in a form Timmy can save.';
   if (blocks.length > MAX_BLOCKS) return `A page can hold up to ${MAX_BLOCKS.toLocaleString('en-US')} blocks.`;
   const ids = new Set<string>();

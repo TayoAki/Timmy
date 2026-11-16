@@ -8,7 +8,8 @@
    "server/test/audit.test.ts",
    "server/test/filing.test.ts",
    "server/test/calendar-write.test.ts",
-   "server/test/outlook.test.ts"
+   "server/test/outlook.test.ts",
+   "server/test/ontology.test.ts"
   ],
   "no action runs twice": [
    "server/test/gateway.test.ts",
@@ -22,7 +23,9 @@
    "server/test/isolation.test.ts",
    "server/test/agent.test.ts",
    "server/test/audit.test.ts",
-   "server/test/drive.test.ts"
+   "server/test/drive.test.ts",
+   "server/test/ontology.test.ts",
+   "server/test/pages.test.ts"
   ],
   "no real credential inside a prompt, the sandbox or logs": [
    "server/test/unit.test.ts",
@@ -157,15 +160,29 @@
   {
    "id": "api-drive",
    "file": "server/test/drive.test.ts",
-   "covers": "Google Drive through Composio, read-only: connect beside a mailbox; the list of recent files without folders or trash; links kept only if they are Google's; paging, resuming, and asking only for what changed since; file events; the nightly pass; Ask's file search by name, wrapped as outside content; no other workspace sees the files; disconnect removes them",
-   "tests": 12,
+   "covers": "Google Drive through Composio, read-only: connect beside a mailbox; the list of recent files without folders or trash; links kept only if they are Google's; paging, resuming, and asking only for what changed since; file events; the nightly pass; Ask's file search by name, wrapped as outside content; no other workspace sees the files; disconnect removes them; reading inside a file: Google’s document structure to text, docs, sheets and slides read on demand through the connection and not stored, kinds that can’t be opened said plainly, only files on the workspace’s own list are ever asked of Drive, long files cut off and flagged, contents wrapped as outside content, no other workspace can read a file by its id",
+   "tests": 18,
+   "status": "pass"
+  },
+  {
+   "id": "api-pages",
+   "file": "server/test/pages.test.ts",
+   "covers": "the new UI’s records on a real workspace: a page’s blocks, formatting, icon and cover kept across a reload; unknown blocks, links that aren’t web or mail addresses, SVG or oversized pictures and too-deep nesting refused; a change checked as the page it would become; the trash and restore; only real collections writable, never by a read-only role or seen by another workspace; automation graphs (unknown steps, loops, two triggers, dangling arrows refused; what must hold before one can run); chat settings limits; visitors’ conversations not writable from a member’s screen; cold-email drafts never sent in bulk, and cleared when the person’s own send is seen; Ask’s search and reading of Timmy’s own pages as outside content, trash excluded, nothing across workspaces; Summarize with Timmy: only lines the page backs are kept (no invented figure, no line resting on a missing block), what is on screen is checked like a saved page, an empty page costs nothing, read-only roles refused, audit entry written",
+   "tests": 19,
+   "status": "pass"
+  },
+  {
+   "id": "api-ontology",
+   "file": "server/test/ontology.test.ts",
+   "covers": "the ontology and decisions: company vs personal addresses, automated senders, quotes that must really be in the text; people, companies and works-at from mail with evidence, idempotent re-reading, second display names kept as other names, recipients of sent mail; meetings and files with attendees and owners; the People screen projection that never overwrites what a person typed; promises kept only with a real sentence from the right person; Ask’s person lookup and open promises wrapped as outside content; no other workspace sees any of it, by tool or by row; disconnecting removes what was learned; decision cards from a question in the mail with only figures the email gives, choosing drafts a reply and sends nothing, read-only roles can’t decide, answering yourself closes the card, a repeated question makes no second card, unusable model output makes none",
+   "tests": 20,
    "status": "pass"
   },
   {
    "id": "demo-e2e",
    "file": "e2e/run-all.sh",
-   "covers": "the 12 demo-mode Playwright suites (348 checks)",
-   "tests": 348,
+   "covers": "the 17 demo-mode Playwright suites (483 checks), including the frontend branch’s five: round4, story, intro, pages and uis",
+   "tests": 483,
    "status": "pass"
   },
   {
@@ -244,7 +261,21 @@
    "id": "live-outlook",
    "file": "e2e/live/live-outlook.cjs",
    "covers": "in the browser: the Outlook card says what Timmy really reads; connect Outlook; Gmail refused beside it; an Outlook email arrives and reads as plain words; accepting a suggestion puts the category on it in Outlook; a drafted reply is approved, held, and sent once from the Outlook mailbox in the same conversation; archiving moves it to Outlook's Archive; connect Drive, a new file is announced, Ask finds it by name; disconnecting Outlook removes its thread",
-   "checks": 25,
+   "checks": 27,
+   "status": "pass"
+  },
+  {
+   "id": "live-pages",
+   "file": "e2e/live/live-pages.cjs",
+   "covers": "in the browser on a real workspace: no sample pages, automations or chats; a page typed with markdown shortcuts and the / menu is saved by the server and survives a reload; a script link is refused; trash and restore; an automation drawn on the canvas, saved, test-run with sample data; switching it or the website chat on is refused with the reason; a made-up visitor conversation is refused; a task is kept; Summarize with Timmy adds lines that come from the page",
+   "checks": 28,
+   "status": "pass"
+  },
+  {
+   "id": "live-decisions",
+   "file": "e2e/live/live-decisions.cjs",
+   "covers": "in the browser: a question in the mail becomes a card with the answers and the real figure; choosing drafts a reply with a Send button and sends nothing; the same question asked again says what was decided; People suggests the people who wrote, with their company; Ask says who someone is and what they promised",
+   "checks": 13,
    "status": "pass"
   },
   {

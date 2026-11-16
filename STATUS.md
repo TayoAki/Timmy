@@ -1,6 +1,6 @@
 # Timmy backend: status
 
-Last updated: Nov 16, 2026 (session 1, after Outlook, Drive and Resend). Read this first, then `tests.json`, then `git log`.
+Last updated: Nov 16, 2026 (session 1, after the new UI was merged and decisions, the ontology and Drive reading were built). Read this first, then `tests.json`, then `git log`.
 The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 
 ## Where things stand
@@ -18,6 +18,11 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 | Composio: connect, mail backfill, new-mail webhook, nightly mail check, calendar sync, item store | Built and tested against the fake provider, for Gmail, Outlook, Google Calendar and Google Drive. Every other app shows as coming soon and the API refuses to connect it. The real key works (connect links were minted against the real API); no real account has been connected yet. |
 | Outlook mail (phase 1) | Built. Outlook connects through Composio like Gmail and is a workspace's mailbox in the same way (one mailbox per workspace, Gmail or Outlook). First read of the last 30 then 90 days, new mail and sent mail by event, the nightly check, sending and replying through the gateway with the undo window, and filing written back: Follow Up, Waiting and Read Through become Outlook categories with the same names, and Archived moves the messages to Outlook's Archive folder. HTML bodies are stored and shown as text. Outlook's calendar and OneDrive are not read yet, and the card says so. Tested against the fake provider and checked against Composio's real tool definitions; not yet run on a real mailbox. |
 | Google Drive (phase 1) | Built, read-only. Timmy keeps a list of files changed in the last 90 days and from then on (name, kind, owner, when it changed, link), kept current by Drive's events and a nightly pass, and Ask can search it (“find the file …”). Timmy does not open files and writes nothing to Drive. Tested against the fake provider and checked against Composio's real tool definitions; not yet run on a real Drive. |
+| The new UI on real workspaces (page editor, trash, automations canvas, website chat settings, pipeline board, cold-email Drafts) | Merged from `claude/modest-meitner-59cqpr` and kept by the server: pages and their blocks, the trash, automations and chat settings are stored per workspace and checked before saving (known blocks only, links that are web or mail addresses, pictures that can't carry a script and stay small, automation graphs with one trigger and no loops, chat settings within limits). Switching an automation or the website chat **on** is refused with the reason until the engine behind it is merged (both are being built; see "In progress"). Cold-email drafts open in the person's mail app; Timmy never sends them. |
+| Decisions (phase 1) | Built. When an email asks the person to choose, reading the thread makes a card in Approvals: the question, two or three answers, and only figures whose sentence is really in the thread. Timmy never chooses. Picking an answer has Timmy draft the reply, which still waits for Send. Answering the thread yourself closes the card. The same question asked again makes no second card; the thread says what was decided and when. |
+| Ontology, first version (phase 1) | Built. A map of people, companies, meetings, files and promises in four tables with row-level security. Plain code builds it from who wrote, who was written to, who was invited and who owns a file; no model is involved, so it costs nothing and an email can't talk it into anything. The model's one contribution is promises ("I'll send the contract by Friday"), kept only when the sentence is really in a message from the person said to have made it. Everything points at the stored item it came from and is removed when that item goes. Used by the People screen (people from the mail appear under Suggestions with their company and how often they wrote; nothing typed by hand is overwritten) and by Ask (`lookup_person`, `list_commitments`). Not built yet: trade-specific types (deals, properties), proposing and certifying new types, matching by meaning (embeddings), showing conflicts. |
+| Timmy's own pages in Ask, and Summarize with Timmy (phase 1) | Built. Ask can search the pages written in Timmy by title and text and read one (`search_pages`, `read_page`); pages in the trash are left out. "Summarize with Timmy" is written by the model on a real workspace from what is on screen; the server keeps a line only if it rests on blocks that exist and every figure in it appears in those blocks, and Timmy types the lines in. If the model can't be reached, the lines picked from the page itself stand in. Not built: a version history of pages, and a search index outside the workspace's state. |
+| Reading inside Drive files (phase 1) | Built for Google Docs, Sheets (the first sheet's first 200 rows) and Slides, through the same Composio connection, at the moment Ask needs it; the text is not stored. Only a file already on the workspace's list can be read. PDFs and Office files can't be opened yet, and Ask says so. Contents are not searched; names are. |
 | Composio toolkit versions | Pinned in config (`composio.toolkitVersions`, overridable with `COMPOSIO_TOOLKIT_VERSIONS`). `server/scripts/check-composio.mts` checks every tool and event the server uses against Composio's API at the pinned versions; it passes. |
 | Model layer (OpenRouter), model picker, cost log, spend cap | Built. Real calls made on Claude Opus 5.5. An owner can set the monthly limit in Settings, up to a ceiling the server sets ($200 by default). No fallback model is configured (see decision 6). |
 | Agent loop (leased runs, checkpoints, pause for approval), Ask over mail | Built. |
@@ -70,11 +75,11 @@ Cost measurement: `server/scripts/measure-cost.ts` (the header says how to run i
 
 | Suite | Result |
 | --- | --- |
-| API unit and integration (`server/test`, 18 files) | 286 of 286 pass |
-| Demo-mode Playwright (`e2e/`, 12 suites, 348 checks) | 12 of 12 pass |
-| Live-mode Playwright (`e2e/live/`, 12 suites, 205 checks) | 12 of 12 pass. Eleven run on one server; `live-verify` runs on a server restarted with address confirmation required. |
-| Live-mode Playwright against **staging** (Railway) | 11 of 11 pass (199 checks) on build `231dc18`, including the new Outlook and Drive suite. On its first staging run that suite failed at its second connect: my test helper took the Drive connect as finished because the address bar still showed the earlier Outlook one. The helper now waits for each connect's own return trip. The app was not at fault and was not changed for it. |
-| Composio tool check (`server/scripts/check-composio.mts`, real API, read-only) | Pass: 21 tools and 8 events exist at the pinned versions and take the arguments the code sends. |
+| API unit and integration (`server/test`, 20 files) | 331 of 331 pass |
+| Demo-mode Playwright (`e2e/`, 17 suites, 483 checks) | 17 of 17 pass. The frontend branch brought five suites (`e2e-round4`, `e2e-story`, `e2e-intro`, `e2e-pages`, `e2e-uis`). `e2e-round3` failed once during a run in which I was editing source files while the dev server hot-reloaded; it passed 45 of 45 on a clean run. |
+| Live-mode Playwright (`e2e/live/`, 15 suites, 248 checks) | 15 of 15 pass. Fourteen run on one server; `live-verify` runs on a server restarted with address confirmation required. |
+| Live-mode Playwright against **staging** (Railway) | Last full run: 11 of 11 (199 checks) on build `231dc18`, before the new UI was merged. To be re-run on the merged build. |
+| Composio tool check (`server/scripts/check-composio.mts`, real API, read-only) | Pass: 24 tools and 8 events exist at the pinned versions and take the arguments the code sends. |
 | Real connect links for Outlook and Drive (Composio's real API) | Pass: a link was minted for each through the server's own code, with the pinned versions, and the pending accounts were removed again. Composio accepted the narrower Outlook permission set (`timmy-outlook-a7eae611`: mail and profile only). Nobody has signed in through them yet. |
 | Demo suites against a deployed build of this branch | Not run: `web` deploys the older branch, and I won't change that service without your OK |
 | Real-provider smoke (a real Gmail or Outlook mailbox, a real Drive, through Composio) | Not run: needs a test account connected by a person |
@@ -228,6 +233,18 @@ Test changes that came with this, so you can check them:
 20. **Outlook is asked only for what Timmy uses.** Composio's default sign-in for Outlook asks for calendars, contacts, Teams chat and mailbox settings as well as mail. Timmy asks for mail (read, change, send) and the profile only (`COMPOSIO_SCOPES_OUTLOOK`; set it empty to go back to Composio's defaults if a real connect needs something more). Reading Outlook's calendar later will mean asking each person to connect again. Google is left at Composio's defaults, because Google only lets an app ask for permissions it has been approved for and Composio does not publish which narrower ones its app holds (see "Needs your attention").
 19. **Timmy's own mail goes through Resend** (your choice). With it configured, sign-up requires confirming the address, which closes the gap the audit left open (anyone could register an address they don't own).
 
+21. **Every connection is Composio; anything Composio doesn't offer is skipped for now** (owner's instruction, Nov 16). That covers CRMs and lead sources in phase 2, and it means the "treg" enrichment provider, which uses its own token, is not connected on real workspaces.
+22. **No model evaluation is planned.** The evaluation in the PRD was for adding more models to the picker in Settings. Timmy reaches models through OpenRouter and the picker holds one, Claude Opus 5.5, so there is nothing to compare (owner's instruction, Nov 16). It comes back only if a second model is ever proposed.
+23. **The "60% of drafts sent" goal is dropped** as a gate for phase 1 (owner's instruction, Nov 16).
+24. **A decision card never acts by itself.** Choosing an answer only records the choice and starts a draft. The card's wording comes from a model reading someone else's email, so its answers are short labels, its figures need a real sentence behind them, and what the person picks is passed to the drafting step as their own words.
+25. **The new UI's records are checked on the server, not replaced with new commands.** The frontend's doc proposed named commands (`doc.save`, `page.trash`, …). The screens send generic put / patch / remove operations today; rather than rewrite the screens, the server checks every such operation (`server/src/state/ws-check.ts`). Visitors' chat conversations are the exception: they can only be changed through the chat's own commands.
+26. **Cold-email drafts are Timmy's own records on a real workspace.** The frontend branch planned to save them in the mailbox's Drafts folder and send them from Timmy. Your later decision stands: each draft opens in your mail app and you send it there; several are never sent in one go.
+
+## In progress (being built in parallel, not merged yet)
+
+- **Automation engine, version 1**: so an automation that is switched on really runs. New-email and schedule triggers; create a task, notify, draft a reply, ask me first, add to a doc, and a Send step that always waits for a person; if/else and wait; a dry-run endpoint and a run history.
+- **Website chat, version 1**: the loader script and embeddable frame, public endpoints locked to the customer's site, rule-based replies (no model), leads from chats, take over, limits against abuse.
+
 ## Needs your attention
 
 - [ ] **Production sign-up is invite-only since the audit.** To create your own account on production, add your address to the `app` service's variables: `TIMMY_SIGNUP_ALLOW=you@example.com` (several addresses, or whole domains like `@example.com`, separated by commas). People you invite to a workspace can sign up without being on the list. `TIMMY_SIGNUP=open` opens it to everyone; I recommend leaving that until a mail provider is in place and sign-ups can verify their address. Staging stays open, which the test suites need.
@@ -243,13 +260,15 @@ Test changes that came with this, so you can check them:
 - [ ] **The production frontend's branch.** `web` deploys `claude/modest-meitner-59cqpr`; this work is on `claude/funny-keller-5ouhro`. I will not change that service without your OK.
 - [ ] **An outage fallback model, if you want one.** None is configured (decision 6). Tell me which model to evaluate; I run the eval, show you the numbers, and you decide.
 - [ ] **OpenRouter budget for this session.** The key attached to the session has about $11 left; a large eval needs more.
-- [ ] Which enrichment provider is "treg"?
+- [ ] **Open questions from the new-UI doc, with the defaults I am building to** (say if any should change): the website chat answers from rules only at launch, no model; an automation's Send step always waits for a person (sending without asking comes later, owner or admin only); two people typing in one page at once is left for phase 3; chat transcripts are kept 12 months and trashed pages 30 days; the chat loader is served from the app's own address until you pick a domain such as `chat.timmy.app`.
+- [ ] **Rotate the Supadata key** you pasted (it is not in the repo or logs), along with the earlier pasted keys.
 
 ## What's next
 
 1. Finish phase 0: a real mailbox end to end (connect, backfill, a real email in, a real send out), then repeat the cost measurement on it.
-2. Phase 1, in this order: decisions, ontology v1; then reading inside Drive files, Outlook's calendar, calendar changes and deletes, attachments, and reading back changes made in the mailbox. Reading mail, the Draft button, the morning run, filing, Waiting, Outlook mail and the Drive file list are built.
-3. Before phase 1 ends: the subagent safety review, which will include the Outlook and Drive code added here.
+2. Merge and review the automation engine and the website chat (in progress), then run everything on staging.
+3. Phase 1, what is left: picture uploads to the bucket instead of inline; Outlook's calendar; calendar changes and deletes; attachments; reading back changes made in the mailbox; trade-specific ontology types and the review screen for them.
+4. Before phase 1 ends: the subagent safety review, which will include Outlook, Drive, the new UI's checks, decisions, the ontology, automations and the website chat.
 
 Known gaps to close in phase 1 (none of them lets anything be sent without approval):
 - Calendar: a new event is written to Google Calendar, but a change to an existing event, or deleting one, is not. Event times are sent to Google as UTC instants, which is right for the moment in time but has not been checked on a real calendar for how Google displays them.

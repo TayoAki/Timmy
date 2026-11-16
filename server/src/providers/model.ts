@@ -253,6 +253,21 @@ export class FakeModel implements ModelProvider {
         }),
       };
     }
+    if (req.route === 'summary') {
+      const listed = [...req.messages[req.messages.length - 1]!.content.matchAll(/^\[([\w.:@+-]+)\] (.+)$/gm)].map((m) => ({ id: m[1]!, text: m[2]! }));
+      return {
+        content: JSON.stringify({
+          lines: listed.length
+            ? [
+                ...listed.slice(0, 2).map((b) => ({ text: b.text.slice(0, 120), blocks: [b.id] })),
+                // Two lines a careless model might write: a figure that is not on the page, and a line resting on nothing.
+                { text: 'The budget is $999,999.', blocks: [listed[0]!.id] },
+                { text: 'Everyone agreed.', blocks: ['no-such-block'] },
+              ]
+            : [],
+        }),
+      };
+    }
     if (req.route === 'draft') return { content: JSON.stringify({ body: 'Thanks for your message. I will come back to you on this shortly.\n\nBest' }) };
     const last = req.messages[req.messages.length - 1]!;
     const has = (name: string) => req.tools?.some((t) => t.name === name);
@@ -263,7 +278,15 @@ export class FakeModel implements ModelProvider {
         if (last.content.includes('"commitments":[') && !person) return { content: owed ? `Open: ${owed[1]}${owed[2] ? `, due ${owed[2]}` : ''}.` : 'Nothing is open.' };
         return { content: person ? `${person[1]} (${person[2]})${person[3] ? ` works at ${person[3]}` : ''}.${owed ? ` Open: ${owed[1]}.` : ''}` : 'I don’t know anyone by that name.' };
       }
+      if (last.content.includes('<untrusted source="file">')) {
+        const said = /"text":"((?:[^"\\]|\\.)*)"/.exec(last.content);
+        return { content: said ? `It says: ${(JSON.parse(`"${said[1]}"`) as string).split('\n')[0]}` : 'The file was empty.' };
+      }
       if (last.content.includes('<untrusted source="files">')) {
+        // Asked what a file says: the search found it, so the next step is to read it.
+        const wanted = [...req.messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+        const id = /"file":"([^"]+)"/.exec(last.content)?.[1];
+        if (/what does (?:the |my )?(?:file|doc|document) .+ say/i.test(wanted) && id && has('read_file')) return { toolCalls: [{ name: 'read_file', arguments: { file: id } }] };
         const file = /"name":"([^"]+)","kind":"([^"]+)"/.exec(last.content);
         return { content: file ? `I found a file: “${file[1]}” (${file[2]}).` : 'I couldn’t find a file with that name.' };
       }
@@ -278,6 +301,8 @@ export class FakeModel implements ModelProvider {
     const who = /^who is (.+?)[?.!]*$/i.exec(asked);
     if (who && has('lookup_person')) return { toolCalls: [{ name: 'lookup_person', arguments: { query: who[1] } }] };
     if (/^what am i waiting on[?.!]*$/i.test(asked) && has('list_commitments')) return { toolCalls: [{ name: 'list_commitments', arguments: {} }] };
+    const says = /^what does (?:the |my )?(?:file|doc|document) (.+?) say[?.!]*$/i.exec(asked);
+    if (says && has('search_files')) return { toolCalls: [{ name: 'search_files', arguments: { query: says[1] } }] };
     const lookFor = /^find (?:the |my )?(?:file|doc|document) (?:called |named |about )?(.+?)[?.!]*$/i.exec(asked);
     if (lookFor && has('search_files')) return { toolCalls: [{ name: 'search_files', arguments: { query: lookFor[1] } }] };
     if (file && has('file_thread')) return { toolCalls: [{ name: 'file_thread', arguments: { id: file[2], box: file[1]!.toLowerCase() === 'archive' ? 'archived' : 'follow-up' } }] };

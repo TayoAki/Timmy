@@ -181,6 +181,9 @@ export interface FakeFile {
   trashed?: boolean;
   /** The link Drive gives for opening the file. Set only to test what is done with an odd one. */
   link?: string;
+  /** What the file says: a doc's text (blank lines split paragraphs), a sheet's rows, or a deck's slides. */
+  text?: string;
+  rows?: (string | number)[][];
 }
 
 export interface FakeMailbox {
@@ -295,7 +298,7 @@ export class FakeComposio implements ComposioProvider {
   addFile(connectedAccountId: string, f: Partial<FakeFile> & { name: string }): FakeFile {
     const box = this.accounts.get(connectedAccountId);
     if (!box) throw new Error('no such fake account');
-    const file: FakeFile = { id: f.id ?? newId('file'), name: f.name, mimeType: f.mimeType ?? 'application/vnd.google-apps.document', modifiedTime: f.modifiedTime ?? new Date().toISOString(), owner: f.owner ?? box.address, trashed: f.trashed, link: f.link };
+    const file: FakeFile = { id: f.id ?? newId('file'), name: f.name, mimeType: f.mimeType ?? 'application/vnd.google-apps.document', modifiedTime: f.modifiedTime ?? new Date().toISOString(), owner: f.owner ?? box.address, trashed: f.trashed, link: f.link, text: f.text, rows: f.rows };
     box.files = [...box.files.filter((x) => x.id !== file.id), file];
     return file;
   }
@@ -551,6 +554,22 @@ export class FakeComposio implements ComposioProvider {
         // Like Drive itself, the stand-in returns only what `fields` names: without nextPageToken there, a long list just ends.
         const wantsToken = !args.fields || /(^|,)\s*nextPageToken\s*(,|$)/.test(String(args.fields));
         return ok({ files: page.map(wire), ...(wantsToken && start + max < list.length ? { nextPageToken: String(start + max) } : {}) });
+      }
+      case 'GOOGLEDRIVE_GET_DOCUMENT': {
+        const f = box.files.find((x) => x.id === args.document_id && !x.trashed);
+        if (!f || f.mimeType !== 'application/vnd.google-apps.document') return { successful: false, data: {}, error: 'Requested entity was not found' };
+        // Google's own structure: paragraphs made of text runs, each ending in a line break.
+        return ok({ documentId: f.id, title: f.name, body: { content: (f.text ?? '').split('\n').map((line) => ({ paragraph: { elements: [{ textRun: { content: `${line}\n` } }] } })) } });
+      }
+      case 'GOOGLEDRIVE_GET_SPREADSHEET_VALUES': {
+        const f = box.files.find((x) => x.id === args.spreadsheet_id && !x.trashed);
+        if (!f || f.mimeType !== 'application/vnd.google-apps.spreadsheet' || typeof args.range !== 'string') return { successful: false, data: {}, error: 'Requested entity was not found' };
+        return ok({ range: `Sheet1!${args.range}`, majorDimension: 'ROWS', values: (f.rows ?? []).slice(0, 200) });
+      }
+      case 'GOOGLEDRIVE_GET_PRESENTATION': {
+        const f = box.files.find((x) => x.id === args.presentation_id && !x.trashed);
+        if (!f || f.mimeType !== 'application/vnd.google-apps.presentation') return { successful: false, data: {}, error: 'Requested entity was not found' };
+        return ok({ title: f.name, slides: (f.text ?? '').split('\n\n').map((slide) => ({ pageElements: [{ shape: { text: { textElements: [{ textRun: { content: slide } }] } } }] })) });
       }
       default:
         return { successful: false, data: {}, error: `The fake provider has no tool called ${slug}` };

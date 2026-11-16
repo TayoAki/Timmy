@@ -41,6 +41,9 @@ const TOOLS: Record<string, Record<string, string[]>> = {
   googledrive: {
     GOOGLEDRIVE_GET_ABOUT: ['fields'],
     GOOGLEDRIVE_FIND_FILE: ['q', 'fields', 'orderBy', 'pageSize', 'pageToken'],
+    GOOGLEDRIVE_GET_DOCUMENT: ['document_id'],
+    GOOGLEDRIVE_GET_SPREADSHEET_VALUES: ['spreadsheet_id', 'range'],
+    GOOGLEDRIVE_GET_PRESENTATION: ['presentation_id', 'fields'],
   },
 };
 

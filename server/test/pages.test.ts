@@ -5,6 +5,9 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { blankState } from '../../src/live/blank';
 import { noteLeadMail } from '../src/sync/ingest';
+import { backedLines } from '../src/agent/pages';
+import { TOOL_BY_NAME } from '../src/agent/tools';
+import { rulesFor } from '../src/auth/roles';
 import { MAX_BLOCKS, automationProblems, checkWsOps } from '../src/state/ws-check';
 import { addMember, boot, newWorkspace, rows, type Client } from './helpers';
 
@@ -187,5 +190,102 @@ describe('cold-email drafts', () => {
     const next = noteLeadMail(s, [{ id: 'm1', threadKey: 't1', at: new Date(), from: 'ada@adaco.test', to: ['lee@leadco.test'], cc: [], subject: 'Idea', text: 'Hi Lee', labels: ['SENT'], attachments: [] }]);
     expect(next.out.messages.map((m) => [m.lead, m.status])).toEqual([['l2', 'draft'], ['l1', 'sent']]);
     expect(next.out.leads.l1!.status).toBe('contacted');
+  });
+});
+
+describe('Timmy’s own pages in Ask, and Summarize with Timmy', () => {
+  const blocks = [
+    { id: 'h', type: 'h1', text: 'Acme renewal plan' },
+    { id: 'p1', type: 'p', text: 'We hold the price at $62 per seat for 120 seats.' },
+    { id: 't1', type: 'todo', text: 'Send the order form', checked: false },
+    { id: 'tb', type: 'table', columns: ['Date', 'Notes'], rows: [['Nov 16', 'Dana agreed to a January start']] },
+  ];
+  const tool = async (c: Client, name: string, args: Record<string, unknown>) =>
+    (await TOOL_BY_NAME[name]!.run(args, { ctx: { user: { id: c.userId, name: 'O', email: c.email }, workspaceId: c.workspaceId, role: 'owner', rules: rulesFor('owner') }, runId: 'run_none', fence: 0, callId: 'call', attended: true })) as { result: string; outside?: boolean };
+  const json = (out: { result: string }) => JSON.parse(out.result.split('\n')[1]!);
+  const summarize = (c: Client, id: string, body: Record<string, unknown> = {}) => c.post(`/api/v1/pages/${id}/summarize`, body);
+  const modelCalls = () => rows<{ route: string }>(`select route from usage_event where workspace_id = $1 and route = 'summary'`, [w.workspaceId]);
+
+  beforeEach(async () => {
+    await ws([
+      { op: 'put', col: 'files', item: { id: 'plan', name: 'Acme renewal plan', kind: 'doc', folder: '', updated: new Date(), owner: 'me' } },
+      { op: 'put', col: 'docs', item: { id: 'plan', blocks } },
+      { op: 'put', col: 'files', item: { id: 'other', name: 'Offsite ideas', kind: 'doc', folder: '', updated: new Date(), owner: 'me' } },
+      { op: 'put', col: 'docs', item: { id: 'other', blocks: [{ id: 'x', type: 'p', text: 'Somewhere with a lake.' }] } },
+    ]);
+  });
+
+  it('Ask finds a page by the words in its title or text, and reads it, as outside content', async () => {
+    const found = await tool(w, 'search_pages', { query: 'January start' });
+    expect(found.outside).toBe(true);
+    expect(found.result.startsWith('<untrusted source="pages">')).toBe(true);
+    expect(json(found).results).toEqual([expect.objectContaining({ page: 'plan', name: 'Acme renewal plan', lines: ['Date | Notes\nNov 16 | Dana agreed to a January start'] })]);
+    expect(json(await tool(w, 'search_pages', { query: 'lake' })).results.map((r: { page: string }) => r.page)).toEqual(['other']);
+    const read = await tool(w, 'read_page', { page: 'plan' });
+    expect(read.result.startsWith('<untrusted source="page">')).toBe(true);
+    expect(json(read)).toEqual({ name: 'Acme renewal plan', text: 'Acme renewal plan\nWe hold the price at $62 per seat for 120 seats.\n[ ] Send the order form\nDate | Notes\nNov 16 | Dana agreed to a January start', cut_off: false });
+  });
+
+  it('a page in the trash is out of search and can’t be read; another workspace finds nothing', async () => {
+    await ws([{ op: 'remove', col: 'files', id: 'plan' }, { op: 'put', col: 'trash', item: { id: 'plan', name: 'Acme renewal plan', kind: 'doc', folder: '', updated: new Date(), owner: 'me', trashed: new Date() } }]);
+    expect(json(await tool(w, 'search_pages', { query: 'Acme renewal' })).results).toEqual([]);
+    expect((await tool(w, 'read_page', { page: 'plan' })).result).toMatch(/no page with that id/);
+    expect((await summarize(w, 'plan')).status).toBe(404);
+    const elsewhere = await newWorkspace('Elsewhere');
+    expect(json(await tool(elsewhere, 'search_pages', { query: 'lake' })).results).toEqual([]);
+    expect((await tool(elsewhere, 'read_page', { page: 'other' })).result).toMatch(/no page with that id/);
+    expect((await summarize(elsewhere, 'other')).status).toBe(404);
+  });
+
+  it('the summary keeps only lines the page backs: no invented figure, nothing resting on a block that isn’t there', async () => {
+    const res = await summarize(w, 'plan');
+    expect(res.status).toBe(200);
+    const { lines } = (await res.json()) as { lines: { text: string; blocks: string[] }[] };
+    // The stand-in model also wrote "The budget is $999,999." and a line citing a block that does not exist.
+    expect(lines).toEqual([
+      { text: 'Acme renewal plan', blocks: ['h'] },
+      { text: 'We hold the price at $62 per seat for 120 seats.', blocks: ['p1'] },
+    ]);
+    expect(await modelCalls()).toHaveLength(1);
+    expect(await rows(`select actor, detail from audit_log where workspace_id = $1 and action = 'page.summarized'`, [w.workspaceId])).toEqual([{ actor: w.userId, detail: { page: 'plan', lines: 2 } }]);
+    // Summarising changes nothing on the page; the editor types the lines in and saves like any edit.
+    expect(((await w.state()).ws.docs.plan as unknown as { blocks: unknown[] }).blocks).toHaveLength(4);
+  });
+
+  it('what is on screen is summarised even if it is not saved yet, after the same checks as a saved page', async () => {
+    const res = await summarize(w, 'plan', { blocks: [{ id: 'n1', type: 'p', text: 'Typed a second ago and not saved.' }] });
+    expect(((await res.json()) as { lines: { text: string }[] }).lines).toEqual([{ text: 'Typed a second ago and not saved.', blocks: ['n1'] }]);
+    expect((await summarize(w, 'plan', { blocks: [{ id: 'n1', type: 'iframe', text: 'x' }] })).status).toBe(400);
+    expect((await summarize(w, 'plan', { blocks: 'not blocks' })).status).toBe(400);
+  });
+
+  it('an empty page costs nothing, and someone who can only read can’t ask for a summary', async () => {
+    await ws([{ op: 'put', col: 'files', item: { id: 'empty', name: 'Empty', kind: 'doc', folder: '', updated: new Date(), owner: 'me' } }, { op: 'put', col: 'docs', item: { id: 'empty', blocks: [{ id: 'e', type: 'p', text: '' }] } }]);
+    const res = await summarize(w, 'empty');
+    expect(((await res.json()) as { lines: unknown[] }).lines).toEqual([]);
+    expect(await modelCalls()).toHaveLength(0);
+    const client = await addMember(w.workspaceId, 'client');
+    expect((await summarize(client, 'plan')).status).toBe(403);
+    expect((await summarize(w, 'no such page!')).status).toBe(404);
+  });
+
+  it('a figure counts as backed only when the cited blocks really carry it', () => {
+    const page = [
+      { id: 'a', type: 'p' as const, text: 'Revenue was 1,200 in October and the price is $58.' },
+      { id: 'b', type: 'p' as const, text: 'No numbers here.' },
+    ];
+    const lines = [
+      { text: 'Revenue was 1200 and the price $58.', blocks: ['a'] },
+      { text: 'The price is $58.', blocks: ['b'] },
+      { text: 'Revenue was 1,300.', blocks: ['a'] },
+      { text: 'A line with no figures.', blocks: ['b', 'ghost'] },
+      { text: '', blocks: ['a'] },
+      'not a line',
+    ];
+    expect(backedLines(lines, page)).toEqual([
+      { text: 'Revenue was 1200 and the price $58.', blocks: ['a'] },
+      { text: 'A line with no figures.', blocks: ['b'] },
+    ]);
+    expect(backedLines('nope', page)).toEqual([]);
   });
 });

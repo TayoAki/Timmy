@@ -76,5 +76,7 @@ export const api = {
   settings: () =>
     call<{ model: string; models: LiveProfile['models']; approvalMode: 'ask' | 'auto'; killSwitch: boolean; timezone: string; monthlySpendCapUsd: number; maxConcurrentRuns: number; limits: { monthlySpendCapUsd: number; maxConcurrentRuns: number } }>('GET', '/api/v1/settings'),
   saveSettings: (patch: { model?: string; approvalMode?: 'ask' | 'auto'; killSwitch?: boolean; monthlySpendCapUsd?: number; timezone?: string }) => call('PATCH', '/api/v1/settings', patch),
+  /** Asks the model for a summary of the page as it is on screen. Only lines the page backs come back. */
+  summarizePage: (id: string, blocks: unknown[]) => call<{ lines: { text: string; blocks: string[] }[] }>('POST', `/api/v1/pages/${encodeURIComponent(id)}/summarize`, { blocks }),
   audit: () => call<{ entries: { id: number; at: Date; actor: string; action: string; effect_id: string | null; detail: Record<string, unknown> }[] }>('GET', '/api/v1/audit?limit=100'),
 };

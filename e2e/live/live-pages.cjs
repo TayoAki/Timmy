@@ -45,6 +45,15 @@ run('live-pages', async (browser) => {
   ok(await until(async () => typed(await slices()).includes('h1:Guidance software')), 'what is typed is saved on the server, as blocks');
   ok(typed(await slices()).includes('bullet:Priority displays first') && typed(await slices()).some((t) => /Ship before July\./.test(t)), 'markdown shortcuts made a heading and a bullet, and the text followed');
 
+  // Summarize with Timmy: the model writes the lines, the server keeps only what the page backs, and Timmy types them in.
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('/summ');
+  await page.waitForSelector('.nb-slash');
+  await page.keyboard.press('Enter');
+  ok(await until(async () => typed(await slices()).some((t) => /^callout:Timmy’s summary/.test(t)), 80), 'Summarize with Timmy adds a summary to the page');
+  const after = typed(await slices());
+  ok(after.includes('bullet:Guidance software') && !after.some((t) => /999,999|Everyone agreed/.test(t)), 'its lines come from the page; a figure that is not on the page and a line resting on nothing were left out');
+
   // After a reload the page is still there, as typed: it came from the server, not from this browser.
   ok((await page.evaluate(() => localStorage.getItem('timmy-state-v3'))) === null, 'nothing about the page is kept in this browser');
   await page.reload();

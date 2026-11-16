@@ -95,6 +95,12 @@ run('live-outlook', async (browser) => {
   await page.keyboard.press('Enter');
   await page.locator('.ai-msg.timmy', { hasText: 'Friendship 7 launch plan' }).waitFor({ timeout: 30000 });
   ok(/I found a file: “Friendship 7 launch plan” \(Google Doc\)/.test(await page.locator('.ai-msg.timmy').last().innerText()), 'Ask finds the Drive file by the words of its name');
+  // And reads it: the words come through the Drive connection at that moment.
+  ok((await api(page, 'POST', '/api/test/fake', { op: 'file', file: { name: 'Re-entry checklist', text: 'Retro pack stays on.\nConfirm heat shield.' } })).body.ok, 'a second file, with contents, is announced');
+  await page.locator('.ai-input').fill('what does the file re-entry checklist say');
+  await page.keyboard.press('Enter');
+  await page.locator('.ai-msg.timmy', { hasText: 'It says: Retro pack stays on.' }).waitFor({ timeout: 30000 });
+  ok(true, 'Ask reads what a Google Doc says');
   await page.keyboard.press('Escape');
 
   // Disconnecting Outlook takes its mail off the screens.
