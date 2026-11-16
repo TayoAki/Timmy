@@ -26,7 +26,7 @@ export function ConnectionsView() {
       <h1 className="page-title">Connections</h1>
       <p className="page-sub">
         {on} apps connected. Each one connects through Composio: Timmy reads what you connect, and anything it writes waits for approval.{' '}
-        {isLive() ? 'You sign in on Composio’s page; Timmy never sees your password. Gmail and Google Calendar can be connected today; the others follow.' : 'In this preview, connecting is simulated and nothing leaves your browser.'}
+        {isLive() ? 'You sign in on Composio’s page; Timmy never sees your password. Gmail, Outlook, Google Calendar and Google Drive can be connected today; the others follow.' : 'In this preview, connecting is simulated and nothing leaves your browser.'}
       </p>
 
       {GROUPS.map((g) => (
@@ -53,7 +53,11 @@ export function ConnectionsView() {
   );
 }
 
-function AppCard({ app, onConnect }: { app: AppDef; onConnect: () => void }) {
+/** The card as a real workspace should read it: what Timmy does with the app today, not what the preview shows. */
+const shown = (app: AppDef): AppDef => (isLive() && app.live ? { ...app, ...app.live } : app);
+
+function AppCard({ app: def, onConnect }: { app: AppDef; onConnect: () => void }) {
+  const app = shown(def);
   const { state, dispatch } = useStore();
   const c = state.conn.apps[app.id];
   // On a real workspace an app is offered only once Timmy can read it or act through it.
@@ -118,7 +122,8 @@ function AppCard({ app, onConnect }: { app: AppDef; onConnect: () => void }) {
   );
 }
 
-function ConnectDialog({ app, onClose }: { app: AppDef; onClose: () => void }) {
+function ConnectDialog({ app: def, onClose }: { app: AppDef; onClose: () => void }) {
+  const app = shown(def);
   const { dispatch } = useStore();
   return (
     <Modal
@@ -151,7 +156,7 @@ function ConnectDialog({ app, onClose }: { app: AppDef; onClose: () => void }) {
         {app.writes && (
           <>
             <dt>Timmy may write</dt>
-            <dd>{app.writes}. Every write waits for approval.</dd>
+            <dd>{app.writes === 'Nothing' ? 'Nothing.' : `${app.writes}. Every write waits for approval.`}</dd>
           </>
         )}
       </dl>

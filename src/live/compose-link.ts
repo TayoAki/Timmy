@@ -14,11 +14,15 @@ export interface ComposeFields {
 /** Past this length browsers and Gmail start cutting links short. */
 export const COMPOSE_LINK_MAX = 6000;
 
+/** Microsoft's own consumer domains (outlook.com, hotmail.co.uk, live.fr and the like), and nothing that merely starts the same way. */
+const PERSONAL_OUTLOOK = /@(outlook|hotmail|live|msn)\.(com|[a-z]{2}|com?\.[a-z]{2})$/i;
+
 export function composeLink(app: 'gmail' | 'outlook' | 'mailto', f: ComposeFields): { url: string; bodyFits: boolean } {
   const enc = encodeURIComponent;
   const build = (body: string) => {
     if (app === 'gmail') return `https://mail.google.com/mail/?view=cm&fs=1${f.from ? `&authuser=${enc(f.from)}` : ''}&to=${enc(f.to)}&su=${enc(f.subject)}&body=${enc(body)}`;
-    if (app === 'outlook') return `https://outlook.office.com/mail/deeplink/compose?to=${enc(f.to)}&subject=${enc(f.subject)}&body=${enc(body)}`;
+    // Work and school accounts open in Outlook on the web at office.com; personal ones (outlook.com, hotmail.com, live.com, msn.com) at live.com.
+    if (app === 'outlook') return `https://${PERSONAL_OUTLOOK.test(f.from ?? '') ? 'outlook.live.com/mail/0' : 'outlook.office.com/mail'}/deeplink/compose?to=${enc(f.to)}&subject=${enc(f.subject)}&body=${enc(body)}`;
     return `mailto:${enc(f.to)}?subject=${enc(f.subject)}&body=${enc(body)}`;
   };
   const full = build(f.body);

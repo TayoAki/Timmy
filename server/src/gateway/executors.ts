@@ -1,7 +1,6 @@
-import type { Box } from '../../../src/data/types';
 import { createEvent, reconcileEvent } from '../sync/calendar-write';
-import { LabelsUnavailable, labelPlan, timmyLabels } from '../sync/labels';
-import { callTool, connectionById } from '../sync/tools';
+import { mailboxFor, type FilePayload, type MailPayload } from '../sync/mailbox';
+import { connectionById } from '../sync/tools';
 import type { EffectRow, Outcome } from './gateway';
 import type { EffectKind } from './policy';
 
@@ -18,62 +17,25 @@ import type { EffectKind } from './policy';
  */
 type Executor = (e: EffectRow) => Promise<Outcome>;
 
-interface MailPayload {
-  connectionId: string;
-  to: string[];
-  cc?: string[];
-  subject: string;
-  body: string;
-  threadKey?: string;
-}
-
 const sendMail: Executor = async (e) => {
   const p = e.payload as unknown as MailPayload;
   if (!p.to?.length) return { status: 'failed', error: 'There is no recipient.' };
   const conn = await connectionById(e.workspace_id, p.connectionId);
   if (!conn || conn.status !== 'active') return { status: 'failed', error: 'The mailbox is no longer connected.' };
-  const reply = e.kind === 'email.reply' && !!p.threadKey;
-  const [first, ...rest] = p.to;
-
-  // Each mail provider has its own send call; one that isn't wired here is refused, never sent through another's.
-  if (conn.toolkit !== 'gmail') return { status: 'failed', error: 'Sending from this kind of mailbox isn’t available yet.' };
-
-  const res = reply
-    ? await callTool(e.workspace_id, conn.id, 'GMAIL_REPLY_TO_THREAD', { thread_id: p.threadKey, message_body: p.body, recipient_email: first, extra_recipients: rest, cc: p.cc ?? [], is_html: false }, 'send')
-    : await callTool(e.workspace_id, conn.id, 'GMAIL_SEND_EMAIL', { recipient_email: first, extra_recipients: rest, cc: p.cc ?? [], subject: p.subject, body: p.body, is_html: false }, 'send');
-  if (!res.successful) return { status: 'failed', error: res.error ?? 'Gmail refused the message.' };
-  const sent = ((res.data.response_data ?? res.data) as { id?: string; threadId?: string }) ?? {};
-  return { status: 'completed', result: { via: 'gmail', id: sent.id, threadId: sent.threadId ?? p.threadKey }, externalId: sent.id };
+  // Each mail provider has its own send call; one that isn't wired is refused, never sent through another's.
+  const box = mailboxFor(conn.toolkit);
+  if (!box) return { status: 'failed', error: 'Sending from this kind of mailbox isn’t available yet.' };
+  return box.send(e, conn, p);
 };
 
-interface FilePayload {
-  connectionId: string;
-  threadKey: string;
-  box: Box;
-}
-
-/** Writes a thread's place (a label, or archived) to the mailbox. */
+/** Writes a thread's place (a label or category, or archived) to the mailbox. */
 const fileMail: Executor = async (e) => {
   const p = e.payload as unknown as FilePayload;
   const conn = await connectionById(e.workspace_id, p.connectionId);
   if (!conn || conn.status !== 'active') return { status: 'failed', error: 'The mailbox is no longer connected.' };
-  if (conn.toolkit !== 'gmail') return { status: 'failed', error: 'Filing in this kind of mailbox isn’t available yet.' };
-  const change = async (refresh: boolean) => {
-    const plan = labelPlan(p.box, await timmyLabels(e.workspace_id, conn, refresh));
-    return { plan, res: await callTool(e.workspace_id, conn.id, 'GMAIL_MODIFY_THREAD_LABELS', { thread_id: p.threadKey, add_label_ids: plan.add, remove_label_ids: plan.remove }, 'send') };
-  };
-  try {
-    let { plan, res } = await change(false);
-    // The label ids are remembered. If the person deleted a label in Gmail the remembered id is refused, so a
-    // refusal is tried once more with the labels looked up afresh. A refused change changed nothing.
-    if (!res.successful && conn.meta.labels) ({ plan, res } = await change(true));
-    if (!res.successful) return { status: 'failed', error: res.error ?? 'Gmail refused the change.' };
-    return { status: 'completed', result: { via: 'gmail', added: plan.add, removed: plan.remove } };
-  } catch (err) {
-    // Getting the labels ready failed before anything was asked of the thread: a clean failure, not an unknown.
-    if (err instanceof LabelsUnavailable) return { status: 'failed', error: err.message };
-    throw err;
-  }
+  const box = mailboxFor(conn.toolkit);
+  if (!box) return { status: 'failed', error: 'Filing in this kind of mailbox isn’t available yet.' };
+  return box.file(e, conn, p);
 };
 
 export const EXECUTORS: Partial<Record<EffectKind, Executor>> = {
@@ -88,17 +50,9 @@ async function reconcileFiling(e: EffectRow): Promise<Outcome> {
   const unknown: Outcome = { status: 'uncertain', error: e.error ?? 'unknown' };
   const p = e.payload as unknown as FilePayload;
   const conn = await connectionById(e.workspace_id, p.connectionId);
-  if (!conn || conn.status !== 'active' || conn.toolkit !== 'gmail') return unknown;
-  const ids = await timmyLabels(e.workspace_id, conn).catch(() => null);
-  if (!ids) return unknown;
-  const plan = labelPlan(p.box, ids);
-  const res = await callTool(e.workspace_id, conn.id, 'GMAIL_FETCH_MESSAGE_BY_THREAD_ID', { thread_id: p.threadKey }, 'send');
-  const messages = res.successful ? ((res.data.messages ?? []) as { labelIds?: string[] }[]) : [];
-  if (!messages.length) return unknown;
-  // Sent copies never carry INBOX, so the inbox label is judged on any message; Timmy's labels on every message.
-  const has = (id: string) => (id === 'INBOX' ? messages.some((m) => m.labelIds?.includes(id)) : messages.every((m) => m.labelIds?.includes(id)));
-  const lacks = (id: string) => messages.every((m) => !m.labelIds?.includes(id));
-  return plan.add.every(has) && plan.remove.every(lacks) ? { status: 'completed', result: { via: 'gmail', reconciled: true } } : unknown;
+  const box = conn && mailboxFor(conn.toolkit);
+  if (!conn || !box || conn.status !== 'active') return unknown;
+  return (await box.filed(e, conn, p)) ? { status: 'completed', result: { via: conn.toolkit, reconciled: true } } : unknown;
 }
 
 /**
@@ -109,22 +63,21 @@ async function reconcileFiling(e: EffectRow): Promise<Outcome> {
 export async function reconcile(e: EffectRow): Promise<Outcome> {
   if (e.kind === 'mail.modify') return reconcileFiling(e);
   if (e.kind === 'calendar.create') return reconcileEvent(e);
-  if (e.kind !== 'email.send' && e.kind !== 'email.reply') return { status: 'uncertain', error: e.error ?? 'unknown' };
+  const unknown: Outcome = { status: 'uncertain', error: e.error ?? 'unknown' };
+  if (e.kind !== 'email.send' && e.kind !== 'email.reply') return unknown;
   const p = e.payload as unknown as MailPayload;
   const started = e.executing_at ? new Date(e.executing_at) : new Date(e.created_at);
   const conn = await connectionById(e.workspace_id, p.connectionId);
-  if (!conn || conn.toolkit !== 'gmail') return { status: 'uncertain', error: e.error ?? 'unknown' };
-  const after = Math.floor(started.getTime() / 1000) - 120;
-  const subject = e.kind === 'email.reply' ? '' : ` subject:"${p.subject.replace(/"/g, '')}"`;
-  const res = await callTool(e.workspace_id, conn.id, 'GMAIL_FETCH_EMAILS', { query: `in:sent to:${p.to[0]}${subject} after:${after}`, max_results: 10, include_payload: false }, 'send');
-  if (!res.successful) return { status: 'uncertain', error: res.error ?? 'could not check the Sent folder' };
-  // Compare on the words only: line endings and spacing differ between what was sent and what the provider returns.
-  const words = (t: string) => t.replace(/\s+/g, ' ').trim().slice(0, 200);
-  const found = ((res.data.messages ?? []) as { messageId: string; threadId: string; to?: string; messageText?: string }[]).find(
-    (m) => (m.to ?? '').toLowerCase().includes(p.to[0]!.toLowerCase()) && (!p.threadKey || m.threadId === p.threadKey) && (!m.messageText || words(m.messageText).startsWith(words(p.body).slice(0, 80))),
-  );
-  if (found) return { status: 'completed', result: { via: 'gmail', id: found.messageId, threadId: found.threadId, reconciled: true }, externalId: found.messageId };
+  const box = conn && mailboxFor(conn.toolkit);
+  if (!conn || !box) return unknown;
+  let found;
+  try {
+    found = await box.findSent(e, conn, p, started);
+  } catch (err) {
+    return { status: 'uncertain', error: (err as Error).message };
+  }
+  if (found) return { status: 'completed', result: { via: conn.toolkit, id: found.id, threadId: found.threadKey, reconciled: true }, externalId: found.id };
   // Not finding it proves nothing: Sent can lag, and the copy can differ. It stays unconfirmed for a person to check;
   // calling it "not sent" would invite sending it a second time.
-  return { status: 'uncertain', error: e.error ?? 'unknown' };
+  return unknown;
 }

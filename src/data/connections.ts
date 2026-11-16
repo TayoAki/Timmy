@@ -18,6 +18,8 @@ export interface AppDef {
   writes?: string;
   /** Something to know before connecting. */
   note?: string;
+  /** What a real workspace is told, where that differs from the preview: only what Timmy does with the app today. */
+  live?: { reads?: string; writes?: string; note?: string };
   account: string;
   /** Lead sources show up in Speed to lead as a source of new leads. */
   source?: 'zillow' | 'realtor' | 'fub' | 'facebook';
@@ -37,7 +39,17 @@ export interface AppConn {
 export const APPS: AppDef[] = [
   { id: 'gmail', name: 'Gmail', group: 'Mail and calendar', mark: 'Gm', color: 'var(--c-red)', reads: 'Mail and labels', writes: 'Drafts, labels and sends you approve', account: 'taylor@northpeak.example' },
   { id: 'gcal', name: 'Google Calendar', group: 'Mail and calendar', mark: 'GC', color: 'var(--c-sky)', reads: 'Your calendars and free/busy', writes: 'Invites and changes you approve', account: 'taylor@northpeak.example' },
-  { id: 'gdrive', name: 'Google Drive', group: 'Mail and calendar', mark: 'GD', color: 'var(--c-green)', reads: 'Files you open in Timmy or file from mail', writes: 'Files Timmy creates or files for you', account: 'taylor@northpeak.example' },
+  {
+    id: 'gdrive',
+    name: 'Google Drive',
+    group: 'Mail and calendar',
+    mark: 'GD',
+    color: 'var(--c-green)',
+    reads: 'Files you open in Timmy or file from mail',
+    writes: 'Files Timmy creates or files for you',
+    account: 'taylor@northpeak.example',
+    live: { reads: 'The names, types and owners of your files, so Ask can find them', writes: 'Nothing', note: 'Timmy keeps a list of your files and links to them. It does not open the files themselves yet, and it changes nothing in Drive.' },
+  },
   {
     id: 'outlook',
     name: 'Outlook and Microsoft 365',
@@ -48,6 +60,11 @@ export const APPS: AppDef[] = [
     writes: 'Drafts, sends and invites you approve',
     note: 'Most Microsoft 365 companies require an admin to approve mail and calendar access. Timmy sends your admin a one-click consent link.',
     account: 'taylor@northpeak-group.example',
+    live: {
+      reads: 'Outlook mail',
+      writes: 'Sends you approve, and categories and archiving for the threads you file',
+      note: 'If your company requires an admin to approve new apps, Microsoft’s sign-in page will say so: ask your admin to approve it there, then connect again. Outlook’s calendar and OneDrive are not read yet. A workspace has one mailbox, so disconnect Gmail first if it is connected.',
+    },
   },
   { id: 'hubspot', name: 'HubSpot', group: 'CRM', mark: 'Hs', color: 'var(--c-amber)', reads: 'Contacts, companies, deals and activity', writes: 'Deal and stage changes, call and email activity, after approval', account: 'Northpeak portal' },
   { id: 'salesforce', name: 'Salesforce', group: 'CRM', mark: 'Sf', color: 'var(--c-sky)', reads: 'Accounts, contacts, opportunities and tasks', writes: 'Opportunity changes and activity, after approval', account: 'northpeak.my.salesforce.example' },

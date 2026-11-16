@@ -13,16 +13,22 @@ import { log } from '../lib/log';
 import { composio } from '../providers/composio';
 import type { Ctx } from '../state/engine';
 import { mutate } from '../state/mutate';
-import { callTool, meter, type ConnectionRow } from './tools';
+import { driveAddress } from './files';
+import { mailboxFor } from './mailbox';
+import { meter, type ConnectionRow } from './tools';
 
 /**
  * The apps that can be connected, by the frontend's app id, with the Composio toolkit behind each.
  * An app is listed here only once Timmy reads it or acts through it: a connection that does nothing would be a false promise.
  */
-const CONNECT: Record<ConnectableApp, { toolkit: string; kind: 'mail' | 'calendar'; triggers: { slug: string; config?: Record<string, unknown> }[] }> = {
+const CONNECT: Record<ConnectableApp, { toolkit: string; kind: 'mail' | 'calendar' | 'files'; triggers: { slug: string; config?: Record<string, unknown> }[] }> = {
   // New mail in the inbox, and mail the person sent themselves (how Timmy learns a hand-sent cold email went out).
   gmail: { toolkit: 'gmail', kind: 'mail', triggers: [{ slug: 'GMAIL_NEW_GMAIL_MESSAGE', config: { labelIds: 'INBOX' } }, { slug: 'GMAIL_EMAIL_SENT_TRIGGER' }] },
   gcal: { toolkit: 'googlecalendar', kind: 'calendar', triggers: [{ slug: 'GOOGLECALENDAR_GOOGLE_CALENDAR_EVENT_SYNC_TRIGGER', config: { calendarId: 'primary' } }] },
+  // The same two events as Gmail: mail arriving in the inbox, and mail leaving through Sent Items.
+  outlook: { toolkit: 'outlook', kind: 'mail', triggers: [{ slug: 'OUTLOOK_MESSAGE_TRIGGER' }, { slug: 'OUTLOOK_SENT_MESSAGE_TRIGGER' }] },
+  // A file made, changed, or thrown away. Drive is checked every couple of minutes by Composio rather than pushed.
+  gdrive: { toolkit: 'googledrive', kind: 'files', triggers: [{ slug: 'GOOGLEDRIVE_FILE_CREATED_TRIGGER' }, { slug: 'GOOGLEDRIVE_FILE_UPDATED_TRIGGER' }, { slug: 'GOOGLEDRIVE_FILE_DELETED_OR_TRASHED_TRIGGER' }] },
 };
 export const TOOLKITS: Record<string, (typeof CONNECT)[ConnectableApp] | undefined> = CONNECT;
 const MAIL_APPS = Object.entries(CONNECT).filter(([, app]) => app.kind === 'mail').map(([id]) => id);
@@ -110,12 +116,11 @@ export async function finishConnect(ctx: Ctx, connectionId: string): Promise<(Co
     return { ...conn, status: 'failed' };
   }
 
+  // Which account this is, asked of the app itself: it is what the Connections screen shows, and for a mailbox it is who "me" is.
   let label = acct.label ?? null;
-  if (conn.toolkit === 'gmail') {
-    const profile = await callTool(ctx.workspaceId, connectionId, 'GMAIL_GET_PROFILE', {}, 'connect').catch(() => null);
-    const data = (profile?.data.response_data ?? profile?.data ?? {}) as { emailAddress?: string };
-    label = data.emailAddress ?? label;
-  }
+  const box = mailboxFor(conn.toolkit);
+  if (box) label = (await box.address(ctx.workspaceId, connectionId)) ?? label;
+  if (app.kind === 'files') label = (await driveAddress(ctx.workspaceId, connectionId)) ?? label;
   const triggers: string[] = [];
   for (const t of app.triggers) {
     try {

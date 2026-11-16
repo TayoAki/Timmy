@@ -12,7 +12,9 @@ import { log } from '../lib/log';
 import { syncCalendar } from '../sync/calendar';
 import { purgeDeletedWorkspaces } from '../db/purge';
 import { closeOrphanedConnections, purgeConnection, revokeAtProvider } from '../sync/connect';
+import { removeFile, syncFiles } from '../sync/files';
 import { backfillMail, ingestThread, reconcileMail } from '../sync/ingest';
+import { MAIL_TOOLKITS } from '../sync/mailbox';
 import { defineJob, enqueueSoon } from './jobs';
 
 /** Registers every job and connects the gateway to the queue. Call once at boot. */
@@ -76,7 +78,7 @@ export function registerJobs() {
   defineJob(
     'mail.reconcile.all',
     async () => {
-      const { rows } = await sysPool.query(`select id, workspace_id from connection where status = 'active' and toolkit = 'gmail'`);
+      const { rows } = await sysPool.query(`select id, workspace_id from connection where status = 'active' and toolkit = any($1::text[])`, [MAIL_TOOLKITS]);
       for (const c of rows) enqueueSoon('mail.reconcile', { workspaceId: c.workspace_id, connectionId: c.id }, { singletonKey: `recon:${c.id}` });
     },
     '41 2 * * *',
@@ -111,6 +113,26 @@ export function registerJobs() {
   defineJob('calendar.sync', async (d) => {
     await syncCalendar(String(d.workspaceId), String(d.connectionId));
   });
+
+  // The list of Drive files: a pass that didn't finish carries on in a new job from where it stopped.
+  defineJob('files.sync', async (d) => {
+    const p = await syncFiles(String(d.workspaceId), String(d.connectionId));
+    if (!p.done) enqueueSoon('files.sync', d);
+  });
+
+  defineJob('files.remove', async (d) => {
+    await removeFile(String(d.workspaceId), String(d.connectionId), String(d.fileId));
+  });
+
+  // Drive's triggers can be missed like any other; once a night every connected Drive is listed again from its last finished pass.
+  defineJob(
+    'files.sync.all',
+    async () => {
+      const { rows } = await sysPool.query(`select id, workspace_id from connection where status = 'active' and toolkit = 'googledrive'`);
+      for (const c of rows) enqueueSoon('files.sync', { workspaceId: c.workspace_id, connectionId: c.id }, { singletonKey: `files:${c.id}` });
+    },
+    '17 3 * * *',
+  );
 
   // The morning run: every five minutes, start it for each workspace whose chosen time has come in its own time zone.
   defineJob(

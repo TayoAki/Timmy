@@ -165,7 +165,7 @@ describe('the nightly check', () => {
 
 describe('apps that cannot be connected yet', () => {
   it('are refused before anything is asked of the provider', async () => {
-    for (const app of ['outlook', 'gdrive', 'hubspot', 'made-up']) {
+    for (const app of ['onedrive', 'hubspot', 'slack', 'made-up']) {
       const res = await w.post(`/api/v1/connections/${app}/connect`, {});
       expect([app, res.status]).toEqual([app, 400]);
     }

@@ -234,6 +234,10 @@ export class FakeModel implements ModelProvider {
     const last = req.messages[req.messages.length - 1]!;
     const has = (name: string) => req.tools?.some((t) => t.name === name);
     if (last.role === 'tool') {
+      if (last.content.includes('<untrusted source="files">')) {
+        const file = /"name":"([^"]+)","kind":"([^"]+)"/.exec(last.content);
+        return { content: file ? `I found a file: “${file[1]}” (${file[2]}).` : 'I couldn’t find a file with that name.' };
+      }
       const found = /"subject":"([^"]+)"/.exec(last.content)?.[1];
       return { content: found ? `I found it: “${found}”.` : last.content.includes('"results":[]') ? 'I couldn’t find any mail about that.' : 'Done.' };
     }
@@ -242,6 +246,8 @@ export class FakeModel implements ModelProvider {
     const text = asked.toLowerCase();
     const send = /^send (?:an email )?to (\S+@\S+) saying (.+)$/i.exec(asked);
     const file = /^(archive|file) thread (\S+)$/i.exec(asked);
+    const lookFor = /^find (?:the |my )?(?:file|doc|document) (?:called |named |about )?(.+?)[?.!]*$/i.exec(asked);
+    if (lookFor && has('search_files')) return { toolCalls: [{ name: 'search_files', arguments: { query: lookFor[1] } }] };
     if (file && has('file_thread')) return { toolCalls: [{ name: 'file_thread', arguments: { id: file[2], box: file[1]!.toLowerCase() === 'archive' ? 'archived' : 'follow-up' } }] };
     if (send && has('send_email')) return { toolCalls: [{ name: 'send_email', arguments: { to: [send[1]], subject: 'A note from Timmy', body: send[2] } }] };
     if (/urgent/.test(text) && has('show_urgent')) return { content: 'Here is what needs you first.', toolCalls: [{ name: 'show_urgent', arguments: { limit: 5 } }] };

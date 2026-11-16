@@ -54,16 +54,17 @@ async function api(page, method, path, body) {
   }
 }
 
-/** Connects the fake Gmail mailbox by pressing Connect, the way a person would. */
-async function connectGmail(page, address) {
+/** Connects a stand-in account for an app by pressing Connect on its card, the way a person would. `name` is the app's name on the card. */
+async function connectApp(page, name, address) {
   await api(page, 'POST', '/api/test/fake', { op: 'address', address });
   await page.click('button[aria-label="Connections"]');
-  const card = page.locator('li', { has: page.getByText('Gmail', { exact: true }) }).first();
+  const card = page.locator('li.conn-card', { has: page.getByText(name, { exact: true }) }).first();
   await card.getByRole('button', { name: 'Connect' }).click();
-  await page.getByRole('button', { name: 'Continue to Gmail' }).click();
+  await page.getByRole('button', { name: `Continue to ${name}` }).click();
   await page.waitForURL(/connect=ok/, { timeout: 15000 });
   await page.locator('.main').waitFor();
 }
+const connectGmail = (page, address) => connectApp(page, 'Gmail', address);
 
 /** Writes and sends a new email from the compose window. */
 async function compose(page, { to, subject, body }) {
@@ -95,4 +96,4 @@ async function run(name, fn) {
   }
 }
 
-module.exports = { BASE, ok, open, signUp, api, connectGmail, compose, deliver, sentMail, releaseHolds, run, devices, stamp };
+module.exports = { BASE, ok, open, signUp, api, connectApp, connectGmail, compose, deliver, sentMail, releaseHolds, run, devices, stamp };

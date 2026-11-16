@@ -178,7 +178,7 @@ describe('4. leaving a workspace takes your connected mailbox with you', () => {
     if (d) await (await boot()).request('/api/hooks/composio', { method: 'POST', headers: d.webhook.headers, body: d.webhook.body });
     await jobs().drain();
     expect((await w.state()).threads.map((t) => t.subject)).not.toContain('After leaving');
-    expect((await w.cmd({ type: 'sendNew', draft: { to: ['mail:x@y.test'], subject: 'S', body: 'B' } })).error).toMatch(/Connect Gmail first/);
+    expect((await w.cmd({ type: 'sendNew', draft: { to: ['mail:x@y.test'], subject: 'S', body: 'B' } })).error).toMatch(/Connect Gmail or Outlook first/);
   });
 
   it('a connection whose person is no longer a member is closed by the sweep, however the membership ended', async () => {
@@ -221,6 +221,8 @@ describe('6. what was synced is deleted when its source goes', () => {
     await jobs().drain();
     await deliver(w, { from: 'Dana Whitfield <dana@acme.test>', subject: 'Confidential pricing', body: 'The secret number is 4417.' });
     expect(await search(w, 'secret number 4417')).toContain('Confidential pricing');
+    // The characters that mean "anything" in a pattern are plain text in a search: they find nothing, not everything.
+    expect(await search(w, '%% __')).not.toContain('Confidential pricing');
 
     expect((await w.post('/api/v1/connections/gmail/disconnect', {})).status).toBe(200);
     // At once, before the delete job has run: not on screen, and not found by Ask, including for someone who joins later.

@@ -198,3 +198,14 @@ describe('marking outside content as data', () => {
     expect(untrusted('mail" injected="x', 'a')).toMatch(/^<untrusted source="mailinjectedx">/);
   });
 });
+
+describe('Composio toolkit versions', () => {
+  it('every app that can be connected runs its tools at a version this code was checked against, never at "latest"', async () => {
+    const { TOOLKITS } = await import('../src/sync/connect');
+    const { CONNECTABLE } = await import('../../src/live/connectable');
+    for (const app of CONNECTABLE) {
+      const toolkit = TOOLKITS[app]!.toolkit;
+      expect([toolkit, config.composio.toolkitVersions[toolkit]]).toEqual([toolkit, expect.stringMatching(/^\d{8}_\d{2}$/)]);
+    }
+  });
+});

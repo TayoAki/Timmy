@@ -19,6 +19,7 @@ import { MAX_STREAMS_PER_PERSON, stillAllowed, streamsOf, subscribe, type Subscr
 import { rulesFor } from '../auth/roles';
 import { loadState } from '../state/docs';
 import { ConnectError, TOOLKITS, closeConnections, disconnect, finishConnect, startConnect } from '../sync/connect';
+import { mailboxFor } from '../sync/mailbox';
 import { fromWire, pickSlices, toWire } from '../../../src/live/patches';
 import type { Action } from '../../../src/state/store';
 import { agentRoutes } from './agent';
@@ -76,10 +77,17 @@ export function buildApp(): Hono<Env> {
       [event.id, event.connectedAccountId, conn?.workspace_id ?? null, raw.replace(/\\u0000/g, '')],
     );
     if (!fresh.rows[0] || !conn) return c.json({ ok: true, duplicate: !fresh.rows[0] });
-    const threadKey = String(event.data.thread_id ?? event.data.threadId ?? '');
-    if (conn.toolkit === 'gmail' && threadKey) enqueueSoon('mail.ingest', { workspaceId: conn.workspace_id, connectionId: conn.id, threadKey, seed: event.data });
+    const box = mailboxFor(conn.toolkit);
+    const threadKey = box?.threadKeyOf(event.data) ?? '';
+    if (box && threadKey) enqueueSoon('mail.ingest', { workspaceId: conn.workspace_id, connectionId: conn.id, threadKey, seed: event.data });
     // Any calendar event means the window may have changed; one sync per connection covers a burst of them.
     if (conn.toolkit === 'googlecalendar') enqueueSoon('calendar.sync', { workspaceId: conn.workspace_id, connectionId: conn.id }, { singletonKey: `cal:${conn.id}` });
+    if (conn.toolkit === 'googledrive') {
+      // A file thrown away leaves the list at once. Anything else means "the list changed": one pass per connection covers a burst.
+      const gone = event.triggerSlug === 'GOOGLEDRIVE_FILE_DELETED_OR_TRASHED_TRIGGER' ? String(event.data.file_id ?? '') : '';
+      if (gone) enqueueSoon('files.remove', { workspaceId: conn.workspace_id, connectionId: conn.id, fileId: gone });
+      else enqueueSoon('files.sync', { workspaceId: conn.workspace_id, connectionId: conn.id }, { singletonKey: `files:${conn.id}` });
+    }
     await sysPool.query('update webhook_event set processed_at = now() where id = $1', [event.id]);
     return c.json({ ok: true });
   });
@@ -213,6 +221,7 @@ export function buildApp(): Hono<Env> {
     if (!conn.justConnected) return c.redirect(`/?connect=ok&app=${conn.app_id}`);
     if (TOOLKITS[conn.app_id]?.kind === 'mail') enqueueSoon('mail.backfill', { workspaceId: ctx.workspaceId, connectionId: conn.id, days: config.backfillFastDays }, { singletonKey: `bf:${conn.id}` });
     if (TOOLKITS[conn.app_id]?.kind === 'calendar') enqueueSoon('calendar.sync', { workspaceId: ctx.workspaceId, connectionId: conn.id }, { singletonKey: `cal:${conn.id}` });
+    if (TOOLKITS[conn.app_id]?.kind === 'files') enqueueSoon('files.sync', { workspaceId: ctx.workspaceId, connectionId: conn.id }, { singletonKey: `files:${conn.id}` });
     return c.redirect(`/?connect=ok&app=${conn.app_id}`);
   });
 

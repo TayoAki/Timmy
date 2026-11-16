@@ -9,7 +9,7 @@ run('live-mail', async (browser) => {
 
   // Nothing can be sent before a mailbox is connected.
   await compose(page, { to: 'dana@client.test', subject: 'Too early', body: 'This should not go anywhere.' });
-  await page.locator('.toast', { hasText: 'Connect Gmail first' }).waitFor();
+  await page.locator('.toast', { hasText: 'Connect Gmail or Outlook first' }).waitFor();
   ok(true, 'sending without a mailbox is refused with a plain reason');
   await page.keyboard.press('Escape');
 

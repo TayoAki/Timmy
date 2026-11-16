@@ -138,7 +138,7 @@ export function LiveStoreProvider({ profile, snapshot, children }: { profile: Li
         if (!lead) return;
         const apps = shown.current.conn.apps;
         const app = apps.gmail?.connected ? 'gmail' : apps.outlook?.connected ? 'outlook' : 'mailto';
-        const link = composeLink(app, { to: lead.email, subject: action.op.subject ?? '', body: action.op.body, from: app === 'gmail' ? apps.gmail?.account : undefined });
+        const link = composeLink(app, { to: lead.email, subject: action.op.subject ?? '', body: action.op.body, from: app === 'mailto' ? undefined : apps[app]?.account });
         if (!link.bodyFits) void navigator.clipboard?.writeText(action.op.body).catch(() => {});
         window.open(link.url, '_blank', 'noopener');
         void send(commandId(), action).then(() => {

@@ -22,6 +22,7 @@ import { clearBlobs } from '../lib/blobs';
 import { assistant } from '../agent/conversations';
 import { ARCHIVED_BASE, BOXES, PEOPLE } from '../data/mock';
 import { isLive } from '../live/clock';
+import { APPS } from '../data/connections';
 import { todaysEvents } from '../state/ws';
 import { ApprovalsSide } from '../areas/approvals';
 import { CalendarSide } from '../areas/calendar';
@@ -337,7 +338,15 @@ function RulesSide() {
         </div>
         <div className="side-group">
           <div className="side-title">Connected</div>
-          {['Gmail', 'Google Calendar', 'Google Drive', 'CRM'].map((name) => (
+          {/* A real workspace lists what it has really connected; the preview shows its sample set. */}
+          {isLive() && !APPS.some((a) => state.conn.apps[a.id]?.connected) && (
+            <div className="nav-item compact" style={{ cursor: 'default' }}>
+              <span className="nav-name muted" style={{ fontWeight: 450 }}>
+                Nothing connected yet
+              </span>
+            </div>
+          )}
+          {(isLive() ? APPS.filter((a) => state.conn.apps[a.id]?.connected).map((a) => a.name) : ['Gmail', 'Google Calendar', 'Google Drive', 'CRM']).map((name) => (
             <div key={name} className="nav-item compact" style={{ cursor: 'default' }}>
               <span className="dot" style={tint('var(--ok)')} />
               <span className="nav-name" style={{ fontWeight: 450 }}>

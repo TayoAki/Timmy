@@ -94,7 +94,7 @@ const DEMO_ONLY = new Set(['reset', 'simulateReply', 'client', 'release', 'resto
 /** Outbound operations that would contact someone or pretend an account is connected. Each becomes real in the sales phase. */
 const OUT_NOT_LIVE: Record<string, string> = {
   send: 'Texts and calls aren’t connected for real workspaces yet.',
-  launch: 'A campaign can’t send by itself: Google doesn’t allow cold email through its API. Open each email in Gmail from the lead instead.',
+  launch: 'A campaign can’t send by itself: cold email is never sent through a mail provider’s API. Open each email in your mail app from the lead instead.',
   submit: NOT_LIVE,
   book: 'Booking a meeting from a lead isn’t switched on for real workspaces yet.',
   mailbox: 'Sending mailboxes are added by connecting them in Connections.',
@@ -223,8 +223,9 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
     // The lead is marked contacted later, when sync sees the email in the Sent folder.
     const lead = state.out.leads[a.op.lead];
     if (!lead) return { state, reject: 'That lead is no longer in the list.' };
-    const logged = reduce(loaded, state, { type: 'ws', ops: [], log: `Opened an email to ${lead.first} ${lead.last} in Gmail to send by hand` });
-    return { state: logged, toast: { text: 'Opened in Gmail. Send it from there; Timmy marks the lead as contacted when it sees the email in your Sent folder.' } };
+    const mailApp = state.conn.apps.gmail?.connected ? 'Gmail' : state.conn.apps.outlook?.connected ? 'Outlook' : 'your mail app';
+    const logged = reduce(loaded, state, { type: 'ws', ops: [], log: `Opened an email to ${lead.first} ${lead.last} in ${mailApp} to send by hand` });
+    return { state: logged, toast: { text: `Opened in ${mailApp}. Send it from there; Timmy marks the lead as contacted when it sees the email in your Sent folder.` } };
   }
   if (a.type === 'out' && OUT_NOT_LIVE[a.op.op]) return { state, reject: OUT_NOT_LIVE[a.op.op] };
   if (a.type === 'resolve' && a.key.startsWith('camp:') && a.option === 'launch') return { state, reject: OUT_NOT_LIVE.launch };

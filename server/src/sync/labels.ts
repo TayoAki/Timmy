@@ -2,6 +2,7 @@
  * Where a thread sits in Timmy, written back to the mailbox. Follow Up, Waiting
  * and Read Through become Gmail labels and the thread stays in Gmail's inbox;
  * Archived takes it out of the inbox; back to the inbox clears Timmy's labels.
+ * In Outlook the same three names are categories, and Archived is the Archive folder (see outlook.ts).
  *
  * This is a change to the person's own mailbox that nobody else sees. It still
  * goes through the Action gateway as a `mail.modify` effect, like every write.
@@ -32,7 +33,7 @@ export function filingProposal(t: Thread, box: Box): Pick<Proposal, 'kind' | 'pa
     kind: 'mail.modify',
     payload: { connectionId: t.ext.connectionId, threadKey: t.ext.threadKey, box, threadId: t.id },
     preview: { lines: [`“${t.subject}” ${BOX_WORDS[box]}`] },
-    title: `File “${t.subject}” ${BOX_WORDS[box]} in Gmail`,
+    title: `File “${t.subject}” ${BOX_WORDS[box]} in ${t.ext.app === 'outlook' ? 'Outlook' : 'Gmail'}`,
     target: t.ext.threadKey,
   };
 }

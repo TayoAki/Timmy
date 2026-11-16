@@ -36,14 +36,22 @@ run('live-signup', async (browser) => {
   ok(/Nothing yet\. Timmy asks before every change/.test(approvals), 'Approvals does not list sample work as done without asking');
   ok(!/Last run|First morning run|next (today|tomorrow|\w+day) at/i.test(approvals), 'and no morning run time is claimed while no mailbox is connected');
   await page.click('button[aria-label="Connections"]');
-  const outlook = page.locator('li.conn-card', { hasText: 'Outlook' }).first();
-  await outlook.waitFor();
-  ok(/Coming soon/.test(await outlook.innerText()) && (await outlook.getByRole('button', { name: 'Connect' }).count()) === 0, 'an app Timmy cannot read yet is shown as coming soon, with no Connect button');
+  const hubspot = page.locator('li.conn-card', { hasText: 'HubSpot' }).first();
+  await hubspot.waitFor();
+  ok(/Coming soon/.test(await hubspot.innerText()) && (await hubspot.getByRole('button', { name: 'Connect' }).count()) === 0, 'an app Timmy cannot read yet is shown as coming soon, with no Connect button');
+  for (const name of ['Outlook and Microsoft 365', 'Google Drive', 'Google Calendar']) {
+    const card = page.locator('li.conn-card', { has: page.getByText(name, { exact: true }) }).first();
+    ok((await card.getByRole('button', { name: 'Connect' }).count()) === 1 && !/Coming soon/.test(await card.innerText()), `${name} can be connected`);
+  }
   const gmail = page.locator('li.conn-card', { has: page.getByText('Gmail', { exact: true }) }).first();
   ok((await gmail.getByRole('button', { name: 'Connect' }).count()) === 1, 'Gmail can be connected');
 
   // The workspace's settings: the model, approvals and who is signed in.
   await page.click('button[aria-label="Rules & settings"]');
+  // The settings sidebar lists what is connected. On a new workspace that is nothing, and it says so.
+  const side = page.locator('.side-group', { has: page.locator('.side-title', { hasText: 'Connected' }) }).first();
+  await side.waitFor();
+  ok(/Nothing connected yet/.test(await side.innerText()) && !/synced|Gmail/.test(await side.innerText()), 'the sidebar does not say any app is connected before one is');
   await page.getByRole('tab', { name: 'Approvals' }).click();
   const settings = page.locator('.live-settings');
   await settings.waitFor();

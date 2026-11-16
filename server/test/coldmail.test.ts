@@ -52,6 +52,9 @@ describe('sending a cold email', () => {
     expect(Object.fromEntries(u.searchParams)).toMatchObject({ view: 'cm', to: 'lee@leadco.test', su: 'Quick idea & a question', body: 'Hi Lee,\n\nA quick idea.', authuser: 'owner@cold.test' });
     expect(g.bodyFits).toBe(true);
     expect(composeLink('outlook', { to: 'a@b.test', subject: 's', body: 'b' }).url).toMatch(/^https:\/\/outlook\.office\.com\/mail\/deeplink\/compose\?to=a%40b\.test/);
+    // A personal Outlook account lives on a different site from a work one.
+    expect(composeLink('outlook', { to: 'a@b.test', subject: 's', body: 'b', from: 'me@hotmail.com' }).url).toMatch(/^https:\/\/outlook\.live\.com\/mail\/0\/deeplink\/compose\?to=a%40b\.test/);
+    expect(composeLink('outlook', { to: 'a@b.test', subject: 's', body: 'b', from: 'me@outlook.example.com' }).url).toMatch(/^https:\/\/outlook\.office\.com\//);
     const long = composeLink('gmail', { to: 'a@b.test', subject: 's', body: 'x'.repeat(9000) });
     expect(long.bodyFits).toBe(false);
     expect(long.url.length).toBeLessThan(400);

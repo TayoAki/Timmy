@@ -18,6 +18,7 @@ import { log } from '../lib/log';
 import { BudgetError, checkBudget, modelReady } from '../providers/model';
 import { mutate, readState } from '../state/mutate';
 import { reconcileMail } from '../sync/ingest';
+import { MAIL_TOOLKITS } from '../sync/mailbox';
 import { draftNudge, draftReply, wantsNudge } from './draft';
 import { needsReading, readThread } from './read';
 
@@ -69,7 +70,7 @@ export async function dueWorkspaces(sys: { query: (text: string) => Promise<{ ro
      from workspace w left join state_doc d on d.workspace_id = w.id and d.slice = 'schedule' and d.id = '_'
      where w.deleted_at is null and exists (
        select 1 from connection c join sync_cursor s on s.connection_id = c.id
-       where c.workspace_id = w.id and c.status = 'active' and c.toolkit = 'gmail' and s.kind like 'backfill-%' and s.state = 'done')`,
+       where c.workspace_id = w.id and c.status = 'active' and c.toolkit in ('gmail', 'outlook') and s.kind like 'backfill-%' and s.state = 'done')`,
   );
   return rows
     .filter((r) => {
@@ -112,7 +113,7 @@ export async function morningRun(workspaceId: string, now = new Date()): Promise
   const since = claimed.previous ? new Date(claimed.previous).getTime() : now.getTime() - 86400_000;
 
   // 1. Mail the triggers missed.
-  const boxes = await withWorkspace({ workspaceId }, async (tx) => (await tx.query(`select id from connection where workspace_id = $1 and status = 'active' and toolkit = 'gmail'`, [workspaceId])).rows as { id: string }[]);
+  const boxes = await withWorkspace({ workspaceId }, async (tx) => (await tx.query(`select id from connection where workspace_id = $1 and status = 'active' and toolkit = any($2::text[])`, [workspaceId, MAIL_TOOLKITS])).rows as { id: string }[]);
   for (const b of boxes) await reconcileMail(workspaceId, b.id).catch((e) => log.warn('the morning mail check failed', { workspaceId, error: (e as Error).message }));
 
   const run: MorningRun = { at: now, sorted: 0, drafted: 0 };

@@ -53,7 +53,18 @@ export interface AgentTool {
 }
 
 const str = (v: unknown, max = 4000) => String(v ?? '').slice(0, max);
-/** Mail from a mailbox that has been disconnected is not Timmy's to read any more, even before its stored copy is deleted. */
+/**
+ * The words of a search, as patterns for a "contains" match. The characters that mean "anything" in a pattern are
+ * taken out first, so a search for "%" finds nothing instead of everything.
+ */
+const containsAny = (query: string): string[] =>
+  query
+    .split(/\s+/)
+    .map((w) => w.replace(/[%_\\]/g, ''))
+    .filter((w) => w.length > 1)
+    .slice(0, 6)
+    .map((w) => `%${w}%`);
+/** Mail or files from an account that has been disconnected are not Timmy's to read any more, even before the stored copy is deleted. */
 const FROM_A_CONNECTED_MAILBOX = `exists (select 1 from connection c where c.id = i.connection_id and c.status = 'active')`;
 
 /** A run that lost its lease must not write. Checked inside the same transaction as the write. */
@@ -73,7 +84,6 @@ const searchMail: AgentTool = {
   async run(args, t) {
     const query = str(args.query, 200).trim();
     const limit = Math.min(Math.max(Number(args.limit ?? 8), 1), 20);
-    const words = query.split(/\s+/).filter((w) => w.length > 1).slice(0, 6);
     const rows = await withWorkspace({ workspaceId: t.ctx.workspaceId }, async (tx) => {
       const { rows } = await tx.query(
         `with q as (select coalesce(nullif(array_to_string(tsvector_to_array(to_tsvector('english', $2)), ' | '), '')::tsquery, websearch_to_tsquery('english', $2)) as q)
@@ -83,7 +93,7 @@ const searchMail: AgentTool = {
          where i.workspace_id = $1 and i.kind = 'message' and ${FROM_A_CONNECTED_MAILBOX}
            and (to_tsvector('english', coalesce(i.subject, '') || ' ' || coalesce(i.snippet, '') || ' ' || coalesce(i.sender, '')) @@ q.q or b.tsv @@ q.q or i.sender ilike any($3::text[]) or i.subject ilike any($3::text[]))
          order by rank desc, i.occurred_at desc limit $4`,
-        [t.ctx.workspaceId, query, words.map((w) => `%${w.replace(/[%_]/g, '')}%`), limit],
+        [t.ctx.workspaceId, query, containsAny(query), limit],
       );
       return rows;
     });
@@ -101,7 +111,10 @@ const readThread: AgentTool = {
     parameters: { type: 'object', properties: { thread: { type: 'string' } }, required: ['thread'] },
   },
   async run(args, t) {
-    const key = str(args.thread, 200).replace(/^g-/, '');
+    // The model may pass the thread's own key or the id Timmy shows for it; either finds the thread.
+    const given = str(args.thread, 400);
+    const shown = (await readState(t.ctx.workspaceId)).state.threads.find((th) => th.id === given);
+    const key = shown?.ext?.threadKey ?? given.replace(/^g-/, '');
     const rows = await withWorkspace({ workspaceId: t.ctx.workspaceId }, async (tx) => {
       const { rows } = await tx.query(
         `select i.occurred_at, i.sender, i.recipients, i.subject, left(b.text, 6000) as text from item i left join item_body b on b.item_id = i.id
@@ -112,6 +125,39 @@ const readThread: AgentTool = {
     });
     if (!rows.length) return { result: 'No thread with that id is in the synced mail.' };
     return { result: untrusted('mail', { thread: key, messages: rows.map((r) => ({ at: new Date(r.occurred_at).toISOString(), from: r.sender, to: r.recipients?.to, subject: r.subject, body: r.text })) }), outside: true };
+  },
+};
+
+const searchFiles: AgentTool = {
+  kind: 'read',
+  step: 'Looking through your files',
+  def: {
+    name: 'search_files',
+    description:
+      'Search the names of the files in the user’s connected Google Drive. Returns each match’s name, what kind of file it is, who owns it, when it last changed and a link to open it. Only names are searched: Timmy cannot open a file’s contents yet, so say so if the user asks what a file says.',
+    parameters: { type: 'object', properties: { query: { type: 'string', description: 'Words from the file’s name' }, limit: { type: 'integer', description: 'How many results, 1-20. Default 8.' } }, required: ['query'] },
+  },
+  async run(args, t) {
+    const query = str(args.query, 200).trim();
+    const limit = Math.min(Math.max(Number(args.limit ?? 8), 1), 20);
+    const words = containsAny(query);
+    // Nothing searchable was given: an empty answer, not every file there is.
+    if (!words.length) return { result: untrusted('files', { query, results: [] }), outside: true };
+    const rows = await withWorkspace({ workspaceId: t.ctx.workspaceId }, async (tx) => {
+      // Files matching every word come first, then files matching any of them; newest first among equals.
+      const { rows } = await tx.query(
+        `select i.subject, i.snippet, i.sender, i.occurred_at, i.meta->>'link' as link, i.meta->>'ownerName' as owner_name,
+                (select count(*) from unnest($2::text[]) w where i.subject ilike w) as hits
+         from item i
+         where i.workspace_id = $1 and i.kind = 'file' and ${FROM_A_CONNECTED_MAILBOX} and i.subject ilike any($2::text[])
+         order by hits desc, i.occurred_at desc limit $3`,
+        [t.ctx.workspaceId, words, limit],
+      );
+      return rows;
+    });
+    const results = rows.map((r) => ({ name: r.subject, kind: r.snippet, owner: r.owner_name || r.sender || undefined, changed: new Date(r.occurred_at).toISOString(), link: r.link ?? undefined }));
+    // File names are written by whoever made or shared the file, so they are outside content like mail is.
+    return { result: untrusted('files', { query, results }), outside: true };
   },
 };
 
@@ -270,5 +316,5 @@ const fileThread: AgentTool = {
   },
 };
 
-export const TOOLS: AgentTool[] = [searchMail, readThread, listInbox, draftReply, sendEmail, sendReply, fileThread];
+export const TOOLS: AgentTool[] = [searchMail, readThread, listInbox, searchFiles, draftReply, sendEmail, sendReply, fileThread];
 export const TOOL_BY_NAME: Record<string, AgentTool> = Object.fromEntries(TOOLS.map((t) => [t.def.name, t]));

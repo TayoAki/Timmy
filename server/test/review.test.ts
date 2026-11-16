@@ -150,10 +150,10 @@ describe('6. which mailbox an email leaves from', () => {
     const res = await w.post('/api/v1/connections/gmail/connect', {});
     expect(res.status).toBe(409);
     expect(JSON.stringify(await res.json())).toContain('owner@review.test');
-    // Outlook can't be connected at all until Timmy reads it: there is no way round the one-mailbox rule through another provider.
+    // There is no way round the one-mailbox rule through another provider: Outlook is a mailbox too, and is refused the same way.
     const outlook = await w.post('/api/v1/connections/outlook/connect', {});
-    expect(outlook.status).toBe(400);
-    expect(JSON.stringify(await outlook.json())).toContain('can’t be connected yet');
+    expect(outlook.status).toBe(409);
+    expect(JSON.stringify(await outlook.json())).toContain('owner@review.test');
   });
 
   it('the approver is shown the mailbox it will be sent from', async () => {

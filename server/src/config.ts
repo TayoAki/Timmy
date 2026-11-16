@@ -95,7 +95,23 @@ export const config = {
       googledrive: env.COMPOSIO_AUTH_CONFIG_GOOGLEDRIVE ?? '',
       outlook: env.COMPOSIO_AUTH_CONFIG_OUTLOOK ?? '',
     } as Record<string, string>,
+    /**
+     * The version of each Composio toolkit this code was written against. Composio changes tool names and
+     * arguments between versions (Outlook's send tool took `to_email`, then `to`), so the server never runs
+     * "whatever is newest": a version moves forward here, after its tools have been checked. COMPOSIO_TOOLKIT_VERSIONS
+     * (a JSON object) overrides single entries without a deploy.
+     */
+    toolkitVersions: {
+      gmail: '20261105_00',
+      googlecalendar: '20261111_00',
+      outlook: '20261116_00',
+      googledrive: '20261104_00',
+      ...(JSON.parse(env.COMPOSIO_TOOLKIT_VERSIONS || '{}') as Record<string, string>),
+    } as Record<string, string>,
   },
+
+  /** How far back the first pass over a newly connected Drive goes, by when a file last changed. */
+  driveBackfillDays: Number(env.TIMMY_DRIVE_BACKFILL_DAYS ?? 90),
 
   /**
    * The most a workspace may set its own limits to. The limits guard the workspace against a runaway month;

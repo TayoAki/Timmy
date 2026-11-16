@@ -4,6 +4,7 @@
  * real addresses, which mailbox it leaves from, and one send per thread at a time.
  */
 import type { Tx } from '../db/pool';
+import { MAIL_TOOLKITS } from '../sync/mailbox';
 import type { Proposal } from './gateway';
 
 export const ADDRESS = /^[^\s@,;<>"']+@[^\s@,;<>"']+\.[a-z]{2,}$/i;
@@ -30,8 +31,8 @@ export async function prepareMailSend(tx: Tx, workspaceId: string, m: MailSend):
   if (!to.length) return { ok: false, reason: 'Add a recipient first.' };
   const cc = m.cc.map((x) => x.trim().toLowerCase()).filter((x) => ADDRESS.test(x));
 
-  const boxes = (await tx.query(`select id, account_label from connection where workspace_id = $1 and status = 'active' and purpose = 'primary' and app_id = 'gmail' order by created_at`, [workspaceId])).rows as { id: string; account_label: string | null }[];
-  if (!boxes.length) return { ok: false, reason: 'Connect Gmail first, then send.' };
+  const boxes = (await tx.query(`select id, account_label from connection where workspace_id = $1 and status = 'active' and purpose = 'primary' and toolkit = any($2::text[]) order by created_at`, [workspaceId, MAIL_TOOLKITS])).rows as { id: string; account_label: string | null }[];
+  if (!boxes.length) return { ok: false, reason: 'Connect Gmail or Outlook first, then send.' };
   // A reply leaves from the mailbox its thread arrived in, in that thread. Anything else leaves from the workspace's mailbox as a new email.
   const home = m.existing?.connectionId ? boxes.find((b) => b.id === m.existing!.connectionId) : undefined;
   const mailbox = home ?? boxes[0]!;

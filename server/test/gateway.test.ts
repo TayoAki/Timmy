@@ -120,7 +120,7 @@ describe('a person presses Send', () => {
     const lone = await newWorkspace('NoMail');
     const out = await send(lone);
     expect(out.ok).toBe(false);
-    expect(out.error).toMatch(/Connect Gmail first/);
+    expect(out.error).toMatch(/Connect Gmail or Outlook first/);
     expect(await effects(lone)).toHaveLength(0);
     expect((await lone.state()).threads).toHaveLength(0);
   });

@@ -2,6 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Composio } from '@composio/core';
 import { config } from '../config';
 import { newId } from '../lib/ids';
+import { htmlToText } from '../sync/message';
 
 /**
  * The one door to Composio. The API key lives in this module and is handed to
@@ -75,7 +76,9 @@ function eventFrom(id: string, rawBody: string): ProviderEvent {
 /* ───────────── The real provider ───────────── */
 
 class RealComposio implements ComposioProvider {
-  private client = new Composio({ apiKey: config.composio.apiKey });
+  // Every toolkit runs at the version pinned in config. A tool from a toolkit with no pinned version is refused
+  // by the client, so nothing ever runs at "whatever is newest".
+  private client = new Composio({ apiKey: config.composio.apiKey, toolkitVersions: config.composio.toolkitVersions });
   private authConfigs = new Map<string, string>();
 
   /** The auth config for a toolkit: the id from config when set, else Composio's managed OAuth app. */
@@ -111,7 +114,7 @@ class RealComposio implements ComposioProvider {
   }
 
   async execute(slug: string, args: Record<string, unknown>, who: { userId: string; connectedAccountId: string }): Promise<ToolResult> {
-    const res = await this.client.tools.execute(slug, { userId: who.userId, connectedAccountId: who.connectedAccountId, arguments: args, dangerouslySkipVersionCheck: true });
+    const res = await this.client.tools.execute(slug, { userId: who.userId, connectedAccountId: who.connectedAccountId, arguments: args });
     return { successful: !!res.successful, data: (res.data ?? {}) as Record<string, unknown>, error: res.error ?? null };
   }
 
@@ -146,7 +149,23 @@ export interface FakeMessage {
   subject: string;
   body: string;
   at: Date;
+  /** Where the message sits, in Gmail's words. The stand-in Outlook reads the same list as folders (ARCHIVE is its Archive folder). */
   labels: string[];
+  /** Outlook only: the categories on the message. */
+  categories?: string[];
+  /** Outlook only: the HTML body, when it differs from a plain rendering of `body`. */
+  html?: string;
+}
+
+export interface FakeFile {
+  id: string;
+  name: string;
+  mimeType: string;
+  modifiedTime: string;
+  owner: string;
+  trashed?: boolean;
+  /** The link Drive gives for opening the file. Set only to test what is done with an odd one. */
+  link?: string;
 }
 
 export interface FakeMailbox {
@@ -159,6 +178,8 @@ export interface FakeMailbox {
   events: { id: string; summary: string; start: string; end: string; attendees: string[]; invited?: boolean }[];
   /** Labels the person or Timmy made: name → id. */
   labels: Map<string, string>;
+  /** Drive only: the files in the account. */
+  files: FakeFile[];
 }
 
 /**
@@ -174,7 +195,7 @@ export class FakeComposio implements ComposioProvider {
   /** Every tool call, for assertions and for counting calls. */
   calls: { slug: string; args: Record<string, unknown>; connectedAccountId: string }[] = [];
   /** Make the next execution of a slug fail: 'error' is a clean refusal, 'timeout' leaves the outcome unknown. */
-  failNext = new Map<string, 'error' | 'timeout' | 'sent-then-timeout'>();
+  failNext = new Map<string, 'error' | 'timeout' | 'sent-then-timeout' | 'partial'>();
   /** The address the next connect flow will sign in as. */
   nextAddress = '';
 
@@ -188,7 +209,7 @@ export class FakeComposio implements ComposioProvider {
 
   async link({ userId, toolkit, callbackUrl }: { userId: string; toolkit: string; callbackUrl: string }) {
     const connectedAccountId = newId('ca_fake');
-    this.accounts.set(connectedAccountId, { address: this.nextAddress || `${userId.slice(0, 8)}@example.test`, status: 'INITIATED', toolkit, userId, messages: [], events: [], labels: new Map() });
+    this.accounts.set(connectedAccountId, { address: this.nextAddress || `${userId.slice(0, 8)}@example.test`, status: 'INITIATED', toolkit, userId, messages: [], events: [], labels: new Map(), files: [] });
     const redirectUrl = `${config.publicUrl}/api/test/fake-connect?account=${connectedAccountId}&to=${encodeURIComponent(callbackUrl)}`;
     return { redirectUrl, connectedAccountId, authConfigId: `ac_fake_${toolkit}` };
   }
@@ -233,18 +254,35 @@ export class FakeComposio implements ComposioProvider {
     if (!box) throw new Error('no such fake account');
     const msg: FakeMessage = { id: m.id ?? newId('m'), threadId: m.threadId ?? newId('t'), from: m.from, to: m.to ?? [box.address], cc: m.cc, subject: m.subject, body: m.body, at: m.at ?? new Date(), labels: m.labels ?? ['INBOX', 'UNREAD'] };
     box.messages.push(msg);
-    const trigger = [...this.triggers.entries()].find(([, t]) => t.connectedAccountId === connectedAccountId && t.slug === 'GMAIL_NEW_GMAIL_MESSAGE');
-    const body = JSON.stringify({
-      id: newId('evt'),
-      type: 'composio.trigger.message',
-      timestamp: new Date().toISOString(),
-      metadata: { trigger_slug: 'GMAIL_NEW_GMAIL_MESSAGE', trigger_id: trigger?.[0] ?? '', connected_account_id: connectedAccountId, user_id: box.userId },
-      data: { id: msg.id, message_id: msg.id, thread_id: msg.threadId, label_ids: msg.labels, sender: msg.from, to: msg.to.join(', '), subject: msg.subject, message_text: msg.body, message_timestamp: msg.at.toISOString() },
-    });
+    const outlook = box.toolkit === 'outlook';
+    const slug = outlook ? 'OUTLOOK_MESSAGE_TRIGGER' : 'GMAIL_NEW_GMAIL_MESSAGE';
+    // Outlook's event carries a preview under an id that is not the one the listing tools use, as the real one does.
+    const data = outlook
+      ? { event_type: 'created', id: `mutable-${msg.id}`, message: { id: `mutable-${msg.id}`, conversation_id: msg.threadId, subject: msg.subject, body_preview: msg.body.slice(0, 255), is_read: false } }
+      : { id: msg.id, message_id: msg.id, thread_id: msg.threadId, label_ids: msg.labels, sender: msg.from, to: msg.to.join(', '), subject: msg.subject, message_text: msg.body, message_timestamp: msg.at.toISOString() };
+    const signed = this.event(connectedAccountId, slug, data);
+    return { message: msg, webhook: signed.webhook, hasTrigger: signed.hasTrigger };
+  }
+
+  /** The signed webhook Composio would send for one trigger event on an account. */
+  event(connectedAccountId: string, slug: string, data: Record<string, unknown>) {
+    const box = this.accounts.get(connectedAccountId);
+    if (!box) throw new Error('no such fake account');
+    const trigger = [...this.triggers.entries()].find(([, t]) => t.connectedAccountId === connectedAccountId && t.slug === slug);
+    const body = JSON.stringify({ id: newId('evt'), type: 'composio.trigger.message', timestamp: new Date().toISOString(), metadata: { trigger_slug: slug, trigger_id: trigger?.[0] ?? '', connected_account_id: connectedAccountId, user_id: box.userId }, data });
     const id = newId('wh');
     const timestamp = String(Math.floor(Date.now() / 1000));
     const headers = { 'content-type': 'application/json', 'webhook-id': id, 'webhook-timestamp': timestamp, 'webhook-signature': signWebhook(id, timestamp, body, this.secret) };
-    return { message: msg, webhook: { headers, body }, hasTrigger: !!trigger };
+    return { webhook: { headers, body }, hasTrigger: !!trigger };
+  }
+
+  /** Puts a file in a stand-in Drive. */
+  addFile(connectedAccountId: string, f: Partial<FakeFile> & { name: string }): FakeFile {
+    const box = this.accounts.get(connectedAccountId);
+    if (!box) throw new Error('no such fake account');
+    const file: FakeFile = { id: f.id ?? newId('file'), name: f.name, mimeType: f.mimeType ?? 'application/vnd.google-apps.document', modifiedTime: f.modifiedTime ?? new Date().toISOString(), owner: f.owner ?? box.address, trashed: f.trashed, link: f.link };
+    box.files = [...box.files.filter((x) => x.id !== file.id), file];
+    return file;
   }
 
   private wire(m: FakeMessage) {
@@ -260,6 +298,30 @@ export class FakeComposio implements ComposioProvider {
       messageText: m.body,
       preview: { body: m.body.slice(0, 160), subject: m.subject },
       attachmentList: [],
+    };
+  }
+
+  /** A message as Microsoft Graph returns it. */
+  private graph(m: FakeMessage) {
+    const sender = /^(.*)<([^<>]+)>\s*$/.exec(m.from);
+    const folder = m.labels.includes('DRAFT') ? 'drafts' : m.labels.includes('SENT') ? 'sentitems' : m.labels.includes('INBOX') ? 'inbox' : m.labels.includes('ARCHIVE') ? 'archive' : m.labels.includes('TRASH') ? 'deleteditems' : 'other';
+    const escape = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return {
+      id: m.id,
+      conversationId: m.threadId,
+      subject: m.subject,
+      from: { emailAddress: { name: sender ? sender[1]!.trim().replace(/^"|"$/g, '') : '', address: sender ? sender[2]!.trim() : m.from } },
+      toRecipients: m.to.map((address) => ({ emailAddress: { address } })),
+      ccRecipients: (m.cc ?? []).map((address) => ({ emailAddress: { address } })),
+      receivedDateTime: m.at.toISOString(),
+      sentDateTime: m.at.toISOString(),
+      isRead: !m.labels.includes('UNREAD'),
+      isDraft: m.labels.includes('DRAFT'),
+      parentFolderId: `fld-${folder}`,
+      categories: m.categories ?? [],
+      // Outlook hands bodies over as HTML, with a head and styles around the words.
+      body: { contentType: 'html', content: m.html ?? `<html><head><style>p { margin: 0 }</style></head><body>${m.body.split(/\n\n+/).map((p) => `<p>${escape(p).replace(/\n/g, '<br>')}</p>`).join('')}</body></html>` },
+      bodyPreview: m.body.slice(0, 255),
     };
   }
 
@@ -353,7 +415,9 @@ export class FakeComposio implements ComposioProvider {
         const start = new Date(`${String(args.start_datetime)}${args.timezone === 'UTC' ? 'Z' : ''}`);
         const minutes = Number(args.event_duration_hour ?? 0) * 60 + Number(args.event_duration_minutes ?? 0);
         if (Number.isNaN(start.getTime()) || minutes <= 0 || Number(args.event_duration_minutes ?? 0) > 59) return { successful: false, data: {}, error: 'Invalid start or duration' };
-        const event = { id: newId('gev'), summary: String(args.summary ?? ''), start: start.toISOString(), end: new Date(start.getTime() + minutes * 60_000).toISOString(), attendees: (args.attendees as string[] | undefined) ?? [], invited: args.send_updates === true };
+        // Who is told about the event is one of three words; anything else is refused, as the real tool refuses it.
+        if (!['all', 'externalOnly', 'none'].includes(args.send_updates as string)) return { successful: false, data: {}, error: 'Invalid send_updates' };
+        const event = { id: newId('gev'), summary: String(args.summary ?? ''), start: start.toISOString(), end: new Date(start.getTime() + minutes * 60_000).toISOString(), attendees: (args.attendees as string[] | undefined) ?? [], invited: args.send_updates === 'all' };
         box.events.push(event);
         if (fail === 'sent-then-timeout') {
           this.failNext.delete(slug);
@@ -363,6 +427,114 @@ export class FakeComposio implements ComposioProvider {
       }
       case 'GOOGLECALENDAR_EVENTS_LIST':
         return ok({ items: box.events.map((e) => ({ id: e.id, summary: e.summary, start: { dateTime: e.start }, end: { dateTime: e.end }, attendees: e.attendees.map((email) => ({ email })) })), nextPageToken: null });
+      /* ───── Outlook ───── */
+      case 'OUTLOOK_GET_PROFILE':
+        return ok({ id: 'user-1', mail: box.address, userPrincipalName: box.address, displayName: 'Stand-in person' });
+      case 'OUTLOOK_GET_MAIL_FOLDER': {
+        const name = String(args.mail_folder_id ?? '').toLowerCase();
+        if (!['inbox', 'sentitems', 'drafts', 'archive', 'deleteditems', 'junkemail'].includes(name)) return { successful: false, data: {}, error: 'The specified folder could not be found' };
+        return ok({ id: `fld-${name}`, displayName: name });
+      }
+      case 'OUTLOOK_LIST_MESSAGES': {
+        const filter = String(args.filter ?? '');
+        // Outlook refuses to sort a filtered list unless the filter starts with the property it sorts by.
+        if (filter && !/^receivedDateTime /.test(filter)) return { successful: false, data: {}, error: 'InefficientFilter: the restriction or sort order is too complex for this operation' };
+        const conversation = /conversationId eq '((?:[^']|'')*)'/.exec(filter)?.[1]?.replace(/''/g, "'");
+        const since = args.received_date_time_ge ? new Date(String(args.received_date_time_ge)).getTime() : 0;
+        if (Number.isNaN(since)) return { successful: false, data: {}, error: 'Invalid date' };
+        const folder = String(args.folder ?? 'inbox').toLowerCase();
+        const max = Number(args.top ?? 10);
+        const start = Number(args.page_token ?? 0);
+        let list = [...box.messages].sort((a, b) => b.at.getTime() - a.at.getTime()).filter((m) => m.at.getTime() >= since);
+        if (conversation !== undefined) list = list.filter((m) => m.threadId === conversation);
+        if (folder !== 'allfolders') list = list.filter((m) => this.graph(m).parentFolderId === `fld-${folder}`);
+        const page = list.slice(start, start + max);
+        return ok({ value: page.map((m) => this.graph(m)), ...(start + max < list.length ? { next_page_token: String(start + max) } : {}) });
+      }
+      case 'OUTLOOK_CREATE_DRAFT': {
+        const msg: FakeMessage = { id: newId('om'), threadId: newId('conv'), from: box.address, to: ((args.to_recipients as string[] | undefined) ?? []).map(String), cc: ((args.cc_recipients as string[] | undefined) ?? []).map(String), subject: String(args.subject ?? ''), body: String(args.body ?? ''), at: new Date(), labels: ['DRAFT'] };
+        box.messages.push(msg);
+        return ok(this.graph(msg));
+      }
+      case 'OUTLOOK_CREATE_DRAFT_REPLY': {
+        const original = box.messages.find((m) => m.id === args.message_id);
+        if (!original) return { successful: false, data: {}, error: 'The specified object was not found in the store' };
+        // Outlook addresses the reply itself, to whoever wrote the message, and quotes that message under a rule.
+        const author = /<([^<>]+)>\s*$/.exec(original.from)?.[1] ?? original.from;
+        const msg: FakeMessage = { id: newId('om'), threadId: original.threadId, from: box.address, to: [author], cc: [], subject: `Re: ${original.subject.replace(/^Re:\s*/i, '')}`, body: '', html: `<html><head></head><body><hr><div><b>From:</b> ${author}</div><div>${original.body}</div></body></html>`, at: new Date(), labels: ['DRAFT'] };
+        box.messages.push(msg);
+        return ok(this.graph(msg));
+      }
+      case 'OUTLOOK_UPDATE_EMAIL': {
+        const m = box.messages.find((x) => x.id === args.message_id);
+        if (!m) return { successful: false, data: {}, error: 'The specified object was not found in the store' };
+        const list = (v: unknown) => (v as { address?: string }[]).map((r) => String(r.address ?? ''));
+        if (args.to_recipients) m.to = list(args.to_recipients);
+        if (args.cc_recipients) m.cc = list(args.cc_recipients);
+        if (args.categories) m.categories = (args.categories as string[]).map(String);
+        if (args.body) {
+          const b = args.body as { contentType?: string; content?: string };
+          if (String(b.contentType).toLowerCase() === 'html') {
+            m.html = String(b.content ?? '');
+            // What a reader sees above the rule: the reply itself, without the quoted message.
+            m.body = htmlToText(m.html.split(/<hr\b/i)[0]!);
+          } else m.body = String(b.content ?? '');
+        }
+        return ok(this.graph(m));
+      }
+      case 'OUTLOOK_SEND_DRAFT': {
+        const m = box.messages.find((x) => x.id === args.message_id);
+        if (!m || !m.labels.includes('DRAFT')) return { successful: false, data: {}, error: 'The message is not a draft' };
+        if (!m.to.length) return { successful: false, data: {}, error: 'At least one recipient is required' };
+        m.labels = ['SENT'];
+        m.at = new Date();
+        if (fail === 'sent-then-timeout') {
+          this.failNext.delete(slug);
+          throw new Error('ETIMEDOUT after send (fake)');
+        }
+        return ok({});
+      }
+      case 'OUTLOOK_BATCH_UPDATE_MESSAGES':
+      case 'OUTLOOK_BATCH_MOVE_MESSAGES': {
+        const move = slug === 'OUTLOOK_BATCH_MOVE_MESSAGES';
+        const items = move ? ((args.message_ids as string[] | undefined) ?? []).map((id) => ({ message_id: id, patch: {} as { categories?: string[] } })) : ((args.updates as { message_id: string; patch: { categories?: string[] } }[] | undefined) ?? []);
+        if (!items.length || items.length > 20) return { successful: false, data: {}, error: 'A batch takes between 1 and 20 messages' };
+        const to = String(args.destination_id ?? '').toLowerCase();
+        if (move && !['inbox', 'archive'].includes(to)) return { successful: false, data: {}, error: 'The destination folder could not be found' };
+        // 'partial' applies the first change of the batch and refuses the rest, as a throttled mailbox does.
+        const partial = fail === 'partial';
+        if (partial) this.failNext.delete(slug);
+        let done = 0;
+        const results = items.map((it, i) => {
+          const m = box.messages.find((x) => x.id === it.message_id);
+          if (!m || (partial && i > 0)) return { message_id: it.message_id, success: false };
+          if (move) m.labels = [...m.labels.filter((l) => l !== 'INBOX' && l !== 'ARCHIVE'), to === 'inbox' ? 'INBOX' : 'ARCHIVE'];
+          else if (it.patch.categories) m.categories = it.patch.categories.map(String);
+          done++;
+          return { message_id: it.message_id, success: true };
+        });
+        if (fail === 'sent-then-timeout') {
+          this.failNext.delete(slug);
+          throw new Error('ETIMEDOUT after the change (fake)');
+        }
+        return ok({ results, total_requested: items.length, total_succeeded: done, total_failed: items.length - done });
+      }
+      /* ───── Google Drive ───── */
+      case 'GOOGLEDRIVE_GET_ABOUT':
+        return ok({ user: { emailAddress: box.address, displayName: 'Stand-in person' } });
+      case 'GOOGLEDRIVE_LIST_FILES': {
+        const q = String(args.q ?? '');
+        const since = /modifiedTime > '([^']+)'/.exec(q)?.[1];
+        const max = Number(args.pageSize ?? 100);
+        const start = Number(args.pageToken ?? 0);
+        let list = [...box.files].sort((a, b) => b.modifiedTime.localeCompare(a.modifiedTime));
+        if (since) list = list.filter((f) => new Date(f.modifiedTime).getTime() > new Date(since).getTime());
+        if (/trashed = false/.test(q)) list = list.filter((f) => !f.trashed);
+        if (/mimeType != 'application\/vnd\.google-apps\.folder'/.test(q)) list = list.filter((f) => f.mimeType !== 'application/vnd.google-apps.folder');
+        const page = list.slice(start, start + max);
+        const wire = (f: FakeFile) => ({ id: f.id, name: f.name, mimeType: f.mimeType, modifiedTime: f.modifiedTime, createdTime: f.modifiedTime, trashed: !!f.trashed, webViewLink: f.link ?? `https://docs.google.com/document/d/${f.id}/edit`, shared: f.owner !== box.address, owners: [{ displayName: f.owner.split('@')[0], emailAddress: f.owner }] });
+        return ok({ files: page.map(wire), ...(start + max < list.length ? { nextPageToken: String(start + max) } : {}) });
+      }
       default:
         return { successful: false, data: {}, error: `The fake provider has no tool called ${slug}` };
     }

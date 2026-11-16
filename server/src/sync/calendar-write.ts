@@ -87,7 +87,8 @@ export async function createEvent(e: EffectRow): Promise<Outcome> {
       event_duration_minutes: minutes % 60,
       attendees: p.attendees,
       ...(p.note ? { description: p.note } : {}),
-      send_updates: p.attendees.length > 0,
+      // With guests the event was approved like an email, and Google sends them invitations. With none, nobody is written to.
+      send_updates: p.attendees.length > 0 ? 'all' : 'none',
       create_meeting_room: false,
     },
     'send',

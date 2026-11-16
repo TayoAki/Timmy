@@ -3,6 +3,7 @@
  * backwards, and a trigger for each new message), are stored as items, and the
  * threads that need attention are projected into the state the screens show.
  */
+import { createHash } from 'node:crypto';
 import type { State } from '../../../src/state/store';
 import type { Thread } from '../../../src/data/types';
 import { draftHash } from '../../../src/live/hash';
@@ -11,71 +12,11 @@ import { withWorkspace, type Tx } from '../db/pool';
 import { newId } from '../lib/ids';
 import { log } from '../lib/log';
 import { mutate } from '../state/mutate';
-import { callTool, connectionById, type ConnectionRow, type Phase } from './tools';
+import { mailboxFor } from './mailbox';
+import { paragraphs, parseSender, type MailMessage } from './message';
+import { connectionById, type ConnectionRow, type Phase } from './tools';
 
-export interface MailMessage {
-  id: string;
-  threadKey: string;
-  at: Date;
-  from: string;
-  to: string[];
-  cc: string[];
-  subject: string;
-  text: string;
-  labels: string[];
-  attachments: string[];
-}
-
-/* ───────────── Normalizing what Composio returns ───────────── */
-
-const ADDRESS = /[^\s<>,;"']+@[^\s<>,;"']+\.[a-z]{2,}/gi;
-export const addresses = (v: unknown): string[] => (Array.isArray(v) ? v.join(', ') : String(v ?? '')).match(ADDRESS)?.map((a) => a.toLowerCase()) ?? [];
-/** "Dana Whitfield <dana@acme.com>" → { name: "Dana Whitfield", email: "dana@acme.com" } */
-export function parseSender(v: unknown): { name: string; email: string } {
-  // A From header may carry comments in parentheses, and a comment can hold anything, including something shaped
-  // like an address in angle brackets: mallory@evil.test (Pat <ceo@corp.test>). Comments are dropped first.
-  let s = String(v ?? '');
-  for (let before = ''; before !== s; ) {
-    before = s;
-    s = s.replace(/\([^()]*\)/g, ' ');
-  }
-  // The address is what sits in the last <…>. The display name is free text the sender chose
-  // and may itself look like an address ("ceo@corp.com" <mallory@evil.test>), so it is never used as one.
-  const angle = [...s.matchAll(/<([^<>]*)>/g)].pop()?.[1];
-  const email = (angle !== undefined ? addresses(angle)[0] : addresses(s)[0]) ?? '';
-  const name = (angle !== undefined ? s.slice(0, s.lastIndexOf('<')) : '').replace(/["']/g, '').trim();
-  return { name: name && name.toLowerCase() !== email ? name.slice(0, 120) : '', email };
-}
-
-/** Accepts the fetch tools' camelCase shape and the trigger's snake_case shape. */
-export function normalize(raw: Record<string, unknown>): MailMessage | null {
-  const id = String(raw.messageId ?? raw.message_id ?? raw.id ?? '');
-  if (!id) return null;
-  const ts = raw.messageTimestamp ?? raw.message_timestamp ?? raw.internalDate;
-  const at = ts ? new Date(/^\d+$/.test(String(ts)) ? Number(ts) : String(ts)) : new Date();
-  return {
-    id,
-    threadKey: String(raw.threadId ?? raw.thread_id ?? id),
-    at: Number.isNaN(at.getTime()) ? new Date() : at,
-    from: String(raw.sender ?? raw.from ?? ''),
-    to: addresses(raw.to),
-    cc: addresses(raw.cc),
-    subject: String(raw.subject ?? '').trim() || '(no subject)',
-    text: String(raw.messageText ?? raw.message_text ?? '').replace(/\u0000/g, ''),
-    labels: ((raw.labelIds ?? raw.label_ids ?? []) as string[]).map(String),
-    attachments: ((raw.attachmentList ?? raw.attachment_list ?? []) as { filename?: string }[]).map((a) => a?.filename ?? '').filter(Boolean),
-  };
-}
-
-/** The message without the quoted history under it, as short paragraphs. */
-export function paragraphs(text: string): string[] {
-  const lines = text.replace(/\r\n/g, '\n').split('\n');
-  const cut = lines.findIndex((l) => /^On .{5,80} wrote:\s*$/.test(l.trim()) || /^-{2,}\s*Original Message\s*-{2,}$/i.test(l.trim()) || /^From: .+@.+/.test(l.trim()));
-  const kept = (cut > 0 ? lines.slice(0, cut) : lines).filter((l) => !l.trim().startsWith('>'));
-  const body = kept.join('\n').trim().slice(0, 20000);
-  const parts = body.split(/\n\s*\n+/).map((p) => p.trim()).filter(Boolean);
-  return parts.length ? parts : [''];
-}
+export { addresses, normalize, paragraphs, parseSender, type MailMessage } from './message';
 
 /* ───────────── The item store ───────────── */
 
@@ -133,7 +74,13 @@ export function suggest(last: { sender: string; subject: string; text: string; l
 
 /* ───────────── Threads the screens show ───────────── */
 
-type LiveThread = Thread & { ext?: { threadKey?: string; connectionId?: string; people?: Record<string, { name: string; email: string }> } };
+type LiveThread = Thread;
+
+/**
+ * The id a synced thread has on Timmy's side. Gmail's thread ids are short and plain, so they are used as they are.
+ * An Outlook conversation id is long and full of punctuation, so a short fingerprint of it stands in.
+ */
+export const threadIdFor = (conn: ConnectionRow, threadKey: string) => (conn.toolkit === 'outlook' ? `o-${createHash('sha256').update(`${conn.id}:${threadKey}`).digest('hex').slice(0, 20)}` : `g-${threadKey}`);
 
 const personId = (email: string, mine: string) => (email === mine ? 'me' : `mail:${email}`);
 
@@ -177,7 +124,7 @@ export async function projectThread(tx: Tx, state: State, workspaceId: string, c
     // Only mail that is in the inbox becomes something to work on. The rest stays searchable in the item store.
     if (!inInbox) return state;
     const thread: LiveThread = {
-      id: `g-${threadKey}`,
+      id: threadIdFor(conn, threadKey),
       subject,
       box: 'inbox',
       participants,
@@ -185,7 +132,7 @@ export async function projectThread(tx: Tx, state: State, workspaceId: string, c
       unread,
       ask: snippet || subject,
       suggestion: suggest({ sender: (lastIn ?? last).sender as string, subject: (lastIn ?? last).subject as string, text: ((lastIn ?? last).text as string | null) ?? '', labels: (lastIn ?? last).labels as string[] }),
-      ext: { threadKey, connectionId: conn.id, people },
+      ext: { threadKey, connectionId: conn.id, people, ...(conn.toolkit === 'outlook' ? { app: 'outlook' as const } : {}) },
     };
     return { ...state, threads: [thread, ...state.threads] };
   }
@@ -229,10 +176,14 @@ export async function projectThread(tx: Tx, state: State, workspaceId: string, c
 /** One new message from a trigger. Fetches the whole thread so the stored copy is complete. */
 export async function ingestThread(workspaceId: string, connectionId: string, threadKey: string, phase: Phase = 'sync', seed?: Record<string, unknown>): Promise<number> {
   const conn = await connectionById(workspaceId, connectionId);
-  if (!conn || conn.status !== 'active') return 0;
-  const res = await callTool(workspaceId, connectionId, 'GMAIL_FETCH_MESSAGE_BY_THREAD_ID', { thread_id: threadKey }, phase);
-  const raw = res.successful ? ((res.data.messages ?? []) as Record<string, unknown>[]) : seed ? [seed] : [];
-  const list = raw.map(normalize).filter((m): m is MailMessage => !!m);
+  const box = conn && mailboxFor(conn.toolkit);
+  if (!conn || !box || conn.status !== 'active') return 0;
+  const fetched = await box.thread(workspaceId, conn, threadKey, phase);
+  // If the thread can't be fetched, the message the event itself carried is better than nothing, when it carried one.
+  const carried = fetched ? null : seed ? box.seed(seed) : null;
+  // With neither, the job fails and the queue tries again; the nightly check is the net under that.
+  if (!fetched && !carried) throw new Error('the thread could not be fetched');
+  const list = fetched ?? [carried!];
   if (!list.length) return 0;
   return mutate(workspaceId, 'sync', async (tx, loaded) => {
     const stored = await storeMessages(tx, loaded.state, workspaceId, conn, list);
@@ -304,9 +255,11 @@ export interface BackfillProgress {
  */
 export async function backfillMail(workspaceId: string, connectionId: string, opts: { days?: number; maxPages?: number; pageSize?: number; pauseMs?: number } = {}): Promise<BackfillProgress> {
   const conn = await connectionById(workspaceId, connectionId);
-  if (!conn || conn.status !== 'active') return { pages: 0, messages: 0, threads: 0, done: true };
+  const box = conn && mailboxFor(conn.toolkit);
+  if (!conn || !box || conn.status !== 'active') return { pages: 0, messages: 0, threads: 0, done: true };
   const days = opts.days ?? config.backfillFastDays;
-  const pageSize = opts.pageSize ?? 50;
+  // Outlook returns whole HTML bodies, so its pages are kept smaller.
+  const pageSize = opts.pageSize ?? (conn.toolkit === 'outlook' ? 25 : 50);
   const kind = `backfill-${days}`;
   const cur = await withWorkspace({ workspaceId }, async (tx) => {
     await tx.query(`insert into sync_cursor (connection_id, workspace_id, kind, state, started_at) values ($1, $2, $3, 'running', now()) on conflict (connection_id, kind) do nothing`, [connectionId, workspaceId, kind]);
@@ -318,13 +271,15 @@ export async function backfillMail(workspaceId: string, connectionId: string, op
   const progress: BackfillProgress = { pages: 0, messages: 0, threads: 0, done: false };
 
   while (progress.pages < (opts.maxPages ?? 40)) {
-    const res = await callTool(workspaceId, connectionId, 'GMAIL_FETCH_EMAILS', { query: `after:${after}`, max_results: pageSize, include_payload: false, ...(pageToken ? { page_token: pageToken } : {}) }, 'backfill');
-    if (!res.successful) {
-      log.warn('backfill page failed', { workspaceId, connectionId, error: res.error });
-      throw new Error(res.error ?? 'backfill page failed');
+    let page;
+    try {
+      page = await box.page(workspaceId, conn, { since: new Date(after * 1000), pageToken, pageSize, phase: 'backfill' });
+    } catch (err) {
+      log.warn('backfill page failed', { workspaceId, connectionId, error: (err as Error).message });
+      throw err;
     }
-    const list = ((res.data.messages ?? []) as Record<string, unknown>[]).map(normalize).filter((m): m is MailMessage => !!m);
-    const next = (res.data.nextPageToken as string | null | undefined) || undefined;
+    const list = page.messages;
+    const next = page.next;
     progress.pages++;
     progress.messages += list.length;
     await mutate(workspaceId, 'backfill', async (tx, loaded) => {
@@ -344,7 +299,7 @@ export async function backfillMail(workspaceId: string, connectionId: string, op
       progress.done = true;
       break;
     }
-    // Stay well under Gmail's per-user quota.
+    // Stay well under the provider's per-user quota.
     if (opts.pauseMs ?? 1500) await new Promise((r) => setTimeout(r, opts.pauseMs ?? 1500));
   }
   return progress;
@@ -360,13 +315,13 @@ export async function backfillMail(workspaceId: string, connectionId: string, op
 export async function reconcileMail(workspaceId: string, connectionId: string, opts: { days?: number; maxPages?: number; pageSize?: number } = {}): Promise<{ pages: number; messages: number; fresh: number }> {
   const conn = await connectionById(workspaceId, connectionId);
   const out = { pages: 0, messages: 0, fresh: 0 };
-  if (!conn || conn.status !== 'active' || conn.toolkit !== 'gmail') return out;
-  const after = Math.floor((Date.now() - (opts.days ?? 2) * 86400_000) / 1000);
+  const box = conn && mailboxFor(conn.toolkit);
+  if (!conn || !box || conn.status !== 'active') return out;
+  const since = new Date(Date.now() - (opts.days ?? 2) * 86400_000);
   let pageToken: string | undefined;
   do {
-    const res = await callTool(workspaceId, connectionId, 'GMAIL_FETCH_EMAILS', { query: `after:${after}`, max_results: opts.pageSize ?? 50, include_payload: false, ...(pageToken ? { page_token: pageToken } : {}) }, 'reconcile');
-    if (!res.successful) throw new Error(res.error ?? 'the nightly mail check failed');
-    const list = ((res.data.messages ?? []) as Record<string, unknown>[]).map(normalize).filter((m): m is MailMessage => !!m);
+    const page = await box.page(workspaceId, conn, { since, pageToken, pageSize: opts.pageSize ?? (conn.toolkit === 'outlook' ? 25 : 50), phase: 'reconcile' });
+    const list = page.messages;
     out.pages++;
     out.messages += list.length;
     if (list.length) {
@@ -375,7 +330,7 @@ export async function reconcileMail(workspaceId: string, connectionId: string, o
         return { state: stored.state, result: stored.fresh };
       });
     }
-    pageToken = (res.data.nextPageToken as string | null | undefined) || undefined;
+    pageToken = page.next;
   } while (pageToken && out.pages < (opts.maxPages ?? 10));
   return out;
 }

@@ -115,6 +115,8 @@ export interface Thread {
   ext?: {
     threadKey?: string;
     connectionId?: string;
+    /** Which kind of mailbox it lives in. Left out for Gmail, the first one Timmy read. */
+    app?: 'outlook';
     people?: Record<string, { name: string; email: string }>;
     /** The nudge Timmy last drafted here: for which date, and a hash of its text while nobody has edited it. */
     nudge?: { due: Date; hash?: string };

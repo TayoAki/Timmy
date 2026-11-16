@@ -272,7 +272,7 @@ export function MessageDialog({ lead, channel, onClose, initial }: { lead: Lead;
           </button>
           <button className="btn btn-primary" disabled={!body.trim() || left || (channel === 'email' && !subject.trim())} onClick={send}>
             {/* On a real workspace an email to a lead is sent by hand from the person's own mail app. */}
-            {isLive() && channel === 'email' ? 'Open in Gmail' : cold && today.left === 0 ? 'Queue for tomorrow' : 'Send'}
+            {isLive() && channel === 'email' ? `Open in ${state.conn.apps.gmail?.connected ? 'Gmail' : state.conn.apps.outlook?.connected ? 'Outlook' : 'your mail app'}` : cold && today.left === 0 ? 'Queue for tomorrow' : 'Send'}
           </button>
         </>
       }
