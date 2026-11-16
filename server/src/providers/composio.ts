@@ -156,6 +156,8 @@ export interface FakeMailbox {
   userId: string;
   messages: FakeMessage[];
   events: { id: string; summary: string; start: string; end: string; attendees: string[] }[];
+  /** Labels the person or Timmy made: name → id. */
+  labels: Map<string, string>;
 }
 
 /**
@@ -185,7 +187,7 @@ export class FakeComposio implements ComposioProvider {
 
   async link({ userId, toolkit, callbackUrl }: { userId: string; toolkit: string; callbackUrl: string }) {
     const connectedAccountId = newId('ca_fake');
-    this.accounts.set(connectedAccountId, { address: this.nextAddress || `${userId.slice(0, 8)}@example.test`, status: 'INITIATED', toolkit, userId, messages: [], events: [] });
+    this.accounts.set(connectedAccountId, { address: this.nextAddress || `${userId.slice(0, 8)}@example.test`, status: 'INITIATED', toolkit, userId, messages: [], events: [], labels: new Map() });
     const redirectUrl = `${config.publicUrl}/api/test/fake-connect?account=${connectedAccountId}&to=${encodeURIComponent(callbackUrl)}`;
     return { redirectUrl, connectedAccountId, authConfigId: `ac_fake_${toolkit}` };
   }
@@ -321,6 +323,30 @@ export class FakeComposio implements ComposioProvider {
           throw new Error('ETIMEDOUT after send (fake)');
         }
         return ok({ response_data: { id: msg.id, threadId: msg.threadId, labelIds: msg.labels } });
+      }
+      case 'GMAIL_LIST_LABELS':
+        return ok({ labels: [...['INBOX', 'SENT', 'UNREAD'].map((id) => ({ id, name: id, type: 'system' })), ...[...box.labels].map(([name, id]) => ({ id, name, type: 'user' }))] });
+      case 'GMAIL_CREATE_LABEL': {
+        const name = String(args.label_name ?? '');
+        if (!name || /[,/]/.test(name) || box.labels.has(name)) return { successful: false, data: {}, error: 'Invalid or duplicate label name' };
+        const id = `Label_${box.labels.size + 1}`;
+        box.labels.set(name, id);
+        return ok({ response_data: { id, name } });
+      }
+      case 'GMAIL_MODIFY_THREAD_LABELS': {
+        const list = box.messages.filter((m) => m.threadId === args.thread_id);
+        if (!list.length) return { successful: false, data: {}, error: 'Thread not found' };
+        const add = (args.add_label_ids as string[] | undefined) ?? [];
+        const remove = (args.remove_label_ids as string[] | undefined) ?? [];
+        const real = new Set(['INBOX', 'SENT', 'UNREAD', ...box.labels.values()]);
+        // Gmail refuses a label id it doesn't know, for adding and for removing.
+        if ([...add, ...remove].some((id) => !real.has(id))) return { successful: false, data: {}, error: 'Invalid label id' };
+        for (const m of list) m.labels = [...new Set([...m.labels.filter((l) => !remove.includes(l)), ...add])];
+        if (fail === 'sent-then-timeout') {
+          this.failNext.delete(slug);
+          throw new Error('ETIMEDOUT after the change (fake)');
+        }
+        return ok({ success: true, response_dict: { id: args.thread_id } });
       }
       case 'GOOGLECALENDAR_EVENTS_LIST':
         return ok({ items: box.events.map((e) => ({ id: e.id, summary: e.summary, start: { dateTime: e.start }, end: { dateTime: e.end }, attendees: e.attendees.map((email) => ({ email })) })), nextPageToken: null });

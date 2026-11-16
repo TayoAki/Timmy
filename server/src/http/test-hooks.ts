@@ -55,6 +55,14 @@ export function testRoutes(app: Hono<Env>): void {
       return c.json({ ok: res.ok, message: d.message });
     }
     if (body.op === 'sent') return c.json({ sent: fake.sent(conn.connected_account_id) });
+    // The labels each thread carries in the stand-in mailbox, by name, so a test can see what was filed.
+    if (body.op === 'labels') {
+      const box = fake.accounts.get(conn.connected_account_id)!;
+      const names = new Map([...box.labels].map(([name, id]) => [id, name]));
+      const threads: Record<string, string[]> = {};
+      for (const m of box.messages) threads[m.subject] = [...new Set([...(threads[m.subject] ?? []), ...m.labels.map((l) => names.get(l) ?? l)])].sort();
+      return c.json({ threads });
+    }
     // The person sent an email themselves, from their mail app: it appears in Sent and the provider announces it.
     if (body.op === 'sent-by-hand') {
       const m = body.message as { to: string; subject: string; body: string };

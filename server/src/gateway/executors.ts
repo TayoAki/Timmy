@@ -1,3 +1,5 @@
+import type { Box } from '../../../src/data/types';
+import { labelPlan, timmyLabels } from '../sync/labels';
 import { callTool, connectionById } from '../sync/tools';
 import type { EffectRow, Outcome } from './gateway';
 import type { EffectKind } from './policy';
@@ -43,10 +45,52 @@ const sendMail: Executor = async (e) => {
   return { status: 'completed', result: { via: 'gmail', id: sent.id, threadId: sent.threadId ?? p.threadKey }, externalId: sent.id };
 };
 
+interface FilePayload {
+  connectionId: string;
+  threadKey: string;
+  box: Box;
+}
+
+/** Writes a thread's place (a label, or archived) to the mailbox. */
+const fileMail: Executor = async (e) => {
+  const p = e.payload as unknown as FilePayload;
+  const conn = await connectionById(e.workspace_id, p.connectionId);
+  if (!conn || conn.status !== 'active') return { status: 'failed', error: 'The mailbox is no longer connected.' };
+  if (conn.toolkit !== 'gmail') return { status: 'failed', error: 'Filing in this kind of mailbox isn’t available yet.' };
+  const change = async (refresh: boolean) => {
+    const plan = labelPlan(p.box, await timmyLabels(e.workspace_id, conn, refresh));
+    return { plan, res: await callTool(e.workspace_id, conn.id, 'GMAIL_MODIFY_THREAD_LABELS', { thread_id: p.threadKey, add_label_ids: plan.add, remove_label_ids: plan.remove }, 'send') };
+  };
+  const remembered = !!conn.meta.labels;
+  let { plan, res } = await change(false);
+  // The label ids are remembered. If the person deleted a label in Gmail the remembered id is refused, so a
+  // refusal is tried once more with the labels looked up afresh. A refused change changed nothing.
+  if (!res.successful && remembered) ({ plan, res } = await change(true));
+  if (!res.successful) return { status: 'failed', error: res.error ?? 'Gmail refused the change.' };
+  return { status: 'completed', result: { via: 'gmail', added: plan.add, removed: plan.remove } };
+};
+
 export const EXECUTORS: Partial<Record<EffectKind, Executor>> = {
   'email.send': sendMail,
   'email.reply': sendMail,
+  'mail.modify': fileMail,
 };
+
+/** Whether the mailbox already shows the filing an effect asked for. */
+async function reconcileFiling(e: EffectRow): Promise<Outcome> {
+  const unknown: Outcome = { status: 'uncertain', error: e.error ?? 'unknown' };
+  const p = e.payload as unknown as FilePayload;
+  const conn = await connectionById(e.workspace_id, p.connectionId);
+  if (!conn || conn.status !== 'active' || conn.toolkit !== 'gmail') return unknown;
+  const plan = labelPlan(p.box, await timmyLabels(e.workspace_id, conn));
+  const res = await callTool(e.workspace_id, conn.id, 'GMAIL_FETCH_MESSAGE_BY_THREAD_ID', { thread_id: p.threadKey }, 'send');
+  const messages = res.successful ? ((res.data.messages ?? []) as { labelIds?: string[] }[]) : [];
+  if (!messages.length) return unknown;
+  // Sent copies never carry INBOX, so the inbox label is judged on any message; Timmy's labels on every message.
+  const has = (id: string) => (id === 'INBOX' ? messages.some((m) => m.labelIds?.includes(id)) : messages.every((m) => m.labelIds?.includes(id)));
+  const lacks = (id: string) => messages.every((m) => !m.labelIds?.includes(id));
+  return plan.add.every(has) && plan.remove.every(lacks) ? { status: 'completed', result: { via: 'gmail', reconciled: true } } : unknown;
+}
 
 /**
  * For an effect whose outcome is unknown: look for evidence that it happened.
@@ -54,6 +98,7 @@ export const EXECUTORS: Partial<Record<EffectKind, Executor>> = {
  * failed: absence of evidence is not evidence that nothing was sent.
  */
 export async function reconcile(e: EffectRow): Promise<Outcome> {
+  if (e.kind === 'mail.modify') return reconcileFiling(e);
   if (e.kind !== 'email.send' && e.kind !== 'email.reply') return { status: 'uncertain', error: e.error ?? 'unknown' };
   const p = e.payload as unknown as MailPayload;
   const started = e.executing_at ? new Date(e.executing_at) : new Date(e.created_at);

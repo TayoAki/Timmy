@@ -130,7 +130,8 @@ describe('a person presses Send', () => {
     const thread = (await w.state()).threads.find((t) => t.subject === 'Pricing?')!;
     const out = await w.cmd({ type: 'reply', id: thread.id, body: 'It is $58 per seat.' });
     expect(out.ok).toBe(true);
-    const [e] = await effects();
+    // Replying also files the thread in the mailbox, which is its own record; this test is about the reply.
+    const e = (await effects()).find((x) => x.kind === 'email.reply');
     expect(e).toMatchObject({ kind: 'email.reply', target: 'dana@client.test' });
     await releaseHolds(w);
     const [m] = sent();

@@ -5,11 +5,13 @@
     "no outside write without an approved effect record or a rule": [
       "server/test/gateway.test.ts",
       "server/test/agent.test.ts",
-      "server/test/audit.test.ts"
+      "server/test/audit.test.ts",
+      "server/test/filing.test.ts"
     ],
     "no action runs twice": [
       "server/test/gateway.test.ts",
-      "server/test/agent.test.ts"
+      "server/test/agent.test.ts",
+      "server/test/filing.test.ts"
     ],
     "no cross-workspace reads": [
       "server/test/isolation.test.ts",
@@ -104,6 +106,13 @@
       "status": "pass"
     },
     {
+      "id": "api-filing",
+      "file": "server/test/filing.test.ts",
+      "covers": "sorting or archiving a thread writes the label to the mailbox through an approved effect record; labels made once; Undo files it back; written once on a retried command; who may file; the kill switch; a refusal, a deleted label and a timeout",
+      "tests": 12,
+      "status": "pass"
+    },
+    {
       "id": "demo-e2e",
       "file": "e2e/run-all.sh",
       "covers": "the 12 demo-mode Playwright suites (348 checks)",
@@ -120,9 +129,9 @@
     {
       "id": "live-mail",
       "file": "e2e/live/live-mail.cjs",
-      "covers": "connect a mailbox, receive an email, see the thread, Timmy drafts a reply and it is approved and sent from Approvals, send with undo, reply, audit log",
+      "covers": "connect a mailbox, receive an email, see the thread, sorting it labels it in the mailbox, Timmy drafts a reply and it is approved and sent from Approvals, send with undo, reply, audit log",
       "status": "pass",
-      "tests": 30
+      "tests": 33
     },
     {
       "id": "live-ask",
@@ -180,8 +189,8 @@
     },
     {
       "id": "staging-full",
-      "covers": "the eight live suites against the staging deploy on Railway. The demo suites are not run against a deployed build of this branch: web deploys the older branch.",
-      "status": "todo"
+      "covers": "the eight live suites against the staging deploy on Railway (139 checks on the build with the morning run). The demo suites are not run against a deployed build of this branch: web deploys the older branch.",
+      "status": "pass"
     },
     {
       "id": "prod-smoke",

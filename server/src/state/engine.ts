@@ -121,6 +121,7 @@ export async function runCommand(ctx: Ctx, cmd: { id: string; action: Action }):
     await tx.query('savepoint command');
     try {
       handled = await handle(tx, loaded, ctx, cmd);
+      if (!handled.reject) handled = { ...handled, state: await fileMoves(tx, loaded, ctx, cmd.id, handled.state) };
     } catch (err) {
       if (!(err instanceof GatewayError)) throw err;
       handled = { state: loaded.state, reject: err.message };
@@ -305,6 +306,40 @@ async function gateSends(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; ac
     effects.push(p.effect!);
   }
   return { state, effects, toast: { text: `Sending in ${config.sendHoldSeconds} seconds. Undo to stop it.` } };
+}
+
+/* ───────────── Filing ───────────── */
+
+const BOX_WORDS: Record<string, string> = { inbox: 'back to the inbox', 'follow-up': 'under Follow Up', waiting: 'under Waiting', 'read-through': 'under Read Through', archived: 'to the archive' };
+
+/**
+ * When a command changes where a synced thread sits (sorted, archived, moved back, or put back by Undo), the same
+ * change is written to its mailbox: a label, or out of the inbox. It goes through the gateway like any write. The
+ * person's own action is the approval, and nothing about it reaches anyone else. If the write can't be made
+ * (sending is switched off, the role can't write), the thread still moves in Timmy.
+ */
+async function fileMoves(tx: Tx, loaded: Loaded, ctx: Ctx, commandId: string, next: State): Promise<State> {
+  const prev = loaded.state;
+  if (prev.threads === next.threads) return next;
+  const before = new Map(prev.threads.map((t) => [t.id, t.box]));
+  let state = next;
+  for (const t of next.threads) {
+    const was = before.get(t.id);
+    if (was === undefined || was === t.box || !t.ext?.threadKey || !t.ext.connectionId) continue;
+    const p = await propose(tx, loaded, state, actorOf(ctx), {
+      kind: 'mail.modify',
+      payload: { connectionId: t.ext.connectionId, threadKey: t.ext.threadKey, box: t.box },
+      preview: { lines: [`“${t.subject}” ${BOX_WORDS[t.box] ?? t.box}`] },
+      title: `File “${t.subject}” ${BOX_WORDS[t.box] ?? t.box} in Gmail`,
+      why: 'You moved it in Timmy.',
+      target: t.ext.threadKey,
+      // Not tied to the command for Undo: undoing a move is itself a move, and files the thread back.
+      idempotencyKey: `cmd:${commandId}:file:${t.id}`,
+      source: 'user',
+    });
+    if (p.outcome !== 'blocked') state = p.state;
+  }
+  return state;
 }
 
 /* ───────────── Undo ───────────── */

@@ -39,7 +39,7 @@ export async function prepareMailSend(tx: Tx, workspaceId: string, m: MailSend):
 
   if (m.existing && m.threadId) {
     // One send per thread at a time: a second one while the first is waiting or going out would send it twice.
-    const live = await tx.query(`select 1 from effect where workspace_id = $1 and preview->>'thread' = $2 and status in ('intended', 'approved', 'executing', 'uncertain') limit 1`, [workspaceId, m.threadId]);
+    const live = await tx.query(`select 1 from effect where workspace_id = $1 and kind in ('email.send', 'email.reply') and preview->>'thread' = $2 and status in ('intended', 'approved', 'executing', 'uncertain') limit 1`, [workspaceId, m.threadId]);
     if (live.rows[0]) return { ok: false, reason: 'This thread already has an email waiting to go out. Undo or decide that one first.' };
   }
   return {

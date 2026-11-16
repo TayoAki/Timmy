@@ -29,9 +29,25 @@ run('live-mail', async (browser) => {
   await row.waitFor({ timeout: 10000 });
   ok(true, 'the new thread appears on its own');
   ok(/Dana Whitfield/.test(await page.locator('.main').innerText()), 'the sender shows by name, from the mailbox');
+
   await row.click();
   await page.locator('.main').getByText('Could you send the revised quote by Friday?').first().waitFor();
   ok(true, 'opening the thread shows the message');
+
+  // Sorting it in Timmy files it in the mailbox too: a label for Follow Up, and it stays in Gmail's inbox.
+  const labels = async () => (await api(page, 'POST', '/api/test/fake', { op: 'labels' })).body.threads['Revised quote for 120 seats'] || [];
+  ok(!(await labels()).some((l) => /^Timmy/.test(l)), 'before it is sorted the thread has none of Timmy’s labels in the mailbox');
+  await page.keyboard.press('Escape');
+  await page.click('button[aria-label="Today & mail"]');
+  await page.getByRole('tab', { name: /Triage/ }).click();
+  await page.locator('.suggest-pill').first().click();
+  let filed = [];
+  for (let i = 0; i < 30 && !filed.includes('Timmy Follow Up'); i++) {
+    await page.waitForTimeout(300);
+    filed = await labels();
+  }
+  ok(filed.includes('Timmy Follow Up') && filed.includes('INBOX'), `accepting Timmy’s suggestion labels the thread in Gmail (${filed.join(', ')})`);
+  ok((await sentMail(page)).length === 0, 'filing sends nothing');
 
   // The Draft button: Timmy writes a draft on the server; it shows up in Approvals and nothing is sent.
   const forDraft = (await api(page, 'GET', '/api/v1/state')).body.slices.threads.find((t) => t.subject === 'Revised quote for 120 seats');

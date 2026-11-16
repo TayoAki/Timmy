@@ -80,6 +80,8 @@ export function approverFor(kind: EffectKind, actor: Actor, crm: CrmPolicy): { r
     if (actor.rules.approveCrm) return { route: 'user', self: true };
     return crm.approver === 'revops' ? { route: 'revops', self: false } : { route: 'user', self: false };
   }
+  // Filing mail (labels, archive) reaches nobody else. Anyone who may work the inbox may file it on their own say.
+  if (k.domain === 'mail' && !k.outbound) return { route: 'user', self: actor.rules.work };
   if (actor.rules.approveSends) return { route: 'user', self: true };
   // A delegate works on the exec's behalf; the exec decides.
   if (actor.role.split(',').map((r) => r.trim()).includes('assistant')) return { route: 'exec', self: false };
@@ -93,6 +95,8 @@ export function mayDecide(route: Route, kind: EffectKind, actor: Actor, effect: 
   if (route === 'revops') return actor.rules.approveCrm;
   if (route === 'exec') return admin || (!!effect.on_behalf_of && effect.on_behalf_of === actor.userId);
   if (k.domain === 'crm') return actor.rules.approveCrm;
+  // Filing that Timmy proposed can be decided by anyone who may work the inbox.
+  if (k.domain === 'mail' && !k.outbound) return actor.rules.work;
   if (!actor.rules.approveSends) return false;
   // Members approve what they asked for; owners and admins may approve anything in the workspace.
   return admin || effect.requested_by === actor.userId || effect.requested_by === 'agent' || effect.on_behalf_of === actor.userId;
