@@ -7,3 +7,5 @@ dist
 .claude/skills/impeccable/scripts/bin/
 .claude/settings.local.json
 .craft-build/
+
+e2e/shots/
