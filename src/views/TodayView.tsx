@@ -89,6 +89,9 @@ function Brief() {
   const focus = state.focus;
   const scopeProject = state.scope ? state.ws.projects[state.scope] : undefined;
   const phone = useMedia(PHONE);
+  const mailConnected = !!state.conn.apps.gmail?.connected;
+  // The run's own account of itself is only shown on the day it happened.
+  const ranToday = state.run && dayDiff(state.run.at) === 0 ? state.run : null;
 
   if (state.calm) return <CalmBrief ranked={ranked} alerts={alerts} approvals={approvals.length} />;
 
@@ -97,16 +100,16 @@ function Brief() {
       <div className="brief-head">
         <h1 className="page-title">Good morning, {state.conn.delegate.on ? state.conn.delegate.me.split(' ')[0] : meFirst()}.</h1>
         {state.conn.delegate.on && <span className="delegate-chip">Working for {state.conn.delegate.exec}</span>}
-        {/* The run-time control comes back on real workspaces with the scheduled morning run (phase 1). */}
-        {!isLive() && <RunControl />}
+        {/* A real workspace's run only happens once a mailbox is connected, so the control waits for that too. */}
+        {(!isLive() || mailConnected) && <RunControl />}
         <CalmToggle />
       </div>
       <p className="page-sub">
         {fmtLongDate(NOW)}.{' '}
         {!isLive()
           ? `Timmy sorted ${LAST_RUN_COUNT} emails this morning.`
-          : state.conn.apps.gmail?.connected || state.conn.apps.outlook?.connected
-            ? `${plural(state.threads.filter((t) => t.box === 'inbox').length, 'thread')} in your inbox.`
+          : mailConnected
+            ? `${ranToday ? `Timmy’s morning run at ${fmtTime(ranToday.at)} found ${plural(ranToday.sorted, 'thread')} with new mail and drafted ${ranToday.drafted === 1 ? '1 reply' : `${ranToday.drafted} replies`}. ` : ''}${plural(state.threads.filter((t) => t.box === 'inbox').length, 'thread')} in your inbox.`
             : 'Connect your mail in Connections and Timmy starts working on it.'}{' '}
         {urgent ? `${plural(urgent, 'thing')} ${urgent === 1 ? 'is' : 'are'} urgent` : 'Nothing is urgent'}
         {approvals.length ? `, and ${plural(approvals.length, 'item')} ${approvals.length === 1 ? 'needs' : 'need'} your approval.` : '.'}

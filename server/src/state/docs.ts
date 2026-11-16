@@ -261,8 +261,9 @@ export async function commitState(tx: Tx, cur: Loaded, next: State, origin = 'co
 }
 
 /** Patches made after `since`, oldest first, or null when too old to replay (the client reloads). */
-export async function changesSince(tx: Tx, workspaceId: string, since: number): Promise<{ rev: number; patches: Patch[] }[] | null> {
-  const { rows } = await tx.query('select rev, patches::text as patches from state_change where workspace_id = $1 and rev > $2 order by rev limit 500', [workspaceId, since]);
+export async function changesSince(tx: Tx, workspaceId: string, since: number): Promise<{ rev: number; patches: Patch[]; command?: string }[] | null> {
+  const { rows } = await tx.query('select rev, patches::text as patches, origin from state_change where workspace_id = $1 and rev > $2 order by rev limit 500', [workspaceId, since]);
   if (rows.length && (rows[0].rev as number) !== since + 1) return null;
-  return rows.map((r) => ({ rev: r.rev as number, patches: fromWire<Patch[]>(r.patches as string) }));
+  // A change made by a command says which one, so the tab that sent it knows its own change when it comes back on the stream.
+  return rows.map((r) => ({ rev: r.rev as number, patches: fromWire<Patch[]>(r.patches as string), ...(String(r.origin ?? '').startsWith('cmd:') ? { command: String(r.origin).slice(4) } : {}) }));
 }

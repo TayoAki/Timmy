@@ -34,7 +34,7 @@ export interface DraftResult {
 const lastInbound = (t: Thread) => [...t.messages].reverse().find((m) => m.from !== 'me');
 
 /** Writes a reply draft for a thread and saves it on the thread. Returns why not, when it can't. */
-export async function draftReply(workspaceId: string, threadId: string, opts: { note?: string; userName?: string } = {}): Promise<DraftResult> {
+export async function draftReply(workspaceId: string, threadId: string, opts: { note?: string; userName?: string; unattended?: boolean } = {}): Promise<DraftResult> {
   const { state, workspace } = await readState(workspaceId);
   const thread = state.threads.find((t) => t.id === threadId);
   if (!thread) return { ok: false, reason: 'That thread is no longer here.' };
@@ -52,6 +52,8 @@ export async function draftReply(workspaceId: string, threadId: string, opts: { 
     const res = await complete({
       workspaceId,
       route: 'draft',
+      // A draft the morning run writes was asked for by nobody; it draws on the share set aside for that.
+      unattended: opts.unattended,
       model,
       effort: 'low',
       maxTokens: 1500,

@@ -2,6 +2,7 @@ import { config } from '../config';
 import { sysPool } from '../db/pool';
 import { dueEffects, executeEffect, expireStaleApprovals, onEffectApproved, onEffectSettled, reconcileEffect, staleExecuting } from '../gateway/gateway';
 import { draftReply } from '../agent/draft';
+import { dueWorkspaces, morningRun } from '../agent/morning';
 import { needsReading, readThread } from '../agent/read';
 import { modelReady } from '../providers/model';
 import { readState } from '../state/mutate';
@@ -98,6 +99,20 @@ export function registerJobs() {
 
   defineJob('calendar.sync', async (d) => {
     await syncCalendar(String(d.workspaceId), String(d.connectionId));
+  });
+
+  // The morning run: every five minutes, start it for each workspace whose chosen time has come in its own time zone.
+  defineJob(
+    'morning.tick',
+    async () => {
+      // The run itself claims the day, so a workspace listed twice before its run starts still runs once.
+      for (const workspaceId of await dueWorkspaces(sysPool)) enqueueSoon('morning.run', { workspaceId }, { singletonKey: `morning:${workspaceId}` });
+    },
+    '*/5 * * * *',
+  );
+
+  defineJob('morning.run', async (d) => {
+    await morningRun(String(d.workspaceId));
   });
 
   defineJob('run.resume', async (d) => {

@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { subscribe } from '../src/state/hub';
 import { startHub, stopHub } from '../src/state/hub';
 import { forget } from '../src/state/docs';
+import { mutate } from '../src/state/mutate';
 import { addMember, boot, newWorkspace, rows, type Client } from './helpers';
 
 let w: Client;
@@ -135,6 +136,20 @@ describe('the stream', () => {
     await new Promise((r) => setTimeout(r, 300));
     expect(late).toEqual([rev + 2, rev + 3]);
     off3();
+    await stopHub();
+  });
+
+  it('a change made by a command says which command, so the tab that sent it knows its own change', async () => {
+    await startHub();
+    const seen: { rev: number; command?: string }[] = [];
+    const off = subscribe({ workspaceId: w.workspaceId, rev: (await w.state()).rev, send: (e, d) => e === 'patch' && seen.push(d as { rev: number; command?: string }) });
+    const made = await w.cmd({ type: 'addRule', group: 'triage', text: 'Flag mail from my accountant.' }, 'named-command-1');
+    // A change that no command made (new mail, a job) carries no command id.
+    await mutate(w.workspaceId, 'job', async (_tx, loaded) => ({ state: { ...loaded.state, highlight: 'set by a job' }, result: null }));
+    await new Promise((r) => setTimeout(r, 400));
+    expect(seen.map((s) => s.command)).toEqual(['named-command-1', undefined]);
+    expect(seen[0]!.rev).toBe(made.rev);
+    off();
     await stopHub();
   });
 });

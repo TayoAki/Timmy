@@ -104,7 +104,7 @@ async function catchUp(sub: Subscriber) {
         return;
       }
       for (const c of changes) {
-        sub.send('patch', { rev: c.rev, patches: c.patches as Patch[] });
+        sub.send('patch', { rev: c.rev, patches: c.patches as Patch[], ...(c.command ? { command: c.command } : {}) });
         sub.rev = c.rev;
       }
       if (changes.length) sub.again = true;

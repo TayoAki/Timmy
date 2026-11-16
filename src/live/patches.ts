@@ -37,6 +37,7 @@ export const SLICES: SliceSpec[] = [
   slice('highlightDone', 'value'),
   slice('dismissed', 'value'),
   slice('schedule', 'value'),
+  slice('run', 'value'),
   slice('calm', 'value'),
   slice('showDeals', 'value'),
   slice('clients', 'value'),

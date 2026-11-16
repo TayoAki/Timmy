@@ -34,7 +34,7 @@ run('live-signup', async (browser) => {
   await page.getByText('Done without asking').first().waitFor();
   const approvals = await page.locator('body').innerText();
   ok(/Nothing yet\. Timmy asks before every change/.test(approvals), 'Approvals does not list sample work as done without asking');
-  ok(!/morning run/.test(approvals), 'and does not describe a morning run that has not happened');
+  ok(!/Last run|First morning run|next (today|tomorrow|\w+day) at/i.test(approvals), 'and no morning run time is claimed while no mailbox is connected');
   await page.click('button[aria-label="Connections"]');
   const outlook = page.locator('li.conn-card', { hasText: 'Outlook' }).first();
   await outlook.waitFor();
@@ -58,13 +58,25 @@ run('live-signup', async (browser) => {
   const before = await page.locator('.rule').count();
   await page.locator('.rule-add input, input[placeholder*="rule" i]').first().fill('Always flag mail from my accountant.');
   await page.keyboard.press('Enter');
-  await page.waitForTimeout(600);
-  ok((await page.locator('.rule').count()) === before + 1, 'a new rule appears');
+  // On a deployed server the answer takes longer than on one machine, so this waits for the settled state
+  // (the rule there exactly once) instead of looking after a fixed pause, and says what it saw if it never settles.
+  const added = page.locator('.rule', { hasText: 'Always flag mail from my accountant.' });
+  let seen = [];
+  for (let i = 0; i < 25; i++) {
+    seen = [await page.locator('.rule').count(), await added.count()];
+    if (seen[0] === before + 1 && seen[1] === 1) break;
+    await page.waitForTimeout(200);
+  }
+  const notice = await page.locator('.toast').allInnerTexts();
+  ok(seen[0] === before + 1 && seen[1] === 1, `a new rule appears, once (rules before ${before}, now ${seen[0]}, the new one ${seen[1]} time(s); notices: ${notice.join(' | ') || 'none'})`);
+  // Reloading straight away, before the server has answered: the change must not be lost with the old page.
   await page.reload();
   await page.locator('.main').waitFor();
   await page.click('button[aria-label="Rules & settings"]');
   await page.getByRole('tab', { name: 'Triage' }).click();
-  ok(/Always flag mail from my accountant/.test(await page.locator('.main').innerText()), 'the rule is still there after a reload');
+  const kept = await page.locator('.rule', { hasText: 'Always flag mail from my accountant.' }).waitFor({ timeout: 8000 }).then(() => true, () => false);
+  ok(kept, 'the rule is still there after an immediate reload');
+  ok((await page.locator('.rule', { hasText: 'Always flag mail from my accountant.' }).count()) === 1, 'and it is there once');
 
   await page.getByRole('tab', { name: 'Approvals' }).click();
   await page.locator('.live-settings').getByRole('button', { name: 'Sign out' }).click();

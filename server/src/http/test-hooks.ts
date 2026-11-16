@@ -4,6 +4,7 @@
  */
 import { timingSafeEqual } from 'node:crypto';
 import type { Hono } from 'hono';
+import { morningRun } from '../agent/morning';
 import { config, isLocal } from '../config';
 import { withWorkspace } from '../db/pool';
 import { executeEffect } from '../gateway/gateway';
@@ -71,6 +72,13 @@ export function testRoutes(app: Hono<Env>): void {
       return c.json({ ok: true });
     }
     return c.json({ error: 'unknown op' }, 400);
+  });
+
+  // Lets a test start the workspace's morning run now instead of waiting for its scheduled time.
+  app.post('/api/test/morning-run', requireWorkspace, async (c) => {
+    const run = await morningRun(ctxOf(c).workspaceId);
+    await inlineJobs()?.drain();
+    return c.json({ run });
   });
 
   // Lets a test end the undo window now instead of waiting it out.

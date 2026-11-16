@@ -1,7 +1,7 @@
 import { isLive } from '../live/clock';
 import { Check, Flame, Focus, Inbox, Monitor, Moon, Search, Stamp, Sun, type LucideIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { fmtTime } from '../lib/format';
+import { dayDiff, fmtDay, fmtTime } from '../lib/format';
 import { scopedApprovals, scopedThreads } from '../state/scope';
 import { LAST_RUN, nextRun, whenLabel } from '../state/schedule';
 import { inBox, useStore } from '../state/store';
@@ -9,6 +9,9 @@ import { openThreads, useUrgency } from '../state/urgency';
 import { MODES, PALETTES, Swatch, useTheme, type Mode } from '../state/theme';
 import { AssistantLauncher } from '../agent/Assistant';
 import { PhoneTabs } from './PhoneNav';
+
+/** "8:02 AM" for a run today, "Mon, Nov 16, 8:02 AM" for an earlier one. */
+const fmtRunDay = (d: Date) => (dayDiff(d) === 0 ? fmtTime(d) : `${fmtDay(d)}, ${fmtTime(d)}`);
 
 const MODE_ICON: Record<Mode, typeof Sun> = { light: Sun, dark: Moon, system: Monitor };
 const FOCUS_KEY = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘.' : 'Ctrl+.';
@@ -35,9 +38,11 @@ export function BottomBar() {
         ) : (
           <span className="bar-status-text">
             <strong>{project ? `Showing ${project.name}` : isLive() && !state.conn.apps.gmail?.connected && !state.conn.apps.outlook?.connected ? 'Connect your mail to get started' : 'Timmy is up to date'}</strong>
-            {/* A real workspace has no scheduled run yet: Timmy works on mail as it arrives, so no run time is claimed. */}
-            {isLive() ? (
-              <span className="bar-sub">Timmy reads new mail as it arrives</span>
+            {/* A real workspace's run needs a connected mailbox; without one, no run time is claimed. */}
+            {isLive() && !state.conn.apps.gmail?.connected ? null : isLive() ? (
+              <button className="bar-link" onClick={() => dispatch({ type: 'navigate', route: { view: 'rules', tab: 'schedule' } })} title="Change the morning run in Settings › Schedule">
+                {state.run ? `Last run ${fmtRunDay(state.run.at)} · ` : ''}{next ? `${state.run ? 'next' : 'First morning run'} ${whenLabel(next)}` : 'morning run paused'}
+              </button>
             ) : (
               <button className="bar-link" onClick={() => dispatch({ type: 'navigate', route: { view: 'rules', tab: 'schedule' } })} title="Change the morning run in Settings › Schedule">
                 {`Last run ${fmtTime(LAST_RUN)} · `}{next ? `next ${whenLabel(next)}` : 'morning run paused'}

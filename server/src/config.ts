@@ -106,6 +106,10 @@ export const config = {
   /** After the first backfill pass, the model reads the newest threads people wrote: this many at most, this far back. */
   firstReadThreads: Number(env.TIMMY_FIRST_READ_THREADS ?? 40),
   firstReadDays: Number(env.TIMMY_FIRST_READ_DAYS ?? 7),
+  /** The morning run: how many threads it reads and how many replies it drafts at most, and how old a thread may be to get a draft. */
+  morningReadLimit: Number(env.TIMMY_MORNING_READ_LIMIT ?? 30),
+  morningDraftLimit: Number(env.TIMMY_MORNING_DRAFT_LIMIT ?? 10),
+  morningDraftDays: Number(env.TIMMY_MORNING_DRAFT_DAYS ?? 14),
 };
 
 export const isProd = () => config.stage === 'production';

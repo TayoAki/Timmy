@@ -58,6 +58,18 @@ export function LiveStoreProvider({ profile, snapshot, children }: { profile: Li
   const rev = useRef(snapshot.rev);
   const waiting = useRef<{ id: string; action: Action }[]>([]);
 
+  // The morning run happens on the workspace's own clock. Until someone sets it, that is the clock of the
+  // owner or admin who first opens the workspace; it is not changed again when they travel.
+  useEffect(() => {
+    if (!profile.can.policy) return;
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (!zone || zone === 'UTC') return;
+    void api
+      .settings()
+      .then((s) => (s.timezone === 'UTC' ? api.saveSettings({ timezone: zone }) : undefined))
+      .catch(() => {});
+  }, [profile]);
+
   const show = useCallback((next: State) => {
     shown.current = next;
     setState(next);
@@ -163,7 +175,10 @@ export function LiveStoreProvider({ profile, snapshot, children }: { profile: Li
   useEffect(() => {
     const es = new EventSource(`/api/v1/stream?rev=${rev.current}`);
     es.addEventListener('patch', (e) => {
-      const d = fromWire<{ rev: number; patches: Patch[] }>((e as MessageEvent).data);
+      const d = fromWire<{ rev: number; patches: Patch[]; command?: string }>((e as MessageEvent).data);
+      // This tab's own change can come back on the stream before the answer to its request does. It is confirmed
+      // from that moment, so it is no longer replayed on top (which would show it twice until the answer arrived).
+      if (d.command) waiting.current = waiting.current.filter((w) => w.id !== d.command);
       if (accept(d.rev, d.patches)) rebase();
     });
     es.addEventListener('reload', () => void reload());

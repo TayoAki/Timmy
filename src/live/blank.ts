@@ -62,5 +62,6 @@ export function blankState({ first, company }: BlankOptions): State {
     },
     clients: { active: 'own', names: { own: company }, stash: {} },
     pending: [],
+    run: null,
   };
 }

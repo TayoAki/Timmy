@@ -126,7 +126,7 @@ export async function runCommand(ctx: Ctx, cmd: { id: string; action: Action }):
       handled = { state: loaded.state, reject: err.message };
     }
     if (handled.reject) await tx.query('rollback to savepoint command');
-    commit = handled.reject ? null : await commitState(tx, loaded, handled.state, 'command');
+    commit = handled.reject ? null : await commitState(tx, loaded, handled.state, `cmd:${cmd.id}`);
     const out: CommandResult = {
       ok: !handled.reject,
       rev: commit?.rev ?? loaded.rev,

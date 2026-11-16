@@ -12,8 +12,12 @@ export class ApiError extends Error {
 }
 
 /** One request to Timmy's API. Same origin, so the sign-in cookie travels on its own. */
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(path, { method, credentials: 'same-origin', headers: body !== undefined ? { 'content-type': 'application/json' } : undefined, body: body !== undefined ? toWire(body) : undefined });
+async function call<T>(method: string, path: string, body?: unknown, opts: { outliveThePage?: boolean } = {}): Promise<T> {
+  const payload = body !== undefined ? toWire(body) : undefined;
+  // A change made a moment before the tab is closed or reloaded must still reach the server. The browser finishes
+  // such a request after the page is gone, as long as it is small (its limit is 64 KB across requests in flight).
+  const keepalive = !!opts.outliveThePage && (payload?.length ?? 0) < 30_000;
+  const res = await fetch(path, { method, credentials: 'same-origin', headers: body !== undefined ? { 'content-type': 'application/json' } : undefined, body: payload, keepalive });
   const text = await res.text();
   let data: Record<string, unknown> = {};
   try {
@@ -61,11 +65,11 @@ export const api = {
   invitation: (id: string) => call<Invitation>('GET', `/api/auth/organization/get-invitation?id=${encodeURIComponent(id)}`),
   acceptInvitation: (invitationId: string) => call<{ invitation?: { organizationId?: string } }>('POST', '/api/auth/organization/accept-invitation', { invitationId }),
   state: () => call<Snapshot>('GET', '/api/v1/state'),
-  command: (id: string, action: Action) => call<CommandResult>('POST', '/api/v1/commands', { id, action }),
+  command: (id: string, action: Action) => call<CommandResult>('POST', '/api/v1/commands', { id, action }, { outliveThePage: true }),
   connect: (app: string) => call<{ redirectUrl: string }>('POST', `/api/v1/connections/${app}/connect`, {}),
   disconnect: (app: string) => call('POST', `/api/v1/connections/${app}/disconnect`, {}),
   settings: () =>
-    call<{ model: string; models: LiveProfile['models']; killSwitch: boolean; monthlySpendCapUsd: number; maxConcurrentRuns: number; limits: { monthlySpendCapUsd: number; maxConcurrentRuns: number } }>('GET', '/api/v1/settings'),
-  saveSettings: (patch: { model?: string; killSwitch?: boolean; monthlySpendCapUsd?: number }) => call('PATCH', '/api/v1/settings', patch),
+    call<{ model: string; models: LiveProfile['models']; killSwitch: boolean; timezone: string; monthlySpendCapUsd: number; maxConcurrentRuns: number; limits: { monthlySpendCapUsd: number; maxConcurrentRuns: number } }>('GET', '/api/v1/settings'),
+  saveSettings: (patch: { model?: string; killSwitch?: boolean; monthlySpendCapUsd?: number; timezone?: string }) => call('PATCH', '/api/v1/settings', patch),
   audit: () => call<{ entries: { id: number; at: Date; actor: string; action: string; effect_id: string | null; detail: Record<string, unknown> }[] }>('GET', '/api/v1/audit?limit=100'),
 };

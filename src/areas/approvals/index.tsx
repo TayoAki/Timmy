@@ -153,7 +153,7 @@ function Queue({ all, filter }: { all: Approval[]; filter?: ApprovalKind }) {
           <EmptyState
             icon={Check}
             title={filter ? `No ${APPROVAL_KINDS[filter].plural.toLowerCase()} waiting` : 'Nothing is waiting on you'}
-            body={isLive() ? 'Drafts you ask Timmy for, and emails it prepares in the chat, wait here for your OK.' : next ? `Timmy brings new drafts and decisions here after the next run, ${whenLabel(next)}.` : 'The morning run is paused. Turn it back on in Settings › Schedule.'}
+            body={isLive() && !state.conn.apps.gmail?.connected ? 'Drafts you ask Timmy for, and emails it prepares in the chat, wait here for your OK.' : next ? `Timmy brings new drafts and decisions here after the next run, ${whenLabel(next)}.` : 'The morning run is paused. Turn it back on in Settings › Schedule.'}
             action={
               filter ? (
                 <button className="btn btn-sm" onClick={() => dispatch({ type: 'navigate', route: { view: 'approvals', tab: 'open' } })}>
@@ -304,7 +304,7 @@ export function ApprovalsContext() {
       <Section title="How approvals work">
         <ol className="ap-steps">
           <li>
-            <strong>Timmy prepares.</strong> {isLive() ? 'It drafts a reply when you ask for one, and prepares the emails you ask for in the chat.' : 'During the morning run it drafts replies, works out the numbers and lines up invites and CRM changes.'}
+            <strong>Timmy prepares.</strong> {isLive() ? 'In the morning run it drafts replies to mail that needs an answer. It also drafts when you ask, and prepares the emails you ask for in the chat.' : 'During the morning run it drafts replies, works out the numbers and lines up invites and CRM changes.'}
           </li>
           <li>
             <strong>You decide.</strong> Approve, edit or turn it down here, or on the email it came from.

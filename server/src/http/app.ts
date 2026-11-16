@@ -4,6 +4,7 @@ import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { secureHeaders } from 'hono/secure-headers';
 import { streamSSE } from 'hono/streaming';
+import { isTimeZone } from '../agent/morning';
 import { auth } from '../auth/auth';
 import { MODEL_ALLOWLIST, config, isLocal, modelFor } from '../config';
 import { sysPool, withWorkspace } from '../db/pool';
@@ -181,10 +182,11 @@ export function buildApp(): Hono<Env> {
     if (body.approvalMode !== undefined && body.approvalMode !== 'ask' && body.approvalMode !== 'auto') return c.json({ error: 'Approval mode is ask or auto.' }, 400);
     const cap = body.monthlySpendCapUsd;
     if (cap !== undefined && !(typeof cap === 'number' && cap >= 0 && cap <= config.spendCapCeilingUsd)) return c.json({ error: `The monthly limit can be anything from $0 to $${config.spendCapCeilingUsd}.` }, 400);
+    if (body.timezone !== undefined && !(typeof body.timezone === 'string' && body.timezone.length <= 64 && isTimeZone(body.timezone))) return c.json({ error: 'That isn’t a time zone Timmy knows.' }, 400);
     const runs = body.maxConcurrentRuns;
     if (runs !== undefined && !(Number.isInteger(runs) && runs >= 1 && runs <= config.concurrentRunsCeiling)) return c.json({ error: `Timmy can work on 1 to ${config.concurrentRunsCeiling} things at once.` }, 400);
     // Only the settings named here are stored and logged; anything else in the request is ignored.
-    const change = { model: body.model, approvalMode: body.approvalMode, killSwitch: typeof body.killSwitch === 'boolean' ? body.killSwitch : undefined, timezone: typeof body.timezone === 'string' ? body.timezone.slice(0, 64) : undefined, monthlySpendCapUsd: cap, maxConcurrentRuns: runs };
+    const change = { model: body.model, approvalMode: body.approvalMode, killSwitch: typeof body.killSwitch === 'boolean' ? body.killSwitch : undefined, timezone: body.timezone, monthlySpendCapUsd: cap, maxConcurrentRuns: runs };
     await withWorkspace({ workspaceId: ctx.workspaceId, userId: ctx.user.id }, async (tx) => {
       await tx.query(
         `update workspace set model_id = coalesce($2, model_id), approval_mode = coalesce($3, approval_mode), kill_switch = coalesce($4, kill_switch), timezone = coalesce($5, timezone),

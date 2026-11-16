@@ -18,6 +18,7 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 | Model layer (OpenRouter), model picker, cost log, spend cap | Built. Real calls made on Claude Opus 5.5. An owner can set the monthly limit in Settings, up to a ceiling the server sets ($200 by default). No fallback model is configured (see decision 6). |
 | Agent loop (leased runs, checkpoints, pause for approval), Ask over mail | Built. |
 | Reading mail and drafting (phase 1, started early) | Built: the model reads threads people wrote and proposes a sort; the Draft button writes a draft. |
+| The morning run (phase 1) | Built. At the time and on the days set in Settings › Schedule, in the workspace's own time zone, Timmy checks the mailbox for anything the triggers missed, reads what people wrote, and drafts replies to what needs an answer (10 at most). It moves nothing and sends nothing; the drafts wait in Approvals. Today and the activity log say what it did. It needs a connected mailbox, and no run time is shown without one. |
 | Cold email (phase 2, built early because the decision was made) | Built as decided: Timmy writes it and opens Gmail's compose window; nothing cold goes through an API. The lead is marked contacted when sync sees the email in Sent, and replies show in the Unibox. |
 | Frontend live mode (`VITE_TIMMY_LIVE=1`) | Built: sign-in, onboarding, state from the API, Connect buttons, model picker, monthly limit, approvals for writes Timmy proposes. The demo is unchanged and still the default build. |
 | Railway | `app` (API + live app), `pgvector` and the bucket `timmy-files` exist in `production` and `staging`. Both `app` services have the OpenRouter and Composio keys. |
@@ -49,7 +50,7 @@ BASE=https://app-staging-fcb4f05d.up.railway.app/ TEST_TOKEN=<the TIMMY_TEST_TOK
 bash scripts/dev.sh          # local Postgres with pgvector, then every suite
 bash scripts/dev.sh server   # the API's unit and integration tests
 bash scripts/dev.sh demo     # the 12 demo-mode Playwright suites
-bash scripts/dev.sh live     # the 7 live-mode Playwright suites (fake providers)
+bash scripts/dev.sh live     # the 8 live-mode Playwright suites (fake providers)
 ```
 
 Local Postgres stops when the cloud session's worker restarts; `bash scripts/dev.sh db` starts it again.
@@ -61,9 +62,9 @@ Cost measurement: `server/scripts/measure-cost.ts` (the header says how to run i
 
 | Suite | Result |
 | --- | --- |
-| API unit and integration (`server/test`, 10 files) | 177 of 177 pass |
+| API unit and integration (`server/test`, 11 files) | 187 of 187 pass |
 | Demo-mode Playwright (`e2e/`, 12 suites, 348 checks) | 12 of 12 pass |
-| Live-mode Playwright (`e2e/live/`, 7 suites, 124 checks) | 7 of 7 pass |
+| Live-mode Playwright (`e2e/live/`, 8 suites, 139 checks) | 8 of 8 pass |
 | Live-mode Playwright against **staging** (Railway) | Last full pass was 6 of 6 (91 checks) on the commit before the code review. To be run again on this one once it has deployed. |
 | Demo suites against a deployed build of this branch | Not run: `web` deploys the older branch, and I won't change that service without your OK |
 | Real-provider smoke (real Gmail through Composio) | Not run: needs a test Gmail account connected by a person |
@@ -143,6 +144,8 @@ Also changed from its notes: a From header's comment is no longer read as the se
 
 **A rule I changed because the audit raised it, for you to confirm or reverse:** an email leaves under the name of whoever connected the mailbox. A send from that mailbox by anyone else who is not an owner or admin now waits for the mailbox's owner, the same way a delegate's send waits for the exec. Before, any member could send from the workspace's mailbox on their own approval.
 
+**Found by running the suites on staging:** a change made a moment before the page was reloaded or closed could be lost, because the request that saves it was cut off with the page. It showed up as the sign-up suite failing about half the time on staging and never on one machine. Saves now finish even after the page is gone. A tab also no longer shows its own change twice for a moment when the stream delivers it before the answer to its request. `e2e/live/live-signup.cjs` now reloads immediately after adding a rule, on purpose, and checks the rule is there once.
+
 Not done, by choice: a full content-security policy for scripts (the dictation model loads from a CDN, and the policy needs an inventory first); pinning the Docker base image by digest; rate limits on commands and chat beyond the cap on jobs at once; a narrower database role for the API process (it holds the owner's credentials); cleaning the document viewers' saved files at sign-out. The audit could not check four things from where it ran: stream load on the shared database pools, memory use on a very large mailbox, how long pg-boss keeps finished jobs, and where the prebuilt document-viewer binaries came from.
 
 ## Code review (Nov 16, 2026)
@@ -176,6 +179,7 @@ Test changes that came with this, so you can check them:
 7. **An app can be connected only once Timmy reads it or acts through it.** Outlook and Drive had Connect buttons that led to a connection nothing used. They now show as coming soon, like the rest, until phase 1 builds them.
 8. **Auto mode is not offered in Settings yet.** The only thing it may ever decide is routine filing in the person's own mailbox, and nothing files mail yet, so the setting did nothing. It comes back with label and archive write-back.
 9. **Limits.** A workspace's owner or admin can set its monthly model limit ($50 to start) and how many jobs run at once (2 to start), up to ceilings set on the server (`TIMMY_SPEND_CAP_CEILING_USD`, default $200; `TIMMY_CONCURRENT_RUNS_CEILING`, default 4). The ceilings protect whoever pays the model bill until billing exists. The limit on jobs applies to starting new work; a job that is waiting for an approval always resumes.
+11. **The morning run only prepares.** It drafts for threads you put in Follow Up, and for inbox threads Timmy read as needing a reply with at least medium confidence, where the other person wrote last and the thread is no older than 14 days. It never accepts a triage suggestion for you. Its model cost counts against the half of the monthly limit set aside for work nobody asked for. The workspace's time zone is taken from the owner's browser the first time they open it.
 10. **One everyday mailbox per workspace in phase 0.** It is who "me" is in that workspace's mail. A mailbox per member comes with phase 1.
 
 ## Needs your attention
@@ -195,13 +199,12 @@ Test changes that came with this, so you can check them:
 ## What's next
 
 1. Finish phase 0: a real Gmail account end to end (connect, backfill, a real email in, a real send out), then repeat the cost measurement on it.
-2. Phase 1: the brief, Waiting, decisions, ontology v1, Outlook and Drive. (Reading mail with the model and the Draft button are already built.)
+2. Phase 1, in this order: label and archive written back to Gmail (which also gives Auto mode something to decide), Waiting (track what you asked for, draft a nudge when the date slips), calendar events written to Google Calendar, decisions, ontology v1, Outlook and Drive. Reading mail, the Draft button and the morning run are built.
 
 Known gaps to close in phase 1 (none of them lets anything be sent without approval):
 - Calendar: Google Calendar events are synced in, but events added in Timmy are not written to Google Calendar yet.
 - Labels and archive are not written back to Gmail.
 - Attachments cannot be sent.
-- **The morning run is not scheduled on real workspaces yet.** Timmy reads mail as it arrives and drafts when asked. The Today header and the bottom bar no longer claim a run time, but Settings › Schedule still lets you pick one, and it does nothing yet. This is the first thing phase 1 builds.
 - A few demo screens still show sample wording on a real workspace (the "undo anything for 7 days" line on Activity). The sample archive count, the sample "done without asking" list and the templates signed "Taylor" from "Northpeak" are fixed.
 - A reply typed in the Unibox to a lead who wrote back is treated like cold email (it opens Gmail). It should go through the normal reply path, with approval and the undo window.
 

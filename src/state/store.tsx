@@ -12,7 +12,7 @@ import { connect, connectSeed, gate, type Connect, type ConnHelpers, type ConnOp
 import { outboundSeed } from '../data/outbound-mock';
 import type { Outbound } from '../data/outbound-types';
 import { DEFAULT_SCHEDULE, fmtClock, nextRun, scheduleRule, whenLabel, daysLabel, type Schedule } from './schedule';
-import type { PendingEffect } from '../live/types';
+import type { MorningRun, PendingEffect } from '../live/types';
 import { isLive, liveSuffix } from '../live/clock';
 import { applyOps, decisionOps, firstName, midSentence, patch as wsPatch, personFromMail, personName, put, registerPerson, type WsOp, type WsOptions } from './ws';
 
@@ -162,6 +162,8 @@ export interface State {
   clients: { active: string; names: Record<string, string>; stash: Record<string, Outbound> };
   /** Live mode: writes Timmy proposed that are waiting for someone's OK, or held for the undo window. Empty in the demo. */
   pending: PendingEffect[];
+  /** Live mode: the last scheduled morning run. Null in the demo (which shows its sample run) and before the first one. */
+  run: MorningRun | null;
 }
 
 export type Action =
@@ -263,6 +265,7 @@ export const initial: State = {
   conn: connectSeed(),
   clients: { active: 'own', names: { own: 'Northpeak (your company)' }, stash: {} },
   pending: [],
+  run: null,
 };
 
 // Leads you've met or added to People show up by name on the calendar and in People.

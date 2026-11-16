@@ -36,6 +36,17 @@ export interface LiveProfile {
   approvalMode: 'ask' | 'auto';
 }
 
+/** A scheduled morning run on a real workspace: when it happened and what it prepared. */
+export interface MorningRun {
+  at: Date;
+  /** Threads with new mail from someone else since the run before. */
+  sorted: number;
+  /** Replies drafted and waiting in Approvals. */
+  drafted: number;
+  /** Set when the run stopped short, in words for the person. */
+  note?: string;
+}
+
 /** What the server answers to one command. The browser and the server share this definition. */
 export interface CommandResult {
   ok: boolean;

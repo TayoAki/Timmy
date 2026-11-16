@@ -58,7 +58,7 @@
       "id": "api-commands",
       "file": "server/test/commands.test.ts",
       "covers": "blank workspace, commands, idempotent retry answered only to the sender, undo, ordering, stream, model setting, monthly limit and concurrent-run limit within the server's ceilings",
-      "tests": 15,
+      "tests": 16,
       "status": "pass"
     },
     {
@@ -97,6 +97,13 @@
       "status": "pass"
     },
     {
+      "id": "api-morning",
+      "file": "server/test/morning.test.ts",
+      "covers": "the morning run: due by the workspace's own clock, once a day, drafts replies for what needs an answer, moves nothing and sends nothing, takes in missed mail first, stops at the spending limit",
+      "tests": 9,
+      "status": "pass"
+    },
+    {
       "id": "demo-e2e",
       "file": "e2e/run-all.sh",
       "covers": "the 12 demo-mode Playwright suites (348 checks)",
@@ -106,9 +113,9 @@
     {
       "id": "live-signup",
       "file": "e2e/live/live-signup.cjs",
-      "covers": "sign up, name the workspace, land on an empty Today with none of the demo's sample data, Approvals and Connections show the workspace's own state, sign out and in",
+      "covers": "sign up, name the workspace, land on an empty Today with none of the demo's sample data, Approvals and Connections show the workspace's own state, sign out and in; a change survives an immediate reload",
       "status": "pass",
-      "tests": 27
+      "tests": 28
     },
     {
       "id": "live-mail",
@@ -153,6 +160,13 @@
       "status": "pass"
     },
     {
+      "id": "live-morning",
+      "file": "e2e/live/live-morning.cjs",
+      "covers": "no run time is claimed without a mailbox; after the run Today says what it did, the drafted reply waits in Approvals, nothing is sent or moved",
+      "tests": 14,
+      "status": "pass"
+    },
+    {
       "id": "smoke-openrouter",
       "file": "server/scripts/measure-cost.ts",
       "covers": "real model calls on Claude Opus 5.5 through the agent loop, with cost read back from the usage rows",
@@ -166,7 +180,7 @@
     },
     {
       "id": "staging-full",
-      "covers": "the seven live suites against the staging deploy on Railway. The demo suites are not run against a deployed build of this branch: web deploys the older branch.",
+      "covers": "the eight live suites against the staging deploy on Railway. The demo suites are not run against a deployed build of this branch: web deploys the older branch.",
       "status": "todo"
     },
     {
