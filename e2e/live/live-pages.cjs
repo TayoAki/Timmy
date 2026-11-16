@@ -128,17 +128,15 @@ run('live-pages', async (browser) => {
 
   /* ── The Tasks board ── */
   await page.click('button[aria-label="Tasks"]');
-  await page.getByRole('tab', { name: 'Board' }).click().catch(() => {});
-  await page.locator('.tk-quick, button', { hasText: /Add a task|New task|\+ Add/ }).first().click().catch(() => {});
-  const quick = page.locator('.tk-quick input, input.tk-quick').first();
-  if (await quick.count()) {
-    await quick.fill('Verify the abort program');
-    await page.keyboard.press('Enter');
-    ok(await until(async () => Object.values((await slices())['ws.tasks']).some((t) => t.title === 'Verify the abort program')), 'a task added on the board is kept by the server');
-  } else {
-    const t = await cmd({ type: 'ws', ops: [{ op: 'put', col: 'tasks', item: { id: 'task-abort', title: 'Verify the abort program', status: 'todo', created: new Date().toISOString() } }] });
-    ok(t.body.ok && !!(await slices())['ws.tasks']['task-abort'], 'a task is kept by the server');
-  }
+  await page.locator('.tk-add-row').first().click();
+  await page.getByLabel('New task').fill('Verify the abort program');
+  await page.keyboard.press('Enter');
+  ok(await until(async () => Object.values((await slices())['ws.tasks']).some((t) => t.title === 'Verify the abort program')), 'a task added with the board’s quick add is kept by the server');
+  await page.reload();
+  await page.locator('.main').waitFor();
+  await page.click('button[aria-label="Tasks"]');
+  await page.locator('.main').getByText('Verify the abort program').first().waitFor({ timeout: 10000 });
+  ok(true, 'and is on the board after a reload');
 
   ok(errors.filter((e) => !/400|409/.test(e)).length === 0, `no page errors (${errors.join(' | ')})`);
 });
