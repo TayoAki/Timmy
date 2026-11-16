@@ -63,6 +63,41 @@ run('live-pages', async (browser) => {
   await page.waitForSelector('.nb-editor');
   ok(/Guidance software/.test(await page.locator('.nb-editor').innerText()) && /Priority displays first/.test(await page.locator('.nb-editor').innerText()), 'after a reload the page shows what was typed');
 
+  // Typing that carries on while a save is on its way back is kept. On a real workspace the save's answer is a new
+  // copy of the same page; it must not replace what is on screen, or the letters typed in between are lost.
+  // The click goes on the last block itself: a click on the middle of the page can land on the title while the
+  // page is still settling after a reload, and Enter in the title sends the typing to the top of the page.
+  await page.locator('.nb-editor > *').last().click();
+  await page.waitForFunction(() => document.activeElement?.classList.contains('nb-editor'));
+  await page.keyboard.press('Control+End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Abort modes reviewed');
+  // The editor saves after a short pause. Each wait below ends a little later after that pause, so one of them
+  // lands on the moment the answer arrives, whatever the speed of the connection.
+  const words = [' with', ' the', ' crew', ' on', ' Tuesday', ' and', ' again', ' on', ' Friday'];
+  for (const [i, word] of words.entries()) {
+    await page.waitForTimeout(850 + i * 15);
+    await page.keyboard.type(word, { delay: 12 });
+  }
+  await saved();
+  const whole = /Abort modes reviewed with the crew on Tuesday and again on Friday$/;
+  const line = async () => typed(await slices()).find((t) => /Abort modes/.test(t)) || '(no such line)';
+  ok(await until(async () => whole.test(await line())), `typing that carries on while a save comes back is all kept on the server (it holds “${await line()}”)`);
+  ok(/Abort modes reviewed with the crew on Tuesday and again on Friday/.test(await page.locator('.nb-editor').innerText()), 'and is all on screen');
+
+  // Taking a cover off a page sticks. (Clearing a field is sent as "null": JSON has no word for "not set".)
+  ok((await cmd({ type: 'ws', ops: [{ op: 'patch', col: 'docs', id: 'launch-plan', patch: { cover: { kind: 'gradient', value: 'dawn' } } }] })).body.ok, 'a cover is put on the page');
+  const remove = page.locator('.pg-cover-btn', { hasText: 'Remove' });
+  await remove.waitFor({ state: 'attached', timeout: 8000 });
+  await remove.click({ force: true });
+  ok(await until(async () => (await slices())['ws.docs']['launch-plan'].cover === undefined), 'removing the cover is kept by the server');
+  await page.reload();
+  await page.locator('.main').waitFor();
+  await page.click('button[aria-label="Docs"]');
+  await page.locator('.main').getByText('Launch plan').first().click();
+  await page.waitForSelector('.nb-editor');
+  ok((await page.locator('.pg-cover-btn', { hasText: 'Remove' }).count()) === 0 && whole.test((await page.locator('.nb-editor').innerText()).split('\n').find((l) => /Abort modes/.test(l)) || ''), 'after a reload the cover is still gone and the typed line is whole');
+
   // Something that isn't a page's contents is refused, with a reason, and the page is unchanged.
   const bad = await cmd({ type: 'ws', ops: [{ op: 'patch', col: 'docs', id: 'launch-plan', patch: { blocks: [{ id: 'x', type: 'p', text: 'click', rich: [{ type: 'text', text: 'click', marks: [{ type: 'link', attrs: { href: 'javascript:alert(1)' } }] }] }] } }] });
   ok(bad.body.ok === false && /web or email address/.test(bad.body.error), 'a link that is not a web or email address is refused by the server');
@@ -119,10 +154,14 @@ run('live-pages', async (browser) => {
   ok((await page.locator('.au-card', { hasText: 'Thank new customers' }).count()) === 1, 'after a reload the automation is listed, from the server');
 
   /* ── The website chat's settings ── */
+  // The chat can now really be put on a website (live-chat.cjs covers that end to end). What is checked here is
+  // the switch itself: it is refused while there is no website for the chat to show on, and works once there is.
+  const tooSoon = await cmd({ type: 'ws', ops: [{ op: 'patch', col: 'chat', id: 'site', patch: { on: true } }] });
+  ok(tooSoon.body.ok === false && /Set your website first/.test(tooSoon.body.error) && (await slices())['ws.chat'].site.on === false, 'switching the chat on is refused with the reason while no website is set, and it stays off');
   const chat = await cmd({ type: 'ws', ops: [{ op: 'patch', col: 'chat', id: 'site', patch: { domain: 'apollo.example', faq: [{ id: 'f1', q: 'When is launch?', a: 'July 16.' }] } }] });
   ok(chat.body.ok && (await slices())['ws.chat'].site.domain === 'apollo.example', 'the chat’s settings are kept');
   const chatOn = await cmd({ type: 'ws', ops: [{ op: 'patch', col: 'chat', id: 'site', patch: { on: true } }] });
-  ok(chatOn.body.ok === false && /isn’t switched on yet/.test(chatOn.body.error), 'switching the chat on is refused with the reason, because no website could load it yet');
+  ok(chatOn.body.ok === true && (await slices())['ws.chat'].site.on === true && /^[A-Za-z0-9_-]{32}$/.test((await slices())['ws.chat'].site.siteKey), 'with a website set, the owner switches the chat on, and it has its own key for the snippet');
   const forged = await cmd({ type: 'ws', ops: [{ op: 'put', col: 'chats', item: { id: 'fake', messages: [{ id: 'm', from: 'visitor', text: 'hi', at: new Date().toISOString() }], live: false, unread: true } }] });
   ok(forged.body.ok === false, 'a visitor’s conversation can’t be made up from a member’s screen');
 

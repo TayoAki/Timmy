@@ -124,4 +124,7 @@ export async function releaseHolds(c: Client): Promise<number> {
   return out.ran;
 }
 
+/** A task as the screens make one. The server refuses a task the board could not draw, so fixtures use a whole one. */
+export const task = (id: string, title: string, extra: Record<string, unknown> = {}) => ({ id, title, status: 'todo', priority: 'normal', created: new Date('2026-11-16T09:00:00Z'), ...extra });
+
 export const rows = async <T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> => (await sysPool.query(sql, params)).rows as T[];

@@ -330,6 +330,12 @@ export interface ChatWidget {
   /** When someone asks for a person. */
   handoff: 'notify' | 'book' | 'email';
   booking: boolean;
+  /** On a real workspace: the key in the code snippet. The server makes it; nobody can set it. */
+  siteKey?: string;
+  /** A link to the business's own privacy policy, shown with the email question. */
+  privacyUrl?: string;
+  /** How long visitors' conversations are kept, in months (12 when not set). */
+  retentionMonths?: number;
 }
 
 export interface ChatMsg {
@@ -338,6 +344,10 @@ export interface ChatMsg {
   text: string;
   at: Date;
   image?: string;
+  /** On a real workspace: the name of the teammate who wrote it. */
+  by?: string;
+  /** On a real workspace: the message could not be shown to the visitor. */
+  undelivered?: boolean;
 }
 
 /** One visitor's chat from the website. */
@@ -356,6 +366,8 @@ export interface ChatConvo {
   answers?: Record<string, string>;
   booked?: string;
   page?: string;
+  /** On a real workspace: how many older messages are kept on the server but not listed here. */
+  earlier?: number;
 }
 
 /** A rule Timmy proposes after noticing how you edit its drafts. */

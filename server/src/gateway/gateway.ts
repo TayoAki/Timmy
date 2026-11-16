@@ -120,7 +120,7 @@ function pendingOf(e: EffectRow): PendingEffect {
   const domain = KINDS[e.kind].domain;
   return {
     id: e.id,
-    kind: e.kind === 'mail.modify' ? 'filing' : domain === 'mail' ? 'email' : domain,
+    kind: e.kind === 'mail.modify' ? 'filing' : domain === 'mail' || domain === 'chat' ? 'email' : domain,
     title: e.preview.title ?? KINDS[e.kind].label,
     why: e.preview.why ?? '',
     preview: { from: e.preview.from, to: e.preview.to, cc: e.preview.cc, subject: e.preview.subject, body: e.preview.body, lines: e.preview.lines },
@@ -134,7 +134,8 @@ function pendingOf(e: EffectRow): PendingEffect {
 }
 
 function withPending(state: State, e: EffectRow): State {
-  const show = e.status === 'intended' || (e.status === 'approved' && !!e.hold_until);
+  // A chat reply is never queued for a decision: it is approved as it is proposed, or not proposed at all.
+  const show = KINDS[e.kind].domain !== 'chat' && (e.status === 'intended' || (e.status === 'approved' && !!e.hold_until));
   const rest = state.pending.filter((p) => p.id !== e.id);
   return { ...state, pending: show ? [pendingOf(e), ...rest] : rest };
 }

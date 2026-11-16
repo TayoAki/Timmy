@@ -92,10 +92,9 @@ export function blocksProblem(blocks: unknown): string | null {
 }
 
 function docProblem(doc: Record<string, unknown>): string | null {
-  if (doc.blocks !== undefined) {
-    const bad = blocksProblem(doc.blocks);
-    if (bad) return bad;
-  }
+  // Every page has its list of blocks, even an empty one: the editor draws from it.
+  const bad = blocksProblem(doc.blocks);
+  if (bad) return bad;
   if (doc.icon !== undefined && !text(doc.icon, 16)) return 'That page’s icon isn’t valid.';
   if (doc.cover !== undefined && doc.cover !== null) {
     const c = doc.cover;
@@ -191,6 +190,9 @@ function automationProblem(a: Record<string, unknown>): string | null {
 
 /* ───────────── Website chat ───────────── */
 
+/** How long visitors' conversations may be kept, in months. */
+export const CHAT_RETENTION_MONTHS = [1, 3, 6, 12, 24];
+
 function chatProblem(w: Record<string, unknown>): string | null {
   const c = w as Partial<ChatWidget> & Record<string, unknown>;
   if (c.id !== 'site') return 'A workspace has one website chat.';
@@ -202,15 +204,50 @@ function chatProblem(w: Record<string, unknown>): string | null {
   if (c.handoff !== 'notify' && c.handoff !== 'book' && c.handoff !== 'email') return 'Those chat settings aren’t in a form Timmy can save.';
   if (!Array.isArray(c.questions) || c.questions.length > 10 || !c.questions.every((q) => plain(q) && typeof q.id === 'string' && ID.test(q.id) && text(q.text, 300))) return 'The chat can ask up to 10 questions, each up to 300 characters.';
   if (!Array.isArray(c.faq) || c.faq.length > 60 || !c.faq.every((f) => plain(f) && typeof f.id === 'string' && ID.test(f.id) && text(f.q, 300) && text(f.a, 2000))) return 'The chat can hold up to 60 answers, each up to 2,000 characters.';
+  // The link is shown to every visitor, so it is a plain https address and nothing else.
+  if (c.privacyUrl !== undefined && c.privacyUrl !== '' && !(typeof c.privacyUrl === 'string' && /^https:\/\/[^\s"'<>\\]{1,500}$/.test(c.privacyUrl))) return 'The privacy policy link has to be a web address that starts with https://.';
+  if (c.retentionMonths !== undefined && !CHAT_RETENTION_MONTHS.includes(c.retentionMonths as number)) return 'Chats can be kept for 1, 3, 6, 12 or 24 months.';
+  // Whether this is the right key is the chat's own check (the server makes it); here it only has to look like one.
+  if (c.siteKey !== undefined && !(typeof c.siteKey === 'string' && /^[A-Za-z0-9_-]{20,64}$/.test(c.siteKey))) return 'The key in the code snippet is made by Timmy and can’t be changed.';
+  return null;
+}
+
+/* ───────────── Tasks ───────────── */
+
+const TASK_STATUS = new Set(['todo', 'doing', 'done']);
+const TASK_PRIORITY = new Set(['high', 'normal', 'low']);
+const date = (v: unknown) => (v instanceof Date && !Number.isNaN(v.getTime())) || (typeof v === 'string' && v.length <= 40 && !Number.isNaN(Date.parse(v)));
+
+/** A task every screen can draw. One without a status or a priority breaks the board for everyone in the workspace. */
+function taskProblem(t: Record<string, unknown>): string | null {
+  const refused = 'That task isn’t in a form Timmy can save.';
+  if (!text(t.title, 500)) return 'A task’s title can be up to 500 characters.';
+  if (!TASK_STATUS.has(t.status as string) || !TASK_PRIORITY.has(t.priority as string)) return refused;
+  if (t.notes !== undefined && !text(t.notes, 20_000)) return 'A task’s notes can be up to 20,000 characters.';
+  if (!date(t.created) || (t.due !== undefined && !date(t.due))) return refused;
+  for (const k of ['project', 'thread', 'contact', 'event']) if (t[k] !== undefined && !text(t[k], 200)) return refused;
   return null;
 }
 
 /* ───────────── Every change ───────────── */
 
+/**
+ * JSON has no way to say “undefined”, so a screen that clears a field (taking the cover off a page) sends null
+ * for it, as JSON merge patch does. Here a null in a patch becomes “not set” again, which is how the reducer
+ * and the checks below understand a cleared field. Anything that isn't a well-formed patch is left as it came.
+ */
+export function withClearedFields(ops: unknown): unknown {
+  if (!Array.isArray(ops)) return ops;
+  return ops.map((o) => {
+    if (!plain(o) || o.op !== 'patch' || !plain(o.patch) || !Object.values(o.patch).includes(null)) return o;
+    return { ...o, patch: Object.fromEntries(Object.entries(o.patch).map(([k, v]) => [k, v === null ? undefined : v])) };
+  });
+}
+
 /** The settings on a visitor's conversation that a member may flip. Everything else in it is written by the server. */
 const CHAT_FLAGS = new Set(['unread', 'starred']);
 
-const CHECKS: Partial<Record<string, (item: Record<string, unknown>) => string | null>> = { docs: docProblem, automations: automationProblem, chat: chatProblem };
+const CHECKS: Partial<Record<string, (item: Record<string, unknown>) => string | null>> = { docs: docProblem, automations: automationProblem, chat: chatProblem, tasks: taskProblem };
 
 /** The record a collection really holds under an id: its own, never something every object has. */
 const ownRecord = (col: Record<string, unknown> | undefined, id: string) => (col && Object.hasOwn(col, id) ? (col[id] as Record<string, unknown>) : null);

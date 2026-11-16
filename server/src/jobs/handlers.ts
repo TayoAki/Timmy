@@ -17,6 +17,7 @@ import { backfillMail, ingestThread, reconcileMail } from '../sync/ingest';
 import { MAIL_TOOLKITS } from '../sync/mailbox';
 import { noteItems, pruneOntology } from '../ontology/ontology';
 import { projectPeople } from '../ontology/people';
+import { registerChatJobs } from '../chat/jobs';
 import { defineJob, enqueueSoon } from './jobs';
 
 /** Registers every job and connects the gateway to the queue. Call once at boot. */
@@ -222,6 +223,9 @@ export function registerJobs() {
     },
     '17 3 * * *',
   );
+
+  // The website chat: conversations past their retention period are deleted nightly.
+  registerChatJobs();
 
   onEffectApproved((e) => enqueueSoon('effect.execute', { workspaceId: e.workspace_id, effectId: e.id }, { startAfter: e.hold_until ? new Date(e.hold_until) : 0 }));
   onEffectSettled((e) => {

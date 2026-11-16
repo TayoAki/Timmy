@@ -9,6 +9,7 @@ import type { ApprovalKind, ApprovalRecord } from './approvals';
 import { draftFor } from './drafting';
 import { outbound, type OutOp } from './outbound';
 import { connect, connectSeed, gate, type Connect, type ConnHelpers, type ConnOp } from './connect';
+import { chat, type ChatOp } from './chat';
 import { outboundSeed } from '../data/outbound-mock';
 import type { Outbound } from '../data/outbound-types';
 import { DEFAULT_SCHEDULE, fmtClock, nextRun, scheduleRule, whenLabel, daysLabel, type Schedule } from './schedule';
@@ -218,6 +219,8 @@ export type Action =
   /** Outbound: leads, campaigns, sending, forms, social. */
   | { type: 'out'; op: OutOp }
   | { type: 'conn'; op: ConnOp }
+  /** Website chat: a teammate replies to a visitor, takes a chat over, stars, reads or deletes it. */
+  | { type: 'chat'; op: ChatOp }
   | { type: 'client'; to?: string; create?: string }
   /** The exec or RevOps answered a held action (simulated in this preview). */
   | { type: 'release'; id: string; approve: boolean }
@@ -992,6 +995,9 @@ export function reducer(s: State, a: Action): State {
 
     case 'conn':
       return connect(s, a.op, connHelpers);
+
+    case 'chat':
+      return chat(s, a.op, { toast: (st, text) => withToast(st, text) });
 
     case 'client': {
       const cl = s.clients;

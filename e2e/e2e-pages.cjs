@@ -206,8 +206,15 @@ const settle = (p) => p.waitForFunction(() => document.querySelector('.pg-save')
   await p.waitForTimeout(80);
   await p.keyboard.press('Escape');
   await p.waitForTimeout(200);
+  // The demo writes to the browser's storage 400 ms after the last change, so on a busy machine a single look can
+  // come too early. The check is the same; it looks until it holds, for up to three seconds.
+  const isBack = (s) => !!(s.ws.files['acme-running-notes'] && Object.values(s.ws.files).some((f) => f.name === 'Security questions') && !Object.keys(s.ws.trash).length);
   let st = await saved(p);
-  assert(st.ws.files['acme-running-notes'] && Object.values(st.ws.files).some((f) => f.name === 'Security questions') && !Object.keys(st.ws.trash).length, 'restore brings back the page and its sub-page');
+  for (let i = 0; i < 30 && !isBack(st); i++) {
+    await p.waitForTimeout(100);
+    st = await saved(p);
+  }
+  assert(isBack(st), 'restore brings back the page and its sub-page');
 
   // Same doc in a second tab.
   const p2 = await ctx.newPage();

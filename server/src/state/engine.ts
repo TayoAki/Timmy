@@ -21,7 +21,7 @@ import type { RoleRules } from '../auth/roles';
 import { withWorkspace, type Tx } from '../db/pool';
 import { cancelHeld, decide, GatewayError, onReplay, propose, type EffectRow } from '../gateway/gateway';
 import type { WsOp } from '../../../src/state/ws';
-import { checkWsOps } from './ws-check';
+import { checkWsOps, withClearedFields } from './ws-check';
 import { LIVE_DECISION } from '../agent/read';
 import { prepareMailSend } from '../gateway/mail';
 import { SYNCED_PREFIX, eventProposal } from '../sync/calendar-write';
@@ -33,6 +33,8 @@ import { enqueueSoon } from '../jobs/jobs';
 import { log } from '../lib/log';
 import { modelReady } from '../providers/model';
 import { commitState, loadState, remember, type Commit, type Loaded, type PreImage } from './docs';
+import { chatCommand, chatCommandForRecord, sendChatRepliesNow } from '../chat/commands';
+import { chatChecked } from '../chat/settings';
 
 enterLive();
 // Someone the workspace only knows by address still has a name when the reducer asks.
@@ -95,14 +97,13 @@ export function emailOf(loaded: Loaded, state: State, id: string): string | null
  */
 const NOT_RUNNING: Record<string, string> = {
   automations: 'You can draw, save and test this automation here. Running automations on a real workspace isn’t switched on yet, so it stays off.',
-  chat: 'You can set the chat up and preview it here. Putting it on a real website isn’t switched on yet, so it stays off.',
 };
 function notRunningYet(state: State, ops: WsOp[]): string | null {
   for (const o of ops) {
     const why = NOT_RUNNING[o.col];
     if (!why) continue;
     const on = o.op === 'put' ? (o.item as { on?: boolean }).on : o.op === 'patch' ? (o.patch as { on?: boolean }).on : false;
-    const was = (state.ws[o.col as 'automations' | 'chat'] as Record<string, { on?: boolean }>)[o.op === 'put' ? o.item.id : o.id]?.on;
+    const was = (state.ws[o.col as 'automations'] as Record<string, { on?: boolean }>)[o.op === 'put' ? o.item.id : o.id]?.on;
     if (on === true && !was) return why;
   }
   return null;
@@ -133,7 +134,11 @@ const POLICY_ONLY = new Set(['addRule', 'toggleRule', 'setSchedule']);
 
 export async function runCommand(ctx: Ctx, cmd: { id: string; action: Action }): Promise<CommandResult> {
   if (!cmd.id || typeof cmd.id !== 'string' || cmd.id.length > 80) return { ok: false, rev: 0, patches: [], error: 'A command needs an id.' };
+  // A screen clears a field by sending null for it in a patch (see withClearedFields).
+  if (cmd.action?.type === 'ws') cmd = { ...cmd, action: { ...cmd.action, ops: withClearedFields(cmd.action.ops) as typeof cmd.action.ops } };
   let commit: Commit | null = null;
+  let effects: EffectRow[] | undefined;
+  const isChat = cmd.action?.type === 'chat';
   const result = await withWorkspace({ workspaceId: ctx.workspaceId, userId: ctx.user.id, lock: true }, async (tx) => {
     // The same command id always gets the same answer: a retry never applies twice.
     const dup = (await tx.query('select result, user_id from command where workspace_id = $1 and id = $2', [ctx.workspaceId, cmd.id])).rows[0];
@@ -154,11 +159,18 @@ export async function runCommand(ctx: Ctx, cmd: { id: string; action: Action }):
         else handled = { ...handled, state: await fileMoves(tx, loaded, ctx, cmd.id, handled.state) };
       }
       if (!handled.reject) handled = await addEvents(tx, loaded, ctx, cmd.id, handled);
+      // The website chat: who may switch it on or change it while it is on, and that nothing but the chat's own
+      // commands rewrites a visitor's conversation. Checked on what the command did, whichever command it was.
+      if (!handled.reject) {
+        const chat = await chatChecked(tx, loaded, ctx, cmd.action, handled.state);
+        handled = 'state' in chat ? { ...handled, state: chat.state, ...(chat.toast ? { toast: { text: chat.toast } } : {}) } : { state: loaded.state, reject: chat.reject };
+      }
     } catch (err) {
       if (!(err instanceof GatewayError)) throw err;
       handled = { state: loaded.state, reject: err.message };
     }
     if (handled.reject) await tx.query('rollback to savepoint command');
+    else effects = handled.effects;
     commit = handled.reject ? null : await commitState(tx, loaded, handled.state, `cmd:${cmd.id}`);
     const out: CommandResult = {
       ok: !handled.reject,
@@ -173,14 +185,18 @@ export async function runCommand(ctx: Ctx, cmd: { id: string; action: Action }):
       ctx.workspaceId,
       cmd.id,
       ctx.user.id,
-      JSON.stringify(cmd.action).replace(/\\u0000/g, ''),
+      // A chat command is kept without a reply's words, and with nothing to undo it by: what a visitor was
+      // shown can't be taken back, and a deleted conversation must not live on in an Undo.
+      JSON.stringify(isChat ? chatCommandForRecord(cmd.action as Extract<Action, { type: 'chat' }>) : cmd.action).replace(/\\u0000/g, ''),
       JSON.stringify(out).replace(/\\u0000/g, ''),
-      JSON.stringify(commit?.pre ?? []).replace(/\\u0000/g, ''),
-      commit?.rev ?? null,
+      JSON.stringify(isChat ? [] : (commit?.pre ?? [])).replace(/\\u0000/g, ''),
+      isChat ? null : (commit?.rev ?? null),
     ]);
     return out;
   });
   if (commit) remember((commit as Commit).next);
+  // A teammate's reply to a visitor is shown now that its record is saved, not when the queue next looks.
+  await sendChatRepliesNow(ctx.workspaceId, effects);
   return result;
 }
 
@@ -210,6 +226,17 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
   }
   if (!ctx.rules.work) return { state, reject: 'Your role can’t make changes in this workspace.' };
   if (a.type === 'undo') return undo(tx, loaded, ctx, a.command);
+  if (a.type === 'chat') {
+    // A teammate acts on a visitor's conversation. The reducer says what the screen shows; the chat's own code does the rest.
+    const apply = (op: typeof a.op) => {
+      try {
+        return reduce(loaded, state, { type: 'chat', op });
+      } catch {
+        return undefined;
+      }
+    };
+    return chatCommand(tx, loaded, ctx, actorOf(ctx), cmd.id, a.op, apply);
+  }
   if (a.type === 'ws') {
     // Docs, pages, tasks, automations and chat settings arrive as plain put / patch / remove operations.
     // What is acceptable is decided here, before the reducer applies them and before anything is saved.

@@ -29,16 +29,29 @@ export interface Subscriber {
 const subscribers = new Map<string, Set<Subscriber>>();
 let listener: pg.PoolClient | null = null;
 
+/**
+ * Other announcements carried on the same database connection, by channel. The website chat uses one to tell
+ * every instance that a visitor's conversation has a new message. Register before `startHub` runs.
+ */
+const others = new Map<string, (payload: string) => void>();
+export function alsoListen(channel: string, fn: (payload: string) => void) {
+  if (!/^[a-z_]{1,40}$/.test(channel)) throw new Error('not a channel name');
+  others.set(channel, fn);
+  if (listener) void listener.query(`listen ${channel}`).catch((e) => log.error('could not listen', { channel, error: (e as Error).message }));
+}
+
 export async function startHub() {
   if (listener) return;
   listener = await sysPool.connect();
   listener.on('notification', (n) => {
+    if (n.payload && others.has(n.channel)) return others.get(n.channel)!(n.payload);
     if (n.channel !== 'timmy_state' || !n.payload) return;
     const at = n.payload.lastIndexOf(':');
     void flush(n.payload.slice(0, at));
   });
   listener.on('error', (e) => log.error('state listener failed', { error: e.message }));
   await listener.query('listen timmy_state');
+  for (const channel of others.keys()) await listener.query(`listen ${channel}`);
 }
 
 export async function stopHub() {
@@ -47,7 +60,7 @@ export async function stopHub() {
   const held = listener;
   listener = null;
   if (held) {
-    await held.query('unlisten timmy_state').catch(() => {});
+    await held.query('unlisten *').catch(() => {});
     held.release();
   }
 }

@@ -3,6 +3,7 @@
  * JSON but lean on how JavaScript objects work, rather than on anything the screens would ever send.
  */
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { clearsAsNull } from '../../src/live/patches';
 import { boot, newWorkspace, rows, type Client } from './helpers';
 
 let w: Client;
@@ -59,3 +60,58 @@ describe('records are kept under ids, and an id can’t be a name every object a
     expect(Object.keys((await w.state()).ws.files).sort()).toEqual(['doc-lq3x9a-1.v2', 'mail:ada@example.test']);
   });
 });
+
+describe('a field is cleared by sending null for it in a patch', () => {
+  it('taking the cover and the icon off a page removes them, and leaves the rest of the page alone', async () => {
+    const blocks = [{ id: 'b1', type: 'p', text: 'Kept' }];
+    expect((await ws([{ op: 'put', col: 'files', item: { id: 'd1', name: 'Page', kind: 'doc' } }, { op: 'put', col: 'docs', item: { id: 'd1', blocks, icon: '📝', cover: { kind: 'gradient', value: 'dawn' } } }])).ok).toBe(true);
+    // What the browser sends: JSON has no “undefined”, so a cleared field arrives as null.
+    expect((await ws([{ op: 'patch', col: 'docs', id: 'd1', patch: JSON.parse('{"cover":null,"icon":null}') }])).ok).toBe(true);
+    const doc = (await w.state()).ws.docs.d1 as unknown as Record<string, unknown>;
+    expect(doc.cover).toBeUndefined();
+    expect(doc.icon).toBeUndefined();
+    expect(doc.blocks).toEqual(blocks);
+    const stored = (await rows(`select data from state_doc where workspace_id = $1 and slice = 'ws.docs' and id = 'd1'`, [w.workspaceId]))[0] as { data: Record<string, unknown> };
+    expect(Object.keys(stored.data).sort()).toEqual(['blocks', 'id']);
+  });
+
+  it('the browser’s side turns a cleared field into null, and only inside a patch', () => {
+    const action = { type: 'ws', ops: [{ op: 'patch', col: 'docs', id: 'd1', patch: { cover: undefined, icon: '📝' } }, { op: 'put', col: 'files', item: { id: 'f1', name: 'x', parent: undefined } }] };
+    const sent = JSON.parse(JSON.stringify(clearsAsNull(action)));
+    expect(sent.ops[0].patch).toEqual({ cover: null, icon: '📝' });
+    expect(sent.ops[1].item).toEqual({ id: 'f1', name: 'x' });
+    const other = { type: 'move', id: 't1', box: 'archived', filing: undefined };
+    expect(clearsAsNull(other)).toBe(other);
+  });
+
+  it('a field that must be there can’t be cleared', async () => {
+    await ws([{ op: 'put', col: 'files', item: { id: 'd2', name: 'Page', kind: 'doc' } }, { op: 'put', col: 'docs', item: { id: 'd2', blocks: [] } }]);
+    expect((await ws([{ op: 'patch', col: 'docs', id: 'd2', patch: JSON.parse('{"blocks":null}') }])).ok).toBe(false);
+    expect((await w.state()).ws.docs.d2).toBeTruthy();
+  });
+});
+
+describe('a task every screen can draw', () => {
+  const task = (extra: Record<string, unknown> = {}) => ({ id: 't1', title: 'Call the supplier', status: 'todo', priority: 'normal', created: new Date(), ...extra });
+
+  it('a task with its status, priority and dates is kept', async () => {
+    expect((await ws([{ op: 'put', col: 'tasks', item: task({ due: new Date(Date.now() + 86_400_000), notes: 'Ask about lead times.' }) }])).ok).toBe(true);
+    expect((await w.state()).ws.tasks.t1).toMatchObject({ title: 'Call the supplier', priority: 'normal' });
+  });
+
+  it('a task without a priority or a status, or with one the board doesn’t know, is refused', async () => {
+    for (const bad of [task({ priority: undefined }), task({ status: undefined }), task({ priority: 'urgent' }), task({ status: 'blocked' }), task({ title: 'x'.repeat(501) }), task({ created: 'not a date' }), task({ due: 'someday' }), task({ notes: { html: '<b>x</b>' } })]) {
+      expect((await ws([{ op: 'put', col: 'tasks', item: bad }])).ok, JSON.stringify(bad).slice(0, 80)).toBe(false);
+    }
+    expect(Object.keys((await w.state()).ws.tasks)).toEqual([]);
+  });
+
+  it('a change that would leave a task the board can’t draw is refused, and the task stays as it was', async () => {
+    await ws([{ op: 'put', col: 'tasks', item: task() }]);
+    expect((await ws([{ op: 'patch', col: 'tasks', id: 't1', patch: { status: 'nope' } }])).ok).toBe(false);
+    expect((await ws([{ op: 'patch', col: 'tasks', id: 't1', patch: JSON.parse('{"priority":null}') }])).ok).toBe(false);
+    expect((await ws([{ op: 'patch', col: 'tasks', id: 't1', patch: { status: 'done' } }])).ok).toBe(true);
+    expect((await w.state()).ws.tasks.t1).toMatchObject({ status: 'done', priority: 'normal' });
+  });
+});
+

@@ -189,9 +189,12 @@ export function NotionEditor({
   // Changes from outside (Timmy, undo, the 1:1 row button) replace what's shown.
   useEffect(() => {
     if (!editor || editor.isDestroyed || blocks === lastSaved.current) return;
+    // On a real workspace this tab's own save comes back from the server as a new copy of the same blocks. That is
+    // not a change from outside: replacing what is shown would throw away whatever was typed since the save went.
+    const ownSave = sameBlocks(blocks, lastSaved.current);
     const cur = fromDoc(editor.getJSON());
     lastSaved.current = blocks;
-    if (sameBlocks(cur, blocks)) return;
+    if (ownSave || sameBlocks(cur, blocks)) return;
     window.clearTimeout(timer.current);
     timer.current = undefined;
     const { from } = editor.state.selection;

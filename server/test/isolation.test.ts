@@ -5,7 +5,7 @@
  * database as the app role, and the stream.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
-import { appPool, authPool, boot, connectGmail, fake, jobs, newWorkspace, releaseHolds, rows, signUp, withWorkspace, addMember, type Client } from './helpers';
+import { appPool, authPool, boot, connectGmail, fake, jobs, newWorkspace, releaseHolds, rows, signUp, withWorkspace, addMember, type Client, task } from './helpers';
 
 let a: Client;
 let b: Client;
@@ -23,8 +23,8 @@ beforeAll(async () => {
   fake().deliver(bConn.account, { from: 'Dave <dave@client.test>', subject: 'Bravo secret plan', body: 'The bravo launch code is 9999.' });
   await a.post('/api/test/fake', { op: 'deliver', message: { from: 'Carol <carol@client.test>', subject: 'Alpha budget', body: 'Alpha budget is 10k.' } });
   await b.post('/api/test/fake', { op: 'deliver', message: { from: 'Dave <dave@client.test>', subject: 'Bravo budget', body: 'Bravo budget is 20k.' } });
-  await a.cmd({ type: 'ws', ops: [{ op: 'put', col: 'tasks', item: { id: 'task-a', title: 'Alpha only task' } }] });
-  await b.cmd({ type: 'ws', ops: [{ op: 'put', col: 'tasks', item: { id: 'task-b', title: 'Bravo only task' } }] });
+  await a.cmd({ type: 'ws', ops: [{ op: 'put', col: 'tasks', item: task('task-a', 'Alpha only task') }] });
+  await b.cmd({ type: 'ws', ops: [{ op: 'put', col: 'tasks', item: task('task-b', 'Bravo only task') }] });
   await a.cmd({ type: 'sendNew', draft: { to: ['mail:x@alpha-client.test'], subject: 'From Alpha', body: 'Alpha body' } });
   await b.cmd({ type: 'sendNew', draft: { to: ['mail:y@bravo-client.test'], subject: 'From Bravo', body: 'Bravo body' } });
   await releaseHolds(a);
@@ -125,7 +125,7 @@ describe('the API', () => {
   it('a workspace cannot be chosen by header, query or body', async () => {
     const res = await a.request('GET', `/api/v1/state?workspaceId=${b.workspaceId}`, undefined, { 'x-workspace-id': b.workspaceId });
     expect(JSON.stringify(await res.json())).not.toMatch(/Bravo/);
-    const out = await a.json<{ ok: boolean }>('POST', '/api/v1/commands', { id: 'x-ws-1', workspaceId: b.workspaceId, action: { type: 'ws', ops: [{ op: 'put', col: 'tasks', item: { id: 'task-x', title: 'injected' } }] } });
+    const out = await a.json<{ ok: boolean }>('POST', '/api/v1/commands', { id: 'x-ws-1', workspaceId: b.workspaceId, action: { type: 'ws', ops: [{ op: 'put', col: 'tasks', item: task('task-x', 'injected') }] } });
     expect(out.ok).toBe(true);
     expect((await b.state()).ws.tasks['task-x']).toBeUndefined();
     expect((await a.state()).ws.tasks['task-x']).toBeDefined();
@@ -176,10 +176,10 @@ describe('the API', () => {
     const member = await addMember(a.workspaceId, 'member');
     expect((await client.get('/api/v1/state')).status).toBe(403);
     expect((await client.get('/api/v1/audit')).status).toBe(403);
-    expect((await client.cmd({ type: 'ws', ops: [{ op: 'put', col: 'tasks', item: { id: 'c1', title: 'x' } }] })).ok).toBe(false);
+    expect((await client.cmd({ type: 'ws', ops: [{ op: 'put', col: 'tasks', item: task('c1', 'x') }] })).ok).toBe(false);
     expect((await revops.get('/api/v1/state')).status).toBe(200);
-    expect((await revops.cmd({ type: 'ws', ops: [{ op: 'put', col: 'tasks', item: { id: 'r1', title: 'x' } }] })).ok).toBe(false);
-    expect((await member.cmd({ type: 'ws', ops: [{ op: 'put', col: 'tasks', item: { id: 'm1', title: 'x' } }] })).ok).toBe(true);
+    expect((await revops.cmd({ type: 'ws', ops: [{ op: 'put', col: 'tasks', item: task('r1', 'x') }] })).ok).toBe(false);
+    expect((await member.cmd({ type: 'ws', ops: [{ op: 'put', col: 'tasks', item: task('m1', 'x') }] })).ok).toBe(true);
     expect((await member.request('PATCH', '/api/v1/settings', { approvalMode: 'auto' })).status).toBe(403);
     expect((await member.cmd({ type: 'conn', op: { op: 'delegate', patch: { on: true } } })).ok).toBe(false);
     expect((await a.request('PATCH', '/api/v1/settings', { approvalMode: 'auto' })).status).toBe(200);

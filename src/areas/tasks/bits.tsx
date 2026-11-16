@@ -20,14 +20,15 @@ export const PRIORITIES: { id: Priority; label: string }[] = [
   { id: 'low', label: 'Low' },
 ];
 
-export const priorityLabel = (p: Priority) => PRIORITIES.find((x) => x.id === p)!.label;
+/** A task saved without a priority (an older or hand-made record) reads as Normal instead of breaking the screen. */
+export const priorityLabel = (p: Priority) => PRIORITIES.find((x) => x.id === p)?.label ?? 'Normal';
 
 const RANK: Record<Priority, number> = { high: 0, normal: 1, low: 2 };
 
 const dueMs = (t: Task) => t.due?.getTime() ?? Number.POSITIVE_INFINITY;
 
 /** Soonest due first; undated last; ties broken by priority. */
-export const byDue = (a: Task, b: Task) => dueMs(a) - dueMs(b) || RANK[a.priority] - RANK[b.priority];
+export const byDue = (a: Task, b: Task) => dueMs(a) - dueMs(b) || (RANK[a.priority] ?? 1) - (RANK[b.priority] ?? 1);
 
 /** Most urgent first, then soonest due. */
 export const byPriority = (a: Task, b: Task) => RANK[a.priority] - RANK[b.priority] || dueMs(a) - dueMs(b);

@@ -1,5 +1,5 @@
 import type { Action } from '../state/store';
-import { fromWire, toWire } from './patches';
+import { clearsAsNull, fromWire, toWire } from './patches';
 import type { CommandResult, LiveProfile } from './types';
 
 export class ApiError extends Error {
@@ -70,7 +70,7 @@ export const api = {
   invitation: (id: string) => call<Invitation>('GET', `/api/auth/organization/get-invitation?id=${encodeURIComponent(id)}`),
   acceptInvitation: (invitationId: string) => call<{ invitation?: { organizationId?: string } }>('POST', '/api/auth/organization/accept-invitation', { invitationId }),
   state: () => call<Snapshot>('GET', '/api/v1/state'),
-  command: (id: string, action: Action) => call<CommandResult>('POST', '/api/v1/commands', { id, action }, { outliveThePage: true, repeatable: true }),
+  command: (id: string, action: Action) => call<CommandResult>('POST', '/api/v1/commands', { id, action: clearsAsNull(action) }, { outliveThePage: true, repeatable: true }),
   connect: (app: string) => call<{ redirectUrl: string }>('POST', `/api/v1/connections/${app}/connect`, {}),
   disconnect: (app: string) => call('POST', `/api/v1/connections/${app}/disconnect`, {}),
   settings: () =>

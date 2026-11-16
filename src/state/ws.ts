@@ -39,7 +39,8 @@ export const applyOps = (ws: WS, ops: WsOp[]): WS => {
   for (const o of ops) {
     const col = { ...next[o.col] };
     if (o.op === 'put') col[o.item.id] = o.item;
-    else if (o.op === 'patch' && col[o.id]) col[o.id] = { ...col[o.id]!, ...o.patch };
+    // Only a record that is really there: an id such as "constructor" names something every object has.
+    else if (o.op === 'patch' && Object.hasOwn(col, o.id) && col[o.id]) col[o.id] = { ...col[o.id]!, ...o.patch };
     else if (o.op === 'remove') delete col[o.id];
     next[o.col] = col;
   }

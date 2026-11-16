@@ -160,6 +160,44 @@ export const config = {
   morningNudgeLimit: Number(env.TIMMY_MORNING_NUDGE_LIMIT ?? 5),
   /** Working days someone has to deliver what they were asked for, when the email named no date. */
   waitingDefaultDays: Number(env.TIMMY_WAITING_DEFAULT_DAYS ?? 3),
+
+  /**
+   * The website chat. Strangers type into it, so every number here is a ceiling on what one visitor, one
+   * address or one widget can make the server do or store.
+   */
+  chat: {
+    /** Signs conversation tokens. When empty, one is generated once and kept in the database. */
+    secret: env.TIMMY_CHAT_SECRET ?? '',
+    /** The longest message a visitor or a teammate can send, in characters. */
+    maxMessageChars: 2000,
+    /** The largest request body the public chat routes read, in bytes. */
+    maxBodyBytes: Number(env.TIMMY_CHAT_MAX_BODY_BYTES ?? 12 * 1024),
+    /** How many messages one visitor can send in one conversation. */
+    messagesPerConversation: Number(env.TIMMY_CHAT_MESSAGES_PER_CONVERSATION ?? 100),
+    /** New conversations a widget accepts in a day, and messages it accepts in a day. */
+    conversationsPerDay: Number(env.TIMMY_CHAT_CONVERSATIONS_PER_DAY ?? 300),
+    messagesPerDay: Number(env.TIMMY_CHAT_MESSAGES_PER_DAY ?? 5000),
+    /** Messages a minute from one visitor and from one address; new conversations an hour from one address. */
+    visitorMessagesPerMinute: Number(env.TIMMY_CHAT_VISITOR_PER_MINUTE ?? 12),
+    addressMessagesPerMinute: Number(env.TIMMY_CHAT_ADDRESS_PER_MINUTE ?? 60),
+    addressConversationsPerHour: Number(env.TIMMY_CHAT_ADDRESS_CONVERSATIONS_PER_HOUR ?? 30),
+    /** Reads of the public settings and stream connects a minute from one address. */
+    addressReadsPerMinute: Number(env.TIMMY_CHAT_ADDRESS_READS_PER_MINUTE ?? 120),
+    /** Streams open at once on one server, from one address, and for one conversation. */
+    streamsOpen: Number(env.TIMMY_CHAT_STREAMS_OPEN ?? 2000),
+    streamsPerAddress: Number(env.TIMMY_CHAT_STREAMS_PER_ADDRESS ?? 20),
+    streamsPerConversation: 3,
+    /** A visitor's stream is closed after this long; the chat window opens a new one. */
+    streamSeconds: Number(env.TIMMY_CHAT_STREAM_SECONDS ?? 600),
+    /** How long a conversation's token works after the visitor's last message, in days. */
+    tokenDays: 30,
+    /** What the Chats screen holds: this many conversations, and for each the newest messages up to these limits. */
+    shownConversations: Number(env.TIMMY_CHAT_SHOWN_CONVERSATIONS ?? 100),
+    shownMessages: 30,
+    shownChars: 8000,
+    /** A reply that could not be shown to the visitor within this many seconds is not shown late. */
+    replyFreshSeconds: 600,
+  },
 };
 
 export const isProd = () => config.stage === 'production';
