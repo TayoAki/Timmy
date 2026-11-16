@@ -12,13 +12,13 @@ You are building the backend for **Timmy**, an AI work assistant, and connecting
 - **Tests:** `e2e/` holds 12 Playwright suites (about 340 checks). Run them with `bash e2e/run-all.sh`, with `BASE=<url>` for a deployed build. All of them pass today.
 
 ## Decisions already made (don't reopen them)
-- **Login and workspaces:** Better Auth inside our API. Its organization plugin is the workspace. Roles: owner, admin, member, `assistant` (delegate), `revops`, `client`. Agencies get client workspaces as organizations with a `parent`. Sign-in is email first, plus "Sign in with Google" once I give you a login-only Google client (openid, email, profile). That client is the only Google OAuth app we own.
+- **Login and workspaces:** Better Auth inside our API. Its organization plugin is the workspace. Roles: owner, admin, member, `assistant` (delegate), `revops`, `client`. Agencies get client workspaces as organizations with a `parent`. Sign-in is Better Auth only: email and password, or an email link. There is no Sign in with Google or Microsoft, and we own no Google OAuth app.
 - **Every app connection is a Composio connect button.** That includes Gmail, Calendar, Drive and Outlook. Use Composio's managed OAuth apps for now, not our own. Keep the auth config ids in config, so we can swap in our own apps later without code changes. The agent pulls data through Composio into our store and acts through Composio tools.
 - **Models go through OpenRouter.** Each workspace picks the model that powers Timmy in Settings, from an allowlist of models that pass our eval (tool calling, drafting, refusals).
   - **Default model:** Claude Opus 5.5. Look up its exact OpenRouter model id from the models API; don't guess it. Use reasoning on, with the effort set per route.
   - **Every request:** use prompt caching with `cache_control` breakpoints for Claude, and a fallback model list for outages. Send `provider.zdr: true`, and ask me to turn on zero data retention for the account too. Log each call's cost from OpenRouter's usage data.
   - **Pinned routes:** the auto-mode judge is pinned to a model we test, and users can't change it.
-  - **Computer jobs (phase 3):** test whether Anthropic's native computer-use tool works through OpenRouter. If it doesn't, add a direct Anthropic driver behind the same model interface for that route only, and tell me first.
+  - **Computer jobs (phase 3):** don't use any model's native computer-use tool. The agent drives a headless browser in the sandbox with Playwright, reading the page's accessibility tree, through ordinary function tools. That way any model on the allowlist can run them. Screenshots are only for showing the user what happened. There is no desktop.
   - **Changing defaults:** don't change the default model, or add one to the allowlist, without my OK. Run the eval, show me the numbers, and let me decide.
 - **One agent loop on our own servers,** with the model interface above and a sandbox interface (E2B or Daytona) that runs tools only.
 - **Runs are Postgres rows** with a lease and a fence. A run starts immediately, saves a checkpoint when it pauses for approval, and on resume replays exactly the approved call.
@@ -45,7 +45,7 @@ Build in the PRD's phases. Finish each phase, deploy it and test it before start
   - Lead sources: Follow Up Boss, Zillow by email parsing for now, and Realtor.com.
   - Enrichment and lead finding within caps, behind a provider interface (Apollo, Clay, People Data Labs, Hunter or any API). I also mentioned "treg", which isn't confirmed, so ask me which provider before wiring a real one.
   - Delegate mode and client workspaces.
-- **Phase 3.** The desktop sandbox, routines and channels.
+- **Phase 3.** The cloud computer (shell and headless browser in the sandbox), routines and channels.
 
 **Connecting the frontend:**
 - Move the reducer's persistence onto the API behind a flag.
@@ -69,12 +69,13 @@ Build in the PRD's phases. Finish each phase, deploy it and test it before start
 **Credentials and accounts:**
 - **What you'll need:**
   - Phase 0: an OpenRouter key and a Composio key.
-  - Later: the login-only Google client, Twilio (phase 2) and E2B or Daytona (phase 3).
+  - Later: Twilio (phase 2) and E2B or Daytona (phase 3).
   - Railway provides Postgres and the bucket, so you don't need credentials for those.
 - **OpenRouter key:** this environment may already be connected to OpenRouter, so check that before asking me for a key.
 - **Keys you use inside your session:** ask me through the secure credential form when you reach the step that needs one, never in chat. Use the fakes until then.
 - **Keys for deployed services:** I add secrets as Railway variables myself. You can set non-secret variables and reference variables with the Railway tools.
 - **Test accounts only:** use only the test Gmail and Outlook accounts I give you. Never email, text or call real people.
+- **Composio's Google app:** Composio says its Google app already has Google's verification and CASA. Put "get that confirmed in writing" on my list in `STATUS.md`.
 
 **Keep me informed:**
 - Keep `docs/backend-prd.md` current when you change a decision, with the reason.
