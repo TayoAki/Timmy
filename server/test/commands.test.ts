@@ -126,6 +126,15 @@ describe('the stream', () => {
   });
 });
 
+describe('shutting down', () => {
+  it('stopping the stream hub twice at once does not crash', async () => {
+    await startHub();
+    await expect(Promise.all([stopHub(), stopHub()])).resolves.toBeDefined();
+    await startHub();
+    await stopHub();
+  });
+});
+
 describe('settings', () => {
   it('the model can only be one from the list', async () => {
     const s = await w.json<{ model: string; models: { id: string }[] }>('GET', '/api/v1/settings');

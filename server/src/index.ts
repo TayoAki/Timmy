@@ -35,7 +35,10 @@ async function main() {
   const server = serve({ fetch: app.fetch, port: config.port, hostname: '0.0.0.0' });
   log.info('Timmy API listening', { port: config.port, stage: config.stage, publicUrl: config.publicUrl, fake: config.fakeProviders });
 
+  let stopping = false;
   const stop = async () => {
+    if (stopping) return;
+    stopping = true;
     server.close();
     await stopHub();
     await jobs?.stop().catch(() => {});

@@ -41,10 +41,12 @@ export async function startHub() {
 
 export async function stopHub() {
   subscribers.clear();
-  if (listener) {
-    await listener.query('unlisten timmy_state').catch(() => {});
-    listener.release();
-    listener = null;
+  // Shutdown can be asked for twice (two signals); the connection is handed off before anything is awaited.
+  const held = listener;
+  listener = null;
+  if (held) {
+    await held.query('unlisten timmy_state').catch(() => {});
+    held.release();
   }
 }
 
