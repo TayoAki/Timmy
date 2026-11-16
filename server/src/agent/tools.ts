@@ -13,6 +13,7 @@ import { ADDRESS, prepareMailSend, type MailSend } from '../gateway/mail';
 import type { ToolDef } from '../providers/model';
 import { actorOf, emailOf, type Ctx } from '../state/engine';
 import { mutate, readState } from '../state/mutate';
+import { BOX_WORDS, filingProposal, isBox } from '../sync/labels';
 import { LostLease } from './errors';
 import { untrusted } from './prompts';
 
@@ -39,8 +40,13 @@ export interface AgentTool {
   kind: 'read' | 'internal' | 'write';
   /** Shown in the chat while it runs. */
   step: string;
-  /** For writes: the effect kind, and a description of the action built from the arguments' addresses only. */
+  /** For writes: the kind of effect it proposes. */
   effectKind?: string;
+  /**
+   * For writes Auto mode may decide: what the judge is told this call would do. Built from our own fixed words
+   * and the call's plain choices only, never from anything fetched (a subject, a sender, a body).
+   */
+  describe?(args: Record<string, unknown>): string;
   run(args: Record<string, unknown>, t: ToolRun): Promise<ToolOutcome>;
 }
 
@@ -222,5 +228,43 @@ async function proposeMail(t: ToolRun, m: MailSend): Promise<ToolOutcome> {
   });
 }
 
-export const TOOLS: AgentTool[] = [searchMail, readThread, listInbox, draftReply, sendEmail, sendReply];
+const fileThread: AgentTool = {
+  kind: 'write',
+  step: 'Filing the thread',
+  effectKind: 'mail.modify',
+  // What the judge is told: the action and the place, both from our own fixed words. Never the thread's subject.
+  describe: (args) => (isBox(args.box) ? `Move one mail thread ${BOX_WORDS[args.box]} in the user’s own mailbox` : 'Move one mail thread'),
+  def: {
+    name: 'file_thread',
+    description:
+      'File one mail thread: "follow-up" (the user owes a reply or an action), "waiting" (the user is waiting on someone), "read-through" (worth reading, no action), "archived" (needs nothing) or "inbox" (back to unsorted). The same label is applied in the user’s mailbox. Depending on their settings it happens at once or waits for their OK. Use it only when the user asks you to sort, file or archive mail. Takes the thread `id` from list_inbox.',
+    parameters: { type: 'object', properties: { id: { type: 'string', description: 'The thread id from list_inbox' }, box: { type: 'string', enum: ['follow-up', 'waiting', 'read-through', 'archived', 'inbox'] } }, required: ['id', 'box'] },
+  },
+  async run(args, t) {
+    const id = str(args.id, 200);
+    const box = args.box;
+    if (!isBox(box)) return { result: 'That is not a place a thread can be filed.' };
+    return mutate<ToolOutcome>(t.ctx.workspaceId, 'agent', async (tx, loaded) => {
+      await assertFence(tx, t);
+      const thread = loaded.state.threads.find((x) => x.id === id);
+      if (!thread) return { result: { result: 'There is no thread with that id.' } };
+      if (thread.box === box) return { result: { result: 'That thread is already there.' } };
+      const filing = filingProposal(thread, box);
+      if (!filing) return { result: { result: 'That thread isn’t in the connected mailbox, so it can’t be filed from here.' } };
+      const p = await propose(tx, loaded, loaded.state, t.attended ? actorOf(t.ctx) : null, {
+        ...filing,
+        why: 'Timmy proposed this from your request in the chat.',
+        idempotencyKey: `run:${t.runId}:${t.callId}`,
+        source: t.attended ? 'agent' : 'routine',
+        runId: t.runId,
+        conversation: t.conversation,
+        auto: t.auto,
+      });
+      if (p.outcome === 'blocked' || !p.effect) return { result: { blocked: p.reason ?? 'That isn’t allowed.' } };
+      return { state: p.state, result: { effect: p.effect, outcome: p.outcome } };
+    });
+  },
+};
+
+export const TOOLS: AgentTool[] = [searchMail, readThread, listInbox, draftReply, sendEmail, sendReply, fileThread];
 export const TOOL_BY_NAME: Record<string, AgentTool> = Object.fromEntries(TOOLS.map((t) => [t.def.name, t]));

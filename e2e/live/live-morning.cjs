@@ -5,6 +5,10 @@ const { ok, open, signUp, api, connectGmail, deliver, sentMail, run } = require(
 run('live-morning', async (browser) => {
   const { page, errors } = await open(browser);
   await signUp(page, { name: 'Katherine Johnson' });
+  // The server's own scheduler starts a run when its time has come. So that this test decides when the run happens,
+  // whatever the time of day, the schedule is set to a weekday that is not today.
+  const notToday = (new Date().getDay() + 3) % 7;
+  ok((await api(page, 'POST', '/api/v1/commands', { id: `sched-${Date.now()}`, action: { type: 'setSchedule', schedule: { days: [notToday] } } })).body.ok, 'the owner can set which days the morning run happens');
 
   const claims = /Last run|First morning run|next (today|tomorrow|\w+day) at/i;
   ok(!claims.test(await page.locator('body').innerText()), 'before a mailbox is connected, no morning run time is claimed');

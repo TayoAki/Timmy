@@ -223,7 +223,12 @@ export class FakeModel implements ModelProvider {
   }
 
   private rules(req: ModelRequest): { content?: string; toolCalls?: { name: string; arguments: Record<string, unknown> }[] } {
-    if (req.route === 'judge') return { content: '{"decision":"ask","reason":"The fake judge always asks."}' };
+    // The stand-in judge approves only the one phrasing the stand-in chat rule below files on, and asks about everything else.
+    if (req.route === 'judge') {
+      const words = (JSON.parse(req.messages[req.messages.length - 1]!.content) as { user_messages?: string[] }).user_messages ?? [];
+      const clear = /^archive thread \S+$/i.test((words[words.length - 1] ?? '').trim());
+      return { content: clear ? '{"decision":"approve","reason":"The user asked for exactly this."}' : '{"decision":"ask","reason":"The stand-in judge asks unless the request is exact."}' };
+    }
     if (req.route === 'read') return { content: JSON.stringify({ box: 'follow-up', confidence: 'medium', effort: 'quick', ask: 'They wrote to you and are waiting for an answer.', reason: 'A person asked a question.', due: null }) };
     if (req.route === 'draft') return { content: JSON.stringify({ body: 'Thanks for your message. I will come back to you on this shortly.\n\nBest' }) };
     const last = req.messages[req.messages.length - 1]!;
@@ -236,6 +241,8 @@ export class FakeModel implements ModelProvider {
     const asked = last.content.replace(/^<context>[\s\S]*?<\/context>\s*/, '').replace(/^<untrusted source="screen">[\s\S]*?<\/untrusted>\s*/, '').trim();
     const text = asked.toLowerCase();
     const send = /^send (?:an email )?to (\S+@\S+) saying (.+)$/i.exec(asked);
+    const file = /^(archive|file) thread (\S+)$/i.exec(asked);
+    if (file && has('file_thread')) return { toolCalls: [{ name: 'file_thread', arguments: { id: file[2], box: file[1]!.toLowerCase() === 'archive' ? 'archived' : 'follow-up' } }] };
     if (send && has('send_email')) return { toolCalls: [{ name: 'send_email', arguments: { to: [send[1]], subject: 'A note from Timmy', body: send[2] } }] };
     if (/urgent/.test(text) && has('show_urgent')) return { content: 'Here is what needs you first.', toolCalls: [{ name: 'show_urgent', arguments: { limit: 5 } }] };
     if (/(mail|email|inbox|find|about|from)/.test(text) && has('search_mail')) return { toolCalls: [{ name: 'search_mail', arguments: { query: asked.replace(/[?.!]/g, '').split(/\s+/).slice(-3).join(' ') } }] };

@@ -6,7 +6,7 @@ import type { Patch } from './patches';
  */
 export interface PendingEffect {
   id: string;
-  kind: 'email' | 'calendar' | 'crm' | 'campaign';
+  kind: 'email' | 'calendar' | 'crm' | 'campaign' | 'filing';
   /** What it will do, in a line: "Send “Re: Quote” to Dana Whitfield". */
   title: string;
   /** Why Timmy proposed it. */

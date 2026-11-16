@@ -215,7 +215,7 @@ async function runTools(ctx: Ctx, run: Driving, cp: Checkpoint, calls: ToolCall[
     if (tool.kind === 'write' && run.attended && tool.effectKind && isKind(tool.effectKind) && KINDS[tool.effectKind].autoEligible) {
       // Auto mode: the judge sees the user's own words and a description built from the action's kind, nothing fetched.
       const ws = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => (await tx.query('select approval_mode, (select read_outside from run where id = $2) as read_outside from workspace where id = $1', [ctx.workspaceId, run.runId])).rows[0]);
-      if (ws?.approval_mode === 'auto') t.auto = await judge({ workspaceId: ctx.workspaceId, runId: run.runId, kind: tool.effectKind, payload: {}, action: KINDS[tool.effectKind].label, userWords: cp.userWords, readOutside: !!ws.read_outside });
+      if (ws?.approval_mode === 'auto') t.auto = await judge({ workspaceId: ctx.workspaceId, runId: run.runId, kind: tool.effectKind, payload: {}, action: tool.describe?.(args) ?? KINDS[tool.effectKind].label, userWords: cp.userWords, readOutside: !!ws.read_outside });
     }
     let out;
     try {
@@ -242,6 +242,21 @@ async function runTools(ctx: Ctx, run: Driving, cp: Checkpoint, calls: ToolCall[
 
 /** What the model is told about a write once it has been decided. */
 function effectAnswer(e: EffectRow): string | null {
+  if (e.kind === 'mail.modify') {
+    switch (e.status) {
+      case 'completed':
+        return 'Done. The thread was filed, in Timmy and in the mailbox.';
+      case 'declined':
+      case 'cancelled':
+        return 'The user chose to leave this thread where it is. Do not file it again unless they ask.';
+      case 'failed':
+        return `It could not be filed: ${e.error ?? 'unknown error'}. The thread is where it was.`;
+      case 'uncertain':
+        return 'Timmy could not confirm the mailbox made the change. Say so, and that the thread may not have moved.';
+      default:
+        return null;
+    }
+  }
   switch (e.status) {
     case 'completed':
       return 'It was approved and has been sent.';

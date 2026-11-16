@@ -21,6 +21,7 @@ import type { RoleRules } from '../auth/roles';
 import { withWorkspace, type Tx } from '../db/pool';
 import { cancelHeld, decide, GatewayError, onReplay, propose, type EffectRow } from '../gateway/gateway';
 import { prepareMailSend } from '../gateway/mail';
+import { filingProposal } from '../sync/labels';
 import { draftHash } from '../../../src/live/hash';
 import type { Actor } from '../gateway/policy';
 import { config } from '../config';
@@ -310,8 +311,6 @@ async function gateSends(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; ac
 
 /* ───────────── Filing ───────────── */
 
-const BOX_WORDS: Record<string, string> = { inbox: 'back to the inbox', 'follow-up': 'under Follow Up', waiting: 'under Waiting', 'read-through': 'under Read Through', archived: 'to the archive' };
-
 /**
  * When a command changes where a synced thread sits (sorted, archived, moved back, or put back by Undo), the same
  * change is written to its mailbox: a label, or out of the inbox. It goes through the gateway like any write. The
@@ -325,14 +324,11 @@ async function fileMoves(tx: Tx, loaded: Loaded, ctx: Ctx, commandId: string, ne
   let state = next;
   for (const t of next.threads) {
     const was = before.get(t.id);
-    if (was === undefined || was === t.box || !t.ext?.threadKey || !t.ext.connectionId) continue;
+    const filing = was === undefined || was === t.box ? null : filingProposal(t, t.box);
+    if (!filing) continue;
     const p = await propose(tx, loaded, state, actorOf(ctx), {
-      kind: 'mail.modify',
-      payload: { connectionId: t.ext.connectionId, threadKey: t.ext.threadKey, box: t.box },
-      preview: { lines: [`“${t.subject}” ${BOX_WORDS[t.box] ?? t.box}`] },
-      title: `File “${t.subject}” ${BOX_WORDS[t.box] ?? t.box} in Gmail`,
+      ...filing,
       why: 'You moved it in Timmy.',
-      target: t.ext.threadKey,
       // Not tied to the command for Undo: undoing a move is itself a move, and files the thread back.
       idempotencyKey: `cmd:${commandId}:file:${t.id}`,
       source: 'user',

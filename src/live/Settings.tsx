@@ -5,12 +5,14 @@ import { useProfile } from './LiveApp';
 
 /**
  * Workspace settings that only exist on a real workspace: the model that powers
- * Timmy, the monthly limit on what it may cost, and the account. Renders nothing in the demo.
+ * Timmy, the monthly limit on what it may cost, whether Timmy may file mail on
+ * its own when asked, and the account. Renders nothing in the demo.
  */
 export function LiveSettings() {
   const live = useProfile();
   const { dispatch } = useStore();
   const [model, setModel] = useState(live?.profile.model ?? '');
+  const [mode, setMode] = useState<'ask' | 'auto'>(live?.profile.approvalMode ?? 'ask');
   const [cap, setCap] = useState('');
   const [savedCap, setSavedCap] = useState('');
   const [ceiling, setCeiling] = useState(0);
@@ -20,6 +22,7 @@ export function LiveSettings() {
     if (!live) return;
     void api.settings().then((s) => {
       setModel(s.model);
+      setMode(s.approvalMode);
       setCap(String(s.monthlySpendCapUsd));
       setSavedCap(String(s.monthlySpendCapUsd));
       setCeiling(s.limits.monthlySpendCapUsd);
@@ -29,7 +32,7 @@ export function LiveSettings() {
   const { profile, signOut } = live;
   const canChange = profile.can.policy;
 
-  const save = async (patch: { model?: string; monthlySpendCapUsd?: number }, done: string): Promise<boolean> => {
+  const save = async (patch: { model?: string; approvalMode?: 'ask' | 'auto'; monthlySpendCapUsd?: number }, done: string): Promise<boolean> => {
     setSaving(true);
     try {
       await api.saveSettings(patch);
@@ -101,9 +104,27 @@ export function LiveSettings() {
           {!canChange && ' An owner or admin can change this.'}
         </span>
       </label>
-      <p className="field-hint">
-        Timmy asks before every change. Anything that reaches another person (an email, an invite, a post) waits for your OK or a rule you wrote. Timmy never moves money, signs documents or deletes accounts.
-      </p>
+      <label className="field">
+        <span className="field-label">When you ask Timmy in the chat to file or archive mail</span>
+        <select
+          className="input"
+          name="approval-mode"
+          value={mode}
+          disabled={!canChange || saving}
+          onChange={(e) => {
+            const next = e.target.value as 'ask' | 'auto';
+            setMode(next);
+            void save({ approvalMode: next }, next === 'auto' ? 'Timmy will file what you clearly asked for, and ask when unsure.' : 'Timmy will ask before it files anything.');
+          }}
+        >
+          <option value="ask">Show me each change and wait for my OK</option>
+          <option value="auto">File it when I clearly asked for it, and ask when unsure</option>
+        </select>
+        <span className="field-hint">
+          This only covers labels and archiving in your own mailbox, which nobody else sees. Whatever you choose, anything that reaches another person (an email, an invite, a post) waits for your OK or a rule you wrote. Timmy never moves money, signs documents or deletes accounts.
+          {!canChange && ' An owner or admin can change this.'}
+        </span>
+      </label>
       <div className="live-account">
         <span className="muted">
           Signed in as {profile.user.name} ({profile.user.email}) · {profile.workspace.name} · {profile.workspace.role}

@@ -119,7 +119,7 @@ function pendingOf(e: EffectRow): PendingEffect {
   const domain = KINDS[e.kind].domain;
   return {
     id: e.id,
-    kind: domain === 'mail' ? 'email' : domain,
+    kind: e.kind === 'mail.modify' ? 'filing' : domain === 'mail' ? 'email' : domain,
     title: e.preview.title ?? KINDS[e.kind].label,
     why: e.preview.why ?? '',
     preview: { from: e.preview.from, to: e.preview.to, cc: e.preview.cc, subject: e.preview.subject, body: e.preview.body, lines: e.preview.lines },
@@ -385,6 +385,14 @@ async function settle(workspaceId: string, claimed: EffectRow, outcome: Outcome)
 
 /** What the screens show once a send has gone out, failed, or is unconfirmed. */
 function afterEffect(loaded: Loaded, state0: State, e: EffectRow, outcome: Outcome): State {
+  // Filing that Timmy proposed (from the chat) moves the thread on the screens once the mailbox has it.
+  // A move the person made themselves is already on the screens; it is what proposed the filing.
+  if (e.kind === 'mail.modify') {
+    const p = e.payload as { threadId?: string; box?: string };
+    if (outcome.status !== 'completed' || e.source === 'user' || !p.threadId || !state0.threads.some((t) => t.id === p.threadId && t.box !== p.box)) return state0;
+    const moved = replay(loaded, state0, { type: 'move', id: p.threadId, box: p.box, quiet: true, by: 'timmy' });
+    return moved ? { ...moved, toasts: state0.toasts, route: state0.route } : state0;
+  }
   const threadId = e.preview.thread;
   if (!threadId) return state0;
   let state = state0;

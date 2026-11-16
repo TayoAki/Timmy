@@ -108,8 +108,8 @@
     {
       "id": "api-filing",
       "file": "server/test/filing.test.ts",
-      "covers": "sorting or archiving a thread writes the label to the mailbox through an approved effect record; labels made once; Undo files it back; written once on a retried command; who may file; the kill switch; a refusal, a deleted label and a timeout",
-      "tests": 12,
+      "covers": "sorting or archiving a thread writes the label to the mailbox through an approved effect record; labels made once; Undo files it back; written once on a retried command; who may file; the kill switch; a refusal, a deleted label and a timeout; filing asked for in the chat waits for the person by default; Auto mode's judge sees only the person's words and a fixed description; an unattended run cannot file on its own",
+      "tests": 19,
       "status": "pass"
     },
     {
@@ -143,9 +143,9 @@
     {
       "id": "live-model",
       "file": "e2e/live/live-settings.cjs",
-      "covers": "the model picker (only tested models offered, an unlisted model refused), the monthly limit and its ceiling, no approval mode offered that would do nothing. Switching between two models is covered in server/test/agent.test.ts with a stand-in, because the real list has one model until another passes the eval",
+      "covers": "the model picker (only tested models offered, an unlisted model refused), the monthly limit and its ceiling, the choice to let Timmy file mail itself. Switching between two models is covered in server/test/agent.test.ts with a stand-in, because the real list has one model until another passes the eval",
       "status": "pass",
-      "tests": 12
+      "tests": 13
     },
     {
       "id": "live-isolation",
@@ -172,7 +172,14 @@
       "id": "live-morning",
       "file": "e2e/live/live-morning.cjs",
       "covers": "no run time is claimed without a mailbox; after the run Today says what it did, the drafted reply waits in Approvals, nothing is sent or moved",
-      "tests": 14,
+      "tests": 15,
+      "status": "pass"
+    },
+    {
+      "id": "live-filing",
+      "file": "e2e/live/live-filing.cjs",
+      "covers": "filing asked for in the chat shows the change and waits; with the setting on Timmy files it itself and the audit log says so; an email still needs Send",
+      "tests": 11,
       "status": "pass"
     },
     {

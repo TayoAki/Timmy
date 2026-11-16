@@ -170,7 +170,8 @@ export type Action =
   | { type: 'navigate'; route: Route }
   | { type: 'openThread'; id: string; tab?: ThreadTab }
   | { type: 'back' }
-  | { type: 'move'; id: string; box: Box; quiet?: boolean }
+  /** `by: 'timmy'` is set by the server when Timmy filed the thread itself (after approval, or in Auto mode). */
+  | { type: 'move'; id: string; box: Box; quiet?: boolean; by?: 'timmy' }
   | { type: 'acceptSuggestion'; id: string }
   | { type: 'acceptAll'; ids: string[] }
   | { type: 'toggleStar'; id: string }
@@ -441,7 +442,7 @@ export function reducer(s: State, a: Action): State {
       return {
         ...s,
         threads: patch(s.threads, a.id, (x) => moveThread(x, a.box)),
-        activity: logged(s, `You moved “${t.subject}” to ${tag}`, 'move', t.id),
+        activity: logged(s, a.by === 'timmy' ? `Timmy filed “${t.subject}” under ${tag}, as asked in the chat` : `You moved “${t.subject}” to ${tag}`, 'move', t.id),
         toasts: a.quiet ? s.toasts : withToast(s, `Moved to ${tag}`, snap(s)),
       };
     }

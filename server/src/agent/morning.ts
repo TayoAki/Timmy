@@ -58,12 +58,17 @@ export function runDue(schedule: Pick<Schedule, 'time' | 'days'>, timeZone: stri
   return !lastRun || localTime(lastRun, timeZone).date !== local.date;
 }
 
-/** Workspaces with a connected mailbox whose run is due. */
+/**
+ * Workspaces whose run is due. A workspace needs a connected mailbox whose first sync has finished: a run
+ * on a mailbox that is still being read for the first time would prepare the brief from a fraction of it.
+ */
 export async function dueWorkspaces(sys: { query: (text: string) => Promise<{ rows: Record<string, unknown>[] }> }, now = new Date()): Promise<string[]> {
   const { rows } = await sys.query(
     `select w.id, w.timezone, w.morning_run_at, d.data -> 'v' as schedule
      from workspace w left join state_doc d on d.workspace_id = w.id and d.slice = 'schedule' and d.id = '_'
-     where exists (select 1 from connection c where c.workspace_id = w.id and c.status = 'active' and c.toolkit = 'gmail')`,
+     where w.deleted_at is null and exists (
+       select 1 from connection c join sync_cursor s on s.connection_id = c.id
+       where c.workspace_id = w.id and c.status = 'active' and c.toolkit = 'gmail' and s.kind like 'backfill-%' and s.state = 'done')`,
   );
   return rows
     .filter((r) => {

@@ -89,8 +89,31 @@ export function displayToolsOf(tools: RunAgentInput['tools']): ToolDef[] {
   return out;
 }
 
+/** The line that introduces a prepared action in the chat: what it is and what happens next. */
+function waitingLine(e: EffectRow): string {
+  const mine = e.approver_route === 'user';
+  if (e.kind === 'mail.modify') {
+    if (e.status !== 'intended') return e.approved_via === 'auto' ? 'You let Timmy decide routine filing, so it is filing this now.' : 'A rule you set covers this, so Timmy is filing it now.';
+    return mine ? 'Here is the filing, ready for your OK. Nothing moves until you say so.' : 'This needs someone else’s OK. It is waiting in Approvals.';
+  }
+  if (e.status === 'approved') return 'A rule you set covers this, so it is going out.';
+  return mine ? 'Here is the email, ready for your OK. Nothing is sent until you press Send.' : 'This needs someone else’s OK before it goes out. It is waiting in Approvals.';
+}
+
 function approvalWidget(e: EffectRow) {
   const p = e.preview;
+  if (e.kind === 'mail.modify') {
+    const undecided = e.status === 'intended' && e.approver_route === 'user';
+    return {
+      preview: (p.lines ?? []).join('\n'),
+      choices: undecided
+        ? [
+            { id: 'file', label: 'File it', primary: true, actions: [{ type: 'effect', id: e.id, approve: true }], after: 'Filed, here and in your mailbox.' },
+            { id: 'no', label: 'Leave it', cancel: true, actions: [{ type: 'effect', id: e.id, approve: false }], after: 'Okay. It stays where it is.' },
+          ]
+        : [],
+    };
+  }
   const preview = [...(p.from ? [`From: ${p.from}`] : []), `To: ${(p.to ?? []).join(', ')}`, ...(p.cc?.length ? [`Cc: ${p.cc.join(', ')}`] : []), `Subject: ${p.subject ?? ''}`, '', p.body ?? ''].join('\n');
   const mine = e.approver_route === 'user';
   return {
@@ -167,9 +190,8 @@ export function agentRoutes(app: Hono<Env>) {
         // A prepared send is shown exactly as it will go out, with the buttons that decide it.
         for (const e of waiting) {
           const messageId = newId('msg');
-          const mine = e.approver_route === 'user';
           await emit({ type: 'TEXT_MESSAGE_START', messageId, role: 'assistant' });
-          await emit({ type: 'TEXT_MESSAGE_CONTENT', messageId, delta: e.status === 'approved' ? 'A rule you set covers this, so it is going out.' : mine ? 'Here is the email, ready for your OK. Nothing is sent until you press Send.' : 'This needs someone else’s OK before it goes out. It is waiting in Approvals.' });
+          await emit({ type: 'TEXT_MESSAGE_CONTENT', messageId, delta: waitingLine(e) });
           await emit({ type: 'TEXT_MESSAGE_END', messageId });
           const callId = newId('call');
           await emit({ type: 'TOOL_CALL_START', toolCallId: callId, toolCallName: 'show_answer', parentMessageId: messageId });

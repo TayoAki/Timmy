@@ -5,7 +5,7 @@
  *
  *   dispatch({ type: 'resolve', key: a.key, option: 'send' })
  */
-import { BadgeDollarSign, CalendarCheck, Rocket, Scale, Send, type LucideIcon } from 'lucide-react';
+import { Archive, BadgeDollarSign, CalendarCheck, Rocket, Scale, Send, type LucideIcon } from 'lucide-react';
 import type { Draft, Thread } from '../data/types';
 import { money } from '../lib/format';
 import type { Route, State } from './store';
@@ -15,7 +15,7 @@ import { fmtDay } from '../lib/format';
 import { firstName, midSentence } from './ws';
 import { URGENCY, urgencyOf, urgencyRank, type Urgency, type UrgencyContext, type UrgencyInfo } from './urgency';
 
-export type ApprovalKind = 'email' | 'decision' | 'crm' | 'calendar' | 'campaign';
+export type ApprovalKind = 'email' | 'decision' | 'crm' | 'calendar' | 'campaign' | 'filing';
 
 export const APPROVAL_KINDS: Record<ApprovalKind, { label: string; plural: string; icon: LucideIcon; color: string }> = {
   email: { label: 'Email', plural: 'Emails to send', icon: Send, color: 'var(--accent)' },
@@ -23,6 +23,7 @@ export const APPROVAL_KINDS: Record<ApprovalKind, { label: string; plural: strin
   crm: { label: 'CRM update', plural: 'CRM updates', icon: BadgeDollarSign, color: 'var(--c-teal)' },
   calendar: { label: 'Invite', plural: 'Calendar invites', icon: CalendarCheck, color: 'var(--c-green)' },
   campaign: { label: 'Campaign', plural: 'Campaigns to launch', icon: Rocket, color: 'var(--c-amber)' },
+  filing: { label: 'Filing', plural: 'Mail to file', icon: Archive, color: 'var(--c-slate)' },
 };
 
 export interface ApprovalOption {
@@ -171,7 +172,7 @@ function buildApprovals(s: State): Approval[] {
       thread: e.thread,
       urgency: fixed(holding ? 'soon' : 'urgent', holding ? 'Going out shortly' : 'Waiting for an OK'),
       email: e.preview.subject !== undefined || e.preview.body !== undefined ? { to: (e.preview.to ?? []).map((x) => `mail:${x}`), cc: e.preview.cc?.map((x) => `mail:${x}`), subject: e.preview.subject ?? '', body: e.preview.body ?? '', sources: [] } : undefined,
-      options: holding ? [{ id: 'undo', label: 'Undo', danger: true }] : [{ id: 'approve', label: e.kind === 'email' ? 'Send' : 'Approve', primary: true }, { id: 'decline', label: e.kind === 'email' ? 'Don’t send' : 'Decline', danger: true }],
+      options: holding ? [{ id: 'undo', label: 'Undo', danger: true }] : [{ id: 'approve', label: e.kind === 'email' ? 'Send' : e.kind === 'filing' ? 'File it' : 'Approve', primary: true }, { id: 'decline', label: e.kind === 'email' ? 'Don’t send' : e.kind === 'filing' ? 'Leave it' : 'Decline', danger: true }],
     });
   }
 
@@ -269,7 +270,7 @@ function buildApprovals(s: State): Approval[] {
   }
 
   // Within a level, decisions come before emails: an email often waits on the decision.
-  const order: Record<ApprovalKind, number> = { decision: 0, calendar: 1, campaign: 2, crm: 3, email: 4 };
+  const order: Record<ApprovalKind, number> = { decision: 0, calendar: 1, campaign: 2, crm: 3, email: 4, filing: 5 };
   const due = (a: Approval) => a.due?.getTime() ?? Infinity;
   return list.sort(
     (a, b) =>

@@ -69,7 +69,7 @@ export const api = {
   connect: (app: string) => call<{ redirectUrl: string }>('POST', `/api/v1/connections/${app}/connect`, {}),
   disconnect: (app: string) => call('POST', `/api/v1/connections/${app}/disconnect`, {}),
   settings: () =>
-    call<{ model: string; models: LiveProfile['models']; killSwitch: boolean; timezone: string; monthlySpendCapUsd: number; maxConcurrentRuns: number; limits: { monthlySpendCapUsd: number; maxConcurrentRuns: number } }>('GET', '/api/v1/settings'),
-  saveSettings: (patch: { model?: string; killSwitch?: boolean; monthlySpendCapUsd?: number; timezone?: string }) => call('PATCH', '/api/v1/settings', patch),
+    call<{ model: string; models: LiveProfile['models']; approvalMode: 'ask' | 'auto'; killSwitch: boolean; timezone: string; monthlySpendCapUsd: number; maxConcurrentRuns: number; limits: { monthlySpendCapUsd: number; maxConcurrentRuns: number } }>('GET', '/api/v1/settings'),
+  saveSettings: (patch: { model?: string; approvalMode?: 'ask' | 'auto'; killSwitch?: boolean; monthlySpendCapUsd?: number; timezone?: string }) => call('PATCH', '/api/v1/settings', patch),
   audit: () => call<{ entries: { id: number; at: Date; actor: string; action: string; effect_id: string | null; detail: Record<string, unknown> }[] }>('GET', '/api/v1/audit?limit=100'),
 };

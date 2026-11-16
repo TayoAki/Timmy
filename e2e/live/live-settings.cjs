@@ -38,9 +38,13 @@ run('live-settings', async (browser) => {
   await page.waitForFunction(() => document.querySelector('input[name="spend-cap"]')?.value === '120');
   ok(true, 'the limit is still set after a reload');
 
-  // Auto mode has nothing it could decide yet, so it is not offered.
-  ok((await page.locator('select[name="approval-mode"]').count()) === 0, 'no approval mode is offered that would do nothing');
-  ok(/waits for your OK or a rule you wrote/.test(await page.locator('.live-settings').innerText()), 'Settings says sends always need an OK');
+  // Letting Timmy file mail itself is a choice the owner makes; it is saved, and it says what it does not cover.
+  const mode = page.locator('select[name="approval-mode"]');
+  ok((await mode.inputValue()) === 'ask', 'by default Timmy asks before it files anything');
+  await mode.selectOption('auto');
+  await page.locator('.toast', { hasText: /file what you clearly asked for/ }).waitFor();
+  ok((await api(page, 'GET', '/api/v1/settings')).body.approvalMode === 'auto', 'the choice is saved');
+  ok(/only covers labels and archiving in your own mailbox/.test(await page.locator('.live-settings').innerText()) && /waits for your OK or a rule you wrote/.test(await page.locator('.live-settings').innerText()), 'Settings says it covers filing only, and that sends always need an OK');
   const audit = (await api(page, 'GET', '/api/v1/audit')).body.entries.filter((e) => e.action === 'settings.changed');
   ok(audit.length >= 2, 'setting changes are in the audit log');
 

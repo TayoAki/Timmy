@@ -19,6 +19,7 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 | Agent loop (leased runs, checkpoints, pause for approval), Ask over mail | Built. |
 | Reading mail and drafting (phase 1, started early) | Built: the model reads threads people wrote and proposes a sort; the Draft button writes a draft. |
 | Filing written back to Gmail (phase 1) | Built. Sorting a thread in Timmy labels it in Gmail (“Timmy Follow Up”, “Timmy Waiting”, “Timmy Read Through”) and leaves it in Gmail's inbox; archiving takes it out of the inbox; Undo files it back. Each write is an effect record approved by the person's own action. Tested against the fake provider; the three Gmail calls were checked against Composio's tool list, not yet run on a real mailbox. |
+| Filing from the chat, and Auto mode (phase 1) | Built. Ask Timmy to file or archive a thread and it shows the change with “File it” and “Leave it”. With the setting in Settings › Approvals switched on, Timmy files what you clearly asked for and asks when unsure: a judge model decides from your own words and a fixed description of the action, never from the mail. The setting covers labels and archiving only; a send always waits for Send. |
 | The morning run (phase 1) | Built. At the time and on the days set in Settings › Schedule, in the workspace's own time zone, Timmy checks the mailbox for anything the triggers missed, reads what people wrote, and drafts replies to what needs an answer (10 at most). It moves nothing and sends nothing; the drafts wait in Approvals. Today and the activity log say what it did. It needs a connected mailbox, and no run time is shown without one. |
 | Cold email (phase 2, built early because the decision was made) | Built as decided: Timmy writes it and opens Gmail's compose window; nothing cold goes through an API. The lead is marked contacted when sync sees the email in Sent, and replies show in the Unibox. |
 | Frontend live mode (`VITE_TIMMY_LIVE=1`) | Built: sign-in, onboarding, state from the API, Connect buttons, model picker, monthly limit, approvals for writes Timmy proposes. The demo is unchanged and still the default build. |
@@ -51,7 +52,7 @@ BASE=https://app-staging-fcb4f05d.up.railway.app/ TEST_TOKEN=<the TIMMY_TEST_TOK
 bash scripts/dev.sh          # local Postgres with pgvector, then every suite
 bash scripts/dev.sh server   # the API's unit and integration tests
 bash scripts/dev.sh demo     # the 12 demo-mode Playwright suites
-bash scripts/dev.sh live     # the 8 live-mode Playwright suites (fake providers)
+bash scripts/dev.sh live     # the 9 live-mode Playwright suites (fake providers)
 ```
 
 Local Postgres stops when the cloud session's worker restarts; `bash scripts/dev.sh db` starts it again.
@@ -63,9 +64,9 @@ Cost measurement: `server/scripts/measure-cost.ts` (the header says how to run i
 
 | Suite | Result |
 | --- | --- |
-| API unit and integration (`server/test`, 12 files) | 199 of 199 pass |
+| API unit and integration (`server/test`, 12 files) | 206 of 206 pass |
 | Demo-mode Playwright (`e2e/`, 12 suites, 348 checks) | 12 of 12 pass |
-| Live-mode Playwright (`e2e/live/`, 8 suites, 142 checks) | 8 of 8 pass |
+| Live-mode Playwright (`e2e/live/`, 9 suites, 155 checks) | 9 of 9 pass |
 | Live-mode Playwright against **staging** (Railway) | 8 of 8 pass (139 checks) on the build with the morning run. The sign-up suite was run three times to confirm the reload fix. To be run again after each push. |
 | Demo suites against a deployed build of this branch | Not run: `web` deploys the older branch, and I won't change that service without your OK |
 | Real-provider smoke (real Gmail through Composio) | Not run: needs a test Gmail account connected by a person |
@@ -178,11 +179,12 @@ Test changes that came with this, so you can check them:
 5. **New mail gets a first sort by plain code** (newsletters, receipts, calendar replies, automated notices), with the reason shown. Only a thread a person wrote is read by the model, once, and the model only proposes: the thread moves when the person accepts it in Triage.
 6. **There is no outage fallback model yet.** I had set `anthropic/claude-opus-5` as the fallback; the review against the brief pointed out that a fallback reads the same mail as the default, so it is a model added without the eval or your OK. It is removed. The fallback list is supported (`TIMMY_MODEL_FALLBACKS`) and empty; if the default's providers are down, Timmy says so instead of answering from another model. The judge never falls back, whatever the list says.
 7. **An app can be connected only once Timmy reads it or acts through it.** Outlook and Drive had Connect buttons that led to a connection nothing used. They now show as coming soon, like the rest, until phase 1 builds them.
-8. **Auto mode is not offered in Settings yet.** The only thing it may ever decide is routine filing in the person's own mailbox, and nothing files mail yet, so the setting did nothing. It comes back with label and archive write-back.
+8. **Auto mode came back once it had something to decide.** It was withdrawn while nothing could use it. It now covers one thing: filing mail in the person's own mailbox when they ask in the chat. Off by default.
 9. **Limits.** A workspace's owner or admin can set its monthly model limit ($50 to start) and how many jobs run at once (2 to start), up to ceilings set on the server (`TIMMY_SPEND_CAP_CEILING_USD`, default $200; `TIMMY_CONCURRENT_RUNS_CEILING`, default 4). The ceilings protect whoever pays the model bill until billing exists. The limit on jobs applies to starting new work; a job that is waiting for an approval always resumes.
-12. **How filing shows in Gmail.** Gmail label names can't contain “/”, so the labels are “Timmy Follow Up”, “Timmy Waiting” and “Timmy Read Through”. A labelled thread stays in Gmail's inbox; only Archived removes it. Say if you would rather labelled threads leave the inbox.
-11. **The morning run only prepares.** It drafts for threads you put in Follow Up, and for inbox threads Timmy read as needing a reply with at least medium confidence, where the other person wrote last and the thread is no older than 14 days. It never accepts a triage suggestion for you. Its model cost counts against the half of the monthly limit set aside for work nobody asked for. The workspace's time zone is taken from the owner's browser the first time they open it.
 10. **One everyday mailbox per workspace in phase 0.** It is who "me" is in that workspace's mail. A mailbox per member comes with phase 1.
+11. **The first morning run waits for the first mail sync.** A workspace that connects its mailbox after the day's run time still gets that day's run, once the first 30 days of mail are in, if that is within six hours of the set time.
+12. **The morning run only prepares.** It drafts for threads you put in Follow Up, and for inbox threads Timmy read as needing a reply with at least medium confidence, where the other person wrote last and the thread is no older than 14 days. It never accepts a triage suggestion for you. Its model cost counts against the half of the monthly limit set aside for work nobody asked for. The workspace's time zone is taken from the owner's browser the first time they open it.
+13. **How filing shows in Gmail.** Gmail label names can't contain “/”, so the labels are “Timmy Follow Up”, “Timmy Waiting” and “Timmy Read Through”. A labelled thread stays in Gmail's inbox; only Archived removes it. Say if you would rather labelled threads leave the inbox.
 
 ## Needs your attention
 
@@ -201,7 +203,7 @@ Test changes that came with this, so you can check them:
 ## What's next
 
 1. Finish phase 0: a real Gmail account end to end (connect, backfill, a real email in, a real send out), then repeat the cost measurement on it.
-2. Phase 1, in this order: a chat tool that files mail (which gives Auto mode something to decide, so the setting can come back), Waiting (track what you asked for, draft a nudge when the date slips), calendar events written to Google Calendar, decisions, ontology v1, Outlook and Drive. Reading mail, the Draft button and the morning run are built.
+2. Phase 1, in this order: Waiting (track what you asked for, draft a nudge when the date slips), calendar events written to Google Calendar, decisions, ontology v1, Outlook and Drive. Reading mail, the Draft button and the morning run are built.
 
 Known gaps to close in phase 1 (none of them lets anything be sent without approval):
 - Calendar: Google Calendar events are synced in, but events added in Timmy are not written to Google Calendar yet.
@@ -217,4 +219,3 @@ Known debt in the code (from the code-standards review; none of it is a safety g
 - Job payloads are untyped (`Record<string, unknown>`); a typed map of job name to payload would catch a misspelt field at compile time.
 - The app database role's password is derived from the owner role's inside the server process. Before outside users, the system role should have a separately held credential (the PRD says so).
 - Per-turn tokens, the sandbox interface and the file bucket are not in code yet: the agent's tools run inside the server and never see a key. They arrive with the cloud computer in phase 3.
-- The auto-mode judge is built and tested but nothing can reach it in production until a write that only touches the person's own mailbox exists (label and archive, phase 1).

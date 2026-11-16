@@ -6,7 +6,8 @@
  * This is a change to the person's own mailbox that nobody else sees. It still
  * goes through the Action gateway as a `mail.modify` effect, like every write.
  */
-import type { Box } from '../../../src/data/types';
+import type { Box, Thread } from '../../../src/data/types';
+import type { Proposal } from '../gateway/gateway';
 import { withWorkspace } from '../db/pool';
 import { callTool, type ConnectionRow } from './tools';
 
@@ -16,6 +17,24 @@ type Labelled = keyof typeof LABEL_NAMES;
 export type LabelIds = Record<Labelled, string>;
 
 const isLabelled = (box: Box): box is Labelled => box in LABEL_NAMES;
+
+export const BOX_WORDS: Record<Box, string> = { inbox: 'back to the inbox', 'follow-up': 'under Follow Up', waiting: 'under Waiting', 'read-through': 'under Read Through', archived: 'to the archive' };
+export const isBox = (v: unknown): v is Box => typeof v === 'string' && v in BOX_WORDS;
+
+/**
+ * What the gateway is asked when a synced thread is filed in `box`, whether a person moved it or Timmy proposes to.
+ * Null when the thread isn't in a connected mailbox, so there is nothing to write.
+ */
+export function filingProposal(t: Thread, box: Box): Pick<Proposal, 'kind' | 'payload' | 'preview' | 'title' | 'target'> | null {
+  if (!t.ext?.threadKey || !t.ext.connectionId) return null;
+  return {
+    kind: 'mail.modify',
+    payload: { connectionId: t.ext.connectionId, threadKey: t.ext.threadKey, box, threadId: t.id },
+    preview: { lines: [`“${t.subject}” ${BOX_WORDS[box]}`] },
+    title: `File “${t.subject}” ${BOX_WORDS[box]} in Gmail`,
+    target: t.ext.threadKey,
+  };
+}
 
 /** The label changes that put a thread in `box`. Removing a label the thread doesn't have is harmless. */
 export function labelPlan(box: Box, ids: LabelIds): { add: string[]; remove: string[] } {
