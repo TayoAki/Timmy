@@ -43,6 +43,12 @@ Reply with JSON only: {"body": "the full email, with line breaks as \\n"}`;
 export interface DraftResult {
   ok: boolean;
   reason?: string;
+  /**
+   * Why there is no draft, for code that has to tell the cases apart (an automation's run retries when the model
+   * failed, and does not when the month's limit is reached): the spending limit, the model, the thread itself
+   * (gone, or nobody to answer), or a draft that is already there.
+   */
+  why?: 'budget' | 'model' | 'thread' | 'has-draft';
   draft?: Draft;
 }
 
@@ -81,7 +87,7 @@ function trackFrom(raw: unknown, on: string, now = new Date()): Draft['trackAs']
 }
 
 /** One model call that returns the JSON the drafting prompts ask for. Null when it could not be had. */
-async function ask(workspaceId: string, system: string, lines: string[], opts: DraftOptions): Promise<{ parsed: Record<string, unknown> } | { reason: string }> {
+async function ask(workspaceId: string, system: string, lines: string[], opts: DraftOptions): Promise<{ parsed: Record<string, unknown> } | { reason: string; why: 'budget' | 'model' }> {
   const { state, workspace } = await readState(workspaceId);
   const rules = state.rules.filter((r) => r.group === 'writing' && r.enabled).map((r) => r.text);
   const model = await withWorkspace({ workspaceId }, async (tx) => modelFor((await tx.query('select model_id from workspace where id = $1', [workspaceId])).rows[0]?.model_id));
@@ -105,7 +111,7 @@ async function ask(workspaceId: string, system: string, lines: string[], opts: D
     return { parsed: jsonObject(res.content) };
   } catch (e) {
     log.warn('draft failed', { workspaceId, error: (e as Error).message });
-    return { reason: e instanceof BudgetError ? e.message : FAILED };
+    return e instanceof BudgetError ? { reason: e.message, why: 'budget' } : { reason: FAILED, why: 'model' };
   }
 }
 
@@ -124,26 +130,29 @@ async function save(workspaceId: string, threadId: string, draft: Draft, what: s
     if (!cur || (cur.draft && !replace) || !still(cur)) return { result: false };
     return { state: { ...loaded.state, threads: loaded.state.threads.map((t) => (t.id === threadId ? { ...t, draft, ext: { ...t.ext, ...ext }, history: [...(t.history ?? []), { at: new Date(), text: what }] } : t)) }, result: true };
   });
-  return saved ? { ok: true, draft } : { ok: false, reason: 'The thread already has a draft, or has changed.' };
+  return saved ? { ok: true, draft } : { ok: false, reason: 'The thread already has a draft, or has changed.', why: 'has-draft' };
 }
 
 /** Writes a reply draft for a thread and saves it on the thread. Returns why not, when it can't. */
 export async function draftReply(workspaceId: string, threadId: string, opts: DraftOptions = {}): Promise<DraftResult> {
   const { state } = await readState(workspaceId);
   const thread = state.threads.find((t) => t.id === threadId);
-  if (!thread) return { ok: false, reason: 'That thread is no longer here.' };
+  if (!thread) return { ok: false, reason: 'That thread is no longer here.', why: 'thread' };
   const to = lastInbound(thread)?.from ?? thread.participants.find((p) => p !== 'me');
-  if (!to) return { ok: false, reason: 'There is nobody to reply to on that thread.' };
+  if (!to) return { ok: false, reason: 'There is nobody to reply to on that thread.', why: 'thread' };
 
   const note = opts.note?.trim();
   const out = await ask(workspaceId, DRAFT_SYSTEM, [note ? `The user's note on what to say: ${note.slice(0, 2000)}` : 'The user gave no note. Reply to what the last message asks.', threadData(thread, to)], opts);
-  if ('reason' in out) return { ok: false, reason: out.reason };
+  if ('reason' in out) return { ok: false, reason: out.reason, why: out.why };
   const body = typeof out.parsed.body === 'string' ? out.parsed.body.trim() : '';
-  if (!body) return { ok: false, reason: FAILED };
+  if (!body) return { ok: false, reason: FAILED, why: 'model' };
 
   const trackAs = trackFrom(out.parsed.track, to);
   const draft: Draft = { to: [to], subject: reSubject(thread), body, sources: [], kind: 'reply', ...(trackAs ? { trackAs } : {}) };
-  return save(workspaceId, threadId, draft, note ? `Timmy drafted a reply from your words: “${note.slice(0, 120)}”` : 'Timmy drafted a reply', !!note);
+  // A note from the person means "rewrite it", so their draft is replaced. A draft nobody asked for (the morning
+  // run, an automation) never replaces one that is already there, whatever it was told to say.
+  const asked = !!note && !opts.unattended;
+  return save(workspaceId, threadId, draft, asked ? `Timmy drafted a reply from your words: “${note.slice(0, 120)}”` : 'Timmy drafted a reply', asked);
 }
 
 /** The date a wait runs out: the one that was set, or the default counted from when the wait began. */

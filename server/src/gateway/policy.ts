@@ -15,6 +15,12 @@ export const KINDS = {
   'calendar.create': { domain: 'calendar', outbound: true, hold: true, autoEligible: false, label: 'Create a calendar event' },
   /** A change to a deal, contact or activity in the connected CRM. */
   'crm.write': { domain: 'crm', outbound: false, hold: false, autoEligible: false, label: 'Update the CRM' },
+  /**
+   * An automation's “Ask me first” step. It writes nothing anywhere: it is a question that waits in Approvals,
+   * so that the yes or no goes through the same approve / decline path, the same check of who may decide,
+   * and the same audit log as every other approval. The automation's run carries on, or stops, on the answer.
+   */
+  'automation.ask': { domain: 'decision', outbound: false, hold: false, autoEligible: false, label: 'An automation asks first' },
 } as const;
 
 export type EffectKind = keyof typeof KINDS;
@@ -95,6 +101,8 @@ export function mayDecide(route: Route, kind: EffectKind, actor: Actor, effect: 
   if (route === 'revops') return actor.rules.approveCrm;
   if (route === 'exec') return admin || (!!effect.on_behalf_of && effect.on_behalf_of === actor.userId);
   if (k.domain === 'crm') return actor.rules.approveCrm;
+  // An automation's question is answered by an owner or admin, or by the person who switched the automation on.
+  if (k.domain === 'decision') return admin || (actor.rules.approveSends && !!effect.on_behalf_of && effect.on_behalf_of === actor.userId);
   // Filing that Timmy proposed can be decided by anyone who may work the inbox.
   if (k.domain === 'mail' && !k.outbound) return actor.rules.work;
   if (!actor.rules.approveSends) return false;

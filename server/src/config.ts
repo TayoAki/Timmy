@@ -160,6 +160,20 @@ export const config = {
   morningNudgeLimit: Number(env.TIMMY_MORNING_NUDGE_LIMIT ?? 5),
   /** Working days someone has to deliver what they were asked for, when the email named no date. */
   waitingDefaultDays: Number(env.TIMMY_WAITING_DEFAULT_DAYS ?? 3),
+
+  /** The limits that keep an automation from running away. */
+  automations: {
+    /** The most runs one automation may start in an hour. Past it, the automation is switched off and says why. */
+    runsPerHour: Number(env.TIMMY_AUTOMATION_RUNS_PER_HOUR ?? 100),
+    /** How long a failed step waits before each new try, in seconds. One entry per retry: three retries, then the run fails. */
+    retrySeconds: (env.TIMMY_AUTOMATION_RETRY_SECONDS ?? '30,120,600').split(',').map((s) => Number(s.trim())).filter((n) => Number.isFinite(n) && n >= 0),
+    /** This many failed runs in a row switch the automation off, with a note saying why. */
+    failuresToSwitchOff: Number(env.TIMMY_AUTOMATION_FAILURES_TO_SWITCH_OFF ?? 5),
+    /** A scheduled run that could not start on time (the server was down) still happens if it is no later than this. */
+    lateMinutes: Number(env.TIMMY_AUTOMATION_LATE_MINUTES ?? 6 * 60),
+    /** How long a worker may hold a run before another may take it over, in seconds. A step never takes this long unless its worker died. */
+    leaseSeconds: Number(env.TIMMY_AUTOMATION_LEASE_SECONDS ?? 600),
+  },
 };
 
 export const isProd = () => config.stage === 'production';

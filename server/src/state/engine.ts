@@ -22,6 +22,7 @@ import { withWorkspace, type Tx } from '../db/pool';
 import { cancelHeld, decide, GatewayError, onReplay, propose, type EffectRow } from '../gateway/gateway';
 import type { WsOp } from '../../../src/state/ws';
 import { checkWsOps } from './ws-check';
+import { gateAutomations } from '../automations/gate';
 import { prepareMailSend } from '../gateway/mail';
 import { SYNCED_PREFIX, eventProposal } from '../sync/calendar-write';
 import { filingProposal, isBox } from '../sync/labels';
@@ -93,7 +94,6 @@ export function emailOf(loaded: Loaded, state: State, id: string): string | null
  * nothing happens would be a false promise. Each entry leaves this list when its engine is built.
  */
 const NOT_RUNNING: Record<string, string> = {
-  automations: 'You can draw, save and test this automation here. Running automations on a real workspace isn’t switched on yet, so it stays off.',
   chat: 'You can set the chat up and preview it here. Putting it on a real website isn’t switched on yet, so it stays off.',
 };
 function notRunningYet(state: State, ops: WsOp[]): string | null {
@@ -153,6 +153,12 @@ export async function runCommand(ctx: Ctx, cmd: { id: string; action: Action }):
         else handled = { ...handled, state: await fileMoves(tx, loaded, ctx, cmd.id, handled.state) };
       }
       if (!handled.reject) handled = await addEvents(tx, loaded, ctx, cmd.id, handled);
+      // [automations] Switching one on, or changing one that is on, has to pass the engine's gate (automations/gate.ts).
+      // It looks at the command's result, like the checks above, so Undo and any other route to "on" pass through it too.
+      if (!handled.reject) {
+        const gated = await gateAutomations(tx, loaded, ctx, handled.state);
+        handled = gated.reject ? { state: loaded.state, reject: gated.reject } : { ...handled, state: gated.state, ...(gated.toast ? { toast: gated.toast } : {}) };
+      }
     } catch (err) {
       if (!(err instanceof GatewayError)) throw err;
       handled = { state: loaded.state, reject: err.message };

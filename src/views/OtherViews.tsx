@@ -14,6 +14,7 @@ import {
   Send,
   Stamp,
   Undo2,
+  Workflow,
   type LucideIcon,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -40,6 +41,8 @@ const KIND_META: Record<ActivityKind, { icon: LucideIcon; color: string; label: 
   calendar: { icon: CalendarDays, color: 'var(--c-green)', label: 'Calendar' },
   crm: { icon: BadgeDollarSign, color: 'var(--c-teal)', label: 'CRM' },
   approval: { icon: Stamp, color: 'var(--c-violet)', label: 'Decided' },
+  // On a real workspace: a notice from an automation, or Timmy saying it switched one off.
+  automation: { icon: Workflow, color: 'var(--c-indigo)', label: 'Automation' },
 };
 
 const ACTIVITY_TABS: { id: string; label: string; kinds: ActivityKind[] | null }[] = [
@@ -48,7 +51,7 @@ const ACTIVITY_TABS: { id: string; label: string; kinds: ActivityKind[] | null }
   { id: 'drafts', label: 'Drafts & sends', kinds: ['draft', 'send'] },
   { id: 'decisions', label: 'Decisions', kinds: ['approval'] },
   { id: 'files', label: 'Files', kinds: ['file'] },
-  { id: 'other', label: 'Tasks, calendar & CRM', kinds: ['task', 'calendar', 'crm'] },
+  { id: 'other', label: 'Tasks, calendar & CRM', kinds: ['task', 'calendar', 'crm', 'automation'] },
 ];
 
 export function ActivityView({ tab }: { tab: string }) {

@@ -12,6 +12,7 @@ import { withWorkspace, type Tx } from '../db/pool';
 import { newId } from '../lib/ids';
 import { log } from '../lib/log';
 import { mutate } from '../state/mutate';
+import { onMailStored } from '../automations/triggers';
 import { mailboxFor } from './mailbox';
 import { paragraphs, parseSender, type MailMessage } from './message';
 import { connectionById, type ConnectionRow, type Phase } from './tools';
@@ -204,7 +205,9 @@ async function storeMessages(tx: Tx, state: State, workspaceId: string, conn: Co
   const keys = [...new Set(list.map((m) => m.threadKey))];
   let next = state;
   for (const key of keys) next = await projectThread(tx, next, workspaceId, conn, key);
-  return { state: noteLeadMail(next, fresh), fresh: fresh.length, threads: keys.length };
+  // [automations] New mail may start automations. Their runs are recorded here, in the transaction that stores the mail.
+  next = await onMailStored(tx, noteLeadMail(next, fresh), workspaceId, conn, fresh);
+  return { state: next, fresh: fresh.length, threads: keys.length };
 }
 
 /* ───────────── Mail to and from leads ───────────── */

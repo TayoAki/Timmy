@@ -23,6 +23,7 @@ import { mailboxFor } from '../sync/mailbox';
 import { fromWire, pickSlices, toWire } from '../../../src/live/patches';
 import type { Action } from '../../../src/state/store';
 import { agentRoutes } from './agent';
+import { automationRoutes } from './automations';
 import { membership, workspacesOf } from '../auth/members';
 import { ctxOf, requireRead, requireSession, requireWorkspace, sameOrigin, sessionOf, type Env } from './session';
 import { testRoutes } from './test-hooks';
@@ -271,6 +272,8 @@ export function buildApp(): Hono<Env> {
   });
 
   agentRoutes(app);
+  // [automations] The test run and the list of runs (http/automations.ts).
+  automationRoutes(app);
 
   if (config.testHooks) testRoutes(app);
 

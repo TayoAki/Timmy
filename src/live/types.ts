@@ -6,7 +6,8 @@ import type { Patch } from './patches';
  */
 export interface PendingEffect {
   id: string;
-  kind: 'email' | 'calendar' | 'crm' | 'campaign' | 'filing';
+  /** `decision`: an automation's “Ask me first” step, which reaches nobody outside and waits for a yes or no. */
+  kind: 'email' | 'calendar' | 'crm' | 'campaign' | 'filing' | 'decision';
   /** What it will do, in a line: "Send “Re: Quote” to Dana Whitfield". */
   title: string;
   /** Why Timmy proposed it. */
