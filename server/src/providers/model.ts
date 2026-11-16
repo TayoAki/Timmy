@@ -6,6 +6,7 @@
 import { config } from '../config';
 import { sysPool, withWorkspace } from '../db/pool';
 import { log } from '../lib/log';
+import { fakeThingsAnswer, fakeThingsQuestion, fakeThingsRead } from './fake-things';
 
 export interface ToolCall {
   id: string;
@@ -250,6 +251,8 @@ export class FakeModel implements ModelProvider {
           due: null,
           commitments: promise ? [{ who: 'them', what: promise[1]!.replace(/^(I will|I'll|We will|We'll) /, '').replace(/ by \d{4}-\d{2}-\d{2}$/, ''), due: promise[2], quote: promise[1] }] : [],
           decision: choice ? { question, options: [cap(choice[1]!), cap(choice[2]!)], facts: [...(price ? [['Price', price[1], price[0]]] : []), ['Made up', '$1', 'a sentence that is not in the thread at all']], same_as: same ? Number(same[1]) : null } : null,
+          // Tracked things and untracked kinds, from lines like "Deal: company Acme Corp; value $40,000." (see fake-things.ts).
+          ...fakeThingsRead(content),
         }),
       };
     }
@@ -272,6 +275,7 @@ export class FakeModel implements ModelProvider {
     const last = req.messages[req.messages.length - 1]!;
     const has = (name: string) => req.tools?.some((t) => t.name === name);
     if (last.role === 'tool') {
+      if (last.content.includes('<untrusted source="things">')) return { content: fakeThingsAnswer(last.content) };
       if (last.content.includes('<untrusted source="people">')) {
         const person = /"name":"([^"]+)","email":"([^"]+)"(?:,"also":\[[^\]]*\])?(?:,"company":"([^"]+)")?/.exec(last.content);
         const owed = /"what":"([^"]+)","due":(?:"([^"]+)"|null)/.exec(last.content);
@@ -301,6 +305,8 @@ export class FakeModel implements ModelProvider {
     const who = /^who is (.+?)[?.!]*$/i.exec(asked);
     if (who && has('lookup_person')) return { toolCalls: [{ name: 'lookup_person', arguments: { query: who[1] } }] };
     if (/^what am i waiting on[?.!]*$/i.test(asked) && has('list_commitments')) return { toolCalls: [{ name: 'list_commitments', arguments: {} }] };
+    const things = fakeThingsQuestion(asked);
+    if (things && has('find_things')) return { toolCalls: [{ name: 'find_things', arguments: { type: things } }] };
     const says = /^what does (?:the |my )?(?:file|doc|document) (.+?) say[?.!]*$/i.exec(asked);
     if (says && has('search_files')) return { toolCalls: [{ name: 'search_files', arguments: { query: says[1] } }] };
     const lookFor = /^find (?:the |my )?(?:file|doc|document) (?:called |named |about )?(.+?)[?.!]*$/i.exec(asked);

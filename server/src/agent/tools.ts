@@ -19,6 +19,7 @@ import { readPage, searchPages } from './pages';
 import { BOX_WORDS, filingProposal, isBox } from '../sync/labels';
 import { LostLease } from './errors';
 import { untrusted } from './prompts';
+import { findThingsTool } from './things-tool';
 
 export interface ToolRun {
   ctx: Ctx;
@@ -399,5 +400,5 @@ const fileThread: AgentTool = {
   },
 };
 
-export const TOOLS: AgentTool[] = [searchMail, readThread, listInbox, searchFiles, readFile, searchPagesTool, readPageTool, lookupPerson, listCommitments, draftReply, sendEmail, sendReply, fileThread];
+export const TOOLS: AgentTool[] = [searchMail, readThread, listInbox, searchFiles, readFile, searchPagesTool, readPageTool, lookupPerson, listCommitments, findThingsTool, draftReply, sendEmail, sendReply, fileThread];
 export const TOOL_BY_NAME: Record<string, AgentTool> = Object.fromEntries(TOOLS.map((t) => [t.def.name, t]));

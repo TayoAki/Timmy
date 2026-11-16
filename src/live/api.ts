@@ -1,5 +1,6 @@
 import type { Action } from '../state/store';
 import { clearsAsNull, fromWire, toWire } from './patches';
+import type { TrackedOverview, TrackedThing } from './tracked';
 import type { CommandResult, LiveProfile } from './types';
 import type { Block, DocCover } from '../data/ws-types';
 
@@ -100,6 +101,13 @@ export const api = {
   audit: () => call<{ entries: { id: number; at: Date; actor: string; action: string; effect_id: string | null; detail: Record<string, unknown> }[] }>('GET', '/api/v1/audit?limit=100'),
   /** What an automation has done lately: its runs, newest first, each with its steps. */
   automationRuns: (id: string) => call<AutomationRuns>('GET', `/api/v1/automations/${encodeURIComponent(id)}/runs`),
+  /** What Timmy offers to track and what it tracks (deals, properties…), for the review screen on People. */
+  tracked: () => call<TrackedOverview>('GET', '/api/v1/tracked'),
+  trackedThings: (id: string) => call<{ things: TrackedThing[] }>('GET', `/api/v1/tracked/${encodeURIComponent(id)}/things`),
+  acceptTracking: (key: string, name?: string) => call('POST', `/api/v1/tracked/proposals/${encodeURIComponent(key)}/accept`, name ? { name } : {}),
+  dismissTracking: (key: string) => call('POST', `/api/v1/tracked/proposals/${encodeURIComponent(key)}/dismiss`, {}),
+  changeTracked: (id: string, change: { name?: string; removeField?: string }) => call('PATCH', `/api/v1/tracked/${encodeURIComponent(id)}`, change),
+  stopTracking: (id: string) => call<{ removed: number }>('DELETE', `/api/v1/tracked/${encodeURIComponent(id)}`),
 };
 
 export interface AutomationRun {
