@@ -117,7 +117,8 @@ async function typesOf(tx: Tx, workspaceId: string): Promise<TypeRow[]> {
   const rows = await load();
   if (rows.some((r) => r.source === 'trade')) return rows;
   const trade = (await tx.query('select trade from workspace where id = $1', [workspaceId])).rows[0]?.trade as string | undefined;
-  const starters = TRADE_TYPES[trade ?? ''] ?? [];
+  // The trade is a word the sign-up form sent. One this list does not hold as its own entry has no kinds.
+  const starters = trade && Object.hasOwn(TRADE_TYPES, trade) ? TRADE_TYPES[trade]! : [];
   if (!starters.length) return rows;
   for (const s of starters) {
     await tx.query(`insert into tracked_type (id, workspace_id, key, name, fields, status, source) values ($1, $2, $3, $4, $5::jsonb, 'proposed', 'trade') on conflict (workspace_id, key) do nothing`, [newId('typ'), workspaceId, s.key, s.name, JSON.stringify(s.fields)]);

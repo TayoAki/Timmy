@@ -158,6 +158,10 @@
   color: var(--text-2);
 }
 
+.trk-loading {
+  margin-top: 24px;
+}
+
 /* ───────────── Narrow main column ───────────── */
 
 @container (max-width: 760px) {

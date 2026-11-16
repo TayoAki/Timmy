@@ -43,10 +43,10 @@ const tool = async (c: Client, name: string, args: Record<string, unknown> = {})
 const data = (out: { result: string }) => JSON.parse(out.result.split('\n')[1]!);
 /** A read the test writes itself, in place of the stand-in's own: the sorting is always usable, the rest is what the test wants to try. */
 const nextRead = (extra: Record<string, unknown>) => model().script.push({ content: JSON.stringify({ box: 'read-through', confidence: 'high', effort: 'quick', ask: 'For your information.', reason: 'Nothing to do.', due: null, commitments: [], decision: null, ...extra }) });
-/** A workspace whose trade has no kinds of its own. */
-async function plainWorkspace(name: string): Promise<Client> {
+/** A workspace of a given trade. "other" has no kinds of its own. */
+async function plainWorkspace(name: string, trade = 'other'): Promise<Client> {
   const c = await signUp(`${name} Owner`);
-  const org = await c.json<{ id: string }>('POST', '/api/auth/organization/create', { name, slug: `${name.toLowerCase()}-${Math.random().toString(36).slice(2, 8)}`, trade: 'other' });
+  const org = await c.json<{ id: string }>('POST', '/api/auth/organization/create', { name, slug: `${name.toLowerCase()}-${Math.random().toString(36).slice(2, 8)}`, trade });
   c.workspaceId = org.id;
   return c;
 }
@@ -121,10 +121,17 @@ describe('a new workspace', () => {
   });
 
   it('each trade gets its own kinds', async () => {
-    const c = await signUp('Estate Owner');
-    const org = await c.json<{ id: string }>('POST', '/api/auth/organization/create', { name: 'Estate', slug: `estate-${Math.random().toString(36).slice(2, 8)}`, trade: 'real-estate' });
-    c.workspaceId = org.id;
-    expect((await overview(c)).proposals.map((p) => p.name)).toEqual(['Property', 'Showing']);
+    expect((await overview(await plainWorkspace('Estate', 'real-estate'))).proposals.map((p) => p.name)).toEqual(['Property', 'Showing']);
+    expect((await overview(await plainWorkspace('Agency', 'agency'))).proposals.map((p) => p.name)).toEqual(['Client', 'Invoice']);
+  });
+
+  it('a trade the list does not hold, whatever word was sent for it, starts with nothing and breaks nothing', async () => {
+    // The trade is whatever the sign-up request said. None of these may be mistaken for an entry of the list.
+    for (const trade of ['constructor', 'toString', '__proto__', 'no-such-trade']) {
+      const c = await plainWorkspace('Odd', trade);
+      expect(await overview(c), trade).toEqual({ proposals: [], tracked: [] });
+      expect(data(await tool(c, 'find_things', { type: 'deal' })), trade).toEqual({ type: 'deal', tracked: [], things: [] });
+    }
   });
 });
 
@@ -414,6 +421,28 @@ describe('kinds Timmy notices on its own', () => {
     expect((await dismiss('deal')).status).toBe(409);
     expect((await accept('deal')).status).toBe(200);
     expect((await overview()).tracked.map((t) => t.name)).toEqual(['Deal']);
+    // A dismissed kind is never proposed again, but an owner who asks for it by name can still have it.
+    await dismiss('lead');
+    expect((await overview()).proposals).toEqual([]);
+    expect((await accept('lead')).status).toBe(200);
+    expect((await overview()).tracked.map((t) => t.name)).toEqual(['Deal', 'Lead']);
+  });
+
+  it('if keeping what was found fails, the thread is still sorted and its promises kept', async () => {
+    await sysPool.query(`create function fail_sighting() returns trigger language plpgsql as $$ begin raise exception 'no sightings today'; end $$`);
+    await sysPool.query(`create trigger fail_sighting before insert on type_sighting for each row execute function fail_sighting()`);
+    try {
+      const subject = await deliver(`Property: address 12 Oak Street; price $450,000.\n\nI'll send the survey by 2026-11-20.`);
+      expect((await w.state()).threads.find((t) => t.subject === subject)!.suggestion).toMatchObject({ box: 'follow-up', confidence: 'medium' });
+      expect(await rows(`select name from entity where workspace_id = $1 and type = 'commitment'`, [w.workspaceId])).toEqual([{ name: 'send the survey' }]);
+      expect(await sightings()).toEqual([]);
+    } finally {
+      await sysPool.query('drop trigger fail_sighting on type_sighting');
+      await sysPool.query('drop function fail_sighting()');
+    }
+    // With the fault gone, the same kind of email is counted as usual.
+    await deliver('Property: address 14 Oak Street; price $510,000.');
+    expect((await sightings()).map((s) => s.name)).toEqual(['14 Oak Street']);
   });
 
   it('what the trade’s own kind showed before it was accepted becomes the first things known', async () => {

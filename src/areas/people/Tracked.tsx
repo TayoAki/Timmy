@@ -100,6 +100,7 @@ export function Tracked() {
         </div>
       </div>
 
+      {!data && !failed && <p className="pj-none trk-loading">Loading…</p>}
       {failed && !data && <EmptyState icon={Shapes} title="This couldn’t be loaded" body={failed} action={<button className="btn btn-sm" onClick={() => void load()}>Try again</button>} />}
 
       {data && (
@@ -350,14 +351,15 @@ function Kind({
                   <div className="trk-thing-main">
                     <strong>{text(t.name)}</strong>
                     <dl className="trk-fields">
-                      {k.fields.slice(1).map((f) =>
-                        t.fields[f.key] ? (
+                      {k.fields.slice(1).map((f) => {
+                        const value = text(t.fields[f.key]);
+                        return value ? (
                           <div key={f.key}>
                             <dt>{text(f.label)}</dt>
-                            <dd>{text(t.fields[f.key])}</dd>
+                            <dd>{value}</dd>
                           </div>
-                        ) : null,
-                      )}
+                        ) : null;
+                      })}
                     </dl>
                   </div>
                   {t.sources.map((s, i) => (
