@@ -32,6 +32,17 @@ run('live-mail', async (browser) => {
   await page.locator('.main').getByText('Could you send the revised quote by Friday?').first().waitFor();
   ok(true, 'opening the thread shows the message');
 
+  // The Draft button: Timmy writes a draft on the server; it shows up in Approvals and nothing is sent.
+  const forDraft = (await api(page, 'GET', '/api/v1/state')).body.slices.threads.find((t) => t.subject === 'Revised quote for 120 seats');
+  ok((await api(page, 'POST', '/api/v1/commands', { id: `draft-${Date.now()}`, action: { type: 'makeDraft', id: forDraft.id } })).body.ok, 'asking for a draft is accepted');
+  await page.click('button[aria-label="Approvals"]');
+  const drafted = page.locator('.ap-card', { hasText: 'Re: Revised quote for 120 seats' });
+  await drafted.waitFor({ timeout: 15000 });
+  ok(/Thanks for your message/.test(await drafted.innerText()), 'the draft Timmy wrote appears in Approvals on its own');
+  ok((await sentMail(page)).length === 0, 'writing a draft sends nothing');
+  await drafted.getByRole('button', { name: 'Discard' }).click();
+  await page.waitForTimeout(500);
+
   // Send a new email, then undo inside the window: nothing goes out.
   await compose(page, { to: 'dana@client.test', subject: 'Quote attached', body: 'Hi Dana, the revised quote is attached.' });
   const holding = page.locator('.toast', { hasText: /Sending in \d+ seconds/ });
