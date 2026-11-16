@@ -54,6 +54,14 @@ What changed to make it work on the API:
   - `e2e/live/live-pages.cjs`: type in a doc, icon and cover, trash and restore, draw and save an automation, and change the chat's settings, all through the API.
   - `e2e/e2e-pages.cjs` and `e2e/e2e-uis.cjs` in demo mode.
 
+**Tested before it reached the backend branch.** Everything below was run on the merged code (`36bf1a7` and `49eab34`):
+
+- **Locally:** type checks; 291 of 291 API tests (286 existing and 5 new); 17 of 17 demo suites, 450+ checks; 13 of 13 live suites.
+- **On staging:** 12 of 12 live suites, 218 checks, including `live-pages`.
+  - Staging's `app` was pointed at the temporary branch `claude/modest-meitner-59cqpr-staging` for the run, then back to this branch.
+  - The test hooks were reached through the session's proxy, which holds the staging test token, using the new opt-in `TEST_PROXY` in `e2e/live/lib.cjs`.
+- **Production `app`** got the merge only after this, by the push to this branch.
+
 ## What is deployed
 
 Railway project `timmy`. Production:
