@@ -95,6 +95,13 @@
    "status": "pass"
   },
   {
+   "id": "api-calendar-change",
+   "file": "server/test/calendar-change.test.ts, server/test/outlook-calendar.test.ts (and additions to calendar.test.ts and outlook.test.ts)",
+   "covers": "Outlook’s calendar read, shown, updated on re-sync and removed on disconnect; an event made in Timmy lands on Outlook once, with approval when guests are involved; changing an event’s time writes the change once after the undo window; a change or a delete with guests waits for approval and nothing is written before it; undo inside the window writes nothing; a timeout after the write is settled by reading the calendar and never repeated; an event organized by someone else cannot be changed or deleted; one that gained a guest the approver was not shown is refused; one change per event at a time; another workspace cannot touch this workspace’s events; Outlook is asked for mail, calendar and profile permissions and nothing else",
+   "tests": 64,
+   "status": "pass"
+  },
+  {
    "id": "api-review",
    "file": "server/test/review.test.ts",
    "covers": "one test per finding of the phase 0 safety review",
@@ -207,6 +214,20 @@
    "status": "pass"
   },
   {
+   "id": "api-mailbox-changes",
+   "file": "server/test/mailbox-changes.test.ts",
+   "covers": "changes made in Gmail or Outlook itself, for both: archived there moves the thread to Archived; back in the inbox returns it (to its Timmy label’s place when it carries one); one of Timmy’s labels or categories put on or changed moves it; read and unread follow; deleted or spam takes it off the screens and out of the trash shows it again. A picked-up change makes no effect record and no write to the mailbox; a thread with Timmy’s own filing still on its way is left alone and picked up after it settles; the same look twice changes nothing; a look costs one or two calls however many threads; mail outside the three-day window is ignored; another workspace’s mailbox never moves this workspace’s threads; a disconnected mailbox is not looked at",
+   "tests": 47,
+   "status": "pass"
+  },
+  {
+   "id": "api-ontology-types",
+   "file": "server/test/ontology-types.test.ts",
+   "covers": "kinds of thing for the workspace’s trade: a new workspace gets its trade’s kinds as suggestions and nothing is extracted until one is accepted; an accepted kind yields one thing with its fields and evidence, and a second thread about the same thing merges into it; a thing whose sentence is not in the thread is dropped, and so is a field whose value appears nowhere in it; a kind seen in three threads becomes a suggestion with examples, in two it does not; dismissing stops it being suggested; renaming, removing a field and stopping (which removes what was learned); only an owner or admin accepts or stops, a read-only role can look; nothing across workspaces by API, tool or row; disconnecting the mailbox removes what was learned from it; still one model read per thread, with a 1,200-token limit; wrong-shaped model output makes nothing",
+   "tests": 31,
+   "status": "pass"
+  },
+  {
    "id": "demo-e2e",
    "file": "e2e/run-all.sh",
    "covers": "the 17 demo-mode Playwright suites (483 checks), including the frontend branch’s five: round4, story, intro, pages and uis",
@@ -228,6 +249,13 @@
    "status": "pass",
    "tests": 33,
    "checks": 33
+  },
+  {
+   "id": "live-mailbox",
+   "file": "e2e/live/live-mailbox.cjs",
+   "covers": "in the browser: a thread archived, labelled, read, restored and deleted in the stand-in Gmail moves in the open app each time, with no effect record; after a reload a change is picked up with nothing asking for it",
+   "checks": 28,
+   "status": "pass"
   },
   {
    "id": "live-ask",
@@ -274,22 +302,24 @@
   {
    "id": "live-filing",
    "file": "e2e/live/live-filing.cjs",
-   "covers": "filing asked for in the chat shows the change and waits; with the setting on Timmy files the thread that is open, and still asks about any other; the audit log says which a person approved; an email still needs Send",
+   "covers": "filing asked for in the chat shows the change and waits; with the setting on Timmy files the thread that is open, and still asks about any other; the audit log says which a person approved; an email still needs Send; a thread moved back to the inbox by hand, which has no suggestion, is listed in Triage with every place to choose from (it used to blank the app)",
    "tests": 12,
-   "status": "pass"
+   "status": "pass",
+   "checks": 15
   },
   {
    "id": "live-calendar",
    "file": "e2e/live/live-calendar.cjs",
-   "covers": "connect Google Calendar; an event with a guest waits out the undo window, then is created with the guest invited, once, and shows once in Timmy; Undo means nobody is invited",
+   "covers": "connect Google Calendar; an event with a guest waits out the undo window, then is created with the guest invited, once, and shows once in Timmy; Undo means nobody is invited; an event is moved and another deleted in the app and the stand-in calendar changes once each, after the undo window",
    "tests": 13,
-   "status": "pass"
+   "status": "pass",
+   "checks": 32
   },
   {
    "id": "live-outlook",
    "file": "e2e/live/live-outlook.cjs",
-   "covers": "in the browser: the Outlook card says what Timmy really reads; connect Outlook; Gmail refused beside it; an Outlook email arrives and reads as plain words; accepting a suggestion puts the category on it in Outlook; a drafted reply is approved, held, and sent once from the Outlook mailbox in the same conversation; archiving moves it to Outlook's Archive; connect Drive, a new file is announced, Ask finds it by name; disconnecting Outlook removes its thread",
-   "checks": 27,
+   "covers": "in the browser: the Outlook card says what Timmy really reads; connect Outlook; Gmail refused beside it; an Outlook email arrives and reads as plain words; accepting a suggestion puts the category on it in Outlook; a drafted reply is approved, held, and sent once from the Outlook mailbox in the same conversation; archiving moves it to Outlook's Archive; connect Drive, a new file is announced, Ask finds it by name; disconnecting Outlook removes its thread; the Outlook card says it reads mail and calendar; Outlook’s events show on Timmy’s calendar",
+   "checks": 31,
    "status": "pass"
   },
   {
@@ -311,6 +341,13 @@
    "file": "e2e/live/live-decisions.cjs",
    "covers": "in the browser: a question in the mail becomes a card with the answers and the real figure; choosing drafts a reply with a Send button and sends nothing; the same question asked again says what was decided; People suggests the people who wrote, with their company; Ask says who someone is and what they promised",
    "checks": 13,
+   "status": "pass"
+  },
+  {
+   "id": "live-types",
+   "file": "e2e/live/live-types.cjs",
+   "covers": "in the browser: the owner accepts a suggested kind on People › What Timmy tracks; an email that mentions one arrives; it is listed with its fields and the sentence it rests on; Ask finds it",
+   "checks": 22,
    "status": "pass"
   },
   {
