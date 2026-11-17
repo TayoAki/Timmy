@@ -4,7 +4,7 @@
  * which runs the same handlers on demand so a test decides when time passes.
  */
 import { PgBoss } from 'pg-boss';
-import { config } from '../config';
+import { systemDatabaseUrl } from '../db/pool';
 import { log } from '../lib/log';
 import { InlineJobs } from '../testing/jobs';
 import type { JobName, JobPayloads } from './payloads';
@@ -73,7 +73,8 @@ export function enqueueSoon<N extends JobName>(name: N, data: JobPayloads[N], op
 }
 
 export async function startBoss(): Promise<Jobs> {
-  const boss = new PgBoss({ connectionString: config.databaseUrl, schema: 'pgboss', max: 4 });
+  // The queue's tables belong to the system role, like the rest of the schema.
+  const boss = new PgBoss({ connectionString: systemDatabaseUrl(), schema: 'pgboss', max: 4 });
   boss.on('error', (e) => log.error('job queue error', { error: (e as Error).message }));
   await boss.start();
   for (const [name, handler] of handlers) {
