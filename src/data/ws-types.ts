@@ -314,6 +314,11 @@ export interface Automation {
   tests?: number;
   /** On a real workspace: why Timmy switched it off (it ran too often, or kept failing). Cleared when it is switched back on. */
   note?: string;
+  /**
+   * On a real workspace: set while it is on but can't run, saying why (a New-email automation with no mailbox
+   * connected). It carries on by itself once that is fixed. Only the server writes it.
+   */
+  paused?: string;
 }
 
 /** The chat on your website: how it looks, what it asks and what it knows. */

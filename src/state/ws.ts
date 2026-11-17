@@ -16,7 +16,8 @@ import type { Route } from './store';
 
 export type WsOp =
   | { op: 'put'; col: Col; item: { id: string } }
-  | { op: 'patch'; col: Col; id: string; patch: object }
+  /** `base`, on a page's save: the lines Timmy added that the copy of the page it was made from had (see lib/blocks.ts). */
+  | { op: 'patch'; col: Col; id: string; patch: object; base?: string[] }
   | { op: 'remove'; col: Col; id: string };
 
 export const put = <C extends Col>(col: C, item: ItemOf<C>): WsOp => ({ op: 'put', col, item });

@@ -71,14 +71,15 @@ export function Automations() {
                     <span className="au-name">{a.name}</span>
                     <span className="au-desc">{a.description}</span>
                     {a.note && <span className="au-note">{a.note}</span>}
+                    {a.on && a.paused && <span className="au-note">Paused. {a.paused}</span>}
                     <span className="au-meta">
                       {a.nodes.length} step{a.nodes.length === 1 ? '' : 's'} · {apps.map((k) => k.app).join(', ')} · edited {fmtStamp(a.updated)}
                       {a.tests ? ` · tested ${a.tests} time${a.tests === 1 ? '' : 's'}` : ''}
                     </span>
                   </span>
                 </button>
-                <label className={`ae-switch${a.on ? ' on' : ''}`}>
-                  <span>{a.on ? 'On' : 'Off'}</span>
+                <label className={`ae-switch${a.on ? ' on' : ''}${a.on && a.paused ? ' paused' : ''}`} title={a.on && a.paused ? a.paused : undefined}>
+                  <span>{a.on ? (a.paused ? 'Paused' : 'On') : 'Off'}</span>
                   <button role="switch" aria-checked={a.on} aria-label={`${a.name} on`} className="ae-switch-track" onClick={() => toggle(a)}>
                     <span className="ae-switch-thumb" />
                   </button>

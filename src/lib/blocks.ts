@@ -10,6 +10,15 @@ export const hasText = (b: Block): b is TextBlock => 'text' in b && typeof (b as
 
 export const textOf = (b: Block) => (hasText(b) ? b.text : '');
 
+/**
+ * A line Timmy added to a page by itself (an automation's “Add to a doc” step) has an id that says so. A save made
+ * from a copy of the page that didn't have the line yet keeps it (server/src/automations/doc-lines.ts).
+ */
+export const TIMMY_LINE = 'auto-';
+export const isTimmyLine = (id: unknown): boolean => typeof id === 'string' && id.startsWith(TIMMY_LINE);
+/** The ids of the lines Timmy added that a page's blocks hold. */
+export const timmyLines = (blocks: { id: string }[]): string[] => blocks.filter((b) => isTimmyLine(b.id)).map((b) => b.id);
+
 const ROMAN = ['i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii', 'viii', 'ix', 'x', 'xi', 'xii', 'xiii', 'xiv', 'xv', 'xvi', 'xvii', 'xviii', 'xix', 'xx'];
 const alpha = (n: number): string => (n <= 26 ? String.fromCharCode(96 + n) : alpha(Math.floor((n - 1) / 26)) + alpha(((n - 1) % 26) + 1));
 

@@ -2,7 +2,8 @@
  * The automation editor: a canvas of blocks you drag in and wire together
  * (zoom, fit, lock, mini map), and a side panel with the blocks and the
  * selected step's settings. "Test run" walks the flow with sample data and
- * shows what each step would do; nothing is sent.
+ * shows what each step would do; nothing is sent. On a real workspace the
+ * server walks it (TestRun.tsx), with sample data or a recent email.
  */
 import {
   Background,
@@ -35,6 +36,7 @@ import { patch, uid } from '../../state/ws';
 import { KIND, KINDS, ROLE_LABEL, evaluate, fill, ready, type Kind } from './catalog';
 import { kindNotYet, stepNotYet } from './real';
 import { Runs } from './Runs';
+import { TestRun, type Walked } from './TestRun';
 
 type StepState = 'running' | 'done' | 'skipped';
 type FlowNode = Node<{ n: AutoNode; index: number }, 'step'>;
@@ -137,6 +139,8 @@ function Canvas({ a }: { a: Automation }) {
   const [locked, setLocked] = useState(false);
   const [run, setRun] = useState<Record<string, StepState>>({});
   const [log, setLog] = useState<{ id: string; text: string; skipped?: boolean }[] | null>(null);
+  /** On a real workspace: the server's test run is open. The number starts it again from scratch. */
+  const [liveTest, setLiveTest] = useState(0);
   const [panelW, setPanelW] = useState(340);
   const [q, setQ] = useState('');
   const wrap = useRef<HTMLDivElement>(null);
@@ -236,6 +240,11 @@ function Canvas({ a }: { a: Automation }) {
 
   const testRun = () => {
     if (!trigger) return dispatch({ type: 'toast', text: 'Add a trigger first.', tone: 'warn' });
+    if (live) {
+      setRun({});
+      setLiveTest((n) => n + 1);
+      return;
+    }
     const data = { ...(KIND[trigger.data.n.kind]?.sample ?? {}) };
     const byId = new Map(nodes.map((n) => [n.id, n]));
     const order: { id: string; text: string }[] = [];
@@ -266,6 +275,12 @@ function Canvas({ a }: { a: Automation }) {
         }
       }, i * 650 + 450);
     });
+  };
+
+  /** The server's test run reached these steps: they are marked on the canvas, and the test is counted. */
+  const walked = (w: Walked) => {
+    setRun({ ...Object.fromEntries(w.done.map((s) => [s, 'done' as const])), ...Object.fromEntries(w.skipped.map((s) => [s, 'skipped' as const])) });
+    dispatch(ws([patch('automations', a.id, { tests: (a.tests ?? 0) + 1 })]));
   };
 
   /* ── resizable side panel ── */
@@ -307,14 +322,20 @@ function Canvas({ a }: { a: Automation }) {
               <Save size={14} aria-hidden />
               Save
             </button>
-            <label className={`ae-switch${a.on ? ' on' : ''}`} title={canPublish ? undefined : 'Add a trigger and connect a step to turn it on'}>
-              <span>{a.on ? 'On' : 'Off'}</span>
+            <label className={`ae-switch${a.on ? ' on' : ''}${a.on && a.paused ? ' paused' : ''}`} title={a.on && a.paused ? a.paused : canPublish ? undefined : 'Add a trigger and connect a step to turn it on'}>
+              <span>{a.on ? (a.paused ? 'Paused' : 'On') : 'Off'}</span>
               <button role="switch" aria-checked={a.on} aria-label="Automation on" onClick={() => setOn(!a.on)} className="ae-switch-track">
                 <span className="ae-switch-thumb" />
               </button>
             </label>
           </div>
         </div>
+
+        {a.on && a.paused && (
+          <p className="ae-paused" role="status">
+            Paused. {a.paused}
+          </p>
+        )}
 
         <div className="ae-body">
           <div className="ae-canvas" ref={wrap} onDragOver={(e) => (e.preventDefault(), (e.dataTransfer.dropEffect = 'move'))} onDrop={onDrop}>
@@ -350,6 +371,9 @@ function Canvas({ a }: { a: Automation }) {
                 <strong>Start with a trigger</strong>
                 <span>Drag one in from the right, or click it.</span>
               </div>
+            )}
+            {live && liveTest > 0 && (
+              <TestRun key={liveTest} id={a.id} graph={current} startsFromEmail={trigger?.data.n.kind === 'email'} onWalked={walked} onClose={() => (setLiveTest(0), setRun({}))} />
             )}
             {log && (
               <div className="ae-log" role="log" aria-label="Test run">
@@ -400,7 +424,7 @@ function Canvas({ a }: { a: Automation }) {
               )}
             </div>
 
-            {tab === 'runs' && live && <Runs id={a.id} on={a.on} note={a.note} />}
+            {tab === 'runs' && live && <Runs id={a.id} on={a.on} note={a.note} paused={a.paused} />}
 
             {tab === 'blocks' && (
               <div className="ae-palette">

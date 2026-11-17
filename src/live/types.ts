@@ -24,6 +24,13 @@ export interface PendingEffect {
   /** The chat conversation that proposed it, if any. */
   conversation?: string;
   at: Date;
+  /** An automation's reply: the thread's draft is what it sends, so Approvals shows this card in the draft's place. */
+  replacesDraft?: boolean;
+  /**
+   * Set when not everyone who may approve sends may decide this one (what an automation put forward): only owners
+   * and admins may, and `person`, whose mailbox the email leaves from, when there is one.
+   */
+  decidedBy?: { person?: string };
 }
 
 /** Who is signed in, and where. Null in the demo. */

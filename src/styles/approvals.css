@@ -444,6 +444,13 @@
   color: var(--danger);
 }
 
+/* A card only some people may decide (an automation's), seen by someone else: who it waits for, in place of the buttons. */
+.ap-waiting-for {
+  align-self: center;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
 .btn-quiet-danger:hover {
   background: var(--danger-soft);
   border-color: transparent;
