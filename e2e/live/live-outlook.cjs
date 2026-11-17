@@ -114,6 +114,11 @@ run('live-outlook', async (browser) => {
   await page.keyboard.press('Enter');
   await page.locator('.ai-msg.timmy', { hasText: 'It says: Retro pack stays on.' }).waitFor({ timeout: 30000 });
   ok(true, 'Ask reads what a Google Doc says');
+  // And finds a file by a word inside it, not in its name: the words of recent Docs, Sheets and Slides are kept for searching.
+  await page.locator('.ai-input').fill('find the file about heat shield');
+  await page.keyboard.press('Enter');
+  await page.locator('.ai-msg.timmy', { hasText: 'I found a file: “Re-entry checklist”' }).waitFor({ timeout: 30000 });
+  ok(/I found a file: “Re-entry checklist” \(Google Doc\)/.test(await page.locator('.ai-msg.timmy').last().innerText()), 'Ask finds a Drive file by a word inside it');
   await page.keyboard.press('Escape');
 
   // Disconnecting Outlook takes its mail off the screens.
