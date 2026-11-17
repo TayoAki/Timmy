@@ -39,6 +39,7 @@ import { commitState, loadState, remember, type Commit, type Loaded, type PreIma
 import { chatCommand, chatCommandForRecord, sendChatRepliesNow } from '../chat/commands';
 import { chatChecked } from '../chat/settings';
 import { changeEvents } from './event-changes';
+import { UNDOING } from '../pages/versions';
 
 enterLive();
 // Someone the workspace only knows by address still has a name when the reducer asks.
@@ -505,6 +506,8 @@ async function undo(tx: Tx, loaded: Loaded, ctx: Ctx, commandId: string, allowed
   // People undo their own actions; an owner or admin may undo anyone's.
   if (!allowed && c.user_id !== ctx.user.id && !ctx.rules.policy) return { state, reject: 'That isn’t yours to undo.' };
   if (c.undone_at) return { state };
+  // A page this brings back gets its version history back with it (see pages/versions.ts).
+  await tx.query('select set_config($1, $2, true)', [UNDOING, commandId]);
 
   // A send that already left can't be taken back; say so instead of pretending.
   const effects = (await tx.query('select * from effect where workspace_id = $1 and command_id = $2', [ctx.workspaceId, commandId])).rows as EffectRow[];

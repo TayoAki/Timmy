@@ -95,7 +95,7 @@ export const api = {
   /** One version with its contents, for a preview. */
   pageVersion: (id: string, number: number) => call<PageVersion & { blocks: Block[]; icon?: string; cover?: DocCover }>('GET', `/api/v1/pages/${encodeURIComponent(id)}/versions/${number}`),
   /** Puts a version back as the page's contents. The server keeps what it replaces as a version too. */
-  restorePageVersion: (id: string, number: number) => call<{ ok: true; changed: boolean }>('POST', `/api/v1/pages/${encodeURIComponent(id)}/versions/${number}/restore`, {}),
+  restorePageVersion: (id: string, number: number) => call<{ ok: true; changed: boolean; leftOut?: number; note?: string }>('POST', `/api/v1/pages/${encodeURIComponent(id)}/versions/${number}/restore`, {}),
   /** How many days a page stays in the trash before it is deleted for good. */
   pageTrash: () => call<{ keptDays: number }>('GET', '/api/v1/pages/trash'),
   audit: () => call<{ entries: { id: number; at: Date; actor: string; action: string; effect_id: string | null; detail: Record<string, unknown> }[] }>('GET', '/api/v1/audit?limit=100'),
