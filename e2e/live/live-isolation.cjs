@@ -35,7 +35,15 @@ run('live-isolation', async (browser) => {
 
   // One workspace's ids mean nothing in the other.
   const aThread = (await api(a.page, 'GET', '/api/v1/state')).body.slices.threads[0];
-  const before = JSON.stringify((await api(a.page, 'GET', '/api/v1/state')).body.slices.threads);
+  // Alpha's own work has to be finished first (the model's first read of its thread can land a moment late on a busy
+  // server), or a change Alpha made itself would look like Bravo's doing. Its threads are read until they hold still.
+  let before = '';
+  for (let i = 0; i < 60; i++) {
+    const now = JSON.stringify((await api(a.page, 'GET', '/api/v1/state')).body.slices.threads);
+    if (now === before && !/"provisional":true/.test(now)) break;
+    before = now;
+    await a.page.waitForTimeout(500);
+  }
   await api(b.page, 'POST', '/api/v1/commands', { id: `x-${Date.now()}`, action: { type: 'move', id: aThread.id, box: 'archived' } });
   await api(b.page, 'POST', '/api/v1/commands', { id: `y-${Date.now()}`, action: { type: 'reply', id: aThread.id, body: 'hijack' } });
   ok(JSON.stringify((await api(a.page, 'GET', '/api/v1/state')).body.slices.threads) === before, 'commands from Bravo aimed at Alpha’s thread change nothing in Alpha');

@@ -500,9 +500,9 @@
   },
   {
    "id": "staging-full",
-   "covers": "the live-mode browser suites (e2e/live/run-all.sh, 20 suites) against the staging server on Railway with stand-in providers and the real Railway bucket",
+   "covers": "the live-mode browser suites (e2e/live/run-all.sh, 21 suites) against the staging server on Railway with stand-in providers and the real Railway bucket",
    "status": "pass",
-   "result": "Nov 17, 2026, on the final build (all seven builds merged, every safety-review fix in): 19 of 20 suites pass, 554 checks. live-files passed against the real Railway bucket. live-chat cannot pass from this cloud session: its network proxy adds the staging test token and drops the chat window’s own Authorization header on the live-update request; a direct request to staging streams the conversation correctly, and live-chat passes locally against the production build run as a staging server."
+   "result": "Nov 17, 2026, on the final code (all builds and gap fixes merged): 20 of 21 suites pass; live-isolation and live-types first failed on test timing and pass on staging after the fix; live-chat cannot pass from this cloud session (its proxy drops the chat window’s own token header)."
   },
   {
    "id": "prod-smoke",

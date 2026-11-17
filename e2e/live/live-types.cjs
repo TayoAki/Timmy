@@ -155,7 +155,7 @@ run('live-types', async (browser) => {
   ok(await until(async () => (await tracked()).tracked.find((k) => k.name === 'Lead').known === 1), 'merging leaves one lead');
   const merged = known.locator('li.trk-thing', { hasText: 'Sam Rivera' });
   ok(await until(async () => (await merged.locator('.trk-source').count()) === 2), 'which rests on both emails');
-  ok((await page.getByRole('region', { name: 'Same thing?' }).count()) === 0, 'and the question is gone');
+  ok(await until(async () => (await page.getByRole('region', { name: 'Same thing?' }).count()) === 0), 'and the question is gone');
 
   // The refused name was answered with a 400, which the browser also writes to its console. That one is expected.
   const unexpected = errors.filter((e) => !/status of 400/.test(e));
