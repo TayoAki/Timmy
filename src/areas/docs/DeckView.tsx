@@ -10,7 +10,7 @@ import { Field, Modal, PeoplePicker, Segmented } from '../../components/kit';
 import { NOW } from '../../data/mock';
 import type { Deck, Slide, WFile } from '../../data/ws-types';
 import { useStore, ws } from '../../state/store';
-import { firstName, folderLabel, patch, put, uid } from '../../state/ws';
+import { firstName, folderLabel, patch, put, signOff, uid } from '../../state/ws';
 import { NewDeckDialog } from './NewFiles';
 import { SlideThumb } from './SlideThumb';
 import { editableFiles, openFile, ranges, shortPath } from './shared';
@@ -141,7 +141,7 @@ export function DeckView({ file, deck }: { file: WFile; deck: Deck }) {
             </button>
             <button
               className="btn btn-xs"
-              onClick={() => dispatch({ type: 'compose', draft: { to: [], subject: made.name, body: `Hi,\n\nHere are the slides: “${made.name}”.\n\nThanks,\nTaylor`, project: file.project } })}
+              onClick={() => dispatch({ type: 'compose', draft: { to: [], subject: made.name, body: `Hi,\n\nHere are the slides: “${made.name}”.\n\n${signOff('Thanks')}`, project: file.project } })}
             >
               <Mail size={13} aria-hidden />
               Email a link

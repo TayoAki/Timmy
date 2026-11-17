@@ -42,6 +42,8 @@ import { chatCommand, chatCommandForRecord, sendChatRepliesNow } from '../chat/c
 import { chatChecked } from '../chat/settings';
 import { changeEvents } from './event-changes';
 import { followWaitingCreates } from './event-creates';
+import { UNDOING } from '../pages/versions';
+import { leadReply } from '../outbound/lead-reply';
 
 enterLive();
 // Someone the workspace only knows by address still has a name when the reducer asks.
@@ -114,6 +116,8 @@ const OUT_NOT_LIVE: Record<string, string> = {
   mailbox: 'Sending mailboxes are added by connecting them in Connections.',
   sendDrafts: 'Timmy doesn’t send cold email itself. Open each draft in your mail app and send it from there.',
   channel: 'Channels are connected in Connections.',
+  // Marking a lead form as connected would only pretend: forms can't send leads to a real workspace yet.
+  form: 'Lead forms can’t be connected on a real workspace yet.',
 };
 
 const CONN_POLICY_OPS = new Set(['crm', 'delegate', 'enrichPolicy']);
@@ -206,6 +210,9 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
   const state = loaded.state;
   if (!a || typeof a.type !== 'string') return { state, reject: 'That isn’t a command.' };
   if (DEMO_ONLY.has(a.type)) return { state, reject: NOT_LIVE };
+  // "Already approved" is the server's to know, never a screen's to say: the reducer skips a CRM or delegate hold
+  // for an action that carries it, so whatever a client sends there is dropped.
+  if ('approved' in a) delete (a as { approved?: unknown }).approved;
   if (a.type === 'move') {
     // A thread can only be put in one of the five places. Who moved it is the server's to say, never the caller's:
     // "Timmy filed this" is written only when Timmy did.
@@ -286,6 +293,14 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
     }
   }
   if (a.type === 'out' && a.op.op === 'send' && a.op.channel === 'email') {
+    // A lead who wrote back is answered in their own thread, through the normal reply path: an email.reply effect
+    // with its approval rules and undo window (outbound/lead-reply.ts). Only the first cold email opens the mail app.
+    const reply = leadReply(state, a.op);
+    if (reply.kind === 'refused') return { state, reject: reply.reason };
+    if (reply.kind === 'reply') {
+      const sent = afterDeciding(loaded, ctx, reply.action, reply.withDraft, reduce(loaded, reply.withDraft, reply.action));
+      return gateSends(tx, loaded, ctx, { id: cmd.id, action: reply.action }, reply.withDraft, sent);
+    }
     // Cold email is never sent through the provider's API. The browser opens the mail app's own compose
     // window and the person sends it there; all that happens here is a line in the activity log.
     // The lead is marked contacted later, when sync sees the email in the Sent folder.
@@ -514,6 +529,8 @@ async function undo(tx: Tx, loaded: Loaded, ctx: Ctx, commandId: string, allowed
   // People undo their own actions; an owner or admin may undo anyone's.
   if (!allowed && c.user_id !== ctx.user.id && !ctx.rules.policy) return { state, reject: 'That isn’t yours to undo.' };
   if (c.undone_at) return { state };
+  // A page this brings back gets its version history back with it (see pages/versions.ts).
+  await tx.query('select set_config($1, $2, true)', [UNDOING, commandId]);
 
   // A send that already left can't be taken back; say so instead of pretending.
   const effects = (await tx.query('select * from effect where workspace_id = $1 and command_id = $2', [ctx.workspaceId, commandId])).rows as EffectRow[];

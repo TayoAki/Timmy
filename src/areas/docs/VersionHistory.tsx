@@ -88,7 +88,9 @@ export function VersionHistory({ file, onClose }: { file: WFile; onClose: () => 
     setBusy(true);
     api.restorePageVersion(file.id, shown.number).then(
       (out) => {
-        dispatch({ type: 'toast', text: out.changed ? `Restored the version from ${fmtStamp(shown.at)}. The page as it was is in the version history.` : 'The page already matches that version.' });
+        // Links to pages deleted since the version was kept are left out, and the server says so.
+        const note = out.note ? ` ${out.note}` : '';
+        dispatch({ type: 'toast', text: out.changed ? `Restored the version from ${fmtStamp(shown.at)}.${note} The page as it was is in the version history.` : `The page already matches that version.${note}` });
         onClose();
       },
       (e: Error) => {

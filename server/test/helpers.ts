@@ -13,6 +13,7 @@ import { fromWire } from '../../src/live/patches';
 import type { Action, State } from '../../src/state/store';
 import { withSlices } from '../../src/live/patches';
 import { blankState } from '../../src/live/blank';
+import * as pictures from './pictures';
 
 let app: Hono<Env> | null = null;
 let n = 0;
@@ -136,11 +137,15 @@ export async function sendBytes(c: Client, method: string, path: string, bytes: 
   return (await boot()).request(path, { method, headers: { origin: ORIGIN, cookie: [...c.cookies].map(([k, v]) => `${k}=${v}`).join('; '), ...headers }, body: bytes as BodyInit });
 }
 
-/** The smallest files of a few kinds: each begins the way a real one does, followed by `fill`. */
+/**
+ * The smallest files of a few kinds. Pictures are real ones that any viewer can draw, made different by `fill`:
+ * the server reads every picture it keeps (to take its metadata out), so a picture that only begins the right way
+ * is refused. Other files begin the way a real one does, followed by `fill`.
+ */
 const text = (s: string) => new TextEncoder().encode(s);
 export const samples = {
-  png: (fill = 'timmy') => new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...text(fill)]),
-  jpeg: (fill = 'timmy') => new Uint8Array([0xff, 0xd8, 0xff, 0xe0, ...text(fill)]),
+  png: (fill = 'timmy') => pictures.png(fill),
+  jpeg: (fill = 'timmy') => pictures.jpeg(fill),
   pdf: (fill = 'A quote.') => text(`%PDF-1.4\n${fill}\n%%EOF\n`),
   text,
 };

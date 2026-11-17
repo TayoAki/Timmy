@@ -18,6 +18,7 @@ import { lastMailTo } from '../providers/email';
 import { ctxOf, requireWorkspace, type Env } from './session';
 import { pageTestRoutes } from '../pages/routes';
 import { chatTestRoutes } from '../chat/test-hooks';
+import { fileTestRoutes } from './files';
 
 export function testRoutes(app: Hono<Env>): void {
   // On a deployed server (staging) the hooks need the test token. The one exception is the page that stands in
@@ -33,6 +34,7 @@ export function testRoutes(app: Hono<Env>): void {
 
   pageTestRoutes(app);
   chatTestRoutes(app);
+  fileTestRoutes(app);
 
   app.get('/api/test/outbox', async (c) => c.json({ mail: await lastMailTo(String(c.req.query('to') ?? '')) }));
 

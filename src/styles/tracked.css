@@ -174,3 +174,39 @@
     grid-row: 2;
   }
 }
+
+/* How the look back through recent mail went, under a tracked kind's row. */
+
+.trk-reread {
+  margin: 0;
+  padding: 0 18px 12px 46px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+/* Kinds that were turned down or stopped. */
+
+.trk-down {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trk-down-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md, 8px);
+}
+
+@media (max-width: 640px) {
+  .trk-reread {
+    padding-left: 18px;
+  }
+}

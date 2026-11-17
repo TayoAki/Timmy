@@ -62,6 +62,14 @@ export const registerPerson = (p: Person) => {
   PEOPLE[p.id] = { ...PEOPLE[p.id], ...p };
 };
 
+/** The signed-in person's first name: Taylor in the demo, the real person's own on a real workspace. Empty when unknown. */
+export const myFirstName = () => (PEOPLE.me?.name ?? '').trim().split(/\s+/)[0] ?? '';
+/** How an email the person writes ends: "Best,\nTaylor" in the demo, their own name on a real workspace. */
+export const signOff = (word = 'Best') => {
+  const name = myFirstName();
+  return name ? `${word},\n${name}` : `${word},`;
+};
+
 export const personName = (id: string) => (id === 'me' ? 'You' : PEOPLE[id]?.name ?? personFromMail(id)?.name ?? id);
 /** First name for a greeting; an address with no name in it stays whole. */
 export const firstName = (id: string) => {

@@ -4,7 +4,8 @@
  * A page in the trash can be brought back for a set number of days (30 unless configured otherwise). After
  * that a job deletes it for good, the same way "Delete forever" does in the app: the page, the sub-pages
  * that went to the trash with it, their contents, and the links to them on other pages. Their versions go
- * with their contents (see versions.ts).
+ * with their contents at once (see versions.ts). A page deleted for good from the app keeps its versions,
+ * hidden, for the same number of days, in case the deletion is undone; this job's sweep removes them after that.
  *
  * How long a page has been in the trash is read from the server's own record of when it arrived there, not
  * from the date the browser wrote on it: a computer with a wrong clock must not get a page deleted early.
@@ -15,7 +16,7 @@ import { config } from '../config';
 import { audit } from '../gateway/gateway';
 import { reduce } from '../state/engine';
 import { mutate } from '../state/mutate';
-import { OWN_ORIGIN } from './versions';
+import { TRASH_EMPTIED } from './versions';
 
 /** Workspaces that hold at least one page past its time in the trash. Asked by the job, as the system role. */
 export async function workspacesWithOldTrash(pool: pg.Pool, days = config.trashRetentionDays): Promise<string[]> {
@@ -29,7 +30,7 @@ export async function workspacesWithOldTrash(pool: pg.Pool, days = config.trashR
 
 /** Deletes for good every page of one workspace that has been in the trash longer than `days`. Returns how many pages went, sub-pages included. */
 export async function emptyOldTrash(workspaceId: string, days = config.trashRetentionDays): Promise<number> {
-  return mutate(workspaceId, `${OWN_ORIGIN}trash-emptied`, async (tx, loaded) => {
+  return mutate(workspaceId, TRASH_EMPTIED, async (tx, loaded) => {
     const state = loaded.state;
     const trash = state.ws.trash;
     const { rows } = await tx.query(`select id from state_doc where workspace_id = $1 and slice = 'ws.trash' and updated_at < now() - make_interval(days => $2::int)`, [workspaceId, days]);

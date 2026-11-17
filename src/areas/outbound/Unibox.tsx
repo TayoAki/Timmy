@@ -7,7 +7,7 @@ import { CalendarCheck, CalendarPlus, Inbox, Mail, MessageSquare, Phone, Send, S
 import { useEffect, useMemo, useState } from 'react';
 import type { Channel, Lead, ReplyLabel } from '../../data/outbound-types';
 import { fmtListDate, fmtStamp } from '../../lib/format';
-import { canText, fill } from '../../state/outbound';
+import { canText, fill, repliesOnTheirWay } from '../../state/outbound';
 import { otherQuestionsLine, pendingAcceptance, questionsIn, referral, whenWords } from '../../state/leads';
 import { useStore } from '../../state/store';
 import { EmptyState, Menu } from '../../components/kit';
@@ -131,6 +131,8 @@ const SUGGEST: Partial<Record<ReplyLabel | 'form', { label: string; template?: s
 function Conversation({ lead, onBack }: { lead: Lead; onBack: () => void }) {
   const { state, dispatch } = useStore();
   const msgs = state.out.messages.filter((m) => m.lead === lead.id).sort((a, b) => a.at.getTime() - b.at.getTime());
+  // Replies sent through Timmy that the lead's history doesn't hold yet (it gets them once they are seen in Sent).
+  const onTheirWay = repliesOnTheirWay(state, lead);
   const textOk = canText(state, lead);
   const lastIn = [...msgs].reverse().find((m) => m.dir === 'in');
   const [channel, setChannel] = useState<Channel>(lastIn?.channel === 'sms' && textOk ? 'sms' : 'email');
@@ -234,6 +236,17 @@ function Conversation({ lead, onBack }: { lead: Lead; onBack: () => void }) {
             </span>
             {m.subject && m.channel === 'email' && <strong className="ubx-subj">{m.subject}</strong>}
             {(m.outcome ? `Call: ${m.outcome}` : m.body).split(/\n\n+/).map((p, k) => (
+              <p key={k}>{p}</p>
+            ))}
+          </li>
+        ))}
+        {onTheirWay.map((r) => (
+          <li key={r.id} className={`ubx-msg out${r.status === 'sent' ? '' : ' scheduled'}`} data-reply={r.status}>
+            <span className="ubx-meta">
+              <Mail size={12} /> You ·{' '}
+              {r.status === 'waiting' ? `waiting for ${r.who ?? 'an approver'} to OK it` : r.status === 'holding' ? `sending${r.sendsAt ? ` at ${fmtStamp(r.sendsAt)}` : ''}; you can still undo it` : `sent from Timmy · ${fmtStamp(r.at)}`}
+            </span>
+            {r.body.split(/\n\n+/).map((p, k) => (
               <p key={k}>{p}</p>
             ))}
           </li>

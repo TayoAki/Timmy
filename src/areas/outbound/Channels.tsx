@@ -7,7 +7,7 @@
 import { CalendarDays, Hash, Briefcase, Mail, MessageCircle, MessageSquare, Phone, Plus, ShieldCheck, Trash2, type LucideIcon } from 'lucide-react';
 import { useState } from 'react';
 import type { ChannelConn, Limits, Mailbox } from '../../data/outbound-types';
-import { NOW } from '../../data/mock';
+import { NOW, PEOPLE } from '../../data/mock';
 import { mailboxCap } from '../../lib/outbound';
 import { dnsFor, domainOf } from '../../lib/dns';
 import { coldToday } from '../../state/outbound';
@@ -220,7 +220,7 @@ function AddMailbox({ onClose }: { onClose: () => void }) {
             className="btn btn-primary"
             disabled={!ok}
             onClick={() => {
-              dispatch({ type: 'out', op: { op: 'mailbox', mailbox: { id: `mb-${Date.now().toString(36)}`, address: address.trim(), name: 'Taylor Morgan', dailyLimit: state.out.limits.perMailbox, warmup: true, health: 80, sentToday: 0, added: NOW } } });
+              dispatch({ type: 'out', op: { op: 'mailbox', mailbox: { id: `mb-${Date.now().toString(36)}`, address: address.trim(), name: PEOPLE.me?.name ?? 'Taylor Morgan', dailyLimit: state.out.limits.perMailbox, warmup: true, health: 80, sentToday: 0, added: NOW } } });
               dispatch({ type: 'toast', text: `Added ${address.trim()}. It warms up from ${state.out.limits.rampStart} a day.` });
               onClose();
             }}

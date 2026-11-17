@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { NOW } from '../data/mock';
 import { fmtDay } from '../lib/format';
 import { useStore, type ComposeDraft } from '../state/store';
-import { firstName, isoDay, parseIsoDay } from '../state/ws';
+import { firstName, isoDay, parseIsoDay, signOff } from '../state/ws';
 import { AttachButton, FileChips } from './Attach';
 import { AutoTextarea, PeoplePicker } from './kit';
 import { Kbd, TimmyMark } from './common';
@@ -65,7 +65,7 @@ export function Compose() {
       `Hi ${to && !firstName(to).includes('@') ? firstName(to) : 'there'},`,
       `${ask.charAt(0).toUpperCase()}${ask.slice(1)}${due ? ` by ${due}` : ''}?`,
       project?.goal ? `For context: ${project.goal}` : '',
-      'Best,\nTaylor',
+      signOff('Best'),
     ].filter(Boolean);
     set({ body: lines.join('\n\n') });
   };

@@ -6,7 +6,9 @@
  *   - ordinary editing keeps at most one copy of a page every few minutes, so a burst of typing is one version;
  *   - a change Timmy makes (a summary it types in, a job writing into the page) always keeps one first;
  *   - putting an old version back always keeps what it replaces (see restore.ts).
- * A job removes copies past their keeping time. A page's copies go when the page is deleted for good.
+ * A job removes copies past their keeping time. When a page is deleted for good its copies are hidden, not
+ * removed: Undo of the deletion brings them back with the page, and the trash job removes them once the trash
+ * period has passed (see `forgetGonePages`).
  *
  * Every read and write here runs in a transaction scoped to one workspace, so row-level security is what
  * stands between one workspace's versions and another's.
@@ -91,14 +93,27 @@ export async function keepVersion(tx: Tx, workspaceId: string, pageId: string, c
 
 /** Whether a copy of this page was kept within the last few minutes, whatever the reason: the same burst of work. */
 async function keptLately(tx: Tx, workspaceId: string, pageId: string): Promise<boolean> {
-  const { rows } = await tx.query(`select 1 from doc_revision where workspace_id = $1 and file_id = $2 and created_at > now() - ($3::float8 * interval '1 minute') limit 1`, [workspaceId, pageId, config.pageVersionMinutes]);
+  // A hidden copy of a deleted page with the same id is not this page's burst of work.
+  const { rows } = await tx.query(`select 1 from doc_revision where workspace_id = $1 and file_id = $2 and page_gone_at is null and created_at > now() - ($3::float8 * interval '1 minute') limit 1`, [workspaceId, pageId, config.pageVersionMinutes]);
   return rows.length > 0;
 }
 
+/** The origin of the trash job's saves. Pages it deletes have been in the trash for the whole period already. */
+export const TRASH_EMPTIED = `${OWN_ORIGIN}trash-emptied`;
+
+/**
+ * Undo marks its own transaction with this setting (see the engine's undo), so a page that comes back here is
+ * known to come back through Undo and not through some other save that happens to reuse its id.
+ */
+export const UNDOING = 'timmy.undoing';
+
 /**
  * Called by every save of a workspace's state, inside the saving transaction, with the state as it was and the
- * changes about to be stored. A page whose contents are being replaced has its earlier contents kept; a page
- * that is being deleted for good loses its versions with it.
+ * changes about to be stored. A page whose contents are being replaced has its earlier contents kept.
+ *
+ * A page deleted for good keeps its versions, hidden, for the trash period, so that Undo of the deletion brings
+ * the page back with its history. Only the trash job removes them at once, because a page it deletes has already
+ * spent the whole period in the trash.
  *
  * Who made the change is the person the transaction is scoped to: a command runs as the person who sent it,
  * and server code (sync, jobs, the agent) runs as nobody, which is recorded as Timmy's change.
@@ -107,10 +122,13 @@ export async function keepPageVersions(tx: Tx, workspaceId: string, before: Stat
   for (const p of patches) {
     if (p.s !== 'ws.docs' || !('id' in p)) continue;
     if ('rm' in p) {
-      await tx.query('delete from doc_revision where workspace_id = $1 and file_id = $2', [workspaceId, p.id]);
+      if (origin === TRASH_EMPTIED) await tx.query('delete from doc_revision where workspace_id = $1 and file_id = $2', [workspaceId, p.id]);
+      else await tx.query('update doc_revision set page_gone_at = now() where workspace_id = $1 and file_id = $2 and page_gone_at is null', [workspaceId, p.id]);
       continue;
     }
     const was = before.ws.docs[p.id];
+    // A page that was deleted for good and is put back by Undo gets its hidden versions back.
+    if (!was) await bringBackVersions(tx, workspaceId, p.id);
     // A new page has no earlier contents to keep.
     if (!was || !Array.isArray(was.blocks) || origin.startsWith(OWN_ORIGIN)) continue;
     const now = p.v as PageContents;
@@ -120,6 +138,13 @@ export async function keepPageVersions(tx: Tx, workspaceId: string, before: Stat
     const person = typed ? ((await tx.query(`select nullif(current_setting('app.user_id', true), '') as id`)).rows[0].id as string | null) : null;
     await keepVersion(tx, workspaceId, p.id, contentsOf(was), person, typed ? 'edit' : 'before-timmy');
   }
+}
+
+/** Shows a deleted page's versions again, but only inside an Undo: any other save that reuses the id starts afresh. */
+async function bringBackVersions(tx: Tx, workspaceId: string, pageId: string): Promise<void> {
+  const undoing = (await tx.query(`select coalesce(current_setting($1, true), '') <> '' as yes`, [UNDOING])).rows[0]?.yes as boolean;
+  if (!undoing) return;
+  await tx.query('update doc_revision set page_gone_at = null where workspace_id = $1 and file_id = $2 and page_gone_at is not null', [workspaceId, pageId]);
 }
 
 /**
@@ -161,8 +186,11 @@ const summary = (r: Row, names: Map<string, string>): VersionSummary => ({
   blockCount: r.block_count,
 });
 
-/** Only copies still inside their keeping time are shown or put back, whether or not the clean-up job has run yet. */
-const KEPT = `created_at > now() - make_interval(days => $3::int)`;
+/**
+ * Only copies still inside their keeping time are shown or put back, whether or not the clean-up job has run yet;
+ * and never the copies of a page that was deleted for good (they wait, hidden, in case the deletion is undone).
+ */
+const KEPT = `created_at > now() - make_interval(days => $3::int) and page_gone_at is null`;
 
 /** A page's versions, newest first, without their blocks. */
 export async function listVersions(tx: Tx, workspaceId: string, pageId: string): Promise<VersionSummary[]> {
@@ -204,4 +232,13 @@ export async function pruneVersions(pool: pg.Pool, keep = config.pageVersionsKep
     [keep],
   );
   return (old.rowCount ?? 0) + (extra.rowCount ?? 0);
+}
+
+/**
+ * Removes the hidden versions of pages that were deleted for good more than the trash period ago, across every
+ * workspace. Undo can no longer bring those pages back. Run by the trash job as the system role.
+ */
+export async function forgetGonePages(pool: pg.Pool, days = config.trashRetentionDays): Promise<number> {
+  const { rowCount } = await pool.query(`delete from doc_revision where page_gone_at < now() - make_interval(days => $1::int)`, [days]);
+  return rowCount ?? 0;
 }

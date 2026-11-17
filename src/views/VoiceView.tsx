@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Frame } from '../components/Frame';
 import { MicButton } from '../components/Dictation';
 import { Segmented } from '../components/kit';
+import { isLive } from '../live/clock';
 import {
   LANGUAGES,
   MODELS,
@@ -292,7 +293,9 @@ function Dictionary() {
         <span className="section-sub">{s.dictionary.length} words</span>
       </div>
       <p className="voice-note" style={{ marginTop: 0 }}>
-        Names and terms to spell your way. “Dana Whitefield at north peak” becomes “Dana Whitfield at Northpeak”. It starts with your contacts and their companies.
+        {isLive()
+          ? 'Names and terms to spell your way, so a name you say is written the way you write it. It starts with your contacts and their companies.'
+          : 'Names and terms to spell your way. “Dana Whitefield at north peak” becomes “Dana Whitfield at Northpeak”. It starts with your contacts and their companies.'}
       </p>
       <ul className="voice-words" aria-label="Dictionary words">
         {s.dictionary.map((w) => (

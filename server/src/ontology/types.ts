@@ -14,11 +14,17 @@
  *
  * The same read may name a kind of thing the thread is about that the workspace does not track. Those are only
  * counted, one per kind and thread. A kind seen in three different threads is offered to the person, with examples.
+ *
+ * Accepting a kind also has Timmy look back through recent mail for it, once (reread.ts). Two things of one kind
+ * whose names suggest they are the same ("Acme" and "Acme Corp") are offered to an owner or admin to merge; nothing
+ * is merged without them. A kind that was turned down or stopped can be brought back as a suggestion.
  */
-import type { TrackedField, TrackedKind, TrackedOverview, TrackedProposal, TrackedSource, TrackedThing } from '../../../src/live/tracked';
+import type { SameThing, TrackedField, TrackedKind, TrackedOverview, TrackedProposal, TrackedReread, TrackedSource, TrackedThing, TurnedDown } from '../../../src/live/tracked';
+import { config } from '../config';
 import type { Tx } from '../db/pool';
 import { withWorkspace } from '../db/pool';
 import { audit } from '../gateway/gateway';
+import { enqueueSoon } from '../jobs/jobs';
 import { newId } from '../lib/ids';
 import { quoted, settleThings } from './ontology';
 import { MAX_LABEL, MAX_NAME, MAX_QUOTE, MAX_VALUE, NOT_A_KIND, appears, capital, fieldKey, kindKey, nameOf, plain, sameAs } from './type-text';
@@ -62,6 +68,9 @@ interface TypeRow {
   fields: TrackedField[];
   status: 'proposed' | 'certified' | 'dismissed';
   source: 'trade' | 'seen';
+  /** As stored: what the screen is told, and when the look back started. */
+  reread: (TrackedReread & { startedAt?: string }) | null;
+  stopped_at: Date | null;
 }
 
 /**
@@ -69,7 +78,7 @@ interface TypeRow {
  * the trade chosen at sign-up are added as proposals. Proposed means offered: nothing is read for them yet.
  */
 async function typesOf(tx: Tx, workspaceId: string): Promise<TypeRow[]> {
-  const load = async () => (await tx.query(`select id, key, name, fields, status, source from tracked_type where workspace_id = $1 order by created_at, name`, [workspaceId])).rows as TypeRow[];
+  const load = async () => (await tx.query(`select id, key, name, fields, status, source, reread, stopped_at from tracked_type where workspace_id = $1 order by created_at, name`, [workspaceId])).rows as TypeRow[];
   const rows = await load();
   if (rows.some((r) => r.source === 'trade')) return rows;
   const trade = (await tx.query('select trade from workspace where id = $1', [workspaceId])).rows[0]?.trade as string | undefined;
@@ -109,14 +118,18 @@ interface Message {
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** Stores one thing with the message that shows it, or adds that message to the thing if Timmy already knows it. */
-async function keepThing(tx: Tx, workspaceId: string, type: TypeRow, fields: Record<string, string>, source: { itemId: string; at: Date; quote: string }): Promise<void> {
+async function keepThing(tx: Tx, workspaceId: string, type: Pick<TypeRow, 'id' | 'fields'>, fields: Record<string, string>, source: { itemId: string; at: Date; quote: string }): Promise<void> {
   const naming = fields[type.fields[0]!.key]!;
-  const { rows } = await tx.query(
-    `insert into entity (id, workspace_id, type, type_id, key, name, first_seen, last_seen) values ($1, $2, 'thing', $3, $4, $5, $6, $6)
-     on conflict (workspace_id, type, key) do update set first_seen = least(entity.first_seen, excluded.first_seen), last_seen = greatest(entity.last_seen, excluded.last_seen)
-     returning id`,
-    [newId('ent'), workspaceId, type.id, `${type.id}:${sameAs(naming)}`.slice(0, 400), naming, source.at],
-  );
+  // A name a person merged into another thing ("Acme" into "Acme Corp") leads to that thing from then on.
+  const merged = (await tx.query(`select n.id from term t join entity n on n.id = t.entity_id where t.workspace_id = $1 and n.type = 'thing' and n.type_id = $2 and t.term = $3 limit 1`, [workspaceId, type.id, sameAs(naming)])).rows[0]?.id as string | undefined;
+  const { rows } = merged
+    ? await tx.query(`update entity set first_seen = least(first_seen, $2), last_seen = greatest(last_seen, $2) where id = $1 returning id`, [merged, source.at])
+    : await tx.query(
+        `insert into entity (id, workspace_id, type, type_id, key, name, first_seen, last_seen) values ($1, $2, 'thing', $3, $4, $5, $6, $6)
+         on conflict (workspace_id, type, key) do update set first_seen = least(entity.first_seen, excluded.first_seen), last_seen = greatest(entity.last_seen, excluded.last_seen)
+         returning id`,
+        [newId('ent'), workspaceId, type.id, `${type.id}:${sameAs(naming)}`.slice(0, 400), naming, source.at],
+      );
   const id = rows[0]!.id as string;
   // One row per thing and message. A second look at the same message adds to what it said and counts nothing twice.
   const seen = await tx.query(
@@ -289,7 +302,8 @@ export async function trackedOverview(workspaceId: string): Promise<TrackedOverv
   return withWorkspace({ workspaceId }, async (tx) => {
     const types = await typesOf(tx, workspaceId);
     const proposals: TrackedProposal[] = [];
-    for (const t of types.filter((x) => x.status === 'proposed')) proposals.push(proposalOf(t.key, t.name, t.fields, 'trade', await sightingsOf(tx, workspaceId, t.key)));
+    // A kind brought back after being turned down keeps what it was: one of the trade's, or one Timmy noticed.
+    for (const t of types.filter((x) => x.status === 'proposed')) proposals.push(proposalOf(t.key, t.name, t.fields, t.source, await sightingsOf(tx, workspaceId, t.key)));
     for (const kind of await seenOftenEnough(tx, workspaceId, types)) {
       const seen = await sightingsOf(tx, workspaceId, kind);
       const shape = shapeOf(kind, seen);
@@ -297,8 +311,121 @@ export async function trackedOverview(workspaceId: string): Promise<TrackedOverv
     }
     const { rows } = await tx.query(`select n.type_id, count(*)::int as known from entity n where n.workspace_id = $1 and n.type = 'thing' and ${STILL_SHOWN} group by n.type_id`, [workspaceId]);
     const known = new Map(rows.map((r) => [r.type_id as string, r.known as number]));
-    const tracked: TrackedKind[] = certified(types).map((t) => ({ id: t.id, key: t.key, name: t.name, fields: t.fields, known: known.get(t.id) ?? 0 }));
-    return { proposals, tracked };
+    const tracked: TrackedKind[] = certified(types).map((t) => ({ id: t.id, key: t.key, name: t.name, fields: t.fields, known: known.get(t.id) ?? 0, ...(t.reread ? { reread: shownReread(t.reread) } : {}) }));
+    const sameThing = await sameThingOffers(tx, workspaceId, certified(types));
+    const turnedDown: TurnedDown[] = types.filter((t) => t.status === 'dismissed').map((t) => ({ key: t.key, name: t.name, stopped: !!t.stopped_at }));
+    // Only said when there is something to say, so a workspace with none of either looks as it always did.
+    return { proposals, tracked, ...(sameThing.length ? { sameThing } : {}), ...(turnedDown.length ? { turnedDown } : {}) };
+  });
+}
+
+/** A look back that never reported (its job was lost) is not shown as still reading for ever: after an hour it reads as stopped. */
+const STALE_MS = 3600_000;
+function shownReread(r: TrackedReread & { startedAt?: string }): TrackedReread {
+  const { startedAt, ...shown } = r;
+  if (shown.status === 'reading' && startedAt && Date.parse(startedAt) < Date.now() - STALE_MS) return { ...shown, status: 'stopped', note: 'Timmy didn’t get to read your recent mail for this.' };
+  return shown;
+}
+
+/* ───────────── The same thing under two names ───────────── */
+
+/** The most pairs offered at once, and the most things of one kind compared. */
+const MAX_OFFERS = 20;
+const MAX_COMPARED = 300;
+
+/** The words of a name, as matching sees them: "Acme, Inc." is acme and inc. */
+const wordsOf = (name: string) => new Set(sameAs(name).split(' ').filter(Boolean));
+/** One name's words all among the other's, and the other has more: "Acme" and "Acme Corp", not "Acme" and "Acme". */
+function within(small: Set<string>, big: Set<string>): boolean {
+  if (small.size >= big.size || [...small].join('').length < 3) return false;
+  for (const w of small) if (!big.has(w)) return false;
+  return true;
+}
+
+/**
+ * Pairs of things of one kind that may be the same one: one name's words all appear in the other's. They are only
+ * offered; a person merges them or says they differ, and a pair said to differ is not offered again.
+ */
+async function sameThingOffers(tx: Tx, workspaceId: string, kinds: TypeRow[]): Promise<SameThing[]> {
+  if (!kinds.length) return [];
+  const apart = new Set((await tx.query(`select a, b from thing_apart where workspace_id = $1`, [workspaceId])).rows.map((r) => `${r.a} ${r.b}`));
+  const offers: SameThing[] = [];
+  for (const kind of kinds) {
+    const { rows } = await tx.query(`select n.id, n.name from entity n where n.workspace_id = $1 and n.type = 'thing' and n.type_id = $2 and ${STILL_SHOWN} order by n.last_seen desc limit $3`, [workspaceId, kind.id, MAX_COMPARED]);
+    const things = (rows as { id: string; name: string }[]).map((r) => ({ ...r, words: wordsOf(r.name) }));
+    for (const x of things) {
+      for (const y of things) {
+        if (offers.length >= MAX_OFFERS) return offers;
+        if (!within(x.words, y.words)) continue;
+        const pair = x.id < y.id ? `${x.id} ${y.id}` : `${y.id} ${x.id}`;
+        if (apart.has(pair)) continue;
+        offers.push({ kind: { id: kind.id, name: kind.name }, a: { id: x.id, name: x.name }, b: { id: y.id, name: y.name } });
+      }
+    }
+  }
+  return offers;
+}
+
+const NOT_A_THING: Decided<never> = { ok: false, status: 404, error: 'Timmy doesn’t know that one any more.' };
+
+/** Both things, if both are things of this tracked kind in this workspace. */
+async function twoThings(tx: Tx, workspaceId: string, typeId: string, ids: unknown[]): Promise<{ id: string; name: string }[] | null> {
+  if (ids.some((x) => typeof x !== 'string') || new Set(ids).size !== ids.length) return null;
+  const { rows } = await tx.query(`select id, name from entity where workspace_id = $1 and type = 'thing' and type_id = $2 and id = any($3::text[])`, [workspaceId, typeId, ids]);
+  return rows.length === ids.length ? (ids as string[]).map((id) => rows.find((r) => r.id === id) as { id: string; name: string }) : null;
+}
+
+/**
+ * Merges one thing into another of the same kind, at a person's word. Every sentence behind the merged thing moves
+ * to the kept one: when both rest on the same email, that email's evidence keeps both sentences and both sets of
+ * values. The merged name becomes another name of the kept thing, so mail that uses it later adds to the kept one.
+ */
+export async function mergeThings(by: By, typeId: string, keepId: unknown, mergeId: unknown): Promise<Decided<{ moved: number }>> {
+  return withWorkspace({ workspaceId: by.workspaceId, userId: by.userId, lock: true }, async (tx) => {
+    const kind = certified(await typesOf(tx, by.workspaceId)).find((t) => t.id === typeId);
+    if (!kind) return NOT_TRACKED;
+    const both = await twoThings(tx, by.workspaceId, kind.id, [keepId, mergeId]);
+    if (!both) return NOT_A_THING;
+    const [keep, gone] = both as [{ id: string; name: string }, { id: string; name: string }];
+    // The same email behind both: one row keeps both sentences and both sets of values (the kept thing's win a tie).
+    await tx.query(
+      `update evidence k set
+          quote = case when m.quote is null or k.quote = m.quote or position(m.quote in coalesce(k.quote, '')) > 0 then coalesce(k.quote, m.quote)
+                       when k.quote is null then m.quote else k.quote || E'\n' || m.quote end,
+          fields = case when m.fields is null then k.fields else m.fields || coalesce(k.fields, '{}'::jsonb) end
+        from evidence m
+       where k.workspace_id = $1 and k.entity_id = $2 and m.entity_id = $3 and k.item_id = m.item_id and k.relation_id is null and m.relation_id is null`,
+      [by.workspaceId, keep.id, gone.id],
+    );
+    await tx.query(`delete from evidence m using evidence k where m.workspace_id = $1 and m.entity_id = $3 and k.entity_id = $2 and k.item_id = m.item_id and m.relation_id is null and k.relation_id is null`, [by.workspaceId, keep.id, gone.id]);
+    const moved = await tx.query(`update evidence set entity_id = $2 where workspace_id = $1 and entity_id = $3 and relation_id is null`, [by.workspaceId, keep.id, gone.id]);
+    // Its names live on as names of the kept thing.
+    await tx.query(`insert into term (workspace_id, entity_id, term) select $1, $2, term from term where entity_id = $3 on conflict do nothing`, [by.workspaceId, keep.id, gone.id]);
+    await tx.query(`insert into term (workspace_id, entity_id, term) values ($1, $2, $3) on conflict do nothing`, [by.workspaceId, keep.id, sameAs(gone.name)]);
+    await tx.query(
+      `update entity n set mentions = (select count(*) from evidence e where e.entity_id = n.id and e.relation_id is null),
+              first_seen = least(n.first_seen, g.first_seen), last_seen = greatest(n.last_seen, g.last_seen)
+         from entity g where n.id = $2 and g.id = $3 and n.workspace_id = $1`,
+      [by.workspaceId, keep.id, gone.id],
+    );
+    await tx.query(`delete from entity where id = $2 and workspace_id = $1`, [by.workspaceId, gone.id]);
+    await settleThings(tx, by.workspaceId, keep.id);
+    await audit(tx, by.workspaceId, { actor: by.userId, action: 'tracking.merged', detail: { kind: kind.key, kept: keep.name, merged: gone.name } });
+    return { ok: true, moved: moved.rowCount ?? 0 };
+  });
+}
+
+/** A person says two things are not the same: the pair is not offered again. */
+export async function keepApart(by: By, typeId: string, aId: unknown, bId: unknown): Promise<Decided> {
+  return withWorkspace({ workspaceId: by.workspaceId, userId: by.userId, lock: true }, async (tx) => {
+    const kind = certified(await typesOf(tx, by.workspaceId)).find((t) => t.id === typeId);
+    if (!kind) return NOT_TRACKED;
+    const both = await twoThings(tx, by.workspaceId, kind.id, [aId, bId]);
+    if (!both) return NOT_A_THING;
+    const [a, b] = both.map((t) => t.id).sort() as [string, string];
+    await tx.query(`insert into thing_apart (workspace_id, a, b, decided_by) values ($1, $2, $3, $4) on conflict do nothing`, [by.workspaceId, a, b, by.userId]);
+    await audit(tx, by.workspaceId, { actor: by.userId, action: 'tracking.kept-apart', detail: { kind: kind.key, names: both.map((t) => t.name) } });
+    return { ok: true };
   });
 }
 
@@ -320,8 +447,8 @@ const nameTaken = (types: TypeRow[], name: string, self?: string) => types.some(
  * Accepts a proposed kind, optionally under another name. From now on threads are read for it. What Timmy
  * had already noticed of this kind (the examples the proposal showed) becomes the first things it knows.
  */
-export async function acceptKind(by: By, key: string, newName?: unknown): Promise<Decided<{ id: string; adopted: number }>> {
-  return withWorkspace({ workspaceId: by.workspaceId, userId: by.userId, lock: true }, async (tx) => {
+export async function acceptKind(by: By, key: string, newName?: unknown): Promise<Decided<{ id: string; adopted: number; looking?: boolean }>> {
+  const out: Decided<{ id: string; adopted: number; looking?: boolean }> = await withWorkspace({ workspaceId: by.workspaceId, userId: by.userId, lock: true }, async (tx) => {
     const types = await typesOf(tx, by.workspaceId);
     let type = types.find((t) => t.key === key);
     if (type?.status === 'certified') return { ok: true, id: type.id, adopted: 0 };
@@ -333,9 +460,9 @@ export async function acceptKind(by: By, key: string, newName?: unknown): Promis
     if (!name) return { ok: false, status: 400, error: NAME_RULE };
     if (nameTaken(types, name, type?.id)) return { ok: false, status: 409, error: 'Something you track or were offered already has that name.' };
     const id = type?.id ?? newId('typ');
-    if (type) await tx.query(`update tracked_type set name = $3, status = 'certified', decided_by = $4, decided_at = now() where id = $1 and workspace_id = $2`, [id, by.workspaceId, name, by.userId]);
+    if (type) await tx.query(`update tracked_type set name = $3, status = 'certified', decided_by = $4, decided_at = now(), stopped_at = null where id = $1 and workspace_id = $2`, [id, by.workspaceId, name, by.userId]);
     else await tx.query(`insert into tracked_type (id, workspace_id, key, name, fields, status, source, decided_by, decided_at) values ($1, $2, $3, $4, $5::jsonb, 'certified', 'seen', $6, now())`, [id, by.workspaceId, key, name, JSON.stringify(shape.fields), by.userId]);
-    type = { id, key, name, fields: shape.fields, status: 'certified', source: type?.source ?? 'seen' };
+    type = { id, key, name, fields: shape.fields, status: 'certified', source: type?.source ?? 'seen', reread: null, stopped_at: null };
 
     // The sightings were checked against their threads when they were counted, so they can be kept as they are.
     let adopted = 0;
@@ -350,8 +477,13 @@ export async function acceptKind(by: By, key: string, newName?: unknown): Promis
     }
     await tx.query('delete from type_sighting where workspace_id = $1 and kind = $2', [by.workspaceId, key]);
     await audit(tx, by.workspaceId, { actor: by.userId, action: 'tracking.accepted', detail: { kind: key, name, fields: type.fields.map((f) => f.label) } });
-    return { ok: true, id, adopted };
+    // Recent mail is read for it once, by a job (reread.ts). The screen says so from this moment.
+    const looking = config.kindReread.threads > 0;
+    if (looking) await tx.query('update tracked_type set reread = $3::jsonb where id = $1 and workspace_id = $2', [id, by.workspaceId, JSON.stringify({ status: 'reading', threads: 0, found: 0, days: config.kindReread.days, startedAt: new Date().toISOString() })]);
+    return { ok: true, id, adopted, looking };
   });
+  if (out.ok && 'looking' in out && out.looking) enqueueSoon('tracking.reread', { workspaceId: by.workspaceId, typeId: out.id }, { singletonKey: `reread:${out.id}` });
+  return out;
 }
 
 /** Turns a proposal down. The kind is remembered so it is not proposed again, and what was counted for it is forgotten. */
@@ -363,7 +495,11 @@ export async function dismissKind(by: By, key: string): Promise<Decided> {
     if (type?.status === 'certified') return { ok: false, status: 409, error: 'That is being tracked. Stop tracking it instead.' };
     if (!type && !(await seenOftenEnough(tx, by.workspaceId, types)).includes(key)) return { ok: false, status: 404, error: 'Timmy hasn’t proposed tracking that.' };
     if (type) await tx.query(`update tracked_type set status = 'dismissed', decided_by = $3, decided_at = now() where id = $1 and workspace_id = $2`, [type.id, by.workspaceId, by.userId]);
-    else await tx.query(`insert into tracked_type (id, workspace_id, key, name, status, source, decided_by, decided_at) values ($1, $2, $3, $4, 'dismissed', 'seen', $5, now())`, [newId('typ'), by.workspaceId, key, capital(key), by.userId]);
+    else {
+      // The shape it was offered with is kept, so that it can be brought back as it was.
+      const shape = shapeOf(key, await sightingsOf(tx, by.workspaceId, key));
+      await tx.query(`insert into tracked_type (id, workspace_id, key, name, fields, status, source, decided_by, decided_at) values ($1, $2, $3, $4, $5::jsonb, 'dismissed', 'seen', $6, now())`, [newId('typ'), by.workspaceId, key, shape.name, JSON.stringify(shape.fields), by.userId]);
+    }
     await tx.query('delete from type_sighting where workspace_id = $1 and kind = $2', [by.workspaceId, key]);
     await audit(tx, by.workspaceId, { actor: by.userId, action: 'tracking.dismissed', detail: { kind: key } });
     return { ok: true };
@@ -407,9 +543,29 @@ export async function stopTracking(by: By, id: string): Promise<Decided<{ remove
     if (!type) return NOT_TRACKED;
     // The evidence rows go with their things.
     const gone = await tx.query(`delete from entity where workspace_id = $1 and type = 'thing' and type_id = $2`, [by.workspaceId, type.id]);
-    await tx.query(`update tracked_type set status = 'dismissed', decided_by = $3, decided_at = now() where id = $1 and workspace_id = $2`, [type.id, by.workspaceId, by.userId]);
+    await tx.query(`update tracked_type set status = 'dismissed', decided_by = $3, decided_at = now(), stopped_at = now(), reread = null where id = $1 and workspace_id = $2`, [type.id, by.workspaceId, by.userId]);
     await audit(tx, by.workspaceId, { actor: by.userId, action: 'tracking.stopped', detail: { kind: type.key, removed: gone.rowCount ?? 0 } });
     return { ok: true, removed: gone.rowCount ?? 0 };
+  });
+}
+
+/**
+ * Brings back a kind that was turned down or stopped: it is offered again, as a suggestion, and nothing is read for
+ * it until someone accepts it (which also reads recent mail for it again). What was learned before it was stopped
+ * stays forgotten.
+ */
+export async function bringBackKind(by: By, key: string): Promise<Decided> {
+  return withWorkspace({ workspaceId: by.workspaceId, userId: by.userId, lock: true }, async (tx) => {
+    const types = await typesOf(tx, by.workspaceId);
+    const type = types.find((t) => t.key === key);
+    if (!type || type.status !== 'dismissed') return { ok: false, status: 404, error: 'That isn’t something you turned down.' };
+    // Its name must not have been taken by another kind since.
+    if (nameTaken(types, type.name, type.id)) return { ok: false, status: 409, error: 'Something you track or were offered now has that name.' };
+    // A kind always has a field that names each thing.
+    const fields = type.fields.length ? type.fields : [{ key: 'name', label: 'name' }];
+    await tx.query(`update tracked_type set status = 'proposed', fields = $3::jsonb, decided_by = $4, decided_at = now(), stopped_at = null, reread = null where id = $1 and workspace_id = $2`, [type.id, by.workspaceId, JSON.stringify(fields), by.userId]);
+    await audit(tx, by.workspaceId, { actor: by.userId, action: 'tracking.brought-back', detail: { kind: type.key, wasTracked: !!type.stopped_at } });
+    return { ok: true };
   });
 }
 

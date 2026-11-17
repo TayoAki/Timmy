@@ -487,7 +487,8 @@ function LabelContext({ id }: { id: string }) {
 // ───────────── Rules ─────────────
 
 function RulesContext() {
-  const corrections = [
+  // The demo shows corrections a person might have made. A real workspace has no such record to show yet.
+  const corrections = isLive() ? [] : [
     { text: 'You changed “Hi Dana!” to “Hi Dana,”', rule: 'No exclamation marks in customer emails' },
     { text: 'You moved a Ramp notification from Follow Up to Archive', rule: 'Archive notifications' },
     { text: 'You shortened a reply to Marcus by 40%', rule: 'Keep replies to Marcus brief' },
@@ -500,6 +501,7 @@ function RulesContext() {
         </p>
       </Section>
       <Section title="Recent corrections">
+        {corrections.length === 0 && <p className="rp-text">When you edit a draft or re-sort an email, the rule change Timmy proposes shows in Rules.</p>}
         <ul className="rp-list">
           {corrections.map((c) => (
             <li key={c.text} className="correction">

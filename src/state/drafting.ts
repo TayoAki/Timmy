@@ -8,10 +8,10 @@
 import { NOW } from '../data/mock';
 import type { Draft, Thread } from '../data/types';
 import { parseDue, weekdayShort, weekdayWord, workdaysAhead } from '../lib/when';
-import { firstName, midSentence } from './ws';
+import { firstName, midSentence, signOff } from './ws';
 
-/** Your sign-off, from the writing rule "Sign off with “Best, Taylor”". */
-const SIGN = 'Best,\nTaylor';
+/** Your sign-off, as the writing rule "Sign off with “Best, <your name>”" has it. */
+const sign = () => signOff('Best');
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const sentence = (s: string) => {
@@ -74,7 +74,7 @@ function nudge(t: Thread): Draft {
     kind: 'nudge',
     to: [w.on],
     subject: `${generic ? topicOf(t.subject) : w.item} by ${weekdayShort(by)}?`,
-    body: `Hi ${firstName(w.on)},\n\n${lead} ${ask}\n\n${SIGN}`,
+    body: `Hi ${firstName(w.on)},\n\n${lead} ${ask}\n\n${sign()}`,
     sources: (t.docs ?? []).slice(0, 2),
     trackAs: { on: w.on, item: w.item, due: by },
   };
@@ -133,7 +133,7 @@ export function draftFor(t: Thread, note?: string): Draft {
     kind: 'reply',
     to: [who],
     subject,
-    body: `Hi ${firstName(who)},\n\n${line}\n\n${SIGN}`,
+    body: `Hi ${firstName(who)},\n\n${line}\n\n${sign()}`,
     sources: (t.docs ?? []).slice(0, 2),
   };
 }

@@ -12,6 +12,7 @@ import { fmtStamp } from '../../lib/format';
 import { useStore, ws } from '../../state/store';
 import { patch, put, uid } from '../../state/ws';
 import { ancestors, childPages, purgeOps, restoreOps, rootPages, trashOps, trashedRoots } from './pages';
+import { isLive } from '../../live/clock';
 import { openFile } from './shared';
 import { bid } from './templates';
 import { useTrashDays } from './trashPolicy';
@@ -198,7 +199,7 @@ export function TrashDialog({ onClose }: { onClose: () => void }) {
                 {sure === f.id ? (
                   <span className="pt-trash-confirm">
                     <span>Delete for good?</span>
-                    <button className="btn btn-xs btn-danger" onClick={() => (dispatch(ws(purgeOps(W, f.id), { toast: `Deleted “${f.name}” for good` })), setSure(null))}>
+                    <button className="btn btn-xs btn-danger" onClick={() => (dispatch(ws(purgeOps(W, f.id), { toast: `Deleted “${f.name}” for good`, undo: isLive() })), setSure(null))}>
                       Delete
                     </button>
                     <button className="btn btn-xs" onClick={() => setSure(null)}>

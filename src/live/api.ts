@@ -95,7 +95,7 @@ export const api = {
   /** One version with its contents, for a preview. */
   pageVersion: (id: string, number: number) => call<PageVersion & { blocks: Block[]; icon?: string; cover?: DocCover }>('GET', `/api/v1/pages/${encodeURIComponent(id)}/versions/${number}`),
   /** Puts a version back as the page's contents. The server keeps what it replaces as a version too. */
-  restorePageVersion: (id: string, number: number) => call<{ ok: true; changed: boolean }>('POST', `/api/v1/pages/${encodeURIComponent(id)}/versions/${number}/restore`, {}),
+  restorePageVersion: (id: string, number: number) => call<{ ok: true; changed: boolean; leftOut?: number; links?: { block: string; page: string }[]; note?: string }>('POST', `/api/v1/pages/${encodeURIComponent(id)}/versions/${number}/restore`, {}),
   /** How many days a page stays in the trash before it is deleted for good. */
   pageTrash: () => call<{ keptDays: number }>('GET', '/api/v1/pages/trash'),
   audit: () => call<{ entries: { id: number; at: Date; actor: string; action: string; effect_id: string | null; detail: Record<string, unknown> }[] }>('GET', '/api/v1/audit?limit=100'),
@@ -112,6 +112,12 @@ export const api = {
   dismissTracking: (key: string) => call('POST', `/api/v1/tracked/proposals/${encodeURIComponent(key)}/dismiss`, {}),
   changeTracked: (id: string, change: { name?: string; removeField?: string }) => call('PATCH', `/api/v1/tracked/${encodeURIComponent(id)}`, change),
   stopTracking: (id: string) => call<{ removed: number }>('DELETE', `/api/v1/tracked/${encodeURIComponent(id)}`),
+  /** Offers a kind that was turned down or stopped again, as a suggestion. */
+  bringBackTracking: (key: string) => call('POST', `/api/v1/tracked/proposals/${encodeURIComponent(key)}/bring-back`, {}),
+  /** "Same thing?": keeps one and moves everything the other rests on to it. */
+  mergeThings: (kindId: string, keep: string, merge: string) => call<{ moved: number }>('POST', `/api/v1/tracked/${encodeURIComponent(kindId)}/merge`, { keep, merge }),
+  /** "Same thing?": no, they differ; not asked again. */
+  keepThingsApart: (kindId: string, a: string, b: string) => call('POST', `/api/v1/tracked/${encodeURIComponent(kindId)}/apart`, { a, b }),
 };
 
 export interface AutomationRun {

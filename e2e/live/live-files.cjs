@@ -6,6 +6,22 @@ const { createHash } = require('crypto');
 const { ok, open, signUp, api, connectGmail, deliver, sentMail, run } = require('./lib.cjs');
 const HOLD = Number(process.env.TIMMY_SEND_HOLD_SECONDS || 4) * 1000;
 const sha256 = (b) => createHash('sha256').update(b).digest('hex');
+/** The EICAR test string every virus scanner flags on purpose, put together here so this file isn't flagged itself. */
+const EICAR = ['X5O!P%@AP[4\\PZX54(P^)7CC)7}$', 'EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*'].join('');
+
+/** A JPEG with an Exif block put in after its start, the way a phone writes one: the camera's make and a GPS position. */
+function withLocation(jpeg) {
+  const u16 = (n) => [(n >> 8) & 255, n & 255];
+  const u32 = (n) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
+  const make = Buffer.from('Phone Camera GPS\0', 'latin1');
+  const gpsAt = 8 + 2 + 2 * 12 + 4;
+  const makeAt = gpsAt + 2 + 12 + 4;
+  const ifd0 = [...u16(2), ...u16(0x010f), ...u16(2), ...u32(make.length), ...u32(makeAt), ...u16(0x8825), ...u16(4), ...u32(1), ...u32(gpsAt), ...u32(0)];
+  // One GPS entry: the latitude is north.
+  const gps = [...u16(1), ...u16(1), ...u16(2), ...u32(2), 0x4e, 0, 0, 0, ...u32(0)];
+  const body = Buffer.concat([Buffer.from('Exif\0\0', 'latin1'), Buffer.from([0x4d, 0x4d, 0, 0x2a, ...u32(8), ...ifd0, ...gps]), make]);
+  return Buffer.concat([jpeg.subarray(0, 2), Buffer.from([0xff, 0xe1, ...u16(body.length + 2)]), body, jpeg.subarray(2)]);
+}
 
 run('live-files', async (browser) => {
   const { page, errors } = await open(browser);
@@ -182,5 +198,76 @@ run('live-files', async (browser) => {
   const named = await api(page, 'POST', '/api/v1/commands', { id: `icon-${Date.now()}`, action: { type: 'ws', ops: [{ op: 'patch', col: 'chat', id: 'site', patch: { icon: `asset:${fileId}` } }] } });
   ok(named.body.ok === false && /chat’s picture/.test(named.body.error), 'an uploaded file can’t be made the chat’s picture');
 
-  ok(errors.filter((e) => !/400|413|415/.test(e)).length === 0, `no page errors (${errors.join(' | ')})`);
+  /* ── A photo is kept without where it was taken ── */
+  // A JPEG the browser draws, with an Exif block such as a phone writes: the camera, and a GPS position.
+  const drawn = Buffer.from(await page.evaluate(() => {
+    const c = document.createElement('canvas');
+    c.width = 64;
+    c.height = 48;
+    const g = c.getContext('2d');
+    g.fillStyle = '#b45309';
+    g.fillRect(0, 0, 64, 48);
+    g.fillStyle = '#1d4ed8';
+    g.fillRect(16, 12, 32, 24);
+    return c.toDataURL('image/jpeg', 0.9).split(',')[1];
+  }), 'base64');
+  const photo = withLocation(drawn);
+  ok(photo.includes('Phone Camera') && photo.includes('GPS'), 'the photo carries its camera and where it was taken');
+  await page.click('button[aria-label="Today & mail"]');
+  await page.getByRole('button', { name: 'New email' }).first().click();
+  const again = page.getByRole('dialog', { name: 'New message' });
+  await again.getByPlaceholder('Name or email').fill('dana@client.test');
+  await page.keyboard.press('Enter');
+  await again.locator('.draft-subject').fill('Site photo');
+  await again.getByRole('textbox', { name: 'Message' }).fill('The photo from the site.');
+  const arrived = page.waitForResponse((r) => r.request().method() === 'PUT' && /\/api\/v1\/uploads\//.test(r.url()));
+  await again.locator('input[type="file"]').setInputFiles({ name: 'site.jpg', mimeType: 'image/jpeg', buffer: photo });
+  const told = await (await arrived).json();
+  await again.locator('.compose-files .chip', { hasText: 'site.jpg' }).waitFor();
+  ok(told.scanned === false && /not checked for viruses/.test(told.note), 'with no virus scanner set up, the upload’s answer says the file was not checked');
+  ok(told.size < photo.length, 'the server kept a smaller file than was sent');
+  const kept = Buffer.from(await page.evaluate(async (id) => {
+    const bytes = new Uint8Array(await (await fetch(`/api/v1/assets/${id}`)).arrayBuffer());
+    let text = '';
+    for (const b of bytes) text += String.fromCharCode(b);
+    return btoa(text);
+  }, told.assetId), 'base64');
+  ok(kept.length === told.size && !kept.includes('GPS') && !kept.includes('Phone Camera'), 'what is kept has no camera and no position in it');
+  const size = await page.evaluate(async (id) => {
+    const img = new Image();
+    img.src = `/api/v1/assets/${id}`;
+    await img.decode();
+    return [img.naturalWidth, img.naturalHeight];
+  }, told.assetId);
+  ok(size[0] === 64 && size[1] === 48, 'and it is still the same picture: the browser draws it at its own size');
+  await again.getByRole('button', { name: /^Send/ }).first().click();
+  await page.locator('.toast', { hasText: /Sending in \d+ seconds/ }).waitFor();
+  let photoSent;
+  for (let i = 0; i < 40 && !photoSent; i++) {
+    await page.waitForTimeout(500);
+    photoSent = (await sentMail(page)).find((m) => m.subject === 'Site photo');
+  }
+  ok(photoSent && photoSent.attachments[0].sha256 === sha256(kept) && photoSent.attachments[0].size === kept.length, 'the photo that goes out is the one without its location');
+
+  /* ── With a virus scanner set up, an infected file is refused ── */
+  const scanner = await api(page, 'POST', '/api/test/files/scanner', { on: true });
+  ok(scanner.status === 200 && scanner.body.scanning === true, 'the stand-in virus scanner is put in front of uploads');
+  try {
+    await page.click('button[aria-label="Today & mail"]');
+    await page.getByRole('button', { name: 'New email' }).first().click();
+    const scanned = page.getByRole('dialog', { name: 'New message' });
+    const files = scanned.locator('input[type="file"]');
+    await files.setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from(`${EICAR}\n`) });
+    await page.locator('.toast', { hasText: 'The virus scanner found Eicar-Test-Signature in this file, so Timmy didn’t keep it.' }).waitFor();
+    ok((await scanned.locator('.compose-files .chip').count()) === 0, 'a file carrying the test virus is refused, with the reason, and nothing is attached');
+    const clean = page.waitForResponse((r) => r.request().method() === 'PUT' && /\/api\/v1\/uploads\//.test(r.url()));
+    await files.setInputFiles({ name: 'Terms.txt', mimeType: 'text/plain', buffer: terms });
+    ok((await (await clean).json()).scanned === true, 'a clean file is scanned and kept');
+    await scanned.locator('.compose-files .chip', { hasText: 'Terms.txt' }).waitFor();
+  } finally {
+    await api(page, 'POST', '/api/test/files/scanner', { on: false });
+  }
+
+  // 422 is the stand-in scanner refusing the test virus, expected above.
+  ok(errors.filter((e) => !/400|413|415|422/.test(e)).length === 0, `no page errors (${errors.join(' | ')})`);
 });

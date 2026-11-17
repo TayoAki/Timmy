@@ -5,7 +5,8 @@
  * knows, small enough, and of a kind that fits that use? Second, of the bytes themselves: do they look like
  * what was promised? A file is never trusted for its name or its declared type alone.
  *
- * Nothing here scans for viruses. A document that passes these checks can still be harmful to open.
+ * Nothing here scans for viruses: that is scan.ts, and only when a scanner is set up. Without one, a document that
+ * passes these checks can still be harmful to open.
  */
 import { ATTACHMENT_TYPES, MAX_FILE_BYTES, PICTURE_TYPES, UPLOAD_PURPOSES, endingOf, fileSize, type UploadPurpose } from '../../../src/lib/files';
 

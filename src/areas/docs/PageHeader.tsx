@@ -21,6 +21,7 @@ import { shrinkImage } from './editor/nodeviews';
 import { usePeers } from './editor/presence';
 import { useSaveState } from './editor/status';
 import { ancestors, purgeOps, restoreOps } from './pages';
+import { isLive } from '../../live/clock';
 import { openFile, shortPath } from './shared';
 import { toggleStarOps, showInFolder } from './FileView';
 import { LIVE } from '../../live/config';
@@ -381,7 +382,8 @@ function TrashBanner({ file }: { file: WFile }) {
           open
           onClose={() => setConfirm(false)}
           title="Delete this page for good?"
-          description={`“${file.name}”${inside ? ` and the ${inside} page${inside === 1 ? '' : 's'} inside it` : ''} will be deleted. This can’t be undone.`}
+          // On a real workspace the deletion can be undone from the notice that follows, history and all.
+          description={`“${file.name}”${inside ? ` and the ${inside} page${inside === 1 ? '' : 's'} inside it` : ''} will be deleted. ${isLive() ? 'Undo is on the notice that follows.' : 'This can’t be undone.'}`}
           footer={
             <>
               <button className="btn" onClick={() => setConfirm(false)}>
@@ -390,7 +392,7 @@ function TrashBanner({ file }: { file: WFile }) {
               <button
                 className="btn btn-danger"
                 onClick={() => {
-                  dispatch(ws(purgeOps(W, file.id), { toast: `Deleted “${file.name}” for good`, log: `Deleted the page “${file.name}” for good` }));
+                  dispatch(ws(purgeOps(W, file.id), { toast: `Deleted “${file.name}” for good`, log: `Deleted the page “${file.name}” for good`, undo: isLive() }));
                   dispatch({ type: 'navigate', route: { view: 'docs', tab: 'recent' } });
                 }}
               >

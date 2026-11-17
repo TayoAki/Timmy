@@ -5,6 +5,11 @@
  * recorded. Then the bytes arrive, are compared with what was announced, and go to the store. Only an asset
  * whose bytes arrived and matched can be shown, referenced by a page, or sent.
  *
+ * On arrival a picture loses its metadata (pictures.ts), so where a photo was taken never reaches the store. When
+ * a virus scanner is set up (scan.ts) the file is scanned before it is kept: an infected file is refused and its
+ * record deleted, and while the scanner can't be reached the upload stays unfinished, so nothing can use it.
+ * Without a scanner, the answer says the file was not scanned.
+ *
  * Every query here runs inside the workspace's own scope, so an id from another workspace finds nothing.
  */
 import { createHash } from 'node:crypto';
@@ -13,7 +18,10 @@ import { config } from '../config';
 import { sysPool, withWorkspace, type Tx } from '../db/pool';
 import { newId } from '../lib/ids';
 import { log } from '../lib/log';
+import { audit } from '../gateway/gateway';
+import { withoutMetadata } from './pictures';
 import { bytesProblem, readDeclared } from './rules';
+import { ScannerUnavailable, scanning, virusScanner } from './scan';
 import { fileStore, filesReady, storageKey } from './store';
 
 export interface AssetRow {
@@ -28,7 +36,17 @@ export interface AssetRow {
   created_by: string;
   created_at: Date;
   uploaded_at: Date | null;
+  /** Whether a virus scanner looked at it: "clean", "not-scanned", or null (still on its way, or kept before scanning existed). */
+  scan: 'clean' | 'not-scanned' | null;
+  unused_since: Date | null;
 }
+
+/**
+ * The condition an asset meets when it may be used: its bytes arrived and, on a server that scans, it was scanned
+ * clean. A file kept before the scanner was switched on waits for the scanner's next pass (`scanBacklog`).
+ * Always one of two fixed pieces of text: nothing from a request is ever put in it.
+ */
+export const USABLE = (alias = '') => `${alias}uploaded_at is not null${scanning() ? ` and ${alias}scan = 'clean'` : ''}`;
 
 export type Refused = { ok: false; status: number; reason: string };
 const refuse = (status: number, reason: string): Refused => ({ ok: false, status, reason });
@@ -88,20 +106,54 @@ export async function receiveUpload(who: Uploader, assetId: string, bytes: Uint8
     if (sentType && sentType.split(';')[0]!.trim().toLowerCase() !== row.content_type) return refuse(415, 'The file that arrived isn’t the kind that was announced, so it wasn’t kept.');
     const bad = bytesProblem({ type: row.content_type, size: row.size_bytes }, bytes);
     if (bad) return refuse(400, bad);
+    // A picture is kept without its metadata. What is kept, scanned, hashed and later sent is the cleaned copy.
+    const cleaned = withoutMetadata(row.content_type, bytes);
+    if (!cleaned.ok) return refuse(400, cleaned.reason);
+    const kept = cleaned.bytes;
+    const scanned = await scanUpload(tx, who, row, kept);
+    if (!scanned.ok) return scanned;
     try {
-      await fileStore().put(row.storage_key, bytes, row.content_type);
+      await fileStore().put(row.storage_key, kept, row.content_type);
     } catch (e) {
       log.error('a file could not be stored', { assetId, error: (e as Error).message });
       return refuse(502, 'The file couldn’t be stored just now. Try again in a moment.');
     }
-    const done = await tx.query('update asset set uploaded_at = now(), sha256 = $2 where id = $1 and uploaded_at is null returning *', [assetId, sha256Of(bytes)]);
+    const done = await tx.query('update asset set uploaded_at = now(), sha256 = $2, size_bytes = $3, scan = $4 where id = $1 and uploaded_at is null returning *', [assetId, sha256Of(kept), kept.length, scanned.scan]);
     return { ok: true as const, asset: done.rows[0] as AssetRow };
   });
 }
 
-/** One uploaded asset of this workspace, or null: not this workspace's, not there, or its bytes never arrived. */
+const NOT_CHECKED = 'Timmy couldn’t check this file for viruses just now, so it can’t be used yet. Try uploading it again in a few minutes.';
+
+/**
+ * Scans an arriving file, when this server scans. An infected file is refused and its record deleted (its bytes
+ * were never stored). When the scanner can't be asked, the upload stays unfinished: nothing can use it, and the
+ * person is told why and that they can try again.
+ */
+async function scanUpload(tx: Tx, who: Uploader, row: AssetRow, bytes: Uint8Array): Promise<{ ok: true; scan: 'clean' | 'not-scanned' } | Refused> {
+  const scanner = virusScanner();
+  if (!scanner) return { ok: true, scan: 'not-scanned' };
+  let verdict;
+  try {
+    verdict = await scanner.scan(bytes);
+  } catch (e) {
+    log.warn('an upload could not be scanned', { assetId: row.id, error: e instanceof ScannerUnavailable ? e.message : 'the scan failed' });
+    return refuse(503, NOT_CHECKED);
+  }
+  if (verdict.clean) return { ok: true, scan: 'clean' };
+  await tx.query('delete from asset where id = $1 and workspace_id = $2', [row.id, who.workspaceId]);
+  await audit(tx, who.workspaceId, { actor: who.userId, action: 'file.refused', detail: { why: 'virus', virus: verdict.virus, name: row.name, purpose: row.purpose } });
+  return refuse(422, `The virus scanner found ${verdict.virus} in this file, so Timmy didn’t keep it.`);
+}
+
+/** What an upload's answer says about scanning. */
+export function scanNote(a: Pick<AssetRow, 'scan'>): { scanned: boolean; note?: string } {
+  return a.scan === 'clean' ? { scanned: true } : { scanned: false, note: 'This file was not checked for viruses: no virus scanner is set up on this server yet.' };
+}
+
+/** One usable asset of this workspace, or null: not this workspace's, not there, its bytes never arrived, or (on a server that scans) not scanned clean. */
 export async function uploadedAsset(workspaceId: string, assetId: string): Promise<AssetRow | null> {
-  return withWorkspace({ workspaceId }, async (tx) => ((await tx.query('select * from asset where id = $1 and workspace_id = $2 and uploaded_at is not null', [assetId, workspaceId])).rows[0] as AssetRow | undefined) ?? null);
+  return withWorkspace({ workspaceId }, async (tx) => ((await tx.query(`select * from asset where id = $1 and workspace_id = $2 and ${USABLE()}`, [assetId, workspaceId])).rows[0] as AssetRow | undefined) ?? null);
 }
 
 /** An uploaded asset with its bytes. Null when the asset or its bytes can't be found. Throws when the store can't be asked. */
@@ -150,7 +202,7 @@ export function assetRefsIn(current: (col: string, id: string) => unknown, ops: 
 /** Which of these ids are pictures this workspace has uploaded. An id from anywhere else is simply not among them. */
 export async function usablePictures(tx: Tx, workspaceId: string, ids: string[]): Promise<Set<string>> {
   if (!ids.length) return new Set();
-  const { rows } = await tx.query('select id from asset where workspace_id = $1 and id = any($2::text[]) and uploaded_at is not null and content_type = any($3::text[])', [workspaceId, ids, PICTURE_TYPES]);
+  const { rows } = await tx.query(`select id from asset where workspace_id = $1 and id = any($2::text[]) and ${USABLE()} and content_type = any($3::text[])`, [workspaceId, ids, PICTURE_TYPES]);
   return new Set(rows.map((r) => r.id as string));
 }
 

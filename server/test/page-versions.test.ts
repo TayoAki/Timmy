@@ -234,6 +234,37 @@ describe('putting a version back', () => {
     expect(await stored('plan')).toHaveLength(3);
   });
 
+  it('links to pages deleted for good since are left out of the restored page, and the answer says how many', async () => {
+    const link = (id: string, to: string) => ({ id, type: 'page', file: to });
+    await newPage('hub', 'Hub', [para('Index'), link('l1', 'gone-a'), link('l2', 'gone-b'), link('l3', 'binned'), link('l4', 'here')]);
+    for (const [id, name] of [['gone-a', 'Gone A'], ['gone-b', 'Gone B'], ['binned', 'Binned'], ['here', 'Here']]) await newPage(id!, name!, [para(name!)]);
+    // Version 1 holds all four links; the page then loses them.
+    await save('hub', [para('Index, emptied')]);
+    await trash('gone-a', 'Gone A');
+    await trash('gone-b', 'Gone B');
+    await trash('binned', 'Binned');
+    expect((await ws(['gone-a', 'gone-b'].flatMap((id) => [{ op: 'remove', col: 'trash', id }, { op: 'remove', col: 'docs', id }]))).ok).toBe(true);
+
+    const res = await restore('hub', 1);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, changed: true, kept: 2, leftOut: 2, links: [{ block: 'l1', page: 'gone-a' }, { block: 'l2', page: 'gone-b' }], note: '2 links to pages that have been deleted since were left out.' });
+    // A page in the trash can still come back, so its link stays; so does the link to a page that is still here.
+    const blocks = ((await w.state()).ws.docs.hub as unknown as { blocks: Blocks }).blocks;
+    expect(blocks).toEqual([para('Index'), link('l3', 'binned'), link('l4', 'here')]);
+    // The version itself is kept as it was.
+    expect((await stored('hub'))[0]!.blocks).toEqual([para('Index'), link('l1', 'gone-a'), link('l2', 'gone-b'), link('l3', 'binned'), link('l4', 'here')]);
+    expect((await rows<{ detail: Record<string, unknown> }>(`select detail from audit_log where workspace_id = $1 and action = 'page.version.restored'`, [w.workspaceId]))[0]!.detail).toMatchObject({ leftOut: 2 });
+    // Putting the same version back again changes nothing, and still says what was left out.
+    expect(await (await restore('hub', 1)).json()).toEqual({ ok: true, changed: false, leftOut: 2, links: [{ block: 'l1', page: 'gone-a' }, { block: 'l2', page: 'gone-b' }], note: '2 links to pages that have been deleted since were left out.' });
+    // One left out is said in the singular; a version with nothing deleted behind it says nothing about links.
+    await newPage('solo', 'Solo', [para('one'), link('l9', 'here'), link('l8', 'gone-a')]);
+    await save('solo', [para('two')]);
+    expect(await (await restore('solo', 1)).json()).toEqual({ ok: true, changed: true, kept: 2, leftOut: 1, links: [{ block: 'l8', page: 'gone-a' }], note: 'A link to a page that has been deleted since was left out.' });
+    await newPage('plain', 'Plain', [para('one'), link('l7', 'here')]);
+    await save('plain', [para('two')]);
+    expect(await (await restore('plain', 1)).json()).toEqual({ ok: true, changed: true, kept: 2 });
+  });
+
   it('putting back a version the page already matches is not a change, however the database ordered its fields', async () => {
     // The page goes back to its first contents by an ordinary save; version 1 holds the same contents, stored by the database.
     await ageVersions('plan', '6 minutes');
@@ -350,19 +381,83 @@ describe('how long versions are kept', () => {
 });
 
 describe('when a page or a workspace is deleted for good', () => {
-  it('deleting a page for good removes its versions, and its sub-pages’ versions with theirs', async () => {
+  /** Makes pages deleted for good look as if they went this long ago. */
+  const ageGone = (ids: string[], interval: string, workspaceId = w.workspaceId) => sysPool.query(`update doc_revision set page_gone_at = now() - $3::interval where workspace_id = $1 and file_id = any($2::text[]) and page_gone_at is not null`, [workspaceId, ids, interval]);
+  const gone = (id: string, workspaceId = w.workspaceId) => rows<{ version: number; gone: boolean }>('select version, page_gone_at is not null as gone from doc_revision where workspace_id = $1 and file_id = $2 order by version', [workspaceId, id]);
+  /** "Delete forever", as the app sends it. */
+  const deleteForever = (ids: string[], c: Client = w) => ws(ids.flatMap((id) => [{ op: 'remove', col: 'trash', id }, { op: 'remove', col: 'docs', id }]), c);
+
+  // Changed on purpose: deleting a page for good used to remove its versions at once, so Undo brought the page back
+  // without its history. They are now hidden for the trash period instead, and removed by the trash job.
+  it('deleting a page for good hides its versions and its sub-pages’ versions; Undo brings the pages back with them', async () => {
     await newPage('parent', 'Parent', [para('p1'), { id: 'l', type: 'page', file: 'child' }]);
     await ws([{ op: 'put', col: 'files', item: file('child', 'Child', { parent: 'parent' }) }, { op: 'put', col: 'docs', item: { id: 'child', blocks: [para('c1')] } }]);
     await newPage('other', 'Other', [para('o1')]);
     for (const id of ['parent', 'child', 'other']) await save(id, [para(`${id} changed`), ...(id === 'parent' ? [{ id: 'l', type: 'page', file: 'child' }] : [])]);
     await trash('parent', 'Parent', [{ id: 'child', name: 'Child' }]);
-    // In the trash, the versions are still there.
+    // In the trash, the versions are still there and still listed.
     expect([...(await stored('parent')), ...(await stored('child'))]).toHaveLength(2);
-    // "Delete forever", as the app sends it.
-    expect((await ws(['parent', 'child'].flatMap((id) => [{ op: 'remove', col: 'trash', id }, { op: 'remove', col: 'docs', id }]))).ok).toBe(true);
-    expect([...(await stored('parent')), ...(await stored('child'))]).toEqual([]);
-    expect(await stored('other')).toHaveLength(1);
+    expect(await list('parent')).toHaveLength(1);
+
+    const deleted = await deleteForever(['parent', 'child']);
+    expect(deleted.ok).toBe(true);
+    // The rows are kept, but marked: nothing shows or reads them while the page is gone.
+    expect([...(await gone('parent')), ...(await gone('child'))]).toEqual([{ version: 1, gone: true }, { version: 1, gone: true }]);
+    expect(await gone('other')).toEqual([{ version: 1, gone: false }]);
     expect((await w.get('/api/v1/pages/parent/versions')).status).toBe(404);
+    expect((await w.get('/api/v1/pages/parent/versions/1')).status).toBe(404);
+    expect((await w.get('/api/v1/pages/child/versions/1')).status).toBe(404);
+
+    // Undo of the deletion: both pages are back in the trash, each with its history.
+    const undone = await w.cmd({ type: 'undo', command: deleted.id });
+    expect(undone.ok).toBe(true);
+    const s = await w.state();
+    expect(Object.keys(s.ws.trash).sort()).toEqual(['child', 'parent']);
+    expect(Object.keys(s.ws.docs).sort()).toEqual(['child', 'other', 'parent']);
+    expect([...(await gone('parent')), ...(await gone('child'))]).toEqual([{ version: 1, gone: false }, { version: 1, gone: false }]);
+    expect((await list('parent')).map((v) => v.preview)).toEqual(['p1']);
+    expect((await w.json<{ blocks: Blocks }>('GET', '/api/v1/pages/child/versions/1')).blocks).toEqual([para('c1')]);
+    // Out of the trash, a version can be put back as before.
+    expect((await ws([{ op: 'remove', col: 'trash', id: 'parent' }, { op: 'put', col: 'files', item: file('parent', 'Parent') }])).ok).toBe(true);
+    expect(await (await restore('parent', 1)).json()).toMatchObject({ ok: true, changed: true });
+    // The sub-page is still in the trash, so the link to it stays.
+    expect(((await w.state()).ws.docs.parent as unknown as { blocks: Blocks }).blocks).toEqual([para('p1'), { id: 'l', type: 'page', file: 'child' }]);
+  });
+
+  it('the hidden versions of a page deleted for good are removed by the trash job after 30 days, not before, and only that workspace’s', async () => {
+    await newPage('gone', 'Gone', [para('one')]);
+    await save('gone', [para('two')]);
+    const keep = await newWorkspace('Kept');
+    await newPage('gone', 'Gone', [para('theirs')], {}, keep);
+    await save('gone', [para('theirs, changed')], keep);
+    for (const c of [w, keep]) {
+      await trash('gone', 'Gone', [], new Date(), c);
+      expect((await deleteForever(['gone'], c)).ok).toBe(true);
+    }
+    // Day 29: Undo could still bring it back, so the versions stay.
+    await ageGone(['gone'], '29 days');
+    await runJob('page.trash.sweep');
+    expect(await gone('gone')).toEqual([{ version: 1, gone: true }]);
+    // Day 31: they go. The other workspace's page went today, so its versions stay.
+    await ageGone(['gone'], '31 days');
+    await runJob('page.trash.sweep');
+    expect(await gone('gone')).toEqual([]);
+    expect(await gone('gone', keep.workspaceId)).toEqual([{ version: 1, gone: true }]);
+  });
+
+  it('a page that comes back other than by Undo, under the same id, does not get the old history', async () => {
+    await newPage('reused', 'Reused', [para('secret plan')]);
+    await save('reused', [para('secret plan, changed')]);
+    await trash('reused', 'Reused');
+    expect((await deleteForever(['reused'])).ok).toBe(true);
+    // A new page written straight into the deleted one's place.
+    await newPage('reused', 'Reused', [para('a fresh start')]);
+    expect(await list('reused')).toEqual([]);
+    expect((await w.get('/api/v1/pages/reused/versions/1')).status).toBe(404);
+    expect(await gone('reused')).toEqual([{ version: 1, gone: true }]);
+    // Its own history starts after the old one, and is the only one shown.
+    await save('reused', [para('a fresh start, changed')]);
+    expect((await list('reused')).map((v) => [v.number, v.preview])).toEqual([[2, 'a fresh start']]);
   });
 
   it('a deleted workspace’s versions go with the rest of it', async () => {
