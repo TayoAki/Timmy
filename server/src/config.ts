@@ -158,6 +158,26 @@ export const config = {
      * Refused when the email is prepared, so the person hears it at once and not after the undo window.
      */
     outlookMaxFileBytes: Number(env.TIMMY_OUTLOOK_MAX_FILE_MB ?? 3) * 1024 * 1024,
+    /** An uploaded file nothing has used for this many days is deleted (files/cleanup.ts). */
+    unusedGraceDays: Math.max(1, Number(env.TIMMY_FILES_UNUSED_DAYS ?? 7)),
+  },
+  /**
+   * The virus scanner uploads go through: a ClamAV daemon, spoken to over TCP. Unset, nothing is scanned and an
+   * upload's answer says so. Set, an upload can't be used until the scanner has found it clean.
+   */
+  clamav: {
+    host: (env.CLAMAV_HOST ?? '').trim(),
+    port: Number(env.CLAMAV_PORT ?? 3310),
+    /** How long one scan may take, connecting included, before the scanner counts as unavailable. */
+    timeoutMs: Number(env.CLAMAV_TIMEOUT_MS ?? 30_000),
+  },
+  /**
+   * Accepting a kind of thing to track reads recent mail for it (ontology/reread.ts): at most this many threads,
+   * from this many days back, as work nobody asked for (it draws on that share of the monthly limit).
+   */
+  kindReread: {
+    threads: Math.max(0, Number(env.TIMMY_KIND_REREAD_THREADS ?? 25)),
+    days: Math.max(1, Number(env.TIMMY_KIND_REREAD_DAYS ?? 30)),
   },
 
   /** How far back the first pass over a newly connected Drive goes, by when a file last changed. */

@@ -11,9 +11,11 @@
  */
 import type { Context, Hono, MiddlewareHandler } from 'hono';
 import { MAX_FILE_BYTES, assetRef } from '../../../src/lib/files';
-import { announceUpload, expectUpload, receiveUpload, uploadedAsset, type AssetRow, type Uploader } from '../files/assets';
+import { announceUpload, expectUpload, receiveUpload, scanNote, uploadedAsset, type AssetRow, type Uploader } from '../files/assets';
 import { isPictureType } from '../files/rules';
+import { setScannerForTests, ClamAV } from '../files/scan';
 import { fileStore, filesReady } from '../files/store';
+import { startStandInClamd, type StandInClamd } from '../files/testing/clamd';
 import { log } from '../lib/log';
 import { ctxOf, requireRead, requireWorkspace, type Env } from './session';
 
@@ -69,7 +71,8 @@ export function fileRoutes(app: Hono<Env>): void {
     const bytes = new Uint8Array(await c.req.arrayBuffer());
     const out = await receiveUpload(uploaderOf(c), id, bytes, c.req.header('content-type') ?? null);
     if (!out.ok) return c.json({ error: out.reason }, out.status as 400);
-    return c.json(described(out.asset));
+    // The size and type are those of what was kept: a picture without its metadata is smaller than what was sent.
+    return c.json({ ...described(out.asset), ...scanNote(out.asset) });
   });
 
   app.get('/api/v1/assets/:id', requireWorkspace, requireRead, async (c) => {
@@ -104,5 +107,27 @@ export function fileRoutes(app: Hono<Env>): void {
       return notFound();
     }
     return new Response(bytes as BodyInit, { status: 200, headers: { ...headers, 'content-length': String(bytes.length) } });
+  });
+}
+
+let standIn: StandInClamd | null = null;
+
+/**
+ * Only for tests (mounted with the other test hooks): puts the stand-in virus scanner in front of uploads, or takes
+ * it away again, so a browser suite can show what a person sees when a file carries a virus. The stand-in listens
+ * on this machine only.
+ */
+export function fileTestRoutes(app: Hono<Env>): void {
+  app.post('/api/test/files/scanner', requireWorkspace, async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { on?: unknown };
+    if (body.on === true) {
+      standIn ??= await startStandInClamd();
+      setScannerForTests(new ClamAV('127.0.0.1', standIn.port, 5000));
+    } else {
+      setScannerForTests(undefined);
+      await standIn?.close();
+      standIn = null;
+    }
+    return c.json({ scanning: body.on === true });
   });
 }

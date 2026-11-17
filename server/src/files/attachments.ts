@@ -7,14 +7,14 @@
  * and must still hash to the same value: if a file changed or is gone, the email fails cleanly and nothing
  * goes out. So the file that is sent is the file that was approved.
  *
- * Nothing here scans a file for viruses.
+ * A file that a virus scanner has not found clean, on a server that scans, can't be attached or sent (see assets.ts).
  */
 import { MAX_ATTACHMENTS, MAX_ATTACHMENTS_BYTES, fileSize } from '../../../src/lib/files';
 import type { Tx } from '../db/pool';
 import { log } from '../lib/log';
 import { composio, type StagedFile } from '../providers/composio';
 import { meter, type ConnectionRow } from '../sync/tools';
-import { readAsset, sha256Of, type AssetRow } from './assets';
+import { USABLE, readAsset, sha256Of, type AssetRow } from './assets';
 
 /** One attached file, as approved. Stored in the effect's payload. */
 export interface ApprovedFile {
@@ -45,7 +45,7 @@ export async function attachmentsFor(tx: Tx, workspaceId: string, files: unknown
     if (typeof f !== 'object' || f === null || typeof f.id !== 'string' || !/^[\w-]{1,80}$/.test(f.id)) return refuse('That attachment isn’t in a form Timmy can send.');
     if (out.some((x) => x.assetId === f.id)) return refuse('The same file is attached twice. Remove one.');
     // Looked up inside this workspace's scope: another workspace's file is simply not found.
-    const row = (await tx.query(`select * from asset where id = $1 and workspace_id = $2 and uploaded_at is not null and purpose = 'attachment'`, [f.id, workspaceId])).rows[0] as AssetRow | undefined;
+    const row = (await tx.query(`select * from asset where id = $1 and workspace_id = $2 and ${USABLE()} and purpose = 'attachment'`, [f.id, workspaceId])).rows[0] as AssetRow | undefined;
     if (!row || !row.sha256 || !row.name) return refuse('An attached file isn’t in Timmy any more. Attach it again.');
     if (f.name !== row.name || f.type !== row.content_type || f.size !== row.size_bytes) return refuse('An attachment isn’t the file that was uploaded. Attach it again.');
     out.push({ assetId: row.id, name: row.name, type: row.content_type, size: row.size_bytes, sha256: row.sha256 });
