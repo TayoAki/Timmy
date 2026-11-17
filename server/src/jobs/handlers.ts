@@ -1,6 +1,7 @@
 import { config } from '../config';
 import { sysPool } from '../db/pool';
-import { dueEffects, executeEffect, expireStaleApprovals, onEffectApproved, onEffectSettled, reconcileEffect, staleExecuting } from '../gateway/gateway';
+import { dueEffects, executeEffect, expireStaleApprovals, reconcileEffect, staleExecuting } from '../gateway/gateway';
+import { onEffectApproved, onEffectSettled } from '../gateway/hooks';
 import { draftFor } from '../agent/draft';
 import { dueWorkspaces, morningRun } from '../agent/morning';
 import { needsReading, readThread } from '../agent/read';
