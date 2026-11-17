@@ -1,4 +1,5 @@
 import { reconcileChatReply, sendChatReply } from '../chat/deliver';
+import { filesToSend } from '../files/attachments';
 import { changeEvent, isEventChange, reconcileChange } from '../sync/calendar-change';
 import { createEvent, reconcileEvent } from '../sync/calendar-write';
 import { mailboxFor, type FilePayload, type MailPayload } from '../sync/mailbox';
@@ -27,7 +28,11 @@ const sendMail: Executor = async (e) => {
   // Each mail provider has its own send call; one that isn't wired is refused, never sent through another's.
   const box = mailboxFor(conn.toolkit);
   if (!box) return { status: 'failed', error: 'Sending from this kind of mailbox isn’t available yet.' };
-  return box.send(e, conn, p);
+  // The approved files are read back and their bytes checked against the approved hashes. A file that is gone
+  // or has changed stops the email here, before anything is asked of the mail provider.
+  const files = await filesToSend(e.workspace_id, p.attachments);
+  if (!files.ok) return { status: 'failed', error: files.error };
+  return box.send(e, conn, p, files.files);
 };
 
 /** Writes a thread's place (a label or category, or archived) to the mailbox. */

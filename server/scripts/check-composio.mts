@@ -17,8 +17,8 @@ const TOOLS: Record<string, Record<string, string[]>> = {
     GMAIL_GET_PROFILE: [],
     GMAIL_FETCH_EMAILS: ['query', 'max_results', 'include_payload', 'page_token', 'verbose', 'include_spam_trash'],
     GMAIL_FETCH_MESSAGE_BY_THREAD_ID: ['thread_id'],
-    GMAIL_SEND_EMAIL: ['recipient_email', 'extra_recipients', 'cc', 'subject', 'body', 'is_html', 'include_signature'],
-    GMAIL_REPLY_TO_THREAD: ['thread_id', 'message_body', 'recipient_email', 'extra_recipients', 'cc', 'is_html', 'include_signature'],
+    GMAIL_SEND_EMAIL: ['recipient_email', 'extra_recipients', 'cc', 'subject', 'body', 'is_html', 'include_signature', 'attachment'],
+    GMAIL_REPLY_TO_THREAD: ['thread_id', 'message_body', 'recipient_email', 'extra_recipients', 'cc', 'is_html', 'include_signature', 'attachment'],
     GMAIL_LIST_LABELS: [],
     GMAIL_CREATE_LABEL: ['label_name', 'label_list_visibility', 'message_list_visibility'],
     GMAIL_MODIFY_THREAD_LABELS: ['thread_id', 'add_label_ids', 'remove_label_ids'],
@@ -36,6 +36,9 @@ const TOOLS: Record<string, Record<string, string[]>> = {
     OUTLOOK_LIST_MESSAGES: ['folder', 'select', 'orderby', 'received_date_time_ge', 'top', 'page_token', 'filter'],
     OUTLOOK_CREATE_DRAFT: ['subject', 'body', 'is_html', 'to_recipients', 'cc_recipients'],
     OUTLOOK_CREATE_DRAFT_REPLY: ['message_id'],
+    // Files are added to the draft one at a time (a reply draft can't be made with files on it), and the draft is listed before it is sent.
+    OUTLOOK_ADD_MAIL_ATTACHMENT: ['message_id', 'attachment'],
+    OUTLOOK_LIST_OUTLOOK_ATTACHMENTS: ['message_id', 'response_detail'],
     OUTLOOK_UPDATE_EMAIL: ['message_id', 'to_recipients', 'cc_recipients', 'body'],
     OUTLOOK_SEND_DRAFT: ['message_id'],
     OUTLOOK_BATCH_UPDATE_MESSAGES: ['updates'],
@@ -73,6 +76,8 @@ const TYPES: Record<string, Record<string, string>> = {
   GMAIL_SEND_EMAIL: { include_signature: 'boolean' },
   GMAIL_REPLY_TO_THREAD: { include_signature: 'boolean' },
   OUTLOOK_CREATE_DRAFT: { to_recipients: 'array' },
+  // This one takes a single file, where the send tools take one or a list.
+  OUTLOOK_ADD_MAIL_ATTACHMENT: { attachment: 'object' },
   OUTLOOK_BATCH_UPDATE_MESSAGES: { updates: 'array' },
   // Who is told about a calendar write is a word, and the guest lists are lists; Outlook's event body is text on
   // create and an object (a kind and the content) on update.

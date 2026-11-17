@@ -3,7 +3,9 @@
  * prepared it in chat, the same checks apply and the same record is built:
  * real addresses, which mailbox it leaves from, and one send per thread at a time.
  */
+import { config } from '../config';
 import type { Tx } from '../db/pool';
+import { attachmentsFor, previewOf } from '../files/attachments';
 import { MAIL_TOOLKITS } from '../sync/mailbox';
 import type { Proposal } from './gateway';
 
@@ -20,6 +22,8 @@ export interface MailSend {
   existing?: { threadKey?: string; connectionId?: string };
   /** The id the screen gave the message, so the sent copy can take its place. */
   localMessageId?: string;
+  /** Files the message carries, as the screen holds them. Each is checked against what was uploaded. */
+  files?: unknown;
 }
 
 export type PreparedMail = { ok: false; reason: string } | { ok: true; proposal: Pick<Proposal, 'kind' | 'payload' | 'preview' | 'title' | 'target' | 'thread'> };
@@ -31,7 +35,7 @@ export async function prepareMailSend(tx: Tx, workspaceId: string, m: MailSend):
   if (!to.length) return { ok: false, reason: 'Add a recipient first.' };
   const cc = m.cc.map((x) => x.trim().toLowerCase()).filter((x) => ADDRESS.test(x));
 
-  const boxes = (await tx.query(`select id, account_label from connection where workspace_id = $1 and status = 'active' and purpose = 'primary' and toolkit = any($2::text[]) order by created_at`, [workspaceId, MAIL_TOOLKITS])).rows as { id: string; account_label: string | null }[];
+  const boxes = (await tx.query(`select id, account_label, toolkit from connection where workspace_id = $1 and status = 'active' and purpose = 'primary' and toolkit = any($2::text[]) order by created_at`, [workspaceId, MAIL_TOOLKITS])).rows as { id: string; account_label: string | null; toolkit: string }[];
   if (!boxes.length) return { ok: false, reason: 'Connect Gmail or Outlook first, then send.' };
   // A reply leaves from the mailbox its thread arrived in, in that thread. Anything else leaves from the workspace's mailbox as a new email.
   const home = m.existing?.connectionId ? boxes.find((b) => b.id === m.existing!.connectionId) : undefined;
@@ -43,12 +47,16 @@ export async function prepareMailSend(tx: Tx, workspaceId: string, m: MailSend):
     const live = await tx.query(`select 1 from effect where workspace_id = $1 and kind in ('email.send', 'email.reply') and preview->>'thread' = $2 and status in ('intended', 'approved', 'executing', 'uncertain') limit 1`, [workspaceId, m.threadId]);
     if (live.rows[0]) return { ok: false, reason: 'This thread already has an email waiting to go out. Undo or decide that one first.' };
   }
+  // Attached files become part of what is approved: each by asset, name, type, size and the hash of its bytes.
+  const attached = await attachmentsFor(tx, workspaceId, m.files, mailbox.toolkit === 'outlook' ? { name: 'Outlook', maxFileBytes: config.files.outlookMaxFileBytes } : undefined);
+  if (!attached.ok) return { ok: false, reason: attached.reason };
+  const attachments = attached.files.length ? { attachments: attached.files } : {};
   return {
     ok: true,
     proposal: {
       kind: threadKey ? 'email.reply' : 'email.send',
-      payload: { connectionId: mailbox.id, to, cc, subject: m.subject, body: m.body, threadKey, ...(m.localMessageId ? { localMessageId: m.localMessageId } : {}) },
-      preview: { from: mailbox.account_label ?? undefined, to, cc, subject: m.subject, body: m.body },
+      payload: { connectionId: mailbox.id, to, cc, subject: m.subject, body: m.body, threadKey, ...(m.localMessageId ? { localMessageId: m.localMessageId } : {}), ...attachments },
+      preview: { from: mailbox.account_label ?? undefined, to, cc, subject: m.subject, body: m.body, ...(attached.files.length ? { attachments: previewOf(attached.files) } : {}) },
       title: `${threadKey ? 'Reply' : 'Send'} “${m.subject}” to ${to.join(', ')}`,
       target: to.join(', '),
       thread: m.threadId,

@@ -11,6 +11,7 @@ import { abandonedRuns, resumeRun } from '../agent/loop';
 import { log } from '../lib/log';
 import { syncCalendar } from '../sync/calendar';
 import { purgeDeletedWorkspaces } from '../db/purge';
+import { forgetAbandonedUploads, removeWorkspaceFiles } from '../files/assets';
 import { closeOrphanedConnections, purgeConnection, revokeAtProvider } from '../sync/connect';
 import { removeFile, syncFiles } from '../sync/files';
 import { backfillMail, ingestThread, reconcileMail } from '../sync/ingest';
@@ -218,6 +219,12 @@ export function registerJobs() {
     await projectPeople(String(d.workspaceId));
   });
 
+  // A deleted workspace's uploaded files leave the bucket right away. The purge clears the prefix again later, in case this was missed.
+  defineJob('assets.remove', async (d) => {
+    const gone = await removeWorkspaceFiles(String(d.workspaceId));
+    if (gone) log.info('removed a deleted workspace’s uploaded files', { workspaceId: d.workspaceId, files: gone });
+  });
+
   // A connection belongs to a member. If the membership ended some way the hooks did not see, it is closed here.
   defineJob(
     'connection.sweep',
@@ -239,7 +246,9 @@ export function registerJobs() {
       await sysPool.query(`delete from command where at < now() - interval '30 days'`);
       // A finished run's transcript is only kept to resume it, which it never will be again.
       await sysPool.query(`delete from run_checkpoint c using run r where r.id = c.run_id and r.status in ('completed', 'failed', 'cancelled') and c.created_at < now() - interval '1 day'`);
-      const purged = await purgeDeletedWorkspaces(sysPool, config.mailRetentionDays);
+      // An upload that was announced and never arrived is of no use to anyone.
+      await forgetAbandonedUploads();
+      const purged = await purgeDeletedWorkspaces(sysPool, config.mailRetentionDays, removeWorkspaceFiles);
       if (purged) log.info('removed the data of deleted workspaces', { workspaces: purged });
     },
     '17 3 * * *',

@@ -9,9 +9,12 @@ import type pg from 'pg';
  * The audit log refuses deletes. This purge is the one exception, and it says
  * so to the database for the length of its own transaction (see migration 0003).
  */
-export async function purgeDeletedWorkspaces(pool: pg.Pool, afterDays: number): Promise<number> {
+export async function purgeDeletedWorkspaces(pool: pg.Pool, afterDays: number, removeFiles?: (workspaceId: string) => Promise<unknown>): Promise<number> {
   const { rows } = await pool.query(`select id from workspace where deleted_at is not null and deleted_at < now() - make_interval(days => $1::int)`, [afterDays]);
   for (const r of rows) {
+    // What the workspace kept outside the database (its uploaded files) goes first. If that fails the rows stay,
+    // so the next run still knows there is something to remove.
+    await removeFiles?.(r.id as string);
     const c = await pool.connect();
     try {
       await c.query('begin');

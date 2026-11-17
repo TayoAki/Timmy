@@ -4,6 +4,7 @@ import { NOW } from '../data/mock';
 import { fmtDay } from '../lib/format';
 import { useStore, type ComposeDraft } from '../state/store';
 import { firstName, isoDay, parseIsoDay } from '../state/ws';
+import { AttachButton, FileChips } from './Attach';
 import { AutoTextarea, PeoplePicker } from './kit';
 import { Kbd, TimmyMark } from './common';
 import { MicButton } from './Dictation';
@@ -29,6 +30,7 @@ export function Compose() {
   const draft = state.compose!;
   const [min, setMin] = useState(false);
   const [showCc, setShowCc] = useState(!!draft.cc?.length);
+  const [attaching, setAttaching] = useState(false);
   const subjectRef = useRef<HTMLInputElement>(null);
   const set = (change: Partial<ComposeDraft>) => dispatch({ type: 'compose', draft: { ...draft, ...change } });
   const tracking = !!draft.track;
@@ -189,12 +191,15 @@ export function Compose() {
         </label>
       </div>
 
+      <FileChips files={draft.files} onRemove={(i) => set({ files: (draft.files ?? []).filter((_, at) => at !== i) })} className="chips compose-files" />
+
       <footer className="compose-foot">
         <button className="btn btn-sm btn-ghost" onClick={close}>
           <Trash2 size={14} />
           Discard
         </button>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <AttachButton files={draft.files ?? []} onChange={(files) => set({ files })} onBusy={setAttaching} />
           {!canSend && (
             <span className="compose-why" role="status">
               {!draft.to.length ? 'Add a recipient: someone in People or any email address.' : 'Add a subject or a message.'}
@@ -207,7 +212,8 @@ export function Compose() {
           </button>
           <button
             className="btn btn-sm btn-primary"
-            disabled={!canSend || (tracking && !draft.track?.item.trim())}
+            // A file still on its way up would be left behind, so Send waits for it.
+            disabled={!canSend || attaching || (tracking && !draft.track?.item.trim())}
             onClick={() => dispatch({ type: 'sendNew', draft })}
             title={tracking && !draft.track?.item.trim() ? 'Say what they owe you first' : undefined}
           >
@@ -217,7 +223,7 @@ export function Compose() {
           </button>
         </div>
       </footer>
-      <SendShortcut onSend={() => canSend && (!tracking || draft.track?.item.trim()) && dispatch({ type: 'sendNew', draft })} />
+      <SendShortcut onSend={() => canSend && !attaching && (!tracking || draft.track?.item.trim()) && dispatch({ type: 'sendNew', draft })} />
     </section>
   );
 }

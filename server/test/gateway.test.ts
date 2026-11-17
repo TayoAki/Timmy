@@ -4,11 +4,14 @@
  *   - no action runs twice;
  *   - unattended runs send only what a rule covers.
  */
+import { createHash } from 'node:crypto';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { draftHash } from '../../src/live/hash';
 import { executeEffect, propose, reconcileEffect, type EffectRow } from '../src/gateway/gateway';
 import { rulesFor } from '../src/auth/roles';
+import { fileStore, setFileStoreForTests, type MemoryStore } from '../src/files/store';
 import { mutate } from '../src/state/mutate';
-import { addMember, boot, connectGmail, fake, jobs, newWorkspace, releaseHolds, rows, sysPool, withWorkspace, type Client } from './helpers';
+import { addMember, boot, connectGmail, fake, jobs, newWorkspace, releaseHolds, rows, samples, sysPool, uploadFile, withWorkspace, type Client } from './helpers';
 
 let w: Client;
 let mailbox: { connectionId: string; account: string };
@@ -508,5 +511,296 @@ describe('the demo’s pretend sends are refused on a real workspace', () => {
     expect(s.out.messages).toEqual([]);
     expect(await effects()).toHaveLength(0);
     expect(sent()).toHaveLength(0);
+  });
+});
+
+/**
+ * Files sent with an email. The file is uploaded first; the email's effect record names it by asset, name,
+ * type, size and the hash of its bytes, and that is what the approver sees and what goes out.
+ */
+describe('an email with a file attached', () => {
+  const hash = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
+  const attach = async (c: Client, name = 'Quote.pdf', bytes = samples.pdf('Quote: $58 per seat.'), type = 'application/pdf') => {
+    const up = await uploadFile(c, { purpose: 'attachment', type, bytes, name });
+    expect(up.status).toBe(200);
+    return { file: { id: up.assetId, name, type, size: bytes.length }, bytes, key: `${c.workspaceId}/${up.assetId}` };
+  };
+  const sendWith = (c: Client, files: unknown[], subject = 'Quote attached') => c.cmd({ type: 'sendNew', draft: { to: ['mail:dana@client.test'], subject, body: 'The quote is attached.', files } });
+  // The stand-in keeps every call it ever got; each test looks only at the ones made since it began.
+  let mark = 0;
+  beforeEach(() => {
+    mark = fake().calls.length;
+  });
+  const calls = (slug: RegExp) => fake().calls.slice(mark).filter((c) => slug.test(c.slug));
+  const sendCalls = () => calls(/^GMAIL_(SEND_EMAIL|REPLY_TO_THREAD)$/);
+  const handovers = () => calls(/^FILES_UPLOAD$/);
+  const store = () => fileStore() as MemoryStore;
+
+  it('waits out the hold, then goes out once, carrying exactly the approved file', async () => {
+    const a = await attach(w);
+    const out = await sendWith(w, [a.file]);
+    expect(out.ok).toBe(true);
+    expect(out.holding?.seconds).toBe(30);
+    const [e] = await effects();
+    // What was approved: the asset, its name, type and size, and the hash its bytes must have.
+    expect(e).toMatchObject({ kind: 'email.send', status: 'approved', approved_by: w.userId });
+    expect(e!.payload.attachments).toEqual([{ assetId: a.file.id, name: 'Quote.pdf', type: 'application/pdf', size: a.bytes.length, sha256: hash(a.bytes) }]);
+    // What the approver is shown, in the queue and on the thread.
+    expect((await w.state()).pending[0]!.preview.attachments).toEqual([{ name: 'Quote.pdf', type: 'application/pdf', size: a.bytes.length }]);
+    expect((await w.state()).threads.find((t) => t.subject === 'Quote attached')!.messages[0]!.files).toEqual([a.file]);
+
+    // Nothing leaves during the hold, however often the job fires. Not the email, and not the file either.
+    await jobs().drain();
+    await Promise.all([executeEffect(w.workspaceId, e!.id), executeEffect(w.workspaceId, e!.id)]);
+    expect(sent()).toHaveLength(0);
+    expect(handovers()).toHaveLength(0);
+
+    expect(await releaseHolds(w)).toBe(1);
+    expect(sent()).toHaveLength(1);
+    expect(sent()[0]).toMatchObject({ to: ['dana@client.test'], subject: 'Quote attached', body: 'The quote is attached.' });
+    expect(sent()[0]!.attachments).toEqual([{ name: 'Quote.pdf', mimetype: 'application/pdf', size: a.bytes.length, sha256: hash(a.bytes) }]);
+    // Handed over the way Composio's client does it: staged for the tool that sends it, then passed by reference.
+    expect(handovers().map((c) => c.args)).toEqual([{ toolSlug: 'GMAIL_SEND_EMAIL', toolkit: 'gmail', name: 'Quote.pdf', type: 'application/pdf', size: a.bytes.length }]);
+    const arg = sendCalls()[0]!.args.attachment as { name: string; mimetype: string; s3key: string }[];
+    expect(arg).toEqual([{ name: 'Quote.pdf', mimetype: 'application/pdf', s3key: expect.stringContaining('gmail/GMAIL_SEND_EMAIL/') }]);
+
+    // Running it again, any number of times, sends nothing more.
+    await Promise.all([executeEffect(w.workspaceId, e!.id), executeEffect(w.workspaceId, e!.id)]);
+    await releaseHolds(w);
+    await jobs().drain();
+    expect(sent()).toHaveLength(1);
+    expect(sendCalls()).toHaveLength(1);
+    expect((await effects())[0]).toMatchObject({ status: 'completed', attempt: 1 });
+  });
+
+  it('a reply carries its files too, and several files keep their order', async () => {
+    await w.post('/api/test/fake', { op: 'deliver', message: { from: 'Dana <dana@client.test>', subject: 'Send the papers?', body: 'Could you send both?' } });
+    const thread = (await w.state()).threads.find((t) => t.subject === 'Send the papers?')!;
+    const a = await attach(w, 'Terms.pdf', samples.pdf('Terms'));
+    const b = await attach(w, 'site photo.jpeg', samples.jpeg('photo'), 'image/jpeg');
+    const out = await w.cmd({ type: 'reply', id: thread.id, body: 'Both attached.', files: [a.file, b.file] });
+    expect(out.ok).toBe(true);
+    const e = (await effects()).find((x) => x.kind === 'email.reply')!;
+    expect((e.payload.attachments as { name: string }[]).map((f) => f.name)).toEqual(['Terms.pdf', 'site photo.jpeg']);
+    await releaseHolds(w);
+    const [m] = sent();
+    expect(m).toMatchObject({ threadId: thread.ext!.threadKey, body: 'Both attached.' });
+    expect(m!.attachments).toEqual([
+      { name: 'Terms.pdf', mimetype: 'application/pdf', size: a.bytes.length, sha256: hash(a.bytes) },
+      { name: 'site photo.jpeg', mimetype: 'image/jpeg', size: b.bytes.length, sha256: hash(b.bytes) },
+    ]);
+    expect(handovers().map((c) => c.args.toolSlug)).toEqual(['GMAIL_REPLY_TO_THREAD', 'GMAIL_REPLY_TO_THREAD']);
+    // When the mailbox's own copy of the reply comes back through sync it is the same message, still with its files, shown once.
+    await w.post('/api/test/fake', { op: 'deliver', message: { from: 'Dana <dana@client.test>', subject: 'Re: Send the papers?', body: 'Got them.', threadId: thread.ext!.threadKey } });
+    const mine = (await w.state()).threads.find((t) => t.id === thread.id)!.messages.filter((x) => x.from === 'me');
+    expect(mine).toHaveLength(1);
+    expect(mine[0]).toMatchObject({ id: m!.id, files: [a.file, b.file] });
+    expect(mine[0]!.attachments).toBeUndefined();
+    // An email with no files is sent as it always was: no file argument at all.
+    await send(w, 'mail:dana@client.test', 'Plain');
+    await releaseHolds(w);
+    expect(Object.hasOwn(sendCalls().at(-1)!.args, 'attachment')).toBe(false);
+  });
+
+  it('if the file changed after approval, or is gone, the email fails cleanly and nothing goes out', async () => {
+    const cases: [string, (a: Awaited<ReturnType<typeof attach>>) => Promise<unknown>, RegExp][] = [
+      ['its bytes were changed in the store', async (a) => store().files.set(a.key, samples.pdf('Quote: $1 per seat.!')), /changed after the email was approved/],
+      ['its bytes are gone from the store', async (a) => store().files.delete(a.key), /no longer in Timmy/],
+      ['its record is gone', (a) => sysPool.query('delete from asset where id = $1', [a.file.id]), /no longer in Timmy/],
+      ['its record says something else', (a) => sysPool.query(`update asset set sha256 = $2 where id = $1`, [a.file.id, 'f'.repeat(64)]), /changed after the email was approved/],
+      ['the store can’t be read', async () => (store().get = async () => Promise.reject(new Error('down'))), /could not be read/],
+    ];
+    for (const [what, damage, why] of cases) {
+      setFileStoreForTests(null);
+      const before = { sent: sent().length, calls: sendCalls().length, staged: handovers().length };
+      const a = await attach(w, 'Quote.pdf', samples.pdf('Quote: $58 per seat.'));
+      expect(store().files.get(a.key)!.length).toBe(samples.pdf('Quote: $1 per seat.!').length);
+      const subject = `Tampered: ${what}`;
+      expect((await sendWith(w, [a.file], subject)).ok).toBe(true);
+      await damage(a);
+      await releaseHolds(w);
+      const e = (await effects()).find((x) => (x.payload as { subject: string }).subject === subject)!;
+      expect([what, e.status]).toEqual([what, 'failed']);
+      expect(e.error).toMatch(why);
+      // Failed before anything was asked of the mail provider: no send, and not even the file was handed over.
+      expect([what, sent().length, sendCalls().length, handovers().length]).toEqual([what, before.sent, before.calls, before.staged]);
+      const t = (await w.state()).threads.find((x) => x.subject === subject)!;
+      expect(t.history!.some((h) => /Not sent/.test(h.text))).toBe(true);
+      // A failed effect is final: it is never run again.
+      expect(await executeEffect(w.workspaceId, e.id)).toBeNull();
+    }
+    setFileStoreForTests(null);
+  });
+
+  it('if the file can’t be handed to the provider, or the provider won’t take it, nothing is sent', async () => {
+    const a = await attach(w);
+    await sendWith(w, [a.file], 'Not handed over');
+    fake().failNext.set('FILES_UPLOAD', 'error');
+    await releaseHolds(w);
+    expect((await effects())[0]).toMatchObject({ status: 'failed' });
+    expect((await effects())[0]!.error).toMatch(/could not be handed to the mail provider/);
+    expect(sent()).toHaveLength(0);
+    expect(sendCalls()).toHaveLength(0);
+
+    // The stand-in takes a file argument only the way the real tools do: a reference that was handed over for that very tool.
+    const who = { userId: (await rows<{ composio_user_id: string }>('select composio_user_id from connection where id = $1', [mailbox.connectionId]))[0]!.composio_user_id, connectedAccountId: mailbox.account };
+    const args = { recipient_email: 'dana@client.test', subject: 's', body: 'b' };
+    const forReply = await fake().stageFile({ toolSlug: 'GMAIL_REPLY_TO_THREAD', toolkit: 'gmail', name: 'a.pdf', type: 'application/pdf', bytes: a.bytes });
+    const forSend = await fake().stageFile({ toolSlug: 'GMAIL_SEND_EMAIL', toolkit: 'gmail', name: 'a.pdf', type: 'application/pdf', bytes: a.bytes });
+    for (const attachment of [{ name: 'a.pdf', mimetype: 'application/pdf', s3key: 'never/uploaded' }, forReply, { ...forSend, mimetype: 'pdf' }, { name: 'a.pdf', s3key: forSend.s3key }, '/etc/passwd', [forSend, 'https://example.test/a.pdf']]) {
+      const res = await fake().execute('GMAIL_SEND_EMAIL', { ...args, attachment }, who);
+      expect([JSON.stringify(attachment), res.successful]).toEqual([JSON.stringify(attachment), false]);
+      expect(res.error).toMatch(/attachment/);
+    }
+    expect(sent()).toHaveLength(0);
+    expect((await fake().execute('GMAIL_SEND_EMAIL', { ...args, attachment: forSend }, who)).successful).toBe(true);
+    expect(sent()[0]!.attachments).toEqual([{ name: 'a.pdf', mimetype: 'application/pdf', size: a.bytes.length, sha256: hash(a.bytes) }]);
+  });
+
+  it('only this workspace’s own uploaded attachments can be sent, described as they were uploaded', async () => {
+    const other = await newWorkspace('Next door');
+    const theirs = await attach(other, 'Their payroll.pdf', samples.pdf('salaries'));
+    const mine = await attach(w);
+    const pending = await w.json<{ assetId: string }>('POST', '/api/v1/uploads', { purpose: 'attachment', type: 'application/pdf', size: 100, name: 'never.pdf' });
+    const picture = await uploadFile(w, { purpose: 'page-image', type: 'image/png', bytes: samples.png() });
+    const refused: [string, unknown[], RegExp][] = [
+      ['another workspace’s file', [theirs.file], /isn’t in Timmy any more/],
+      ['another workspace’s file beside one of ours', [mine.file, theirs.file], /isn’t in Timmy any more/],
+      ['a file whose bytes never arrived', [{ id: pending.assetId, name: 'never.pdf', type: 'application/pdf', size: 100 }], /isn’t in Timmy any more/],
+      ['a page’s picture', [{ id: picture.assetId, name: 'x.png', type: 'image/png', size: samples.png().length }], /isn’t in Timmy any more/],
+      ['an id that was made up', [{ id: 'ast_madeup', name: 'x.pdf', type: 'application/pdf', size: 10 }], /isn’t in Timmy any more/],
+      ['our file under another name', [{ ...mine.file, name: 'Harmless.pdf' }], /isn’t the file that was uploaded/],
+      ['our file with another type', [{ ...mine.file, type: 'text/plain' }], /isn’t the file that was uploaded/],
+      ['our file with another size', [{ ...mine.file, size: 1 }], /isn’t the file that was uploaded/],
+      ['the same file twice', [mine.file, mine.file], /attached twice/],
+      ['something that is not a file', ['asset:whatever'], /isn’t in a form/],
+      ['a path', [{ id: '../../etc/passwd', name: 'passwd', type: 'text/plain', size: 1 }], /isn’t in a form/],
+      ['more files than an email may carry', Array.from({ length: 11 }, () => mine.file), /up to 10 files/],
+    ];
+    for (const [what, files, why] of refused) {
+      const out = await sendWith(w, files, `Refused: ${what}`);
+      expect([what, out.ok]).toEqual([what, false]);
+      expect(out.error).toMatch(why);
+    }
+    // Nothing was recorded, nothing is on the screen, nothing was sent.
+    expect(await effects()).toHaveLength(0);
+    expect((await w.state()).threads.filter((t) => t.subject.startsWith('Refused'))).toEqual([]);
+    await releaseHolds(w);
+    expect(sent()).toHaveLength(0);
+    // The file from next door was never read on this workspace's behalf.
+    expect(handovers()).toHaveLength(0);
+  });
+
+  it('files that are too heavy together are refused before anything is recorded', async () => {
+    const heavy = async (name: string) => {
+      const bytes = new Uint8Array(9_800_000);
+      bytes.set(samples.pdf(name));
+      return attach(w, name, bytes);
+    };
+    const out = await sendWith(w, [(await heavy('a.pdf')).file, (await heavy('b.pdf')).file], 'Too heavy');
+    expect(out.ok).toBe(false);
+    expect(out.error).toMatch(/An email can carry up to 18 MB/);
+    expect(await effects()).toHaveLength(0);
+  });
+
+  it('a role that cannot send cannot attach, and an assistant’s attachment waits for the exec with the email', async () => {
+    for (const role of ['revops', 'client']) {
+      const c = await addMember(w.workspaceId, role);
+      const up = await uploadFile(c, { purpose: 'attachment', type: 'application/pdf', bytes: samples.pdf(), name: 'x.pdf' });
+      expect([role, up.status]).toEqual([role, 403]);
+      // Nor can they send a file someone else uploaded.
+      const a = await attach(w, `${role}.pdf`);
+      const out = await sendWith(c, [a.file], `From ${role}`);
+      expect([role, out.ok]).toEqual([role, false]);
+      expect(out.error).toMatch(/role can’t/);
+    }
+    expect(await effects()).toHaveLength(0);
+
+    const ea = await addMember(w.workspaceId, 'assistant', 'Jess EA');
+    const a = await attach(ea, 'Agenda.pdf', samples.pdf('Agenda'));
+    expect((await sendWith(ea, [a.file], 'From the EA, with a file')).ok).toBe(true);
+    const [e] = await effects();
+    expect(e).toMatchObject({ status: 'intended', approver_route: 'exec', requested_by: ea.userId });
+    // The exec is shown the file, by name and size, before deciding.
+    expect((await w.state()).pending[0]).toMatchObject({ waitingOn: 'exec', status: 'waiting', preview: { attachments: [{ name: 'Agenda.pdf', type: 'application/pdf', size: a.bytes.length }] } });
+    await releaseHolds(w);
+    expect(sent()).toHaveLength(0);
+    expect((await ea.cmd({ type: 'effect', id: e!.id, approve: true })).ok).toBe(false);
+    expect((await w.cmd({ type: 'effect', id: e!.id, approve: true })).ok).toBe(true);
+    await releaseHolds(w);
+    expect(sent()).toHaveLength(1);
+    expect(sent()[0]!.attachments).toEqual([{ name: 'Agenda.pdf', mimetype: 'application/pdf', size: a.bytes.length, sha256: hash(a.bytes) }]);
+    // Once it has gone out, the thread shows the email with its file.
+    const t = (await w.state()).threads.find((x) => x.subject === 'From the EA, with a file')!;
+    expect(t.messages.find((m) => m.from === 'me')!.files).toEqual([a.file]);
+  });
+
+  it('what was approved cannot be swapped: the file list is part of the record the database keeps fixed', async () => {
+    const a = await attach(w);
+    const b = await attach(w, 'Other.pdf', samples.pdf('Something else'));
+    await sendWith(w, [a.file]);
+    const [e] = await effects();
+    const swapped = { ...e!.payload, attachments: [{ assetId: b.file.id, name: 'Other.pdf', type: 'application/pdf', size: b.bytes.length, sha256: hash(b.bytes) }] };
+    await expect(sysPool.query('update effect set payload = $2::jsonb where id = $1', [e!.id, JSON.stringify(swapped)])).rejects.toThrow(/what was approved cannot change/);
+    await releaseHolds(w);
+    expect(sent()[0]!.attachments!.map((f) => f.name)).toEqual(['Quote.pdf']);
+  });
+
+  it('a file can be added to a reply Timmy drafted: it is kept with the draft, checked as it is added, and sent with it', async () => {
+    await w.post('/api/test/fake', { op: 'deliver', message: { from: 'Dana <dana@client.test>', subject: 'Contract?', body: 'Could you send the contract?' } });
+    const thread = (await w.state()).threads.find((t) => t.subject === 'Contract?')!;
+    const draftNow = async () => (await w.state()).threads.find((t) => t.id === thread.id)!.draft!;
+    expect((await w.cmd({ type: 'makeDraft', id: thread.id })).ok).toBe(true);
+    await jobs().drain();
+    const drafted = await draftNow();
+    const seenBefore = draftHash(drafted);
+    const a = await attach(w, 'Contract.pdf', samples.pdf('Contract'));
+    // What can't be sent can't be put on the draft either: another workspace's file, or something that isn't a file.
+    const theirs = await attach(await newWorkspace('Next door'), 'Theirs.pdf', samples.pdf('theirs'));
+    for (const files of [[theirs.file], 'nope', [{ id: a.file.id, name: 'Renamed.pdf', type: 'application/pdf', size: a.bytes.length }]]) {
+      expect([JSON.stringify(files), (await w.cmd({ type: 'updateDraft', id: thread.id, body: drafted.body, files })).ok]).toEqual([JSON.stringify(files), false]);
+    }
+    expect((await draftNow()).files).toBeUndefined();
+
+    expect((await w.cmd({ type: 'updateDraft', id: thread.id, body: drafted.body, files: [a.file] })).ok).toBe(true);
+    // Typing in the draft afterwards leaves its files where they are.
+    expect((await w.cmd({ type: 'updateDraft', id: thread.id, body: `${drafted.body}\n\nThe contract is attached.` })).ok).toBe(true);
+    const withFile = await draftNow();
+    expect(withFile.files).toEqual([a.file]);
+    // Someone who read the draft before the file was added has to look again before sending.
+    const stale = await w.cmd({ type: 'sendDraft', id: thread.id, track: false, seen: seenBefore });
+    expect(stale.ok).toBe(false);
+    expect(stale.error).toMatch(/changed after you opened it/);
+    const changedOnlyByFile = draftHash({ ...withFile, files: undefined });
+    expect((await w.cmd({ type: 'sendDraft', id: thread.id, track: false, seen: changedOnlyByFile })).ok).toBe(false);
+    expect(await effects().then((list) => list.filter((x) => x.kind === 'email.reply'))).toHaveLength(0);
+
+    expect((await w.cmd({ type: 'sendDraft', id: thread.id, track: false, seen: draftHash(withFile) })).ok).toBe(true);
+    const e = (await effects()).find((x) => x.kind === 'email.reply')!;
+    expect(e.payload.attachments).toEqual([{ assetId: a.file.id, name: 'Contract.pdf', type: 'application/pdf', size: a.bytes.length, sha256: hash(a.bytes) }]);
+    expect(e.preview.attachments).toEqual([{ name: 'Contract.pdf', type: 'application/pdf', size: a.bytes.length }]);
+    await releaseHolds(w);
+    const m = sent().find((x) => x.threadId === thread.ext!.threadKey)!;
+    expect(m.body).toMatch(/The contract is attached\.$/);
+    expect(m.attachments).toEqual([{ name: 'Contract.pdf', mimetype: 'application/pdf', size: a.bytes.length, sha256: hash(a.bytes) }]);
+    // Taking the last file off a draft leaves it with none.
+    await w.post('/api/test/fake', { op: 'deliver', message: { from: 'Dana <dana@client.test>', subject: 'One more?', body: 'And the other one?' } });
+    const second = (await w.state()).threads.find((t) => t.subject === 'One more?')!;
+    await w.cmd({ type: 'makeDraft', id: second.id });
+    await jobs().drain();
+    const body = (await w.state()).threads.find((t) => t.id === second.id)!.draft!.body;
+    await w.cmd({ type: 'updateDraft', id: second.id, body, files: [a.file] });
+    expect((await w.cmd({ type: 'updateDraft', id: second.id, body, files: [] })).ok).toBe(true);
+    expect((await w.state()).threads.find((t) => t.id === second.id)!.draft!.files).toBeUndefined();
+  });
+
+  it('a file from Timmy’s own Files still can’t be sent, and says so', async () => {
+    await w.post('/api/test/fake', { op: 'deliver', message: { from: 'Dana <dana@client.test>', subject: 'Proposal?', body: 'Please send it.' } });
+    const thread = (await w.state()).threads.find((t) => t.subject === 'Proposal?')!;
+    await mutate(w.workspaceId, 'test', async (_tx, loaded) => ({ state: { ...loaded.state, threads: loaded.state.threads.map((t) => (t.id === thread.id ? { ...t, draft: { to: ['mail:dana@client.test'], subject: 'Re: Proposal?', body: 'Attached.', sources: [], attachments: ['proposal-v3'] } } : t)) }, result: null }));
+    const out = await w.cmd({ type: 'sendDraft', id: thread.id, track: false });
+    expect(out.ok).toBe(false);
+    expect(out.error).toMatch(/from Timmy’s Files isn’t available yet/);
+    expect((await effects()).filter((x) => x.kind !== 'mail.modify')).toHaveLength(0);
   });
 });

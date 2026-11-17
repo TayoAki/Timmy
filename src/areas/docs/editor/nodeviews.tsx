@@ -14,6 +14,8 @@ import { BlockText } from '../BlockText';
 import { LinkedTable } from '../LinkedTable';
 import { openFile, shortPath } from '../shared';
 import { LIVE } from '../../../live/config';
+import { uploadPicture } from '../../../live/upload';
+import { pictureUrl } from '../../../lib/files';
 
 /* ───────────── What node views can ask the editor for ───────────── */
 
@@ -68,7 +70,7 @@ async function shrink(file: File, max = LIVE ? 1000 : 1600): Promise<string> {
 export { shrink as shrinkImage };
 
 function ImageView({ node, updateAttributes, deleteNode, selected, editor }: NodeViewProps) {
-  const { readOnly } = useContext(DocEditorContext);
+  const { readOnly, toast } = useContext(DocEditorContext);
   const src = node.attrs.src as string;
   const width = node.attrs.width as number | null;
   const [link, setLink] = useState('');
@@ -80,7 +82,11 @@ function ImageView({ node, updateAttributes, deleteNode, selected, editor }: Nod
     if (!f || !f.type.startsWith('image/')) return;
     setBusy(true);
     try {
-      updateAttributes({ src: await shrink(f) });
+      // On a real workspace the picture is uploaded and the page keeps a reference to it. The demo keeps it inline.
+      updateAttributes({ src: LIVE ? await uploadPicture(f, 'page-image', 1600) : await shrink(f) });
+    } catch (e) {
+      if (!LIVE) throw e;
+      toast((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -146,7 +152,7 @@ function ImageView({ node, updateAttributes, deleteNode, selected, editor }: Nod
     <NodeViewWrapper className="nb nb-atom nb-image" style={wrapStyle(node)}>
       <figure className={`nb-figure${selected ? ' selected' : ''}`} contentEditable={false}>
         <div ref={box} className="nb-image-box" style={width ? { width } : undefined}>
-          <img src={src} alt={node.attrs.caption || 'Image'} draggable={false} onDragStart={(e) => e.preventDefault()} />
+          <img src={pictureUrl(src)} alt={node.attrs.caption || 'Image'} draggable={false} onDragStart={(e) => e.preventDefault()} />
           {!readOnly && editor.isEditable && (
             <>
               <span className="nb-resize l" onPointerDown={(e) => startResize(e.nativeEvent, -1)} aria-hidden />

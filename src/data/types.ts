@@ -14,6 +14,17 @@ export interface Person {
   bot?: boolean;
 }
 
+/**
+ * A file attached from the person's computer, on a real workspace. It is uploaded before the email is sent;
+ * `id` is the uploaded file's id on the server, and the rest is what the screen shows for it.
+ */
+export interface MailFile {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+}
+
 export interface Message {
   id: string;
   from: string;
@@ -22,6 +33,8 @@ export interface Message {
   at: Date;
   body: string[];
   attachments?: string[];
+  /** Files uploaded and sent with this message (real workspaces). */
+  files?: MailFile[];
 }
 
 export interface Draft {
@@ -32,6 +45,11 @@ export interface Draft {
   /** Docs Timmy read to write the draft. */
   sources: string[];
   attachments?: string[];
+  /**
+   * Files uploaded to go out with it (real workspaces). On a thread's draft each has the id of its upload;
+   * an email already waiting to go out is shown with its files by name, type and size only.
+   */
+  files?: (MailFile | { id?: undefined; name: string; type: string; size: number })[];
   /** When sent, the thread moves to Waiting for this item. */
   trackAs?: { on: string; item: string; due: Date };
   kind?: 'reply' | 'nudge';

@@ -442,6 +442,18 @@ select.input {
   background: var(--panel);
 }
 
+/* Files attached to an email (real workspaces): a row of chips above the footer, each with a small remove button. */
+.compose-files,
+.reply-files {
+  padding: 8px 14px;
+}
+
+.chip .icon-btn.sm {
+  width: 18px;
+  height: 18px;
+  margin: -2px -4px -2px 0;
+}
+
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;

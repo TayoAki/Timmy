@@ -1,5 +1,6 @@
 /* Built-in page covers: gradients in Timmy's palette. */
 import type { DocCover } from '../../data/ws-types';
+import { pictureUrl } from '../../lib/files';
 
 export const COVERS: { id: string; label: string; css: string }[] = [
   { id: 'indigo', label: 'Indigo', css: 'linear-gradient(135deg, #3f51d9 0%, #7b5ce0 55%, #b07ad8 100%)' },
@@ -17,6 +18,6 @@ export const COVERS: { id: string; label: string; css: string }[] = [
 export const coverStyle = (c: DocCover) =>
   c.kind === 'gradient'
     ? { backgroundImage: COVERS.find((x) => x.id === c.value)?.css ?? COVERS[0]!.css }
-    : { backgroundImage: `url("${c.value.replace(/"/g, '%22')}")`, backgroundPosition: `center ${c.y ?? 50}%` };
+    : { backgroundImage: `url("${pictureUrl(c.value).replace(/"/g, '%22')}")`, backgroundPosition: `center ${c.y ?? 50}%` };
 
 export const randomCover = (): DocCover => ({ kind: 'gradient', value: COVERS[Math.floor(Math.random() * COVERS.length)]!.id });

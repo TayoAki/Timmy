@@ -14,6 +14,7 @@ import type { State } from '../../../src/state/store';
 import type { AutoEdge, AutoNode, Automation, ChatWidget } from '../../../src/data/ws-types';
 import { KIND } from '../../../src/areas/automations/catalog';
 import { WS_COLLECTIONS, toWire } from '../../../src/live/patches';
+import { assetIdOf } from '../../../src/lib/files';
 
 const COLLECTIONS: ReadonlySet<string> = new Set(WS_COLLECTIONS);
 /** Ids made here and by the screens. An id taken from an email address may carry a plus sign. */
@@ -33,12 +34,26 @@ const BLOCK_TYPES = new Set(['h1', 'h2', 'h3', 'p', 'bullet', 'numbered', 'quote
 const COLORS = /^(gray|brown|orange|yellow|green|blue|purple|pink|red)(-bg)?$/;
 /** A picture is a web address, or a small image carried inline. SVG is left out: it can hold script. */
 const PICTURE = /^(https:\/\/[^\s"'<>]{1,2000}|data:image\/(png|jpeg|jpg|gif|webp);base64,[A-Za-z0-9+/=]+)$/;
-/** Inline pictures live in the workspace's stored state until uploads exist, so they are kept small. */
+/** Inline pictures live in the workspace's stored state, so they are kept small. New pictures are uploaded instead. */
 export const MAX_INLINE_PICTURE = 700_000;
 const LINK = /^(https?:\/\/|mailto:)[^\s"'<>]{1,2000}$/i;
 export const MAX_BLOCKS = 5000;
 
-const picture = (v: unknown) => typeof v === 'string' && v.length <= MAX_INLINE_PICTURE && PICTURE.test(v);
+/**
+ * The ids of this workspace's uploaded pictures that a change may refer to, looked up by the caller before the
+ * check. A reference ("asset:" and an id) is accepted only when its id is among them, so a picture from another
+ * workspace, one whose bytes never arrived, or a file that is not a picture is refused like any other bad value.
+ * With none given, no reference is accepted.
+ */
+export type Pictures = ReadonlySet<string>;
+const NO_PICTURES: Pictures = new Set();
+
+const uploaded = (v: unknown, pictures: Pictures) => {
+  const id = assetIdOf(v);
+  return id !== null && pictures.has(id);
+};
+/** A web address, an uploaded picture of this workspace, or a small picture carried inline (older pages have those). */
+const picture = (v: unknown, pictures: Pictures) => uploaded(v, pictures) || (typeof v === 'string' && v.length <= MAX_INLINE_PICTURE && PICTURE.test(v));
 
 function richProblem(rich: unknown): string | null {
   if (!Array.isArray(rich) || rich.length > 2000) return 'Its formatting isn’t in a form Timmy can save.';
@@ -63,7 +78,7 @@ function richProblem(rich: unknown): string | null {
   return null;
 }
 
-export function blocksProblem(blocks: unknown): string | null {
+export function blocksProblem(blocks: unknown, pictures: Pictures = NO_PICTURES): string | null {
   if (!Array.isArray(blocks)) return 'That page’s contents aren’t in a form Timmy can save.';
   if (blocks.length > MAX_BLOCKS) return `A page can hold up to ${MAX_BLOCKS.toLocaleString('en-US')} blocks.`;
   const ids = new Set<string>();
@@ -78,7 +93,7 @@ export function blocksProblem(blocks: unknown): string | null {
       const bad = richProblem(b.rich);
       if (bad) return bad;
     }
-    if (b.type === 'image' && !(b.src === '' || picture(b.src))) return 'A picture on that page isn’t one Timmy can keep. Use a PNG, JPEG, GIF or WebP under 500 KB, or a web address that starts with https.';
+    if (b.type === 'image' && !(b.src === '' || picture(b.src, pictures))) return 'A picture on that page isn’t one Timmy can keep. Upload a PNG, JPEG, GIF or WebP, or use a web address that starts with https.';
     if (b.type === 'table') {
       const cols = b.columns;
       const rows = b.rows;
@@ -91,16 +106,16 @@ export function blocksProblem(blocks: unknown): string | null {
   return null;
 }
 
-function docProblem(doc: Record<string, unknown>): string | null {
+function docProblem(doc: Record<string, unknown>, pictures: Pictures): string | null {
   // Every page has its list of blocks, even an empty one: the editor draws from it.
-  const bad = blocksProblem(doc.blocks);
+  const bad = blocksProblem(doc.blocks, pictures);
   if (bad) return bad;
   if (doc.icon !== undefined && !text(doc.icon, 16)) return 'That page’s icon isn’t valid.';
   if (doc.cover !== undefined && doc.cover !== null) {
     const c = doc.cover;
     if (!plain(c) || (c.kind !== 'gradient' && c.kind !== 'image')) return 'That page’s cover isn’t valid.';
     if (c.kind === 'gradient' && !(typeof c.value === 'string' && /^[\w-]{1,40}$/.test(c.value))) return 'That page’s cover isn’t valid.';
-    if (c.kind === 'image' && !picture(c.value)) return 'That cover picture isn’t one Timmy can keep. Use a PNG, JPEG, GIF or WebP under 500 KB, or a web address that starts with https.';
+    if (c.kind === 'image' && !picture(c.value, pictures)) return 'That cover picture isn’t one Timmy can keep. Upload a PNG, JPEG, GIF or WebP, or use a web address that starts with https.';
     if (c.y !== undefined && !(typeof c.y === 'number' && c.y >= 0 && c.y <= 100)) return 'That page’s cover isn’t valid.';
   }
   return null;
@@ -208,6 +223,8 @@ function chatProblem(w: Record<string, unknown>): string | null {
   if (!(typeof c.domain === 'string' && (c.domain === '' || /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(c.domain)) && c.domain.length <= 253)) return 'Enter the website as a plain address, like example.com.';
   if (!text(c.name, 80) || !text(c.greeting, 600)) return 'The chat’s name or greeting is too long.';
   if (!(typeof c.color === 'string' && /^#[0-9a-f]{6}$/i.test(c.color))) return 'Pick the chat’s colour from the palette.';
+  // The chat's picture stays a small one carried inline, never a reference to an upload: it is shown to strangers
+  // on someone else's website, and an uploaded file is only ever handed to signed-in members of the workspace.
   if (c.icon !== undefined && c.icon !== '' && !(typeof c.icon === 'string' && c.icon.length <= 300_000 && /^data:image\/(png|jpeg|jpg|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(c.icon))) return 'The chat’s picture has to be a PNG, JPEG, GIF or WebP under 200 KB.';
   if (c.handoff !== 'notify' && c.handoff !== 'book' && c.handoff !== 'email') return 'Those chat settings aren’t in a form Timmy can save.';
   if (!Array.isArray(c.questions) || c.questions.length > 10 || !c.questions.every((q) => plain(q) && typeof q.id === 'string' && ID.test(q.id) && text(q.text, 300))) return 'The chat can ask up to 10 questions, each up to 300 characters.';
@@ -309,7 +326,7 @@ export function withClearedFields(ops: unknown): unknown {
 /** The settings on a visitor's conversation that a member may flip. Everything else in it is written by the server. */
 const CHAT_FLAGS = new Set(['unread', 'starred']);
 
-const CHECKS: Partial<Record<string, (item: Record<string, unknown>) => string | null>> = { docs: docProblem, automations: automationProblem, chat: chatProblem, tasks: taskProblem, contacts: contactProblem, events: eventProblem };
+const CHECKS: Partial<Record<string, (item: Record<string, unknown>, pictures: Pictures) => string | null>> = { docs: docProblem, automations: automationProblem, chat: chatProblem, tasks: taskProblem, contacts: contactProblem, events: eventProblem };
 
 /** The record a collection really holds under an id: its own, never something every object has. */
 const ownRecord = (col: Record<string, unknown> | undefined, id: string) => (col && Object.hasOwn(col, id) ? (col[id] as Record<string, unknown>) : null);
@@ -317,8 +334,9 @@ const ownRecord = (col: Record<string, unknown> | undefined, id: string) => (col
 /**
  * Looks at a batch of workspace operations before the reducer applies them.
  * Returns why they are refused, in words for the person, or null when they are fine.
+ * `pictures` are the uploaded pictures of this workspace that the operations may refer to (see `Pictures`).
  */
-export function checkWsOps(state: State, ops: unknown): string | null {
+export function checkWsOps(state: State, ops: unknown, pictures: Pictures = NO_PICTURES): string | null {
   const refused = 'That change isn’t in a form Timmy can save.';
   if (!Array.isArray(ops) || ops.length > 400) return refused;
   // Later operations in a batch see what earlier ones did.
@@ -357,7 +375,7 @@ export function checkWsOps(state: State, ops: unknown): string | null {
 
     if (col === 'chat' && o.op === 'remove') return 'The website chat’s settings can be changed, not removed.';
     if (item) {
-      const bad = CHECKS[col]?.(item) ?? null;
+      const bad = CHECKS[col]?.(item, pictures) ?? null;
       if (bad) return bad;
       if (!BIG_ALLOWED.has(col) && toWireSize(item) > MAX_RECORD_BYTES) return 'That is too much to keep in one item. Put long text in a page instead.';
       if ('name' in item && item.name !== undefined && !text(item.name, 300)) return 'That name is too long.';

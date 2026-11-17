@@ -6,6 +6,7 @@
  * saved like every other change to the workspace's state, which is how open tabs come to show it.
  */
 import { patch, type WsOp } from '../../../src/state/ws';
+import { assetRefsOf, usablePictures } from '../files/assets';
 import { audit } from '../gateway/gateway';
 import { reduce, type Ctx } from '../state/engine';
 import { mutate } from '../state/mutate';
@@ -32,7 +33,10 @@ export async function restoreVersion(ctx: Ctx, pageId: string, number: number): 
 
     // An icon or cover the version did not have is taken off again.
     const ops: WsOp[] = [patch('docs', pageId, { blocks: version.blocks, icon: version.icon, cover: version.cover }), patch('files', pageId, { updated: new Date() })];
-    const bad = checkWsOps(state, ops);
+    // A version may hold pictures uploaded to this workspace, saved by reference. They count only while they are still
+    // this workspace's uploaded pictures, looked up the same way as for any save.
+    const pictures = await usablePictures(tx, ctx.workspaceId, [...assetRefsOf(ops)]);
+    const bad = checkWsOps(state, ops, pictures);
     if (bad) return refuse(422, `That version can’t be put back. ${bad}`);
     if (sameContents(doc, version)) return { result: { ok: true as const, changed: false } };
 

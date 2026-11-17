@@ -26,7 +26,8 @@ import { decisionOps, firstName, isoDay, pathOf } from '../state/ws';
 import { BlockTimeDialog } from '../areas/calendar/BlockTimeDialog';
 import { TaskDialog } from '../areas/tasks/TaskDialog';
 import { AutoTextarea, Field, Modal } from '../components/kit';
-import type { Box, Draft, Thread } from '../data/types';
+import type { Box, Draft, MailFile, Thread } from '../data/types';
+import { AttachButton, FileChips } from '../components/Attach';
 import { fmtDay, fmtStamp } from '../lib/format';
 import { acmeSeatPrice, counterpart, labelOf, useStore, ws, type ThreadTab } from '../state/store';
 import { Avatar, Kbd, ThreadChips, TimmyMark } from '../components/common';
@@ -214,11 +215,13 @@ function Conversation({ t, replying, focusReply, onReplyDone }: { t: Thread; rep
                       {m.attachments.map((id) => (
                         <span key={id} className="chip">
                           <Paperclip size={12} />
-                          {state.ws.files[id]!.name}
+                          {/* On a real workspace a synced message names its attachments by file name, not by a file in Timmy. */}
+                          {state.ws.files[id]?.name ?? id}
                         </span>
                       ))}
                     </div>
                   )}
+                  <FileChips files={m.files} className="chips msg-files" />
                 </div>
               )}
             </article>
@@ -413,9 +416,12 @@ function ReplyBox({ t, onDone, autoFocus }: { t: Thread; onDone: () => void; aut
       el.setSelectionRange(el.value.length, el.value.length);
     }
   }, [autoFocus]);
+  // Files attached from the person's computer (real workspaces). Each is uploaded as it is picked.
+  const [files, setFiles] = useState<MailFile[]>([]);
+  const [attaching, setAttaching] = useState(false);
   const send = () => {
-    if (!body.trim() || (track && !item.trim())) return;
-    dispatch({ type: 'reply', id: t.id, body, track: track ? { on: who, item: item.trim(), due } : null });
+    if (!body.trim() || (track && !item.trim()) || attaching) return;
+    dispatch({ type: 'reply', id: t.id, body, track: track ? { on: who, item: item.trim(), due } : null, ...(files.length ? { files } : {}) });
     onDone();
   };
   // Dictated text goes in at the cursor, or at the end if you haven't clicked into the reply.
@@ -464,6 +470,7 @@ function ReplyBox({ t, onDone, autoFocus }: { t: Thread; onDone: () => void; aut
           )}
         </div>
       </div>
+      <FileChips files={files} onRemove={(i) => setFiles((list) => list.filter((_, at) => at !== i))} className="chips reply-files" />
       <footer className="draft-foot">
         <span className="draft-foot-left">
           <button className="btn btn-sm btn-ghost" onClick={onDone}>
@@ -471,8 +478,9 @@ function ReplyBox({ t, onDone, autoFocus }: { t: Thread; onDone: () => void; aut
             Discard
           </button>
           <MicButton onText={dictate} label="Dictate your reply" />
+          <AttachButton files={files} onChange={setFiles} onBusy={setAttaching} />
         </span>
-        <button className="btn btn-sm btn-primary" onClick={send} disabled={!body.trim() || (track && !item.trim())}>
+        <button className="btn btn-sm btn-primary" onClick={send} disabled={!body.trim() || (track && !item.trim()) || attaching}>
           <Send size={14} />
           {track ? 'Send & track in Waiting' : 'Send'}
         </button>
@@ -503,6 +511,11 @@ function DraftCard({ t, draft }: { t: Thread; draft: Draft }) {
   }, [draft.body]);
 
   const track = draft.trackAs;
+  // Files added to the draft from the person's computer (real workspaces). They are kept with the draft on the
+  // server, so whoever approves it sees them, and a file still on its way up holds Send back.
+  const attached = (draft.files ?? []) as MailFile[];
+  const [attaching, setAttaching] = useState(false);
+  const setFiles = (files: MailFile[]) => dispatch({ type: 'updateDraft', id: t.id, body: draft.body, files });
 
   return (
     <section className="draft card" aria-label="Draft reply">
@@ -569,6 +582,8 @@ function DraftCard({ t, draft }: { t: Thread; draft: Draft }) {
         </div>
       )}
 
+      <FileChips files={draft.files} onRemove={(i) => setFiles(attached.filter((_, at) => at !== i))} className="chips reply-files" />
+
       <ApprovalNotes notes={draftNotes(state, t)} />
 
       <div className="draft-checks">
@@ -592,12 +607,13 @@ function DraftCard({ t, draft }: { t: Thread; draft: Draft }) {
           Discard
         </button>
         <div className="draft-send">
+          <AttachButton files={attached} onChange={setFiles} onBusy={setAttaching} />
           {track && (
-            <button className="btn btn-sm" onClick={() => dispatch({ type: 'sendDraft', id: t.id, track: false })}>
+            <button className="btn btn-sm" disabled={attaching} onClick={() => dispatch({ type: 'sendDraft', id: t.id, track: false })}>
               Send only
             </button>
           )}
-          <button className="btn btn-sm btn-primary" onClick={() => dispatch({ type: 'sendDraft', id: t.id, track: true })}>
+          <button className="btn btn-sm btn-primary" disabled={attaching} onClick={() => dispatch({ type: 'sendDraft', id: t.id, track: true })}>
             <Send size={14} />
             {track ? 'Send & track in Waiting' : 'Send'}
           </button>

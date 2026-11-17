@@ -26,9 +26,11 @@ import { summarizePage } from '../agent/pages';
 import { BudgetError } from '../providers/model';
 import { fromWire, pickSlices, toWire } from '../../../src/live/patches';
 import type { Action } from '../../../src/state/store';
+import { MAX_FILE_BYTES, fileSize } from '../../../src/lib/files';
 import { chatFrameRoutes, chatRoutes } from '../chat/routes';
 import { agentRoutes } from './agent';
 import { automationRoutes } from './automations';
+import { assetHeaders, fileRoutes, isFileUpload } from './files';
 import { membership, workspacesOf } from '../auth/members';
 import { ctxOf, requireRead, requireSession, requireWorkspace, sameOrigin, sessionOf, type Env } from './session';
 import { testRoutes } from './test-hooks';
@@ -50,6 +52,9 @@ export function buildApp(): Hono<Env> {
   // They are registered first, which keeps the app's own headers below from being applied to them.
   chatFrameRoutes(app);
 
+  // Uploaded files get stricter headers than the rest of the app. Registered first, so they are set last and stand.
+  app.use('/api/v1/assets/*', assetHeaders);
+
   // Browser protections on every response. The app opens its own document viewers in frames, so framing is allowed
   // from this origin only. A full content-security policy for scripts is still to come (see STATUS.md).
   app.use(
@@ -65,7 +70,10 @@ export function buildApp(): Hono<Env> {
   // No request needs a large body. The check comes before anything reads it, including the webhook's signature check.
   const tooLarge = (c: Context) => c.json({ error: 'That request is too large.' }, 413);
   app.use('/api/hooks/*', bodyLimit({ maxSize: 2 * 1024 * 1024, onError: tooLarge }));
-  app.use('/api/*', bodyLimit({ maxSize: 1024 * 1024, onError: tooLarge }));
+  // The one exception is the route that takes a file's bytes, which may be as large as a file may be.
+  const smallBody = bodyLimit({ maxSize: 1024 * 1024, onError: tooLarge });
+  const fileBody = bodyLimit({ maxSize: MAX_FILE_BYTES, onError: (c) => c.json({ error: `Timmy keeps files up to ${fileSize(MAX_FILE_BYTES)}.` }, 413) });
+  app.use('/api/*', (c, next) => (isFileUpload(c.req.method, c.req.path) ? fileBody(c, next) : smallBody(c, next)));
 
   // What is configured is only told on a developer's own machine; a deployed server just says it is up.
   app.get('/api/health', (c) => c.json(isLocal() ? { ok: true, stage: config.stage, composio: composioReady(), model: modelReady(), fake: config.fakeProviders } : { ok: true }));
@@ -308,6 +316,7 @@ export function buildApp(): Hono<Env> {
   });
 
   agentRoutes(app);
+  fileRoutes(app);
   chatRoutes(app);
   // [automations] The test run and the list of runs (http/automations.ts).
   automationRoutes(app);

@@ -1,6 +1,7 @@
 // Live mode: the page editor, the trash, the automation canvas, the website chat's settings and the Tasks board
 // on a real workspace. What is typed and drawn is kept by the server, survives a reload, and switches that would
-// promise something that does not run yet stay off and say why.
+// promise something that does not run yet stay off and say why. A picture put on a page is uploaded, and the page
+// keeps a reference to it, never the picture itself.
 const { ok, open, signUp, api, run } = require('./lib.cjs');
 
 run('live-pages', async (browser) => {
@@ -100,6 +101,79 @@ run('live-pages', async (browser) => {
   await page.locator('.main').getByText('Launch plan').first().click();
   await page.waitForSelector('.nb-editor');
   ok((await page.locator('.pg-cover-btn', { hasText: 'Remove' }).count()) === 0 && whole.test((await page.locator('.nb-editor').innerText()).split('\n').find((l) => /Abort modes/.test(l)) || ''), 'after a reload the cover is still gone and the typed line is whole');
+
+  /* ── A picture on the page ── */
+  // A photo as a phone saves it: a JPEG with a block of camera data (where it was taken) in front of the picture.
+  const drawing = Buffer.from(await page.evaluate(() => {
+    const c = document.createElement('canvas');
+    c.width = 640;
+    c.height = 400;
+    const g = c.getContext('2d');
+    g.fillStyle = '#3f51d9';
+    g.fillRect(0, 0, 640, 400);
+    g.fillStyle = '#f8d77f';
+    g.fillRect(40, 40, 200, 120);
+    return c.toDataURL('image/jpeg', 0.9).split(',')[1];
+  }), 'base64');
+  const camera = Buffer.concat([Buffer.from('Exif\0\0'), Buffer.from('GPS 52.5200N 13.4050E TAKEN-AT-HOME')]);
+  const marker = Buffer.alloc(4);
+  marker.writeUInt16BE(0xffe1, 0);
+  marker.writeUInt16BE(camera.length + 2, 2);
+  const photo = Buffer.concat([drawing.subarray(0, 2), marker, camera, drawing.subarray(2)]);
+  const pictures = async () => ((await slices())['ws.docs']['launch-plan'].blocks || []).filter((b) => b.type === 'image');
+  const shown = (selector) => page.waitForFunction((sel) => { const i = document.querySelector(sel); return !!i && i.complete && i.naturalWidth > 0; }, selector, { timeout: 10000 });
+
+  // The cursor goes to the end of the page. As above, the page takes a turn after the click before a key is pressed.
+  await page.locator('.nb-editor').click();
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(done, 60)))));
+  await page.keyboard.press('Control+End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('/image');
+  await page.waitForSelector('.nb-slash');
+  await page.keyboard.press('Enter');
+  await page.locator('.nb-image-add input[type="file"]').setInputFiles({ name: 'IMG_2041.jpg', mimeType: 'image/jpeg', buffer: photo });
+  await shown('.nb-figure img');
+  ok(/^\/api\/v1\/assets\/ast_/.test(await page.locator('.nb-figure img').getAttribute('src')), 'a picture added to a page is uploaded, and shown from the server');
+  await saved();
+  ok(await until(async () => (await pictures()).length === 1 && /^asset:ast_/.test((await pictures())[0].src)), 'the page’s saved block holds a reference to the upload (asset:…)');
+  const saw = JSON.stringify((await slices())['ws.docs']['launch-plan']);
+  ok(!/data:image|base64/.test(saw) && saw.length < 20000, 'and no picture data: the page stays small');
+  const assetId = (await pictures())[0].src.slice('asset:'.length);
+
+  // What the server keeps and how it hands it back.
+  const kept = await page.request.get(new URL(`/api/v1/assets/${assetId}`, page.url()).toString());
+  const bytes = await kept.body();
+  ok(kept.status() === 200 && kept.headers()['content-type'] === 'image/jpeg' && bytes[0] === 0xff && bytes[1] === 0xd8, 'the picture is served as the JPEG it is');
+  ok(kept.headers()['x-content-type-options'] === 'nosniff' && /^attachment/.test(kept.headers()['content-disposition']) && /sandbox/.test(kept.headers()['content-security-policy']), 'with headers that keep an uploaded file from ever running as a page');
+  ok(!bytes.includes('TAKEN-AT-HOME') && !bytes.includes('Exif'), 'where the photo was taken did not travel with it');
+
+  // After a reload it is still there: it came from the server, through the reference.
+  await page.reload();
+  await page.locator('.main').waitFor();
+  await page.click('button[aria-label="Docs"]');
+  await page.locator('.main').getByText('Launch plan').first().click();
+  await page.waitForSelector('.nb-editor');
+  await shown('.nb-figure img');
+  ok((await page.locator('.nb-figure img').getAttribute('src')) === `/api/v1/assets/${assetId}`, 'after a reload the picture shows again');
+
+  // A cover is uploaded the same way.
+  await page.locator('.pg-addon', { hasText: 'Add cover' }).click();
+  await page.locator('.pg-cover').hover();
+  await page.locator('.pg-cover-btn', { hasText: 'Change cover' }).click();
+  await page.locator('.pg-cover-pop [role="tab"]', { hasText: 'Upload' }).click();
+  await page.locator('.pg-cover-pop input[type="file"]').setInputFiles({ name: 'skyline.jpg', mimeType: 'image/jpeg', buffer: photo });
+  ok(await until(async () => /^asset:ast_/.test((await slices())['ws.docs']['launch-plan'].cover?.value || '')), 'an uploaded cover is saved as a reference too');
+  ok(/\/api\/v1\/assets\/ast_/.test(await page.locator('.pg-cover').evaluate((el) => getComputedStyle(el).backgroundImage)), 'and drawn from the server');
+
+  // Someone in another workspace, and someone signed out, can't fetch the picture or put it on their own page.
+  const outsider = await open(browser);
+  await signUp(outsider.page, { name: 'Other Person' });
+  ok((await api(outsider.page, 'GET', `/api/v1/assets/${assetId}`)).status === 404, 'another workspace gets 404 for the picture');
+  const borrowed = await api(outsider.page, 'POST', '/api/v1/commands', { id: `t-${Date.now()}-x`, action: { type: 'ws', ops: [{ op: 'put', col: 'docs', item: { id: 'theirs', blocks: [{ id: 'b', type: 'image', src: `asset:${assetId}` }] } }] } });
+  ok(borrowed.body.ok === false && /picture/.test(borrowed.body.error), 'and can’t reference it from a page of their own');
+  await outsider.context.clearCookies();
+  ok((await api(outsider.page, 'GET', `/api/v1/assets/${assetId}`)).status === 401, 'signed out, the answer is 401');
+  await outsider.context.close();
 
   // Something that isn't a page's contents is refused, with a reason, and the page is unchanged.
   const bad = await cmd({ type: 'ws', ops: [{ op: 'patch', col: 'docs', id: 'launch-plan', patch: { blocks: [{ id: 'x', type: 'p', text: 'click', rich: [{ type: 'text', text: 'click', marks: [{ type: 'link', attrs: { href: 'javascript:alert(1)' } }] }] }] } }] });

@@ -15,6 +15,8 @@ export default defineConfig({
       TIMMY_ENV: 'test',
       NODE_ENV: 'test',
       TIMMY_FAKE_PROVIDERS: '1',
+      // Tests never touch a real bucket, even on a machine that has one configured.
+      TIMMY_FILE_STORE: 'standin',
       TIMMY_TEST_HOOKS: '1',
       TIMMY_SEND_HOLD_SECONDS: '30',
       PUBLIC_URL: 'http://localhost:8787',

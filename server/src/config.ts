@@ -124,6 +124,42 @@ export const config = {
     } as Record<string, string>,
   },
 
+  /**
+   * The bucket uploaded files are kept in: S3-compatible (Railway Buckets). The secret key is handed only to the
+   * code that signs requests to the bucket; the browser never gets it, and uploads go through this server.
+   */
+  bucket: {
+    // An address given without "https://" is read as https.
+    endpoint: (env.BUCKET_ENDPOINT ?? '').trim().replace(/\/$/, '').replace(/^(?!https?:\/\/)(?=.)/, 'https://'),
+    name: env.BUCKET_NAME ?? '',
+    region: env.BUCKET_REGION || 'auto',
+    accessKeyId: env.BUCKET_ACCESS_KEY_ID ?? '',
+    secretAccessKey: env.BUCKET_SECRET_ACCESS_KEY ?? '',
+    /** Railway's buckets put the bucket's name in the host name. BUCKET_URL_STYLE=path is for stores that want it in the path. */
+    urlStyle: (env.BUCKET_URL_STYLE === 'path' ? 'path' : 'virtual') as 'virtual' | 'path',
+  },
+  files: {
+    /**
+     * Left unset, a server that has the bucket's variables uses the bucket, and one without them uses the
+     * stand-in if it runs the stand-in providers or is a developer's machine. Set to "standin" to keep a server
+     * that has a bucket off it (files then live in this process and are lost when it stops), or to "bucket" to
+     * refuse to run uploads on anything else.
+     */
+    store: (env.TIMMY_FILE_STORE === 'bucket' || env.TIMMY_FILE_STORE === 'standin' ? env.TIMMY_FILE_STORE : undefined) as 'bucket' | 'standin' | undefined,
+    /** A folder for the stand-in to keep files in, so they survive a restart on a developer's machine. Memory when empty. */
+    dir: env.TIMMY_FILES_DIR ?? '',
+    /** The most one workspace may keep in uploaded files, so one account can't fill the bucket. */
+    quotaBytes: Number(env.TIMMY_FILES_QUOTA_MB ?? 2048) * 1024 * 1024,
+    /** How many uploads one workspace may have announced and not yet sent. */
+    maxPendingUploads: Number(env.TIMMY_MAX_PENDING_UPLOADS ?? 100),
+    /**
+     * The largest file an email from Outlook may carry. Outlook's tool for adding a file to a draft takes
+     * "small" files, which for Microsoft means under 3 MB; larger ones need a different upload that isn't built.
+     * Refused when the email is prepared, so the person hears it at once and not after the undo window.
+     */
+    outlookMaxFileBytes: Number(env.TIMMY_OUTLOOK_MAX_FILE_MB ?? 3) * 1024 * 1024,
+  },
+
   /** How far back the first pass over a newly connected Drive goes, by when a file last changed. */
   driveBackfillDays: Number(env.TIMMY_DRIVE_BACKFILL_DAYS ?? 90),
 
@@ -255,6 +291,7 @@ export function assertSafeConfig() {
   if (isProd() && (config.fakeProviders || flag('TIMMY_TEST_HOOKS'))) throw new Error('Fake providers and test hooks cannot be switched on in production.');
   if (config.testHooks && !isLocal() && config.testToken.length < 24) throw new Error('Test hooks on a deployed server need TIMMY_TEST_TOKEN (24 characters or more).');
   if (isProd() && !new URL(config.databaseUrl).password) throw new Error('The production database URL must carry a password.');
+  if (isProd() && config.files.store === 'standin') throw new Error('The stand-in file store cannot be used in production: files would be lost at the next restart.');
 }
 
 /** The model a workspace runs on: its own choice if that is still on the list, else the default. */

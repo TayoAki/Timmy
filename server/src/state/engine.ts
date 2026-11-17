@@ -21,6 +21,8 @@ import type { RoleRules } from '../auth/roles';
 import { withWorkspace, type Tx } from '../db/pool';
 import { cancelHeld, decide, GatewayError, onReplay, propose, type EffectRow } from '../gateway/gateway';
 import { checkWsOps, leadsProblem, withClearedFields } from './ws-check';
+import { assetRefsIn, usablePictures } from '../files/assets';
+import { attachmentsFor } from '../files/attachments';
 import { LIVE_DECISION } from '../agent/read';
 import { gateAutomations } from '../automations/gate';
 import { prepareMailSend } from '../gateway/mail';
@@ -234,12 +236,20 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
   if (a.type === 'ws') {
     // Docs, pages, tasks, automations and chat settings arrive as plain put / patch / remove operations.
     // What is acceptable is decided here, before the reducer applies them and before anything is saved.
-    const bad = checkWsOps(state, a.ops);
+    // An uploaded picture is saved by reference. Which references are this workspace's own uploaded pictures is looked up first.
+    const pictures = await usablePictures(tx, ctx.workspaceId, assetRefsIn((col, id) => (Object.hasOwn(state.ws, col) ? (state.ws as unknown as Record<string, Record<string, unknown>>)[col]?.[id] : undefined), a.ops));
+    const bad = checkWsOps(state, a.ops, pictures);
     if (bad) return { state, reject: bad };
   }
   // Rules are instructions Timmy follows for everyone (writing rules go into every drafting prompt), and the schedule
   // decides when it works. Only an owner or admin changes them.
   if (POLICY_ONLY.has(a.type) && !ctx.rules.policy) return { state, reject: 'Only an owner or admin can change this.' };
+
+  // Files put on a draft are checked as they are put there: each has to be one of this workspace's own uploaded attachments.
+  if (a.type === 'updateDraft' && a.files !== undefined) {
+    const attached = await attachmentsFor(tx, ctx.workspaceId, a.files);
+    if (!attached.ok) return { state, reject: attached.reason };
+  }
 
   // A send names the draft the person was looking at. If someone, or Timmy, changed it since, they read it again first.
   if ((a.type === 'sendDraft' || a.type === 'runStep' || (a.type === 'resolve' && a.key.startsWith('draft:') && a.option === 'send')) && a.seen !== undefined) {
@@ -380,7 +390,9 @@ async function gateSends(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; ac
   let state = next;
   const effects: EffectRow[] = [];
   for (const [i, o] of outgoing.entries()) {
-    if (o.message.attachments?.length) return { state: prev, reject: 'Sending attachments isn’t available yet. Remove the attachment or send it from your mail app.' };
+    // A file attached from the person's computer was uploaded first and goes out with the email (`files`, below).
+    // A file from Timmy's own Files can't be sent yet.
+    if (o.message.attachments?.length) return { state: prev, reject: 'Sending a file from Timmy’s Files isn’t available yet. Attach it from your computer, or send it from your mail app.' };
     // The screen names people by id; an id Timmy has no address for is passed on as it is, and refused as not an address.
     const address = (id: string) => emailOf(loaded, prev, id) ?? id;
     const mail = await prepareMailSend(tx, ctx.workspaceId, {
@@ -391,6 +403,7 @@ async function gateSends(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; ac
       threadId: o.thread.id,
       existing: o.before ? { threadKey: o.before.ext?.threadKey, connectionId: o.before.ext?.connectionId } : undefined,
       localMessageId: o.message.id,
+      files: o.message.files,
     });
     if (!mail.ok) return { state: prev, reject: mail.reason };
     const p = await propose(tx, loaded, state, actorOf(ctx), {

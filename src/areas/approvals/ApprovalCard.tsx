@@ -9,6 +9,7 @@ import { dueInfo } from '../../lib/format';
 import { APPROVAL_KINDS, type Approval, type ApprovalNote } from '../../state/approvals';
 import { useStore } from '../../state/store';
 import { firstName, midSentence, personName } from '../../state/ws';
+import { FileChips } from '../../components/Attach';
 import { Avatar, ProjectChip, tint } from '../../components/common';
 import { UrgencyReasons, UrgencyTag } from '../../components/Urgency';
 
@@ -73,6 +74,8 @@ export function ApprovalCard({ a, inThread }: { a: Approval; inThread?: boolean 
             {full ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
             {full ? 'Show less' : 'Show the whole email'}
           </button>
+          {/* What goes out with the email, exactly as approved: the files uploaded for it, by name and size. */}
+          <FileChips files={a.email.files} />
           {(a.email.trackAs || a.email.attachments?.length) && (
             <div className="chips">
               {a.email.trackAs && (

@@ -171,7 +171,7 @@ function buildApprovals(s: State): Approval[] {
       who: e.preview.to?.[0] ? `mail:${e.preview.to[0]}` : undefined,
       thread: e.thread,
       urgency: fixed(holding ? 'soon' : 'urgent', holding ? 'Going out shortly' : 'Waiting for an OK'),
-      email: e.preview.subject !== undefined || e.preview.body !== undefined ? { to: (e.preview.to ?? []).map((x) => `mail:${x}`), cc: e.preview.cc?.map((x) => `mail:${x}`), subject: e.preview.subject ?? '', body: e.preview.body ?? '', sources: [] } : undefined,
+      email: e.preview.subject !== undefined || e.preview.body !== undefined ? { to: (e.preview.to ?? []).map((x) => `mail:${x}`), cc: e.preview.cc?.map((x) => `mail:${x}`), subject: e.preview.subject ?? '', body: e.preview.body ?? '', sources: [], ...(e.preview.attachments?.length ? { files: e.preview.attachments } : {}) } : undefined,
       options: holding ? [{ id: 'undo', label: 'Undo', danger: true }] : [{ id: 'approve', label: e.kind === 'email' ? 'Send' : e.kind === 'filing' ? 'File it' : 'Approve', primary: true }, { id: 'decline', label: e.kind === 'email' ? 'Don’t send' : e.kind === 'filing' ? 'Leave it' : 'Decline', danger: true }],
     });
   }

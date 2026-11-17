@@ -19,7 +19,7 @@ export const addSecret = (value: string) => {
   if (value && value.length >= 8) learned.add(value);
 };
 
-const configured = () => [config.openrouter.apiKey, config.composio.apiKey, config.composio.webhookSecret, config.mail.resendApiKey, config.authSecret, config.testToken, ...learned].filter((s) => s && s.length >= 8);
+const configured = () => [config.openrouter.apiKey, config.composio.apiKey, config.composio.webhookSecret, config.mail.resendApiKey, config.authSecret, config.testToken, config.bucket.secretAccessKey, ...learned].filter((s) => s && s.length >= 8);
 
 export function redact(text: string): string {
   let out = text;
