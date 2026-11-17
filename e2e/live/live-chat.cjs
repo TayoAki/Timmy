@@ -1,11 +1,27 @@
 // Live mode: the website chat, end to end, in two browsers.
 // The owner sets the chat up and switches it on. A visitor, on a page of the owner's website that carries the
-// real code snippet, gets a help desk answer, leaves an email and asks for a person. The owner sees the chat
-// marked urgent and the lead, takes over and replies, and the visitor sees the reply.
+// real code snippet, gets a help desk answer (after the chat window has done the bot check's work in the
+// browser), leaves an email and asks for a person. The owner sees the chat marked urgent, a card on Today and a
+// notice across the app, and the lead on the Speed to lead clock; takes over and replies, and the visitor sees
+// the reply. Older chats, past the ones the Chats screen lists, can be opened and read.
 // The "website" is a page Playwright serves at the configured address, so the browser itself checks that the
 // chat's frame may be shown there and nowhere else.
+const { createHash, randomBytes } = require('crypto');
 const { chromium } = require('playwright');
 const { BASE, ok, open, signUp, api, run, stamp } = require('./lib.cjs');
+
+/** How many zero bits the bot check's hash of a challenge and an answer starts with (as the server counts them). */
+const zeros = (text) => {
+  let n = 0;
+  for (const byte of createHash('sha256').update(text).digest()) {
+    if (byte !== 0) return n + Math.clz32(byte) - 24;
+    n += 8;
+  }
+  return n;
+};
+const solve = (challenge, bits) => {
+  for (let n = 0; ; n++) if (zeros(`${challenge}:${n}`) >= bits) return String(n);
+};
 
 run('live-chat', async (browser) => {
   const { page, errors } = await open(browser);
@@ -85,6 +101,13 @@ run('live-chat', async (browser) => {
     await visitor.context.route(`https://${domain}/**`, (route) => route.fulfill({ contentType: 'text/html; charset=utf-8', body: pageHtml('Harbor Tools') }));
     await visitor.context.route('https://copycat.example/**', (route) => route.fulfill({ contentType: 'text/html; charset=utf-8', body: pageHtml('Copycat') }));
     const v = visitor.page;
+    // What the chat window sends, and the workers it starts (the bot check runs in one).
+    const posts = [];
+    const workers = [];
+    v.on('request', (r) => {
+      if (r.method() === 'POST' && /\/api\/public\/chat\/[^/]+\/messages$/.test(new URL(r.url()).pathname)) posts.push(JSON.parse(r.postData() || '{}'));
+    });
+    v.on('worker', (w) => workers.push(w.url()));
     await v.goto(`https://${domain}/pricing`);
     const holder = v.locator('iframe[title="Chat"]');
     await holder.waitFor({ state: 'attached' });
@@ -110,10 +133,19 @@ run('live-chat', async (browser) => {
     await hears(ANSWER);
     await hears('What’s the best email to reach you?');
     ok((await chat.locator('.tc-row:not(.visitor) .tc-bubble p', { hasText: ANSWER }).first().innerText()) === ANSWER, 'a question gets the help desk answer, word for word');
+    // The bot check: the first message carried a challenge from the server, solved in the browser, in a worker.
+    const bits = (await api(page, 'GET', `/api/public/chat/${key}/config`)).body.challenge.bits;
+    const first = posts[0] || {};
+    ok(bits >= 1 && typeof first.challenge === 'string' && /^\d+$/.test(first.answer || '') && zeros(`${first.challenge}:${first.answer}`) >= bits, `the chat window did the bot check’s work in the browser before its first message (${bits} zero bits)`);
+    ok(workers.some((u) => u.endsWith('/chat/work.js')), `and did it in a worker, so the page stayed responsive (${workers.join(', ') || 'no worker seen'})`);
+    const bare = await api(page, 'POST', `/api/public/chat/${key}/messages`, { visitor: randomBytes(12).toString('hex'), id: randomBytes(12).toString('hex'), text: 'no work done' });
+    const replayed = await api(page, 'POST', `/api/public/chat/${key}/messages`, { visitor: randomBytes(12).toString('hex'), id: randomBytes(12).toString('hex'), text: 'replayed', challenge: first.challenge, answer: first.answer });
+    ok(bare.status === 403 && bare.body.recheck === true && replayed.status === 403 && replayed.body.recheck === true, 'a first message without the work is refused, and the same work can’t start a second conversation');
     const notice = chat.locator('.tc-bubble', { hasText: 'What’s the best email to reach you?' }).locator('.tc-privacy a');
     ok((await notice.count()) === 1 && (await notice.getAttribute('href')) === policy && /noopener/.test(await notice.getAttribute('rel')), 'the email question comes with a notice that links to the owner’s privacy policy');
     await say('lin@visitor.example');
     await hears('Thanks, Lin! What’s your company called?');
+    ok(posts.length === 2 && posts[1].challenge === undefined && typeof posts[1].token === 'string', 'a later message carries the conversation’s token and no new work');
     await say('<b>Visitor</b> & Co <img src=x onerror=alert(1)>');
     await hears(`Thanks! ${company} will be in touch at lin@visitor.example.`);
     ok((await chat.locator('.tc-body b, .tc-body img:not(.tc-face img)').count()) === 0 && /<b>Visitor<\/b> & Co <img src=x onerror=alert\(1\)>/.test(await chat.locator('.tc-body').innerText()), 'markup a visitor types is shown as the characters they typed');
@@ -136,6 +168,26 @@ run('live-chat', async (browser) => {
     await page.getByRole('tab', { name: /^Leads/ }).click();
     ok(/Website chat/.test(await page.locator('button.lead-name', { hasText: 'Lin' }).innerText()), 'the lead is listed in Leads as coming from the website chat');
 
+    /* ── On another tab, Today: a visitor is waiting for a person ── */
+    const other = await page.context().newPage();
+    await other.goto(BASE);
+    await other.locator('.main').waitFor();
+    await other.click('button[aria-label="Today & mail"]');
+    const todayCard = other.locator('.urg-chat', { hasText: 'Lin wants a person in your website chat' });
+    await todayCard.waitFor({ timeout: 15000 });
+    ok(/Visitor waiting/.test(await todayCard.innerText()) && /“Can I talk to a person\?”/.test(await todayCard.innerText()) && /on \/pricing/.test(await todayCard.innerText()), 'Today has a card at the top of what needs you: Lin wants a person, with what they wrote');
+    const appNotice = other.locator('.chat-notice');
+    ok(/Lin on your website chat is asking for a person\./.test(await appNotice.innerText()), 'and a notice across the app says so');
+    await todayCard.getByRole('button', { name: 'Open the chat' }).click();
+    await other.locator('.wc-thread-head', { hasText: 'lin@visitor.example' }).waitFor();
+    ok((await appNotice.count()) === 0, 'the card opens that very chat, where the notice steps aside');
+    await other.getByRole('tab', { name: /Speed to lead/ }).click();
+    const clock = other.locator('.spd-card', { hasText: 'Lin' });
+    await clock.waitFor();
+    ok(/Website chat/.test(await clock.innerText()) && (await clock.getByRole('timer').count()) === 1, 'Speed to lead has Lin waiting for a first reply, from the website chat, with the clock running');
+    await other.click('button[aria-label="Today & mail"]');
+    await todayCard.waitFor();
+
     /* ── Take over and reply ── */
     await page.getByRole('tab', { name: /Website chat/ }).click();
     await page.getByRole('radio', { name: /Chats/ }).click();
@@ -144,11 +196,20 @@ run('live-chat', async (browser) => {
     ok(await page.getByLabel('Your reply').isDisabled(), 'the owner can’t reply while Timmy is answering');
     await page.getByRole('switch', { name: 'Take over this chat' }).click();
     await page.locator('.wc-live').waitFor();
+    await todayCard.waitFor({ state: 'detached', timeout: 15000 });
+    ok((await other.locator('.chat-notice').count()) === 0, 'once the owner takes over, the card and the notice are gone, on the other tab too');
     await page.getByLabel('Your reply').fill('Hi Lin, Grace here. Happy to help.');
     await page.getByLabel('Your reply').press('Enter');
     await chat.locator('.tc-row:not(.visitor) .tc-bubble', { hasText: 'Hi Lin, Grace here. Happy to help.' }).waitFor({ timeout: 15000 });
     ok(!/Grace Hopper/.test(await chat.locator('.tc-body').innerText()), 'the visitor sees the owner’s reply, without being told who wrote it');
     ok(await until(async () => (await page.locator('.wc-bubble.you', { hasText: 'Hi Lin, Grace here.' }).count()) === 1), 'the owner’s screen shows the reply once');
+    // The reply was Lin's first from a person: their clock on Speed to lead stops.
+    await other.click('button[aria-label="Outbound"]');
+    await other.getByRole('tab', { name: /Speed to lead/ }).click();
+    await other.getByText('Nobody is waiting').waitFor({ timeout: 15000 });
+    const row = other.locator('.lead-table tr', { hasText: 'Lin' });
+    ok(/Website chat/.test(await row.innerText()) && (await row.locator('.spd-pill').count()) === 1 && !/Not yet/.test(await row.innerText()), 'the reply stopped Lin’s clock: Speed to lead shows how long the first reply took');
+    await other.close();
 
     // A follow-up by email is an ordinary draft: it opens in the compose window and goes nowhere unless it is sent.
     await page.getByRole('button', { name: 'Email', exact: true }).click();
@@ -183,6 +244,30 @@ run('live-chat', async (browser) => {
     await copy.waitForTimeout(2500);
     ok((await copy.locator('iframe[title="Chat"]').evaluate((f) => getComputedStyle(f).display)) === 'none', 'pasted into another website, the chat stays hidden');
     await copy.close();
+
+    /* ── Older chats ── */
+    // Two more strangers chat, from a script that does the bot check's work itself. The Chats screen is then made
+    // to list only the newest chat (a test hook does what the screen does past its 100), so theirs become older chats.
+    for (const text of ['Older visitor one here', 'Older visitor two here']) {
+      const c = (await api(page, 'GET', `/api/public/chat/${key}/config`)).body.challenge;
+      const out = await api(page, 'POST', `/api/public/chat/${key}/messages`, { visitor: randomBytes(12).toString('hex'), id: randomBytes(12).toString('hex'), text, challenge: c.id, answer: solve(c.id, c.bits) });
+      ok(out.status === 200, `a stranger starts a chat: “${text}”`);
+    }
+    ok((await api(page, 'POST', '/api/test/chat-list', { keep: 1 })).body.listed === 1, 'the Chats screen now lists one chat, and keeps the rest only in the stored copy');
+    await page.getByRole('tab', { name: 'All', exact: true }).click();
+    ok(await until(async () => (await page.locator('.wc-list > ul .wc-card').count()) === 1), 'the list shows only Lin’s chat, the one taken over');
+    await page.getByRole('button', { name: 'Show older chats' }).click();
+    const older = page.getByRole('region', { name: 'Older chats' });
+    await older.locator('.wc-card').nth(1).waitFor();
+    ok((await older.locator('.wc-card').count()) === 2, 'Show older chats lists the two older ones');
+    await older.locator('.wc-card').first().click();
+    await page.locator('.wc-thread-body .wc-bubble.visitor', { hasText: 'Older visitor two here' }).waitFor();
+    ok(/Older chat/.test(await page.locator('.wc-thread-head').innerText()) && (await page.getByLabel('Your reply').count()) === 0, 'an older chat opens read from the stored copy, newest first, to read and not to answer');
+    await older.locator('.wc-card').nth(1).click();
+    await page.locator('.wc-thread-body .wc-bubble.visitor', { hasText: 'Older visitor one here' }).waitFor();
+    ok(true, 'and the one before it');
+    await page.locator('.wc-list > ul .wc-card', { hasText: 'Lin' }).click();
+    await page.locator('.wc-live').waitFor();
 
     /* ── Privacy: the owner deletes the chat ── */
     page.once('dialog', (d) => d.accept());
