@@ -7,8 +7,10 @@ import { PgBoss } from 'pg-boss';
 import { config } from '../config';
 import { log } from '../lib/log';
 import { InlineJobs } from '../testing/jobs';
+import type { JobName, JobPayloads } from './payloads';
 
-export type Handler = (data: Record<string, unknown>) => Promise<void>;
+/** Runs one job, given what it was queued with. */
+export type Handler<N extends JobName> = (data: JobPayloads[N]) => Promise<void>;
 
 export interface JobOptions {
   startAfter?: Date | number;
@@ -16,16 +18,23 @@ export interface JobOptions {
   singletonKey?: string;
 }
 
+/**
+ * A queue. Every job name and payload is checked against `JobPayloads`. The two queues below accept any name, so
+ * a test can drive them by a name it holds in a variable; the server only reaches them through this interface.
+ */
 export interface Jobs {
-  enqueue(name: string, data: Record<string, unknown>, opts?: JobOptions): Promise<void>;
+  enqueue<N extends JobName>(name: N, data: JobPayloads[N], opts?: JobOptions): Promise<void>;
   stop(): Promise<void>;
 }
 
-const handlers = new Map<string, Handler>();
+/** A handler as the queues hold it: the payload comes back from the queue under the name it was queued with. */
+type StoredHandler = (data: Record<string, unknown>) => Promise<void>;
+
+const handlers = new Map<string, StoredHandler>();
 const crons = new Map<string, string>();
 
-export function defineJob(name: string, handler: Handler, cron?: string) {
-  handlers.set(name, handler);
+export function defineJob<N extends JobName>(name: N, handler: Handler<N>, cron?: string) {
+  handlers.set(name, handler as StoredHandler);
   if (cron) crons.set(name, cron);
 }
 
@@ -59,7 +68,7 @@ export function setJobs(j: Jobs) {
 }
 
 /** Enqueue without making the caller wait or fail: a job that can't be queued is picked up by the sweep. */
-export function enqueueSoon(name: string, data: Record<string, unknown>, opts?: JobOptions) {
+export function enqueueSoon<N extends JobName>(name: N, data: JobPayloads[N], opts?: JobOptions) {
   void jobs.enqueue(name, data, opts).catch((e) => log.warn('could not queue job', { name, error: (e as Error).message }));
 }
 
