@@ -8,7 +8,7 @@
  * approval rules (someone who must not send from that mailbox waits for its owner), the same undo window, and the
  * same idempotency key, so it is sent once.
  *
- * Which thread: the lead's newest reply that Timmy holds as mail. Its copy in the Unibox carries the provider's
+ * Which thread: the one holding the lead's newest reply. Its copy in the Unibox carries the provider's
  * message id (see `noteLeadMail` in sync/ingest.ts), and the thread on Timmy's side holds a message with that id.
  * The reply goes to the address that wrote, which is the lead's own: a display name never decides it.
  */
@@ -29,13 +29,16 @@ export function leadReply(state: State, op: { lead: string; subject?: string; bo
   if (!lead) return { kind: 'cold' };
   const replies = state.out.messages.filter((m) => m.lead === lead.id && m.dir === 'in' && m.channel === 'email').sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
   if (!replies.length) return { kind: 'cold' };
+  // Someone who unsubscribed is not written to again, whoever presses Send.
+  if (lead.status === 'unsubscribed') return { kind: 'refused', reason: `${lead.first} unsubscribed. Timmy won’t contact them again.` };
 
-  for (const r of replies) {
-    const id = messageIdOf(r.id, lead.id);
-    if (!id) continue;
+  // The newest reply only: answering in an older conversation instead would surprise the person and the lead.
+  const newest = replies.map((r) => messageIdOf(r.id, lead.id)).find((id): id is string => !!id);
+  if (newest) {
+    const id = newest;
     const thread = state.threads.find((t) => !!t.ext?.threadKey && !!t.ext.connectionId && t.messages.some((m) => m.id === id));
     const wrote = thread?.messages.find((m) => m.id === id);
-    if (!thread || !wrote) continue;
+    if (!thread || !wrote) return refusedNotHeld(lead.first);
     const body = typeof op.body === 'string' ? op.body.trim() : '';
     if (!body) return { kind: 'refused', reason: `Write your reply to ${lead.first} first.` };
     // The address that wrote is the lead's own: sync only files a message under a lead by its parsed address.
@@ -44,5 +47,7 @@ export function leadReply(state: State, op: { lead: string; subject?: string; bo
     const withDraft: State = { ...state, threads: state.threads.map((t) => (t.id === thread.id ? { ...t, draft } : t)) };
     return { kind: 'reply', withDraft, action: { type: 'sendDraft', id: thread.id, track: false } };
   }
-  return { kind: 'refused', reason: `${lead.first} wrote back, but that email isn’t in Timmy’s inbox, so Timmy can’t reply in that thread. Reply from your mail app instead.` };
+  return refusedNotHeld(lead.first);
 }
+
+const refusedNotHeld = (first: string): LeadReply => ({ kind: 'refused', reason: `${first} wrote back, but that email isn’t in Timmy’s inbox, so Timmy can’t reply in that thread. Reply from your mail app instead.` });

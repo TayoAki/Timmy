@@ -149,6 +149,26 @@ describe('replying in the Unibox to a lead who wrote back', () => {
     expect(sends()).toEqual([]);
   });
 
+  it('only the thread of the lead’s newest reply is answered: when that one isn’t in Timmy, nothing is sent in an older one', async () => {
+    await leadWroteBack();
+    await w.post('/api/test/fake', { op: 'deliver', message: { from: 'Lee Lead <lee@leadco.test>', subject: 'Another thing', body: 'Also, pricing?', labels: ['UNREAD'] } });
+    await jobs().drain();
+    expect((await w.state()).out.messages.filter((m) => m.lead === lead.id && m.dir === 'in')).toHaveLength(2);
+    const out = await reply('Pricing is on its way.');
+    expect(out.ok).toBe(false);
+    expect(out.error).toMatch(/isn’t in Timmy’s inbox/);
+    expect(await effects()).toEqual([]);
+  });
+
+  it('a lead who unsubscribed is not written to', async () => {
+    await leadWroteBack();
+    await w.cmd({ type: 'out', op: { op: 'patchLead', id: lead.id, patch: { status: 'unsubscribed' } } });
+    const out = await reply('One more thing.');
+    expect(out.ok).toBe(false);
+    expect(out.error).toBe('Lee unsubscribed. Timmy won’t contact them again.');
+    expect(await effects()).toEqual([]);
+  });
+
   it('a reply with nothing in it is refused and sends nothing', async () => {
     await leadWroteBack();
     const empty = await reply('   ');
