@@ -15,7 +15,7 @@ import { keepTimmyLines } from '../src/automations/doc-lines';
 import { NO_MAILBOX } from '../src/automations/mailbox';
 import { runAutomation } from '../src/automations/runner';
 import type { EffectRow } from '../src/gateway/gateway';
-import type { FakeMessage } from '../src/providers/composio';
+import type { FakeMessage } from '../src/testing/composio';
 import { setModelForTests, type ModelProvider } from '../src/providers/model';
 import { MAX_BLOCKS } from '../src/state/ws-check';
 import { mayDecideCard, openApprovals } from '../../src/state/approvals';

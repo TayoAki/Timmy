@@ -1,11 +1,12 @@
 /**
  * Background work. In production every job goes through pg-boss, which keeps
- * them in Postgres and retries them. Tests use the inline runner, which runs the
- * same handlers on demand so a test decides when time passes.
+ * them in Postgres and retries them. Tests use the inline runner (testing/jobs.ts),
+ * which runs the same handlers on demand so a test decides when time passes.
  */
 import { PgBoss } from 'pg-boss';
 import { config } from '../config';
 import { log } from '../lib/log';
+import { InlineJobs } from '../testing/jobs';
 
 export type Handler = (data: Record<string, unknown>) => Promise<void>;
 
@@ -49,34 +50,8 @@ export class BossJobs implements Jobs {
   }
 }
 
-/** Runs jobs in-process when asked. For tests and for local runs without a queue. */
-export class InlineJobs implements Jobs {
-  queue: { name: string; data: Record<string, unknown>; opts: JobOptions }[] = [];
-  async enqueue(name: string, data: Record<string, unknown>, opts: JobOptions = {}) {
-    if (opts.singletonKey && this.queue.some((j) => j.name === name && j.opts.singletonKey === opts.singletonKey)) return;
-    this.queue.push({ name, data, opts });
-  }
-  /** Runs everything queued (and whatever those jobs queue), whatever their start time. */
-  async drain(only?: string): Promise<number> {
-    let ran = 0;
-    // The limit only stops a job that keeps queueing itself for ever. It has to sit well above the longest honest
-    // queue: the nightly mail check alone queues one job for every connected mailbox there is.
-    for (let guard = 0; guard < 2000; guard++) {
-      const i = this.queue.findIndex((j) => !only || j.name === only);
-      if (i < 0) break;
-      const [job] = this.queue.splice(i, 1);
-      const h = handlers.get(job!.name);
-      if (h) await h(job!.data);
-      ran++;
-    }
-    return ran;
-  }
-  async stop() {
-    this.queue = [];
-  }
-}
-
-let jobs: Jobs = new InlineJobs();
+// Until the real queue is started (tests never start it), jobs wait in the inline runner.
+let jobs: Jobs = new InlineJobs((name) => handlers.get(name));
 export const getJobs = () => jobs;
 export const inlineJobs = () => (jobs instanceof InlineJobs ? jobs : null);
 export function setJobs(j: Jobs) {

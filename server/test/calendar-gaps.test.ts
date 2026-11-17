@@ -9,7 +9,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EffectRow } from '../src/gateway/gateway';
 import { reconcileEffect } from '../src/gateway/gateway';
-import type { FakeEvent } from '../src/providers/composio';
+import type { FakeEvent } from '../src/testing/composio';
 import { syncCalendar } from '../src/sync/calendar';
 import { refusedForPermission } from '../src/sync/calendar-access';
 import { addMember, boot, connectApp, fake, jobs, newWorkspace, releaseHolds, rows, sysPool, type Client } from './helpers';

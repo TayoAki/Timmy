@@ -7,7 +7,7 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { config } from '../src/config';
 import type { EffectRow } from '../src/gateway/gateway';
 import { executeEffect, reconcileEffect } from '../src/gateway/gateway';
-import type { FakeMessage } from '../src/providers/composio';
+import type { FakeMessage } from '../src/testing/composio';
 import { backfillMail, ingestThread, reconcileMail } from '../src/sync/ingest';
 import { LABEL_NAMES } from '../src/sync/labels';
 import { htmlToText, type MailMessage } from '../src/sync/message';

@@ -13,8 +13,9 @@ import { createServer } from 'node:net';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { withoutMetadata } from '../src/files/pictures';
 import { ClamAV, setScannerForTests } from '../src/files/scan';
-import { MemoryStore, fileStore, setFileStoreForTests } from '../src/files/store';
-import { EICAR, startStandInClamd, type StandInClamd } from '../src/files/testing/clamd';
+import { fileStore, setFileStoreForTests } from '../src/files/store';
+import { EICAR, startStandInClamd, type StandInClamd } from '../src/testing/clamd';
+import { MemoryStore } from '../src/testing/file-store';
 import { addMember, connectGmail, fake, jobs, newWorkspace, releaseHolds, rows, sendBytes, sysPool, uploadFile, boot, type Client } from './helpers';
 import { exif, holds, jfifWithPreview, jpeg, jpegComment, png, pngChunk, pngText, webp, xmp } from './pictures';
 

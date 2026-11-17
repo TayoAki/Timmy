@@ -9,7 +9,7 @@ import { rulesFor } from '../src/auth/roles';
 import { config } from '../src/config';
 import { allowedHost, fetchFileBytes, isPrivateAddress } from '../src/providers/composio-download';
 import { managedAuthConfig } from '../src/providers/composio';
-import { OFFICE_TYPES, docxOf, pptxOf, xlsxOf, zipOf } from '../src/providers/fake-files';
+import { OFFICE_TYPES, docxOf, pptxOf, xlsxOf, zipOf } from '../src/testing/composio-files';
 import { indexFileTexts } from '../src/sync/file-text';
 import { MAX_FILE_TEXT, readFileText } from '../src/sync/files';
 import { OFFICE_LIMITS, OfficeError, officeText } from '../src/sync/office-text';

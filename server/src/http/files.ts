@@ -15,7 +15,7 @@ import { announceUpload, expectUpload, receiveUpload, scanNote, uploadedAsset, t
 import { isPictureType } from '../files/rules';
 import { setScannerForTests, ClamAV } from '../files/scan';
 import { fileStore, filesReady } from '../files/store';
-import { startStandInClamd, type StandInClamd } from '../files/testing/clamd';
+import { startStandInClamd, type StandInClamd } from '../testing/clamd';
 import { log } from '../lib/log';
 import { ctxOf, requireRead, requireWorkspace, type Env } from './session';
 

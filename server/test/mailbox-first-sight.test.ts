@@ -6,7 +6,7 @@
  *   - opening the app looks at the mailbox at most every five minutes, however often the page is reloaded.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import type { FakeMessage } from '../src/providers/composio';
+import type { FakeMessage } from '../src/testing/composio';
 import { LABEL_NAMES, type Labelled } from '../src/sync/labels';
 import { checkMailbox } from '../src/sync/mailbox-check';
 import { appPool, boot, connectApp, fake, jobs, model, newWorkspace, rows, sysPool, withWorkspace, type Client } from './helpers';

@@ -18,7 +18,7 @@ import { businessHours, dueDate, nextFire, sendFrom, waitUntil, zoned } from '..
 import { config } from '../src/config';
 import { reconcileEffect, type EffectRow } from '../src/gateway/gateway';
 import { recent } from '../src/lib/log';
-import type { FakeMessage } from '../src/providers/composio';
+import type { FakeMessage } from '../src/testing/composio';
 import { setModelForTests, type ModelProvider } from '../src/providers/model';
 import type { Draft } from '../../src/data/types';
 import { mutate } from '../src/state/mutate';
