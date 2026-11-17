@@ -41,6 +41,7 @@ import { commitState, loadState, remember, type Commit, type Loaded, type PreIma
 import { chatCommand, chatCommandForRecord, sendChatRepliesNow } from '../chat/commands';
 import { chatChecked } from '../chat/settings';
 import { changeEvents } from './event-changes';
+import { followWaitingCreates } from './event-creates';
 
 enterLive();
 // Someone the workspace only knows by address still has a name when the reducer asks.
@@ -151,6 +152,8 @@ export async function runCommand(ctx: Ctx, cmd: { id: string; action: Action }):
       if (!handled.reject) handled = await addEvents(tx, loaded, ctx, cmd.id, handled);
       // A synced event the command changed or removed is written to its calendar too (see event-changes.ts).
       if (!handled.reject) handled = await changeEvents(tx, loaded, actorOf(ctx), cmd, handled, (id) => emailOf(loaded, handled.state, id));
+      // An event made in Timmy and changed while its create still waits: the change replaces the create (see event-creates.ts).
+      if (!handled.reject) handled = await followWaitingCreates(tx, loaded, actorOf(ctx), cmd, handled, (id) => emailOf(loaded, handled.state, id));
       // The website chat: who may switch it on or change it while it is on, and that nothing but the chat's own
       // commands rewrites a visitor's conversation. Checked on what the command did, whichever command it was.
       if (!handled.reject) {
@@ -483,7 +486,8 @@ async function addEvents(tx: Tx, loaded: Loaded, ctx: Ctx, commandId: string, ha
   if (fresh.length > config.maxEventsPerCommand) return { state: prev, reject: `That would add ${fresh.length} events at once. Timmy adds up to ${config.maxEventsPerCommand} at a time.` };
   // The person's own calendar if they connected one, otherwise the workspace's first (whose owner then approves).
   // With more than one to choose from (Google Calendar and Outlook, say), it is the one that was connected first.
-  const cal = (await tx.query(`select id, toolkit from connection where workspace_id = $1 and status = 'active' and toolkit = any($3::text[]) order by (user_id = $2) desc, created_at limit 1`, [ctx.workspaceId, ctx.user.id, CALENDAR_TOOLKITS])).rows[0] as { id: string; toolkit: string } | undefined;
+  // A calendar the account was not allowed to read (see sync/calendar-access.ts) is not written to either.
+  const cal = (await tx.query(`select id, toolkit from connection where workspace_id = $1 and status = 'active' and toolkit = any($3::text[]) and not (meta ? 'calendarRefused') order by (user_id = $2) desc, created_at limit 1`, [ctx.workspaceId, ctx.user.id, CALENDAR_TOOLKITS])).rows[0] as { id: string; toolkit: string } | undefined;
   if (!cal) return handled;
 
   let state = next;

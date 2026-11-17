@@ -13,7 +13,7 @@ run('live-onedrive', async (browser) => {
   const before = await card.innerText();
   ok(/Reads\s+The names, types and owners of your files, and the words in your recent Word, Excel and PowerPoint files/.test(before), 'the OneDrive card says what Timmy reads');
   ok(/Writes\s+Nothing/.test(before) && !/Coming soon/.test(before), 'and that it writes nothing, and it can be connected');
-  await card.getByRole('button', { name: 'Connect' }).click();
+  await card.getByRole('button', { name: 'Connect', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Connect OneDrive' });
   await dialog.waitFor();
   const told = await dialog.innerText();
@@ -25,7 +25,7 @@ run('live-onedrive', async (browser) => {
   await card.getByRole('button', { name: 'Disconnect' }).waitFor();
   ok(/Connected · grace@navy\.test/.test(await card.innerText()), 'OneDrive shows as connected, with the address OneDrive gave');
   const outlook = page.locator('li.conn-card', { has: page.getByText('Outlook and Microsoft 365', { exact: true }) }).first();
-  ok((await outlook.getByRole('button', { name: 'Connect' }).count()) === 1, 'Outlook is still its own app, not connected by connecting OneDrive');
+  ok((await outlook.getByRole('button', { name: 'Connect', exact: true }).count()) === 1, 'Outlook is still its own app, not connected by connecting OneDrive');
 
   // A Word document and a workbook are made in OneDrive and announced; each is listed and its words kept.
   ok((await api(page, 'POST', '/api/test/fake', { op: 'file', app: 'onedrive', file: { name: 'Compiler notes.docx', text: 'The first bug was a moth.\nTape it into the logbook.' } })).body.ok, 'a Word document made in OneDrive is announced, listed and read');
@@ -49,7 +49,7 @@ run('live-onedrive', async (browser) => {
   ok((await api(page, 'POST', '/api/test/fake', { op: 'file-trash', app: 'onedrive', name: 'Budget.xlsx' })).body.ok, 'a file deleted in OneDrive leaves the list');
   await page.click('button[aria-label="Connections"]');
   await card.getByRole('button', { name: 'Disconnect' }).click();
-  await card.getByRole('button', { name: 'Connect' }).waitFor({ timeout: 10000 });
+  await card.getByRole('button', { name: 'Connect', exact: true }).waitFor({ timeout: 10000 });
   ok(/I couldn’t find a file with that name\./.test(await ask('find the file about moth', 'I couldn’t find')), 'after disconnecting, Ask no longer finds its files');
 
   ok(errors.length === 0, `no page errors (${errors.join(' | ')})`);

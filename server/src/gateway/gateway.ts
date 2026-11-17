@@ -329,8 +329,8 @@ export async function cancelHeld(tx: Tx, loaded: Loaded, state: State, actor: Ac
 
 export type Outcome =
   | { status: 'completed'; result: Record<string, unknown>; externalId?: string }
-  /** The provider refused before doing anything. Nothing left the workspace. */
-  | { status: 'failed'; error: string }
+  /** The provider refused before doing anything. Nothing left the workspace. `result` records what was tidied up (a draft removed). */
+  | { status: 'failed'; error: string; result?: Record<string, unknown> }
   /** We don't know whether it happened (a timeout, a dropped connection). Never retried blindly. */
   | { status: 'uncertain'; error: string };
 
@@ -372,7 +372,7 @@ async function settle(workspaceId: string, claimed: EffectRow, outcome: Outcome)
     const { rows } = await tx.query(
       `update effect set status = $2, result = $3::jsonb, error = $4, external_id = $5, completed_at = case when $2 = 'completed' then now() else null end
        where id = $1 and workspace_id = $6 and status in ('executing', 'uncertain') returning *`,
-      [claimed.id, outcome.status, JSON.stringify(outcome.status === 'completed' ? outcome.result : {}), outcome.status === 'completed' ? null : outcome.error, outcome.status === 'completed' ? outcome.externalId ?? null : null, workspaceId],
+      [claimed.id, outcome.status, JSON.stringify(outcome.status === 'completed' ? outcome.result : outcome.status === 'failed' ? (outcome.result ?? {}) : {}), outcome.status === 'completed' ? null : outcome.error, outcome.status === 'completed' ? outcome.externalId ?? null : null, workspaceId],
     );
     const e = (rows[0] as EffectRow | undefined) ?? claimed;
     await audit(tx, workspaceId, { actor: 'system', action: `effect.${outcome.status}`, effectId: claimed.id, runId: claimed.run_id, detail: outcome.status === 'completed' ? { externalId: outcome.externalId } : { error: outcome.error } });

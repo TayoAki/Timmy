@@ -10,6 +10,7 @@ import { readState } from '../state/mutate';
 import { abandonedRuns, resumeRun } from '../agent/loop';
 import { log } from '../lib/log';
 import { syncCalendar } from '../sync/calendar';
+import { registerCalendarJobs } from '../sync/calendar-jobs';
 import { purgeDeletedWorkspaces } from '../db/purge';
 import { forgetAbandonedUploads, removeWorkspaceFiles } from '../files/assets';
 import { closeOrphanedConnections, purgeConnection, revokeAtProvider } from '../sync/connect';
@@ -155,7 +156,8 @@ export function registerJobs() {
   );
 
   defineJob('calendar.sync', async (d) => {
-    const out = await syncCalendar(String(d.workspaceId), String(d.connectionId));
+    // The nightly re-read (sync/calendar-jobs.ts) is counted apart from the reads that follow an announcement.
+    const out = await syncCalendar(String(d.workspaceId), String(d.connectionId), d.nightly ? 'reconcile' : 'sync');
     if (out.events) learn(String(d.workspaceId));
     // An event the calendar no longer has left the store; what the map knew only from it goes too.
     if (out.dropped) {
@@ -163,6 +165,9 @@ export function registerJobs() {
       await projectPeople(String(d.workspaceId));
     }
   });
+
+  // Once a night every connected calendar is read again, so a quiet one keeps up with its moving window.
+  registerCalendarJobs();
 
   // The list of Drive or OneDrive files: a pass that didn't finish carries on in a new job from where it stopped.
   // A finished one is followed by reading what the new and changed files say.

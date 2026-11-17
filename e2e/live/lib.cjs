@@ -82,7 +82,7 @@ async function connectApp(page, name, address) {
   await api(page, 'POST', '/api/test/fake', { op: 'address', address });
   await page.click('button[aria-label="Connections"]');
   const card = page.locator('li.conn-card', { has: page.getByText(name, { exact: true }) }).first();
-  await card.getByRole('button', { name: 'Connect' }).click();
+  await card.getByRole('button', { name: 'Connect', exact: true }).click();
   // The address bar may still say "connect=ok" from an earlier connect in the same test, so that alone proves nothing.
   // What is waited for is this connect's own return trip: the server's answer to the callback, then the page it lands on.
   const back = page.waitForResponse((r) => r.url().includes('/api/v1/connections/callback'), { timeout: 30000 });

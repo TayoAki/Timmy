@@ -59,14 +59,17 @@ describe('an event with no guests', () => {
     expect(list.filter((x) => x.title === 'Focus: write the proposal')).toHaveLength(1);
   });
 
-  it('changing an event that is already there, or sending the same command again, creates nothing new', async () => {
+  it('sending the same command again creates nothing new; changing it while it waits replaces the waiting create, and it is still created once', async () => {
     await add(w, 'ev-focus', 'Focus: write the proposal');
     await add(w, 'ev-focus', 'Focus: write the proposal');
-    await w.cmd({ type: 'ws', ops: [{ op: 'put', col: 'events', item: { id: 'ev-focus', title: 'Focus: renamed', start: at(24), end: at(25), kind: 'focus', with: [] } }] });
     expect(await effects()).toHaveLength(1);
+    await w.cmd({ type: 'ws', ops: [{ op: 'put', col: 'events', item: { id: 'ev-focus', title: 'Focus: renamed', start: at(24), end: at(25), kind: 'focus', with: [] } }] });
+    // The change used to leave the waiting create as it was, so Google got the old title (see state/event-creates.ts).
+    expect((await effects()).map((e) => e.status)).toEqual(['cancelled', 'approved']);
     await releaseHolds(w);
     await releaseHolds(w);
     expect(creates()).toHaveLength(1);
+    expect(google()).toMatchObject([{ summary: 'Focus: renamed' }]);
   });
 });
 

@@ -102,6 +102,11 @@ function AppCard({ app: def, onConnect }: { app: AppDef; onConnect: () => void }
           <span className="muted">Cost</span> {app.credits} credit{app.credits === 1 ? '' : 's'} a lead
         </p>
       )}
+      {isLive() && c?.connected && c.calendarRefused && (
+        <p className="conn-warn" role="status">
+          {app.id === 'outlook' ? 'Outlook' : app.name} was connected without permission to read your calendar. Disconnect it and connect it again so Timmy can read the calendar.
+        </p>
+      )}
       <footer className="conn-foot">
         {soon ? null : c?.connected ? (
           <>

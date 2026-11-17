@@ -2389,6 +2389,13 @@ td.lead-sub {
   display: inline-block;
   min-width: 52px;
 }
+.conn-warn {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  font-weight: 500;
+  color: var(--warn);
+}
 .conn-foot {
   display: flex;
   align-items: center;

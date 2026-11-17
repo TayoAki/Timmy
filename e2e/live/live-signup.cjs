@@ -38,13 +38,13 @@ run('live-signup', async (browser) => {
   await page.click('button[aria-label="Connections"]');
   const hubspot = page.locator('li.conn-card', { hasText: 'HubSpot' }).first();
   await hubspot.waitFor();
-  ok(/Coming soon/.test(await hubspot.innerText()) && (await hubspot.getByRole('button', { name: 'Connect' }).count()) === 0, 'an app Timmy cannot read yet is shown as coming soon, with no Connect button');
+  ok(/Coming soon/.test(await hubspot.innerText()) && (await hubspot.getByRole('button', { name: 'Connect', exact: true }).count()) === 0, 'an app Timmy cannot read yet is shown as coming soon, with no Connect button');
   for (const name of ['Outlook and Microsoft 365', 'Google Drive', 'Google Calendar']) {
     const card = page.locator('li.conn-card', { has: page.getByText(name, { exact: true }) }).first();
-    ok((await card.getByRole('button', { name: 'Connect' }).count()) === 1 && !/Coming soon/.test(await card.innerText()), `${name} can be connected`);
+    ok((await card.getByRole('button', { name: 'Connect', exact: true }).count()) === 1 && !/Coming soon/.test(await card.innerText()), `${name} can be connected`);
   }
   const gmail = page.locator('li.conn-card', { has: page.getByText('Gmail', { exact: true }) }).first();
-  ok((await gmail.getByRole('button', { name: 'Connect' }).count()) === 1, 'Gmail can be connected');
+  ok((await gmail.getByRole('button', { name: 'Connect', exact: true }).count()) === 1, 'Gmail can be connected');
 
   // The workspace's settings: the model, approvals and who is signed in.
   await page.click('button[aria-label="Rules & settings"]');

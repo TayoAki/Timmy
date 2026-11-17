@@ -93,15 +93,25 @@ run('live-mailbox', async (browser) => {
   ok((await effectRecords()).length === 1 && (await sentMail(page)).length === 0, 'through all of it, nothing but the person’s own move was written to the mailbox, and nothing was sent');
 
   // Opening the app is itself a reason to look: this time nothing asks for the look but the page being opened.
-  // A look is skipped when the mailbox was looked at within the last minute, so the test waits that minute out.
+  // It looks at most every five minutes, however often the page is reloaded.
   await page.click('button[aria-label="Today & mail"]');
   await deliver(page, { from: 'Dana Whitfield <dana@client.test>', subject: 'Parking permits', body: 'Annie, how many parking permits do you need?' });
   await page.getByRole('tab', { name: /Triage/ }).click();
   await main.getByText('Parking permits').first().waitFor({ timeout: 10000 });
   await inGmail('Parking permits', { remove: ['INBOX'] });
-  await page.waitForTimeout(61000);
-  // Asked of the page itself: loading the state through the API is what an opening page does, and would count as one.
-  ok((await main.getByText('Parking permits').count()) > 0, 'a thread archived in Gmail while the tab sat untouched is still listed in Triage');
+  // The mailbox was looked at a moment ago (above). Reloaded now, and again, the page asks for a look that is not made.
+  for (let i = 0; i < 2; i++) {
+    await page.reload();
+    await main.waitFor();
+    await page.waitForTimeout(3000);
+  }
+  await page.getByRole('tab', { name: /Triage/ }).click();
+  // Asked of the page itself first: loading the state through the API is what an opening page does, and would count as one.
+  await main.getByText('Parking permits').first().waitFor({ timeout: 10000 });
+  ok(true, 'reloaded twice within five minutes of the last look, the page has not looked again: the thread archived in Gmail is still in Triage');
+  ok((await threadOf('Parking permits')).box === 'inbox', 'and the workspace still has it in the inbox');
+  // Six minutes later (only the record of the last look is moved back), opening the app looks again.
+  await api(page, 'POST', '/api/test/fake', { op: 'looked-ago', minutes: 6 });
   await page.reload();
   await main.waitFor();
   ok(await until(async () => (await threadOf('Parking permits')).box === 'archived'), 'opening the app again picks it up, with nothing else asking for a look');

@@ -5,6 +5,7 @@ export default defineConfig({
   test: {
     include: ['test/**/*.test.ts'],
     globalSetup: './test/setup.ts',
+    setupFiles: ['./test/each-file.ts'],
     fileParallelism: false,
     pool: 'forks',
     maxWorkers: 1,
