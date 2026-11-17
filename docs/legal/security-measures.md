@@ -8,7 +8,7 @@ Draft, Nov 16, 2026. This is Annex 2 of the data processing agreement, and the p
 | --- | --- | --- |
 | Accounts (name, email address, password hash, sessions) | Postgres on Railway | Passwords are hashed by the sign-in library (Better Auth, scrypt). Sessions are cookies that only the server can read. |
 | A workspace's state: threads as shown on screen, tasks, pages, contacts, rules, settings | Postgres on Railway | One row per piece of state, each carrying its workspace. |
-| Synced mail, calendar events and file names (the "item store") | Postgres on Railway | The last 90 days of mail, then new mail as it arrives. For files only the name, type, owner and dates: file contents are fetched when a user asks Timmy to read a file and are not stored. |
+| Synced mail, calendar events and files (the "item store") | Postgres on Railway | The last 90 days of mail, then new mail as it arrives. For files in Google Drive and OneDrive: the name, type, owner and dates, and, so that files can be found by what they say, the text of Google Docs, Sheets and Slides and of Word, Excel and PowerPoint files changed in the last 90 days (at most 24,000 characters each). The text goes when the file is trashed or deleted and when the account is disconnected. |
 | What Timmy learned: people, companies, promises, decisions, each pointing at the email it came from | Postgres on Railway | Removed when the email it rests on is removed. |
 | Runs of the assistant, proposed and completed actions ("effect records"), model usage, the audit log | Postgres on Railway | The audit log cannot be changed or deleted by the application; it goes only when its workspace is purged. |
 | Access tokens for connected Google and Microsoft accounts | **Composio**, not Timmy | Timmy's database holds only an identifier for each connection. Timmy's servers never see a token. |
@@ -66,7 +66,7 @@ Its mail and calendar events leave the screens and Ask at once. In the same step
 
 | What | How long |
 | --- | --- |
-| Synced mail, events and file names | While the account is connected. Disconnecting removes them from the screens and from Ask at once; the stored copy is deleted by a background job. |
+| Synced mail, events, files and their text | While the account is connected. Disconnecting removes them from the screens and from Ask at once; the stored copy is deleted by a background job. |
 | A workspace | Until deleted by its owner. It is closed at once and every row is deleted 30 days later. |
 | Pages in the trash | 30 days, then deleted for good. |
 | Earlier versions of a page | The newest 100 per page, none older than 90 days. They go when the page is deleted for good. |
