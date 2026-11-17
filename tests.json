@@ -403,7 +403,7 @@
   {
    "id": "live-files",
    "file": "e2e/live/live-files.cjs",
-   "covers": "in the browser: a picture added to a page is uploaded, shows after a reload, and the page holds a reference, not the picture; an email with an attachment is approved with the file listed and goes out once with it; an attachment of a type that isn’t allowed is refused with the reason",
+   "covers": "in the browser: a picture added to a page is uploaded, shows after a reload, and the page holds a reference, not the picture; an email with an attachment is approved with the file listed and goes out once with it; an attachment of a type that isn’t allowed is refused with the reason; on staging it runs against the real Railway bucket",
    "checks": 34,
    "status": "pass"
   },
@@ -437,14 +437,15 @@
   },
   {
    "id": "staging-full",
-   "covers": "the live-mode browser suites (e2e/live/run-all.sh, 19 suites) against the staging server on Railway with stand-in providers",
+   "covers": "the live-mode browser suites (e2e/live/run-all.sh, 20 suites) against the staging server on Railway with stand-in providers and the real Railway bucket",
    "status": "pass",
-   "result": "Nov 17, 2026, on the code with six of the seven parallel builds merged: 18 of 19 suites pass (live-filing lost its connection once while staging redeployed and passed on the re-run). live-chat cannot pass from this cloud session: its network proxy adds the staging test token and drops the chat window’s own Authorization header on the live-update request. A direct request to staging streams the conversation correctly, and live-chat passes locally against the production build run as a staging server. Earlier: 13 of 13 on build b401b3f (Nov 16)."
+   "result": "Nov 17, 2026, on the final build (all seven builds merged, every safety-review fix in): 19 of 20 suites pass, 554 checks. live-files passed against the real Railway bucket. live-chat cannot pass from this cloud session: its network proxy adds the staging test token and drops the chat window’s own Authorization header on the live-update request; a direct request to staging streams the conversation correctly, and live-chat passes locally against the production build run as a staging server."
   },
   {
    "id": "prod-smoke",
    "covers": "production app: health, serves the app, refuses state without a session, test hooks off",
-   "status": "pass"
+   "status": "pass",
+   "result": "Nov 17, 2026, on the final build: the outside checks in their no-account form (live-outside with OUTSIDE_NO_ACCOUNT=1), 39 of 39, including that an uninvited address cannot sign up."
   }
  ]
 }
