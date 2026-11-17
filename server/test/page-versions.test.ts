@@ -247,7 +247,7 @@ describe('putting a version back', () => {
 
     const res = await restore('hub', 1);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, changed: true, kept: 2, leftOut: 2, note: '2 links to pages that have been deleted since were left out.' });
+    expect(await res.json()).toEqual({ ok: true, changed: true, kept: 2, leftOut: 2, links: [{ block: 'l1', page: 'gone-a' }, { block: 'l2', page: 'gone-b' }], note: '2 links to pages that have been deleted since were left out.' });
     // A page in the trash can still come back, so its link stays; so does the link to a page that is still here.
     const blocks = ((await w.state()).ws.docs.hub as unknown as { blocks: Blocks }).blocks;
     expect(blocks).toEqual([para('Index'), link('l3', 'binned'), link('l4', 'here')]);
@@ -255,11 +255,11 @@ describe('putting a version back', () => {
     expect((await stored('hub'))[0]!.blocks).toEqual([para('Index'), link('l1', 'gone-a'), link('l2', 'gone-b'), link('l3', 'binned'), link('l4', 'here')]);
     expect((await rows<{ detail: Record<string, unknown> }>(`select detail from audit_log where workspace_id = $1 and action = 'page.version.restored'`, [w.workspaceId]))[0]!.detail).toMatchObject({ leftOut: 2 });
     // Putting the same version back again changes nothing, and still says what was left out.
-    expect(await (await restore('hub', 1)).json()).toEqual({ ok: true, changed: false, leftOut: 2, note: '2 links to pages that have been deleted since were left out.' });
+    expect(await (await restore('hub', 1)).json()).toEqual({ ok: true, changed: false, leftOut: 2, links: [{ block: 'l1', page: 'gone-a' }, { block: 'l2', page: 'gone-b' }], note: '2 links to pages that have been deleted since were left out.' });
     // One left out is said in the singular; a version with nothing deleted behind it says nothing about links.
     await newPage('solo', 'Solo', [para('one'), link('l9', 'here'), link('l8', 'gone-a')]);
     await save('solo', [para('two')]);
-    expect(await (await restore('solo', 1)).json()).toEqual({ ok: true, changed: true, kept: 2, leftOut: 1, note: 'A link to a page that has been deleted since was left out.' });
+    expect(await (await restore('solo', 1)).json()).toEqual({ ok: true, changed: true, kept: 2, leftOut: 1, links: [{ block: 'l8', page: 'gone-a' }], note: 'A link to a page that has been deleted since was left out.' });
     await newPage('plain', 'Plain', [para('one'), link('l7', 'here')]);
     await save('plain', [para('two')]);
     expect(await (await restore('plain', 1)).json()).toEqual({ ok: true, changed: true, kept: 2 });
