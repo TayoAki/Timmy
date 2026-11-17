@@ -40,6 +40,12 @@ async function signUp(page, { name = 'Ada Lovelace', company = `Analytical ${sta
   return { name, email, password, company };
 }
 
+/**
+ * The API sends dates tagged, as {"$date": "2026-11-17T09:00:00.000Z"}, so that text shaped like a timestamp is
+ * never mistaken for one (src/live/patches.ts). The suites compare dates as ISO strings, so a tag is read as its string.
+ */
+const parse = (text) => JSON.parse(text, (_k, v) => (v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 1 && typeof v.$date === 'string' ? v.$date : v));
+
 /** Calls the API with the page's own session (its cookies), without going through the page's console. */
 async function api(page, method, path, body) {
   // A browser always sends Origin on a write; the API checks it, so the helper sends it too.
@@ -54,7 +60,7 @@ async function api(page, method, path, body) {
       const r = await ctx.fetch(new URL(path, BASE).toString(), { method, data: body, failOnStatusCode: false, headers });
       const text = await r.text();
       try {
-        return { status: r.status(), body: JSON.parse(text) };
+        return { status: r.status(), body: parse(text) };
       } catch {
         return { status: r.status(), body: text };
       }
@@ -65,7 +71,7 @@ async function api(page, method, path, body) {
   const r = await page.request.fetch(new URL(path, BASE).toString(), { method, data: body, failOnStatusCode: false, headers });
   const text = await r.text();
   try {
-    return { status: r.status(), body: JSON.parse(text) };
+    return { status: r.status(), body: parse(text) };
   } catch {
     return { status: r.status(), body: text };
   }
