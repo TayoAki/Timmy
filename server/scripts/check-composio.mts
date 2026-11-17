@@ -56,6 +56,14 @@ const TOOLS: Record<string, Record<string, string[]>> = {
     GOOGLEDRIVE_GET_DOCUMENT: ['document_id'],
     GOOGLEDRIVE_GET_SPREADSHEET_VALUES: ['spreadsheet_id', 'range'],
     GOOGLEDRIVE_GET_PRESENTATION: ['presentation_id', 'fields'],
+    // The nightly look for files thrown away or gone without an announcement.
+    GOOGLEDRIVE_GET_FILE_METADATA: ['fileId', 'fields'],
+  },
+  // OneDrive is only read: whose drive it is, its list of changes, and a file's bytes to read a Word, Excel or PowerPoint file.
+  one_drive: {
+    ONE_DRIVE_LIST_DRIVES: ['select'],
+    ONE_DRIVE_LIST_ROOT_DRIVE_CHANGES: ['top', 'select', 'token'],
+    ONE_DRIVE_DOWNLOAD_FILE: ['item_id', 'file_name', 'drive_id'],
   },
 };
 
@@ -65,6 +73,7 @@ const TRIGGERS: Record<string, Record<string, string[]>> = {
   googlecalendar: { GOOGLECALENDAR_GOOGLE_CALENDAR_EVENT_SYNC_TRIGGER: ['calendarId'] },
   outlook: { OUTLOOK_MESSAGE_TRIGGER: [], OUTLOOK_SENT_MESSAGE_TRIGGER: [], OUTLOOK_EVENT_CHANGE_TRIGGER: [] },
   googledrive: { GOOGLEDRIVE_FILE_CREATED_TRIGGER: [], GOOGLEDRIVE_FILE_UPDATED_TRIGGER: [], GOOGLEDRIVE_FILE_DELETED_OR_TRASHED_TRIGGER: [] },
+  one_drive: { ONE_DRIVE_FILE_CREATED_TRIGGER: [], ONE_DRIVE_ITEM_UPDATED_TRIGGER: [], ONE_DRIVE_ITEM_DELETED_TRIGGER: [] },
 };
 
 /** A few argument types the code depends on. A change here once went unnoticed (send_updates was yes/no, then a word). */
@@ -86,6 +95,11 @@ const TYPES: Record<string, Record<string, string>> = {
   OUTLOOK_GET_CALENDAR_VIEW: { select: 'array', top: 'integer', orderby: 'string' },
   OUTLOOK_CALENDAR_CREATE_EVENT: { attendees_info: 'array', body: 'string', is_html: 'boolean' },
   OUTLOOK_UPDATE_CALENDAR_EVENT: { attendees: 'array', body: 'object' },
+  // OneDrive's list of changes takes its link back as text and the fields as one comma-separated text; the download names its file.
+  ONE_DRIVE_LIST_ROOT_DRIVE_CHANGES: { top: 'integer', select: 'string', token: 'string' },
+  ONE_DRIVE_LIST_DRIVES: { select: 'string' },
+  ONE_DRIVE_DOWNLOAD_FILE: { item_id: 'string', file_name: 'string', drive_id: 'string' },
+  GOOGLEDRIVE_GET_FILE_METADATA: { fileId: 'string', fields: 'string' },
 };
 
 interface Listed {

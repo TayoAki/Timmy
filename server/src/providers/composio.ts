@@ -3,6 +3,8 @@ import { Composio } from '@composio/core';
 import { config } from '../config';
 import { newId } from '../lib/ids';
 import { htmlToText } from '../sync/message';
+import { DownloadRefused, fetchFileBytes } from './composio-download';
+import { fakeFileTool } from './fake-files';
 
 /**
  * The one door to Composio. The API key lives in this module and is handed to
@@ -50,6 +52,11 @@ export interface ComposioProvider {
   ensureWebhook(url: string): Promise<{ secret?: string }>;
   /** Checks the signature and returns the event. Throws when the signature is wrong or stale. */
   parseWebhook(headers: Headers, rawBody: string, secret: string): ProviderEvent;
+  /**
+   * The bytes of a file a tool handed back as an address (OneDrive's download). Throws DownloadRefused when the
+   * address is not one Timmy fetches from or the file is larger than `maxBytes`.
+   */
+  download(url: string, maxBytes: number): Promise<Uint8Array>;
 }
 
 /* ───────────── Webhook signatures (shared by the real and the fake provider) ───────────── */
@@ -105,7 +112,9 @@ export function managedAuthConfig(toolkit: string): { name: string; scopes?: str
 class RealComposio implements ComposioProvider {
   // Every toolkit runs at the version pinned in config. A tool from a toolkit with no pinned version is refused
   // by the client, so nothing ever runs at "whatever is newest".
-  private client = new Composio({ apiKey: config.composio.apiKey, toolkitVersions: config.composio.toolkitVersions });
+  // Files are never fetched or written to disk by the client on its own: a tool's file comes back as an address,
+  // which `download` checks before fetching (OneDrive's reader depends on this; it is the client's default too).
+  private client = new Composio({ apiKey: config.composio.apiKey, toolkitVersions: config.composio.toolkitVersions, dangerouslyAllowAutoUploadDownloadFiles: false });
   private authConfigs = new Map<string, string>();
 
   /** The auth config for a toolkit: the id from config when set, else Composio's managed OAuth app. */
@@ -175,6 +184,10 @@ class RealComposio implements ComposioProvider {
     const id = verifyWebhookSignature(headers, rawBody, secret);
     return eventFrom(id, rawBody);
   }
+
+  async download(url: string, maxBytes: number): Promise<Uint8Array> {
+    return fetchFileBytes(url, maxBytes, config.composio.fileHosts);
+  }
 }
 
 /* ───────────── The fake provider ───────────── */
@@ -218,6 +231,15 @@ export interface FakeFile {
   /** What the file says: a doc's text (blank lines split paragraphs), a sheet's rows, or a deck's slides. */
   text?: string;
   rows?: (string | number)[][];
+  /** When it was shared with the person (Drive's sharedWithMeTime), for a file someone else owns. */
+  sharedAt?: string;
+  /** OneDrive: the file's own bytes, when a test needs exact ones (a damaged file); else built from `text` or `rows`. */
+  bytes?: Uint8Array;
+  /** OneDrive: the size the drive reports, when it should differ from the bytes' own. */
+  size?: number;
+  /** OneDrive: the number of the change that last touched it, and whether that change deleted it. */
+  seq?: number;
+  deleted?: boolean;
 }
 
 /** An event on a stand-in calendar. Google Calendar and Outlook accounts keep the same list and show it in their own shapes. */
@@ -254,6 +276,8 @@ export interface FakeMailbox {
   labels: Map<string, string>;
   /** Drive only: the files in the account. */
   files: FakeFile[];
+  /** OneDrive only: the next list of changes answers that its link has expired, as Microsoft's sometimes does. */
+  resyncRequired?: boolean;
 }
 
 /**
@@ -274,6 +298,10 @@ export class FakeComposio implements ComposioProvider {
   nextAddress = '';
   /** Files handed over with `stageFile`, by the key each was given, with the tool it was handed over for. */
   staged = new Map<string, { toolSlug: string; toolkit: string; bytes: Uint8Array }>();
+  /** Files handed back by a download tool, by the address given for each. */
+  downloads = new Map<string, { bytes: Uint8Array; connectedAccountId: string }>();
+  /** The number of the last change made in a stand-in drive. */
+  fileSeq = 0;
 
   reset() {
     this.accounts.clear();
@@ -282,6 +310,30 @@ export class FakeComposio implements ComposioProvider {
     this.failNext.clear();
     this.nextAddress = '';
     this.staged.clear();
+    this.downloads.clear();
+  }
+
+  /** Puts a downloaded file in the stand-in store, at an address on Composio's own store host. */
+  stash(connectedAccountId: string, bytes: Uint8Array): string {
+    const url = `https://storage.composio.dev/fake/downloads/${newId('dl')}`;
+    this.downloads.set(url, { bytes, connectedAccountId });
+    return url;
+  }
+
+  /** What the real provider's download does, from the stand-in store: a larger file than asked for is refused. */
+  async download(url: string, maxBytes: number): Promise<Uint8Array> {
+    const held = this.downloads.get(url);
+    this.calls.push({ slug: 'FILES_DOWNLOAD', args: { url }, connectedAccountId: held?.connectedAccountId ?? '' });
+    if (!held) throw new DownloadRefused('the file store answered 404');
+    if (held.bytes.length > maxBytes) throw new DownloadRefused('the file is larger than Timmy reads');
+    return held.bytes;
+  }
+
+  /** Changes a stand-in file as a person would in the drive itself; the drive's list of changes then carries it. */
+  changeFile(connectedAccountId: string, id: string, patch: Partial<FakeFile>): FakeFile {
+    const f = this.accounts.get(connectedAccountId)?.files.find((x) => x.id === id);
+    if (!f) throw new Error('no such fake file');
+    return Object.assign(f, patch, { seq: ++this.fileSeq });
   }
 
   /**
@@ -393,7 +445,7 @@ export class FakeComposio implements ComposioProvider {
   addFile(connectedAccountId: string, f: Partial<FakeFile> & { name: string }): FakeFile {
     const box = this.accounts.get(connectedAccountId);
     if (!box) throw new Error('no such fake account');
-    const file: FakeFile = { id: f.id ?? newId('file'), name: f.name, mimeType: f.mimeType ?? 'application/vnd.google-apps.document', modifiedTime: f.modifiedTime ?? new Date().toISOString(), owner: f.owner ?? box.address, trashed: f.trashed, link: f.link, text: f.text, rows: f.rows };
+    const file: FakeFile = { id: f.id ?? newId('file'), name: f.name, mimeType: f.mimeType ?? 'application/vnd.google-apps.document', modifiedTime: f.modifiedTime ?? new Date().toISOString(), owner: f.owner ?? box.address, trashed: f.trashed, link: f.link, text: f.text, rows: f.rows, sharedAt: f.sharedAt, bytes: f.bytes, size: f.size, seq: ++this.fileSeq };
     box.files = [...box.files.filter((x) => x.id !== file.id), file];
     return file;
   }
@@ -886,6 +938,10 @@ export class FakeComposio implements ComposioProvider {
         let list = [...box.files].sort((a, b) => b.modifiedTime.localeCompare(a.modifiedTime));
         if (since) list = list.filter((f) => new Date(f.modifiedTime).getTime() > new Date(since).getTime());
         if (/trashed = false/.test(q)) list = list.filter((f) => !f.trashed);
+        if (/trashed = true/.test(q)) list = list.filter((f) => f.trashed);
+        // Files someone else owns and shared with the person, most recently shared first when asked that way.
+        if (/sharedWithMe = true/.test(q)) list = list.filter((f) => f.owner !== box.address);
+        if (/^sharedWithMeTime desc$/.test(String(args.orderBy ?? ''))) list.sort((a, b) => (b.sharedAt ?? b.modifiedTime).localeCompare(a.sharedAt ?? a.modifiedTime));
         if (/mimeType != 'application\/vnd\.google-apps\.folder'/.test(q)) list = list.filter((f) => f.mimeType !== 'application/vnd.google-apps.folder');
         const page = list.slice(start, start + max);
         const wire = (f: FakeFile) => ({ id: f.id, name: f.name, mimeType: f.mimeType, modifiedTime: f.modifiedTime, createdTime: f.modifiedTime, trashed: !!f.trashed, webViewLink: f.link ?? `https://docs.google.com/document/d/${f.id}/edit`, shared: f.owner !== box.address, owners: [{ displayName: f.owner.split('@')[0], emailAddress: f.owner }] });
@@ -910,7 +966,8 @@ export class FakeComposio implements ComposioProvider {
         return ok({ title: f.name, slides: (f.text ?? '').split('\n\n').map((slide) => ({ pageElements: [{ shape: { text: { textElements: [{ textRun: { content: slide } }] } } }] })) });
       }
       default:
-        return { successful: false, data: {}, error: `The fake provider has no tool called ${slug}` };
+        // OneDrive, and the Drive tools only the nightly check uses, are answered in fake-files.ts.
+        return fakeFileTool(this, who.connectedAccountId, box, slug, args) ?? { successful: false, data: {}, error: `The fake provider has no tool called ${slug}` };
     }
   }
 

@@ -28,6 +28,15 @@ export async function meter(workspaceId: string, op: string, phase: Phase, ok: b
 }
 
 /**
+ * The only tools Timmy runs on the apps it just reads. Any other tool on such an account is refused here, before
+ * anything reaches Composio, so no mistake elsewhere in the code can write to someone's files.
+ */
+export const READ_ONLY_TOOLS: Record<string, ReadonlySet<string>> = {
+  googledrive: new Set(['GOOGLEDRIVE_GET_ABOUT', 'GOOGLEDRIVE_FIND_FILE', 'GOOGLEDRIVE_GET_FILE_METADATA', 'GOOGLEDRIVE_GET_DOCUMENT', 'GOOGLEDRIVE_GET_SPREADSHEET_VALUES', 'GOOGLEDRIVE_GET_PRESENTATION']),
+  one_drive: new Set(['ONE_DRIVE_LIST_DRIVES', 'ONE_DRIVE_LIST_ROOT_DRIVE_CHANGES', 'ONE_DRIVE_DOWNLOAD_FILE']),
+};
+
+/**
  * Runs one Composio tool on a workspace's connection. The connection is looked
  * up inside the workspace's own scope, so a connection id from another
  * workspace finds nothing.
@@ -35,6 +44,8 @@ export async function meter(workspaceId: string, op: string, phase: Phase, ok: b
 export async function callTool(workspaceId: string, connectionId: string, slug: string, args: Record<string, unknown>, phase: Phase): Promise<ToolResult> {
   const conn = await connectionById(workspaceId, connectionId);
   if (!conn || conn.status !== 'active' || !conn.connected_account_id) return { successful: false, data: {}, error: 'This app is not connected.' };
+  const readOnly = Object.hasOwn(READ_ONLY_TOOLS, conn.toolkit) ? READ_ONLY_TOOLS[conn.toolkit] : undefined;
+  if (readOnly && !readOnly.has(slug)) return { successful: false, data: {}, error: 'Timmy only reads this app; that tool is not one it uses.' };
   const started = Date.now();
   try {
     const res = await composio().execute(slug, args, { userId: conn.composio_user_id, connectedAccountId: conn.connected_account_id });

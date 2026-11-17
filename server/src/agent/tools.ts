@@ -14,12 +14,13 @@ import type { ToolDef } from '../providers/model';
 import { actorOf, emailOf, type Ctx } from '../state/engine';
 import { mutate, readState } from '../state/mutate';
 import { findPeople, openCommitments } from '../ontology/ontology';
-import { readFileText } from '../sync/files';
 import { readPage, searchPages } from './pages';
 import { BOX_WORDS, filingProposal, isBox } from '../sync/labels';
 import { LostLease } from './errors';
 import { untrusted } from './prompts';
 import { findThingsTool } from './things-tool';
+// Finding and reading the person's files (Google Drive and OneDrive) live in their own module.
+import { readFile, searchFiles } from './file-tools';
 
 export interface ToolRun {
   ctx: Ctx;
@@ -132,39 +133,6 @@ const readThread: AgentTool = {
   },
 };
 
-const searchFiles: AgentTool = {
-  kind: 'read',
-  step: 'Looking through your files',
-  def: {
-    name: 'search_files',
-    description:
-      'Search the names of the files in the user’s connected Google Drive. Returns each match’s name, what kind of file it is, who owns it, when it last changed, a link to open it, and a `file` value for read_file. Only names are searched, not contents.',
-    parameters: { type: 'object', properties: { query: { type: 'string', description: 'Words from the file’s name' }, limit: { type: 'integer', description: 'How many results, 1-20. Default 8.' } }, required: ['query'] },
-  },
-  async run(args, t) {
-    const query = str(args.query, 200).trim();
-    const limit = Math.min(Math.max(Number(args.limit ?? 8), 1), 20);
-    const words = containsAny(query);
-    // Nothing searchable was given: an empty answer, not every file there is.
-    if (!words.length) return { result: untrusted('files', { query, results: [] }), outside: true };
-    const rows = await withWorkspace({ workspaceId: t.ctx.workspaceId }, async (tx) => {
-      // Files matching every word come first, then files matching any of them; newest first among equals.
-      const { rows } = await tx.query(
-        `select i.external_id, i.subject, i.snippet, i.sender, i.occurred_at, i.meta->>'link' as link, i.meta->>'ownerName' as owner_name,
-                (select count(*) from unnest($2::text[]) w where i.subject ilike w) as hits
-         from item i
-         where i.workspace_id = $1 and i.kind = 'file' and ${FROM_A_CONNECTED_MAILBOX} and i.subject ilike any($2::text[])
-         order by hits desc, i.occurred_at desc limit $3`,
-        [t.ctx.workspaceId, words, limit],
-      );
-      return rows;
-    });
-    const results = rows.map((r) => ({ name: r.subject, kind: r.snippet, owner: r.owner_name || r.sender || undefined, changed: new Date(r.occurred_at).toISOString(), link: r.link ?? undefined, file: r.external_id }));
-    // File names are written by whoever made or shared the file, so they are outside content like mail is.
-    return { result: untrusted('files', { query, results }), outside: true };
-  },
-};
-
 const searchPagesTool: AgentTool = {
   kind: 'read',
   step: 'Looking through your pages',
@@ -194,24 +162,6 @@ const readPageTool: AgentTool = {
     if (!page) return { result: 'There is no page with that id (it may be in the trash).' };
     // Pages are typed and pasted by people; what they say is information, never instructions.
     return { result: untrusted('page', { name: page.name, text: page.text, cut_off: page.truncated }), outside: true };
-  },
-};
-
-const readFile: AgentTool = {
-  kind: 'read',
-  step: 'Reading the file',
-  def: {
-    name: 'read_file',
-    description:
-      'Read what a file in the user’s Google Drive says. Works for Google Docs, Sheets (the first sheet’s first 200 rows) and Slides; other kinds can’t be opened yet. Takes the `file` value from search_files. Long files are cut off, and the result says so.',
-    parameters: { type: 'object', properties: { file: { type: 'string', description: 'The `file` value from search_files' } }, required: ['file'] },
-  },
-  async run(args, t) {
-    const out = await readFileText(t.ctx.workspaceId, str(args.file, 200));
-    // The reason can carry the file's name, which whoever shared the file chose: it is outside content too.
-    if (!out.ok) return { result: untrusted('file', { could_not_read: out.reason }), outside: true };
-    // A file's contents are written by whoever wrote the file: information, never instructions.
-    return { result: untrusted('file', { name: out.name, kind: out.kind, text: out.text, cut_off: out.truncated }), outside: true };
   },
 };
 

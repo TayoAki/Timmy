@@ -13,7 +13,9 @@ import { syncCalendar } from '../sync/calendar';
 import { purgeDeletedWorkspaces } from '../db/purge';
 import { forgetAbandonedUploads, removeWorkspaceFiles } from '../files/assets';
 import { closeOrphanedConnections, purgeConnection, revokeAtProvider } from '../sync/connect';
-import { removeFile, syncFiles } from '../sync/files';
+import { checkFiles, removeFile } from '../sync/files';
+import { FILE_TOOLKITS, syncFileList } from '../sync/file-sources';
+import { indexFileTexts } from '../sync/file-text';
 import { backfillMail, ingestThread, reconcileMail } from '../sync/ingest';
 import { MAIL_TOOLKITS } from '../sync/mailbox';
 import { checkMailbox, checkWorkspaceMailboxes } from '../sync/mailbox-check';
@@ -162,23 +164,39 @@ export function registerJobs() {
     }
   });
 
-  // The list of Drive files: a pass that didn't finish carries on in a new job from where it stopped.
+  // The list of Drive or OneDrive files: a pass that didn't finish carries on in a new job from where it stopped.
+  // A finished one is followed by reading what the new and changed files say.
   defineJob('files.sync', async (d) => {
-    const p = await syncFiles(String(d.workspaceId), String(d.connectionId));
+    const p = await syncFileList(String(d.workspaceId), String(d.connectionId));
     if (p.files) learn(String(d.workspaceId));
     if (!p.done) enqueueSoon('files.sync', d);
+    else enqueueSoon('files.text', { workspaceId: d.workspaceId, connectionId: d.connectionId }, { singletonKey: `ftext:${String(d.connectionId)}` });
+  });
+
+  // What files say, so Ask can search it: a bounded number per pass; what is left waits a little and goes on.
+  defineJob('files.text', async (d) => {
+    const p = await indexFileTexts(String(d.workspaceId), String(d.connectionId));
+    if (p.more) enqueueSoon('files.text', { workspaceId: d.workspaceId, connectionId: d.connectionId }, { startAfter: 120, singletonKey: `ftext:${String(d.connectionId)}` });
+  });
+
+  // Files trashed or gone without an announcement leave the list, in bounded batches (Drive; OneDrive's own list of changes carries deletions).
+  defineJob('files.check', async (d) => {
+    await checkFiles(String(d.workspaceId), String(d.connectionId));
   });
 
   defineJob('files.remove', async (d) => {
     await removeFile(String(d.workspaceId), String(d.connectionId), String(d.fileId));
   });
 
-  // Drive's triggers can be missed like any other; once a night every connected Drive is listed again from its last finished pass.
+  // Drive's and OneDrive's triggers can be missed like any other; once a night every connected one is listed again from its last finished pass.
   defineJob(
     'files.sync.all',
     async () => {
-      const { rows } = await sysPool.query(`select id, workspace_id from connection where status = 'active' and toolkit = 'googledrive'`);
-      for (const c of rows) enqueueSoon('files.sync', { workspaceId: c.workspace_id, connectionId: c.id }, { singletonKey: `files:${c.id}` });
+      const { rows } = await sysPool.query(`select id, workspace_id, toolkit from connection where status = 'active' and toolkit = any($1::text[])`, [FILE_TOOLKITS]);
+      for (const c of rows) {
+        enqueueSoon('files.sync', { workspaceId: c.workspace_id, connectionId: c.id }, { singletonKey: `files:${c.id}` });
+        if (c.toolkit === 'googledrive') enqueueSoon('files.check', { workspaceId: c.workspace_id, connectionId: c.id }, { singletonKey: `fcheck:${c.id}` });
+      }
     },
     '17 3 * * *',
   );
