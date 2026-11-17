@@ -215,8 +215,13 @@ describe('decisions', () => {
     expect(out.ok).toBe(true);
     expect((await card())!.chosen).toMatchObject({ option: 'o1' });
     const job = jobs().queue.find((j) => j.name === 'draft.make')!;
-    expect(String(job.data.note)).toBe('I have decided: Hold the price. The question was: Should we hold the price or drop it to match the competitor? Write the reply that tells them my decision.');
+    // The choice travels as the question and the answer, not as a note in the person's name: their words were written
+    // by a model reading the email, so the drafting step gets them as outside content.
+    expect(job.data.note).toBeUndefined();
+    expect(job.data.decided).toEqual({ question: 'Should we hold the price or drop it to match the competitor?', answer: 'Hold the price' });
     await jobs().drain();
+    const prompt = model().requests.filter((r) => r.route === 'draft').at(-1)!.messages.map((m) => m.content).join('\n');
+    expect(prompt).toMatch(/<untrusted source="decision">[^]*Hold the price[^]*<\/untrusted>/);
     expect((await thread()).draft).toMatchObject({ kind: 'reply' });
     expect(fake().sent(box.account)).toHaveLength(0);
     expect(await rows(`select 1 from effect where workspace_id = $1 and kind like 'email.%'`, [w.workspaceId])).toEqual([]);

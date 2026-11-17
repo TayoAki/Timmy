@@ -58,6 +58,12 @@ export interface DraftOptions {
   userName?: string;
   /** Nobody asked for this draft: the morning run is preparing it. */
   unattended?: boolean;
+  /**
+   * The answer the person picked on a decision card. Which answer it was is the person's choice, but the words of the
+   * question and the answer were written by a model reading someone else's email, so they reach the drafting model
+   * as outside content, never as the person's note.
+   */
+  decided?: { question: string; answer: string };
 }
 
 const FAILED = 'Timmy couldn’t write that draft. Try again in a moment.';
@@ -142,7 +148,10 @@ export async function draftReply(workspaceId: string, threadId: string, opts: Dr
   if (!to) return { ok: false, reason: 'There is nobody to reply to on that thread.', why: 'thread' };
 
   const note = opts.note?.trim();
-  const out = await ask(workspaceId, DRAFT_SYSTEM, [note ? `The user's note on what to say: ${note.slice(0, 2000)}` : 'The user gave no note. Reply to what the last message asks.', threadData(thread, to)], opts);
+  const decided = opts.decided
+    ? [`The user picked an answer to a question in this thread. The question and the answer they picked are below, worded from the email, not by the user. Write the reply that tells them the user's decision. Do not add anything the user did not pick.`, untrusted('decision', { question: opts.decided.question.slice(0, 200), answer: opts.decided.answer.slice(0, 120) })]
+    : [];
+  const out = await ask(workspaceId, DRAFT_SYSTEM, [note ? `The user's note on what to say: ${note.slice(0, 2000)}` : decided.length ? 'The user gave no note of their own.' : 'The user gave no note. Reply to what the last message asks.', ...decided, threadData(thread, to)], opts);
   if ('reason' in out) return { ok: false, reason: out.reason, why: out.why };
   const body = typeof out.parsed.body === 'string' ? out.parsed.body.trim() : '';
   if (!body) return { ok: false, reason: FAILED, why: 'model' };
@@ -151,8 +160,10 @@ export async function draftReply(workspaceId: string, threadId: string, opts: Dr
   const draft: Draft = { to: [to], subject: reSubject(thread), body, sources: [], kind: 'reply', ...(trackAs ? { trackAs } : {}) };
   // A note from the person means "rewrite it", so their draft is replaced. A draft nobody asked for (the morning
   // run, an automation) never replaces one that is already there, whatever it was told to say.
-  const asked = !!note && !opts.unattended;
-  return save(workspaceId, threadId, draft, asked ? `Timmy drafted a reply from your words: “${note.slice(0, 120)}”` : 'Timmy drafted a reply', asked);
+  // Picking an answer on a decision card is the person asking too, as it was when the answer travelled as a note.
+  const asked = (!!note || !!opts.decided) && !opts.unattended;
+  const what = note ? `Timmy drafted a reply from your words: “${note.slice(0, 120)}”` : opts.decided ? 'Timmy drafted the reply that gives your decision' : 'Timmy drafted a reply';
+  return save(workspaceId, threadId, draft, asked ? what : 'Timmy drafted a reply', asked);
 }
 
 /** The date a wait runs out: the one that was set, or the default counted from when the wait began. */

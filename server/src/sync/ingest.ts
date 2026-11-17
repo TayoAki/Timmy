@@ -234,7 +234,8 @@ async function storeMessages(tx: Tx, state: State, workspaceId: string, conn: Co
  */
 export function noteLeadMail(state: State, fresh: MailMessage[]): State {
   if (!fresh.length) return state;
-  const byEmail = new Map(Object.values(state.out.leads).map((l) => [l.email.toLowerCase(), l]));
+  // A lead with no address in a usable form is skipped here: one bad record must never stop mail being stored.
+  const byEmail = new Map(Object.values(state.out.leads).filter((l) => typeof l.email === 'string').map((l) => [l.email.toLowerCase(), l]));
   if (!byEmail.size) return state;
   const have = new Set(state.out.messages.map((m) => m.id));
   let leads = state.out.leads;

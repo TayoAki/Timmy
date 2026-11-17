@@ -88,9 +88,42 @@ export function writeAt<S>(state: S, path: string[], value: unknown): S {
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 
-/** Dates travel as ISO strings and come back as Dates, the same way the browser's saved state does. */
-export const toWire = (value: unknown): string => JSON.stringify(value);
-export const fromWire = <T = unknown>(text: string): T => JSON.parse(text, (_k, v) => (typeof v === 'string' && ISO_DATE.test(v) ? new Date(v) : v)) as T;
+/**
+ * Dates travel tagged, as {"$date": "2026-11-17T09:00:00.000Z"}, and only a tag comes back as a Date. Text never
+ * does, whatever it looks like: an email whose subject is exactly a timestamp stays a subject. (Until Nov 17, 2026
+ * every string shaped like a timestamp came back as a Date, so outside text could put a Date where the screens
+ * expect words, and blank them.)
+ */
+const TAG = '$date';
+const HAS_TAG = /\{\s*"\$date"\s*:/;
+
+/**
+ * Data written before dates were tagged still has them as plain strings. Such data has no tag anywhere in it,
+ * and in it, and only in it, a timestamp is read as a date under the names below, which have only ever held dates.
+ */
+const DATE_FIELDS = new Set(['added', 'at', 'callbackAt', 'created', 'createdAt', 'date', 'day', 'due', 'end', 'finish', 'finishedAt', 'firstReplyAt', 'last', 'lastSeen', 'launched', 'next', 'nextAt', 'receivedAt', 'sendsAt', 'since', 'start', 'trashed', 'until', 'updated', 'wakeAt']);
+
+export const toWire = (value: unknown): string =>
+  JSON.stringify(value, function (this: Record<string, unknown>, key, v: unknown) {
+    // A Date has already been turned into its string by the time it gets here; the holder still has the Date.
+    const raw = this[key];
+    if (raw instanceof Date) return Number.isNaN(raw.getTime()) ? null : { [TAG]: raw.toISOString() };
+    return v;
+  });
+
+export const fromWire = <T = unknown>(text: string): T => {
+  const legacy = !HAS_TAG.test(text);
+  return JSON.parse(text, (k, v: unknown) => {
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      const o = v as Record<string, unknown>;
+      const keys = Object.keys(o);
+      if (keys.length === 1 && keys[0] === TAG && typeof o[TAG] === 'string' && ISO_DATE.test(o[TAG] as string)) return new Date(o[TAG] as string);
+      return v;
+    }
+    if (legacy && typeof v === 'string' && DATE_FIELDS.has(k) && ISO_DATE.test(v)) return new Date(v);
+    return v;
+  }) as T;
+};
 export const viaWire = <T>(value: T): T => fromWire<T>(toWire(value));
 
 /**

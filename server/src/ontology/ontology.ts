@@ -172,6 +172,18 @@ export interface Commitment {
 
 export const words = (t: string) => t.toLowerCase().replace(/[\s ]+/g, ' ').replace(/[“”]/g, '"').replace(/[‘’]/g, "'").trim();
 
+const escaped = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * True when the value is in the text whole, give or take capitals, spacing and curly quotes: not as a piece of a
+ * longer word or number. "$25" is not in "$250,000", "2026-1" is not in "2026-12-15", "Ann" is not in "Annual".
+ */
+export const standsAlone = (text: string, value: string): boolean => {
+  const v = words(value);
+  if (!v) return false;
+  return new RegExp(`(?<![\\p{L}\\p{N}]|\\p{N}[.,])${escaped(v)}(?![\\p{L}\\p{N}]|[.,]\\p{N})`, 'u').test(words(text));
+};
+
 /** True when the quote is really in the text, give or take spacing and curly quotes. A model's paraphrase is not a quote. */
 export const quoted = (text: string, quote: string) => quote.trim().length >= 8 && words(text).includes(words(quote));
 

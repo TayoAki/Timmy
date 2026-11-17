@@ -4,7 +4,7 @@
  * can be shown on a screen and handed back to a model without being trusted: each is one short line of plain
  * text, or it is nothing.
  */
-import { words } from './ontology';
+import { standsAlone, words } from './ontology';
 
 /** The most characters a kind's name, a field's name, a value and a stored sentence may have. */
 export const MAX_NAME = 40;
@@ -45,8 +45,8 @@ export function kindKey(name: string): string {
 /** "Close date" → "close_date". */
 export const fieldKey = (label: string) => label.toLowerCase().replace(/['’]/g, '').replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_+|_+$/g, '');
 
-/** True when the value is really somewhere in the text, give or take capitals, spacing and curly quotes. */
-export const appears = (text: string, value: string) => words(value).length > 0 && words(text).includes(words(value));
+/** True when the value is really somewhere in the text, whole (not part of a longer word or number), give or take capitals, spacing and curly quotes. */
+export const appears = (text: string, value: string) => standsAlone(text, value);
 
 /** What makes two sightings the same thing: the naming value without capitals, spacing or punctuation. "Acme, Inc." is "acme inc". */
 export const sameAs = (value: string) => words(value).replace(/[.,;:!?'"()]+/g, '').replace(/\s+/g, ' ').trim();

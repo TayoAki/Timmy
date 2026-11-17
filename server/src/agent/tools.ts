@@ -208,7 +208,8 @@ const readFile: AgentTool = {
   },
   async run(args, t) {
     const out = await readFileText(t.ctx.workspaceId, str(args.file, 200));
-    if (!out.ok) return { result: out.reason };
+    // The reason can carry the file's name, which whoever shared the file chose: it is outside content too.
+    if (!out.ok) return { result: untrusted('file', { could_not_read: out.reason }), outside: true };
     // A file's contents are written by whoever wrote the file: information, never instructions.
     return { result: untrusted('file', { name: out.name, kind: out.kind, text: out.text, cut_off: out.truncated }), outside: true };
   },

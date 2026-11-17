@@ -34,6 +34,7 @@ Reply with JSON only: {"decision":"approve"|"ask","reason":"one short sentence"}
 export function untrusted(source: string, body: unknown): string {
   const text = typeof body === 'string' ? body : JSON.stringify(body);
   // The content must not be able to close the wrapper (or open a new one) and continue as if it were outside it.
-  const sealed = text.replace(/<(\/?)\s*(untrusted|context|system)\b/gi, '<\u200b$1$2');
+  // Any spacing around the slash counts (“</untrusted>”, “< /untrusted>”, a line break inside the tag).
+  const sealed = text.replace(/<\s*(\/?)\s*(untrusted|context|system)\b/gi, '<\u200b$1$2');
   return `<untrusted source="${source.replace(/[^a-z0-9_-]/gi, '')}">\n${sealed}\n</untrusted>`;
 }

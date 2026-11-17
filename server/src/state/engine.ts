@@ -20,7 +20,7 @@ import type { Thread } from '../../../src/data/types';
 import type { RoleRules } from '../auth/roles';
 import { withWorkspace, type Tx } from '../db/pool';
 import { cancelHeld, decide, GatewayError, onReplay, propose, type EffectRow } from '../gateway/gateway';
-import { checkWsOps, withClearedFields } from './ws-check';
+import { checkWsOps, leadsProblem, withClearedFields } from './ws-check';
 import { LIVE_DECISION } from '../agent/read';
 import { gateAutomations } from '../automations/gate';
 import { prepareMailSend } from '../gateway/mail';
@@ -291,6 +291,9 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
   }
   // The reducer has no default case: an action it doesn't know returns nothing.
   if (!next) return { state, reject: 'That isn’t a command.' };
+  // Leads are written by many outbound commands (add, import, change); what they produced is checked, whichever it was.
+  const badLead = leadsProblem(state, next);
+  if (badLead) return { state, reject: badLead };
   next = afterDeciding(loaded, ctx, a, state, next);
   return gateSends(tx, loaded, ctx, cmd, state, next);
 }
@@ -307,9 +310,10 @@ function afterDeciding(loaded: Loaded, ctx: Ctx, a: Action, prev: State, next: S
     const now = next.decisions.find((d) => d.id === id);
     const picked = now?.chosen ? now.options.find((o) => o.id === now.chosen!.option) : undefined;
     if (was && !was.chosen && now?.thread && picked && !picked.holds && modelReady()) {
-      // The answer is one the person chose from the card, so it goes to the drafting step as their own words.
-      const note = `I have decided: ${picked.label}. The question was: ${now.title} Write the reply that tells them my decision.`;
-      enqueueSoon('draft.make', { workspaceId: ctx.workspaceId, threadId: now.thread, note, userName: ctx.user.name }, { singletonKey: `draft:${ctx.workspaceId}:${now.thread}` });
+      // Which answer is the person's choice; its words and the question's were written by a model reading the email,
+      // so they go to the drafting step as outside content (see agent/draft.ts), not as the person's note.
+      const decided = { question: now.title, answer: picked.label };
+      enqueueSoon('draft.make', { workspaceId: ctx.workspaceId, threadId: now.thread, decided, userName: ctx.user.name }, { singletonKey: `draft:${ctx.workspaceId}:${now.thread}` });
     }
     return next;
   }

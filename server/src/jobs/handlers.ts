@@ -128,7 +128,8 @@ export function registerJobs() {
     const workspaceId = String(d.workspaceId);
     const thread = (await readState(workspaceId)).state.threads.find((t) => t.id === String(d.threadId));
     if (!thread) return;
-    const out = await draftFor(workspaceId, thread, { note: d.note as string | undefined, userName: d.userName as string | undefined });
+    const decided = d.decided && typeof d.decided === 'object' ? (d.decided as { question: string; answer: string }) : undefined;
+    const out = await draftFor(workspaceId, thread, { note: d.note as string | undefined, userName: d.userName as string | undefined, ...(decided ? { decided } : {}) });
     if (!out.ok) log.warn('no draft written', { workspaceId, reason: out.reason });
   });
 

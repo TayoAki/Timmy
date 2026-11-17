@@ -12,7 +12,7 @@ import { log } from '../lib/log';
 import { BudgetError, complete } from '../providers/model';
 import { mutate, readState } from '../state/mutate';
 import type { Decision } from '../../../src/data/decisions';
-import { noteCommitments, quoted, type Commitment } from '../ontology/ontology';
+import { noteCommitments, quoted, standsAlone, type Commitment } from '../ontology/ontology';
 import { certifiedTypes, noteThings, typesForPrompt } from '../ontology/types';
 import { untrusted } from './prompts';
 
@@ -174,7 +174,8 @@ export function decisionFrom(thread: Thread, raw: ReadOutput['decision'], said: 
   if (!title || options.length < 2) return null;
   const facts = (Array.isArray(raw.facts) ? raw.facts : [])
     .filter((f): f is [string, string, string] => Array.isArray(f) && f.length >= 3 && f.every((x) => typeof x === 'string'))
-    .filter((f) => quoted(said, f[2]))
+    // The sentence must be in the thread, and the figure must be in that sentence: a value the model added is not shown.
+    .filter((f) => quoted(said, f[2]) && standsAlone(f[2], f[1]))
     .slice(0, 4)
     .map((f) => [line(f[0], 40), line(f[1], 60)] as [string, string]);
   const asker = [...thread.messages].reverse().find((m) => m.from !== 'me')?.from;

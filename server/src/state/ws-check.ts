@@ -13,7 +13,7 @@
 import type { State } from '../../../src/state/store';
 import type { AutoEdge, AutoNode, Automation, ChatWidget } from '../../../src/data/ws-types';
 import { KIND } from '../../../src/areas/automations/catalog';
-import { WS_COLLECTIONS } from '../../../src/live/patches';
+import { WS_COLLECTIONS, toWire } from '../../../src/live/patches';
 
 const COLLECTIONS: ReadonlySet<string> = new Set(WS_COLLECTIONS);
 /** Ids made here and by the screens. An id taken from an email address may carry a plus sign. */
@@ -237,6 +237,60 @@ function taskProblem(t: Record<string, unknown>): string | null {
   return null;
 }
 
+/* ───────────── Contacts, calendar entries and leads ───────────── */
+
+const shortText = (v: unknown, max = 300) => v === undefined || text(v, max);
+const isDate = (v: unknown) => v instanceof Date && !Number.isNaN(v.getTime());
+const EVENT_KINDS = new Set(['meeting', 'focus', 'review', 'personal']);
+const EMAIL_SHAPE = /^[^\s@<>]{1,200}@[^\s@<>]{1,200}$/;
+
+/** A contact the People screen and the server's own matching can use: a name and an address in plain text. */
+function contactProblem(c: Record<string, unknown>): string | null {
+  if (!text(c.name, 300) || !(typeof c.email === 'string' && c.email.length <= 320)) return 'A contact needs a name and an email address.';
+  for (const k of ['title', 'company', 'phone', 'location', 'notes']) if (!shortText(c[k], k === 'notes' ? 20_000 : 300)) return 'That contact isn’t in a form Timmy can save.';
+  return null;
+}
+
+/** A calendar entry every screen can draw: a title, a real start and end, and a kind the calendar knows. */
+function eventProblem(e: Record<string, unknown>): string | null {
+  const refused = 'That calendar entry isn’t in a form Timmy can save.';
+  if (!text(e.title, 500) || !isDate(e.start) || !isDate(e.end) || !EVENT_KINDS.has(e.kind as string)) return refused;
+  if (!Array.isArray(e.with) || e.with.length > 200 || !e.with.every((x) => text(x, 320))) return refused;
+  if (!shortText(e.note, 20_000)) return refused;
+  return null;
+}
+
+/** A lead the outbound screens and the mail matching can use. Checked on what an outbound command produced, whichever command it was. */
+export function leadProblem(l: unknown): string | null {
+  const refused = 'That lead isn’t in a form Timmy can save.';
+  if (!plain(l) || typeof l.id !== 'string' || !okId(l.id)) return refused;
+  if (!(typeof l.email === 'string' && (l.email === '' || EMAIL_SHAPE.test(l.email)))) return 'A lead’s email address has to be an address, or left empty.';
+  if (!text(l.first, 200) || !text(l.last, 200) || !text(l.company, 300)) return refused;
+  if (!isDate(l.added)) return refused;
+  if (toWireSize(l) > MAX_RECORD_BYTES) return 'That lead holds too much to save.';
+  return null;
+}
+
+/** The leads an outbound command added or changed, each checked. */
+export function leadsProblem(before: State, after: State): string | null {
+  if (before.out.leads === after.out.leads) return null;
+  for (const [id, lead] of Object.entries(after.out.leads)) {
+    if (Object.hasOwn(before.out.leads, id) && before.out.leads[id] === lead) continue;
+    const bad = leadProblem(lead);
+    if (bad) return bad;
+  }
+  return null;
+}
+
+/**
+ * The most one record may hold, outside pages (which have their own limits) and the website chat's settings. Each
+ * request is already limited; this keeps a workspace's state from growing by one large record after another, since
+ * the whole of it is read into memory when the workspace is opened.
+ */
+export const MAX_RECORD_BYTES = 200_000;
+const toWireSize = (v: unknown) => toWire(v).length;
+const BIG_ALLOWED = new Set(['docs', 'chat']);
+
 /* ───────────── Every change ───────────── */
 
 /**
@@ -255,7 +309,7 @@ export function withClearedFields(ops: unknown): unknown {
 /** The settings on a visitor's conversation that a member may flip. Everything else in it is written by the server. */
 const CHAT_FLAGS = new Set(['unread', 'starred']);
 
-const CHECKS: Partial<Record<string, (item: Record<string, unknown>) => string | null>> = { docs: docProblem, automations: automationProblem, chat: chatProblem, tasks: taskProblem };
+const CHECKS: Partial<Record<string, (item: Record<string, unknown>) => string | null>> = { docs: docProblem, automations: automationProblem, chat: chatProblem, tasks: taskProblem, contacts: contactProblem, events: eventProblem };
 
 /** The record a collection really holds under an id: its own, never something every object has. */
 const ownRecord = (col: Record<string, unknown> | undefined, id: string) => (col && Object.hasOwn(col, id) ? (col[id] as Record<string, unknown>) : null);
@@ -305,6 +359,7 @@ export function checkWsOps(state: State, ops: unknown): string | null {
     if (item) {
       const bad = CHECKS[col]?.(item) ?? null;
       if (bad) return bad;
+      if (!BIG_ALLOWED.has(col) && toWireSize(item) > MAX_RECORD_BYTES) return 'That is too much to keep in one item. Put long text in a page instead.';
       if ('name' in item && item.name !== undefined && !text(item.name, 300)) return 'That name is too long.';
     }
     staged.set(`${col}/${id}`, item);

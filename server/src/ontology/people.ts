@@ -17,7 +17,8 @@ export async function projectPeople(workspaceId: string): Promise<number> {
   const seen = new Set(people.map((p) => p.email));
   return mutate(workspaceId, 'ontology', async (_tx, loaded) => {
     const contacts: Record<string, Contact> = { ...loaded.state.ws.contacts };
-    const byEmail = new Map(Object.values(contacts).map((c) => [c.email.toLowerCase(), c]));
+    // A contact typed in by hand may have no address; it is simply not matched.
+    const byEmail = new Map(Object.values(contacts).filter((c) => typeof c.email === 'string').map((c) => [c.email.toLowerCase(), c]));
     let changed = 0;
     for (const p of people) {
       const cur = byEmail.get(p.email);
