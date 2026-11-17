@@ -193,6 +193,13 @@
    "status": "pass"
   },
   {
+   "id": "api-jobs-queue",
+   "file": "server/test/jobs-queue.test.ts",
+   "covers": "the real job queue (pg-boss, its own schema in the test database): a job queued with a key is not queued again while one with that key is waiting; other keys, other queues and jobs without a key are queued as usual; once the waiting job has run the key can be queued again. (The other tests use the in-process runner, which always honoured keys; the deployed servers did not until this fix.)",
+   "tests": 3,
+   "status": "pass"
+  },
+  {
    "id": "api-chat",
    "file": "server/test/chat.test.ts",
    "covers": "the website chat on a real workspace: the workspace comes only from the site key and the conversation only from a signed token (forged, expired, another conversation’s or another site’s token refused); an unknown key, a chat that is off and a workspace with sending switched off all answer the same; replies come from the chat’s own rules with no model call; every reply is an effect record approved by the rule set when an owner or admin switched the chat on, and nothing is shown without one (a database trigger refuses it); a reply is shown once; switching on needs an owner or admin and a website, and only they change settings while it is on; the frame may be embedded only by the named site; a visitor’s text is stored and shown as text; leads from chats never overwrite a lead from elsewhere; take over stops Timmy; limits per visitor, address, conversation and day; streams bounded; retention deletes old conversations; nothing across workspaces",
