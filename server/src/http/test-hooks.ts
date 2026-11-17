@@ -53,6 +53,16 @@ export function testRoutes(app: Hono<Env>): void {
       fake.nextAddress = String(body.address);
       return c.json({ ok: true });
     }
+    // The permissions the next account connected allows, once: Outlook was once connected for mail only.
+    if (body.op === 'scopes') {
+      fake.nextScopes = Array.isArray(body.scopes) ? body.scopes.map(String) : null;
+      return c.json({ ok: true });
+    }
+    // Lets time pass for the mailbox's last look, as if it had been made this many minutes ago.
+    if (body.op === 'looked-ago') {
+      await withWorkspace({ workspaceId: ctx.workspaceId }, (tx) => tx.query(`update sync_cursor set started_at = now() - make_interval(mins => $2) where workspace_id = $1 and kind = 'changes'`, [ctx.workspaceId, Number(body.minutes ?? 0)]));
+      return c.json({ ok: true });
+    }
     // What the stand-in calendar (Google's or Outlook's) holds for this workspace, so a test can see what was created,
     // changed or deleted there, and who was told. `calendar-event` puts an event on it, as if made in the calendar itself,
     // and has the provider announce it.
@@ -145,6 +155,14 @@ export function testRoutes(app: Hono<Env>): void {
     }
     // Looks at the mailbox for what the person changed there, now, instead of waiting for the next scheduled look.
     if (body.op === 'check-mailbox') return c.json({ checked: await checkMailbox(ctx.workspaceId, conn.id) });
+    // The stand-in Outlook mailbox loses its Archive folder, as some older Microsoft 365 mailboxes have none; the
+    // folders Timmy looked up are forgotten, so the next listing finds it missing. `folders` lists those Timmy made.
+    if (body.op === 'no-archive') {
+      fake.accounts.get(conn.connected_account_id)!.noArchive = true;
+      await withWorkspace({ workspaceId: ctx.workspaceId }, (tx) => tx.query(`update connection set meta = meta - 'folders' where id = $1 and workspace_id = $2`, [conn.id, ctx.workspaceId]));
+      return c.json({ ok: true });
+    }
+    if (body.op === 'folders') return c.json({ folders: Object.fromEntries(fake.accounts.get(conn.connected_account_id)!.folders ?? []) });
     if (body.op === 'fail') {
       fake.failNext.set(String(body.slug), body.mode as 'error');
       return c.json({ ok: true });

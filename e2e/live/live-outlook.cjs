@@ -23,10 +23,25 @@ run('live-outlook', async (browser) => {
   const before = await card.innerText();
   ok(/Reads\s+Outlook mail and calendar/.test(before) && /events you add, change or delete in Timmy/.test(before) && !/OneDrive/.test(before), 'the Outlook card says it reads Outlook mail and the calendar, and does not promise OneDrive');
 
+  // An account connected before Timmy asked Microsoft for the calendar allows mail only. Timmy finds out on its first
+  // read of the calendar, stops asking, and the card says what to do.
+  const refusedWords = /Outlook was connected without permission to read your calendar\. Disconnect it and connect it again so Timmy can read the calendar\./;
+  await api(page, 'POST', '/api/test/fake', { op: 'scopes', scopes: ['Mail.ReadWrite', 'Mail.Send', 'User.Read', 'offline_access'] });
+  await connectApp(page, 'Outlook and Microsoft 365', 'katherine@contoso.test');
+  await page.click('button[aria-label="Connections"]');
+  await card.getByRole('button', { name: 'Disconnect' }).waitFor();
+  ok(await until(async () => refusedWords.test(await card.innerText())), 'connected without the calendar, the Outlook card says to connect it again so Timmy can read the calendar');
+  ok(/Connected · katherine@contoso\.test/.test(await card.innerText()), 'its mail is still connected');
+  await card.getByRole('button', { name: 'Disconnect' }).click();
+  await card.getByRole('button', { name: 'Connect', exact: true }).waitFor({ timeout: 10000 });
+  ok(await until(async () => !refusedWords.test(await card.innerText())), 'disconnected, the card no longer says it');
+
   await connectApp(page, 'Outlook and Microsoft 365', 'katherine@contoso.test');
   await page.click('button[aria-label="Connections"]');
   await card.getByRole('button', { name: 'Disconnect' }).waitFor();
   ok(/Connected · katherine@contoso\.test/.test(await card.innerText()), 'Outlook shows as connected, with the address Outlook gave');
+  await page.waitForTimeout(1500);
+  ok(!refusedWords.test(await card.innerText()), 'connected again with the calendar allowed, the card says nothing about it');
   ok((await sentMail(page)).length === 0, 'connecting sent nothing');
   const second = await api(page, 'POST', '/api/v1/connections/gmail/connect', {});
   ok(second.status === 409 && /katherine@contoso\.test/.test(JSON.stringify(second.body)), 'Gmail cannot be added beside it: a workspace has one mailbox');
@@ -94,6 +109,41 @@ run('live-outlook', async (browser) => {
   ok((await api(page, 'POST', '/api/v1/commands', { id: `arch-${Date.now()}`, action: { type: 'move', id: thread.id, box: 'archived' } })).body.ok, 'archiving the thread is accepted');
   ok(await until(async () => (await labels('Trajectory check')).includes('ARCHIVE')), 'archiving in Timmy moves the message to Outlook’s Archive folder');
   ok(!(await labels('Trajectory check')).some((l) => /^Timmy/.test(l) || l === 'INBOX'), 'and it no longer carries Timmy’s category or sits in the inbox');
+
+  // A colleague who files with Timmy too replies, and Outlook keeps their “Timmy Waiting” category on mail sent within
+  // one company. A mark already there when Timmy first sees a message is not the person's doing: the reply brings the
+  // thread back to the inbox, as any reply does, and nothing files it under Waiting.
+  const box = async () => (await threads()).find((t) => t.subject === 'Trajectory check').box;
+  await deliver(page, {
+    from: 'Dorothy Vaughan <dorothy@contoso.test>',
+    subject: 'Re: Trajectory check',
+    threadId: thread.ext.threadKey,
+    body: 'The tables are attached.',
+    categories: ['Timmy Waiting'],
+    attachments: [
+      { name: 'Re-entry tables.pdf', mimetype: 'application/pdf', size: 2048, sha256: 'x' },
+      { name: 'contoso-logo.png', mimetype: 'image/png', size: 300, sha256: 'y', inline: true },
+    ],
+  });
+  ok(await until(async () => (await box()) === 'inbox'), 'a colleague’s reply that arrives marked “Timmy Waiting” brings the thread back to the inbox, not to Waiting');
+  const looked = (await api(page, 'POST', '/api/test/fake', { op: 'check-mailbox' })).body.checked;
+  ok(looked.moved === 0 && (await box()) === 'inbox', 'and a look at the mailbox does not move it there either');
+  // The reply's file is named on the message, as a Gmail message's are; the picture in the signature is not a file.
+  await page.click('button[aria-label="Today & mail"]');
+  await page.getByRole('tab', { name: /Triage/ }).click();
+  await page.locator('.main').getByText('Trajectory check').first().click();
+  await page.locator('.main .chip', { hasText: 'Re-entry tables.pdf' }).first().waitFor({ timeout: 10000 });
+  ok((await page.locator('.main .chip', { hasText: 'contoso-logo.png' }).count()) === 0, 'the reply shows the name of the file it carries, and not the picture in its signature');
+  await page.keyboard.press('Escape');
+
+  // A mailbox with no Archive folder (some older Microsoft 365 mailboxes have none) gets one the first time a thread is archived.
+  await deliver(page, { from: 'John Glenn <john@nasa.test>', subject: 'Launch window', body: 'Katherine, can you confirm the launch window?' });
+  ok(await until(async () => (await threads()).some((t) => t.subject === 'Launch window')), 'a second thread arrives');
+  ok((await api(page, 'POST', '/api/test/fake', { op: 'no-archive' })).body.ok, 'the mailbox has no Archive folder');
+  const launch = (await threads()).find((t) => t.subject === 'Launch window');
+  ok((await api(page, 'POST', '/api/v1/commands', { id: `arch2-${Date.now()}`, action: { type: 'move', id: launch.id, box: 'archived' } })).body.ok, 'archiving it in Timmy is accepted');
+  ok(await until(async () => (await labels('Launch window')).includes('ARCHIVE')), 'it is filed in Outlook all the same');
+  ok(Object.keys((await api(page, 'POST', '/api/test/fake', { op: 'folders' })).body.folders).join() === 'Archive', 'in an Archive folder Timmy made for it, the one folder made');
 
   // Google Drive sits beside the mailbox. Timmy keeps a list of files; Ask finds them by name.
   await connectApp(page, 'Google Drive', 'katherine@contoso.test');

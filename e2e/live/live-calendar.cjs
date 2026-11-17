@@ -160,5 +160,28 @@ run('live-calendar', async (browser) => {
 
   const kinds = (await api(page, 'GET', '/api/v1/audit')).body.entries.filter((e) => e.action === 'effect.proposed').map((e) => e.detail.kind);
   ok(kinds.filter((k) => k === 'calendar.update').length === 2 && kinds.filter((k) => k === 'calendar.delete').length === 1, 'the audit log has the two moves and the deletion, and nothing for the event that was refused');
+
+  /* ───── An event changed while its invitation still waits ───── */
+
+  // Mary adds a meeting with a guest and, before the undo window ends, moves it. The change replaces the waiting
+  // invitation, so Google gets the meeting at the new time and the guest is invited once. The change is sent the way
+  // the Edit window sends it; it goes through the API so that it surely lands inside the short test window.
+  await addEvent('Flight readiness', 'dorothy@nasa.test');
+  await page.locator('.toast', { hasText: /Event added/ }).waitFor();
+  let local;
+  ok(await until(async () => (local = (await onTimmy('Flight readiness')).find((e) => !/^gcal-/.test(e.id))) !== undefined), 'the new meeting is on Timmy’s calendar, waiting to go out');
+  const changed = await api(page, 'POST', '/api/v1/commands', { id: `move-early-${Date.now()}`, action: { type: 'ws', ops: [{ op: 'put', col: 'events', item: { ...local, start: today(18), end: today(18, 30) } }] } });
+  ok(changed.body.ok, `moving it before the window ends is accepted (${changed.body.error || ''})`);
+  ok(!(await google()).some((e) => e.summary === 'Flight readiness'), 'nothing is on Google Calendar yet');
+  ok(await until(async () => (await google()).some((e) => e.summary === 'Flight readiness')), 'after the window the meeting is created in Google Calendar');
+  const flight = (await google()).find((e) => e.summary === 'Flight readiness');
+  ok(flight.start === today(18) && flight.attendees.join() === 'dorothy@nasa.test', 'at the time it was moved to, not the time it was added at');
+  await page.waitForTimeout(HOLD + 1500);
+  const notices = (await api(page, 'POST', '/api/test/fake', { op: 'calendar' })).body.notices.filter((n) => n.event === flight.id);
+  ok((await google()).filter((e) => e.summary === 'Flight readiness').length === 1 && notices.length === 1 && notices[0].about === 'invited', 'it is created once, and the guest is invited once, with no change to follow');
+  const kept = await onTimmy('Flight readiness');
+  ok(kept.length === 1 && /^gcal-/.test(kept[0].id) && new Date(kept[0].start).toISOString() === today(18), 'Timmy’s calendar shows it once, at the new time, after the calendar was read again');
+  await showToday();
+  ok(/6:00/.test(await page.locator('.cal-ev', { hasText: 'Flight readiness' }).first().getAttribute('aria-label')), 'on the screen too');
   ok(errors.length === 0, `no page errors (${errors.join(' | ')})`);
 });
