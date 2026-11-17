@@ -207,6 +207,20 @@
    "status": "pass"
   },
   {
+   "id": "api-review-b",
+   "file": "server/test/review-b.test.ts",
+   "covers": "the closing safety review’s proofs, second half, each failing on the code it was written against and passing after the fix: text shaped like a timestamp stays text through the round trip and the inbox can still be drawn; a display name that is a timestamp doesn’t block tracked replies; a lead without an address, a contact without one or a calendar entry without real dates can’t break mail, People or Today for everyone; stored items have a size limit; after a mailbox is disconnected, Undo doesn’t bring its mail back, its lead replies leave the Unibox, and no stored row (change log, command history, run transcripts) or stream replay still holds it; a picked decision answer reaches drafting only as outside content; a decision figure must be in its own quoted sentence; a tracked value must appear whole; the outside-content wrapper can’t be closed by any spelling of its closing tag, and read_file’s failure is wrapped; page history holds only what the page held, stops at the number kept, and the trash job can’t delete a live page. Also, passing: row-level security is on and forced for every table with a workspace, the new routes find nothing by another workspace’s ids, and RevOps can’t put an email in Approvals through Ask",
+   "tests": 22,
+   "status": "pass"
+  },
+  {
+   "id": "api-uploads",
+   "file": "server/test/uploads.test.ts (and attachment sections in gateway.test.ts and outlook.test.ts)",
+   "covers": "file storage: limits and types (SVG, programs, oversized files, a wrong declared size or type refused); a file readable by its workspace only (404 for another, 401 signed out); response headers make an uploaded page or SVG harmless; a page may reference only its own workspace’s uploaded pictures; the bucket secret never in a log or answer; request signing checked against Amazon’s published examples; deleting a workspace removes its files; restoring a page version that holds an uploaded picture; an email with attachments waits out the hold and is sent once with exactly the approved files (name, type, bytes by hash), for Gmail and Outlook; a changed or missing file fails the send cleanly; another workspace’s file is refused; roles that can’t send can’t attach",
+   "tests": 44,
+   "status": "pass"
+  },
+  {
    "id": "api-chat",
    "file": "server/test/chat.test.ts",
    "covers": "the website chat on a real workspace: the workspace comes only from the site key and the conversation only from a signed token (forged, expired, another conversation’s or another site’s token refused); an unknown key, a chat that is off and a workspace with sending switched off all answer the same; replies come from the chat’s own rules with no model call; every reply is an effect record approved by the rule set when an owner or admin switched the chat on, and nothing is shown without one (a database trigger refuses it); a reply is shown once; switching on needs an owner or admin and a website, and only they change settings while it is on; the frame may be embedded only by the named site; a visitor’s text is stored and shown as text; leads from chats never overwrite a lead from elsewhere; take over stops Timmy; limits per visitor, address, conversation and day; streams bounded; retention deletes old conversations; nothing across workspaces; one address may send at most a set number of messages a day to one business’s chat",
@@ -387,6 +401,13 @@
    "result": "Nov 16, 2026: 50 of 50 locally; 56 of 56 on staging (the six extra checks apply only to a deployed server); 39 of 39 on production in the no-account form (OUTSIDE_NO_ACCOUNT=1), which also checks that an uninvited address cannot sign up."
   },
   {
+   "id": "live-files",
+   "file": "e2e/live/live-files.cjs",
+   "covers": "in the browser: a picture added to a page is uploaded, shows after a reload, and the page holds a reference, not the picture; an email with an attachment is approved with the file listed and goes out once with it; an attachment of a type that isn’t allowed is refused with the reason",
+   "checks": 34,
+   "status": "pass"
+  },
+  {
    "id": "live-verify",
    "file": "e2e/live/live-verify.cjs",
    "covers": "in the browser, on a server that requires address confirmation: a new account is told to confirm its address, is not signed in, can't get in with the password alone, and is signed in by opening the link sent to it",
@@ -399,7 +420,8 @@
    "file": "server/scripts/check-composio.mts",
    "covers": "against Composio's real API, read-only: every tool and event the server uses exists at its pinned toolkit version and takes the arguments the code sends; flags a deprecated tool",
    "status": "pass",
-   "how": "COMPOSIO_API_KEY=... npx tsx scripts/check-composio.mts (from server/). Run before moving a pinned version forward."
+   "how": "COMPOSIO_API_KEY=... npx tsx scripts/check-composio.mts (from server/). Run before moving a pinned version forward.",
+   "result": "Nov 17, 2026, on the fully merged code: 35 tools and 9 events exist at the pinned versions and take the arguments the code sends (adds the calendar tools and the attachment tools)."
   },
   {
    "id": "smoke-openrouter",
