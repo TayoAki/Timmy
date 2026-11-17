@@ -137,5 +137,51 @@ run('live-versions', async (browser) => {
   ok(await until(async () => /Pages stay here for 30 days, then they are deleted for good\./.test(await trash.innerText())), 'the trash dialog says pages are deleted for good after 30 days');
   await page.keyboard.press('Escape');
 
+  /* ── A page deleted for good comes back with its history when the deletion is undone ── */
+  const fileOf = (id, name, extra = {}) => ({ id, name, kind: 'doc', folder: '', updated: new Date().toISOString(), owner: 'me', ...extra });
+  const para = (id, text) => ({ id, type: 'p', text });
+  const historyOf = async (id) => api(page, 'GET', `/api/v1/pages/${id}/versions`);
+  await cmd({ type: 'ws', ops: [{ op: 'put', col: 'files', item: fileOf('old-plan', 'Old plan') }, { op: 'put', col: 'docs', item: { id: 'old-plan', blocks: [para('o1', 'The old plan, first draft')] } }] });
+  await cmd({ type: 'ws', ops: [{ op: 'patch', col: 'docs', id: 'old-plan', patch: { blocks: [para('o1', 'The old plan, second draft')] } }] });
+  ok((await historyOf('old-plan')).body.versions.length === 1, 'a page with a version of its own');
+  await cmd({ type: 'ws', ops: [{ op: 'remove', col: 'files', id: 'old-plan' }, { op: 'put', col: 'trash', item: fileOf('old-plan', 'Old plan', { trashed: new Date().toISOString() }) }] });
+  await page.click('button[aria-label="Docs"]');
+  await page.locator('.pt-trash').click();
+  const bin = page.getByRole('dialog', { name: 'Trash' });
+  await bin.waitFor();
+  await bin.getByRole('button', { name: 'Delete Old plan for good' }).click();
+  await bin.getByRole('button', { name: 'Delete', exact: true }).click();
+  const deleted = page.locator('.toast', { hasText: 'Deleted “Old plan” for good' });
+  await deleted.waitFor();
+  ok(await until(async () => (await historyOf('old-plan')).status === 404), 'deleted for good, the page and its history are gone from view');
+  // The trash dialog is closed to reach the notice under it.
+  await page.keyboard.press('Escape');
+  await bin.waitFor({ state: 'detached' });
+  await deleted.getByRole('button', { name: 'Undo' }).click();
+  ok(await until(async () => (await historyOf('old-plan')).status === 200), 'Undo on the notice brings the page back');
+  const back = (await historyOf('old-plan')).body.versions;
+  ok(back.length === 1 && back[0].preview === 'The old plan, first draft', 'with its version history');
+  await page.locator('.pt-trash').click();
+  await bin.waitFor();
+  ok(await until(async () => /Old plan/.test(await bin.innerText())), 'and it is in the trash again, where it was');
+  await page.keyboard.press('Escape');
+
+  /* ── Restoring a version leaves out links to pages deleted since, and says so ── */
+  await cmd({ type: 'ws', ops: [{ op: 'put', col: 'files', item: fileOf('gone-page', 'Gone page') }, { op: 'put', col: 'docs', item: { id: 'gone-page', blocks: [para('g1', 'Soon gone')] } }] });
+  await cmd({ type: 'ws', ops: [{ op: 'put', col: 'files', item: fileOf('hub', 'Hub') }, { op: 'put', col: 'docs', item: { id: 'hub', blocks: [para('h1', 'The hub, with a link'), { id: 'h2', type: 'page', file: 'gone-page' }] } }] });
+  await cmd({ type: 'ws', ops: [{ op: 'patch', col: 'docs', id: 'hub', patch: { blocks: [para('h1', 'The hub, changed')] } }] });
+  await cmd({ type: 'ws', ops: [{ op: 'remove', col: 'files', id: 'gone-page' }, { op: 'remove', col: 'docs', id: 'gone-page' }] });
+  await page.click('button[aria-label="Docs"]');
+  await page.locator('.main').getByText('Hub').first().click();
+  await page.waitForSelector('.doc-editor .nb-editor');
+  dialog = await openHistory();
+  ok(await until(async () => (await dialog.getByRole('radio').count()) === 1), 'the hub has one earlier version, which linked to the page deleted since');
+  await dialog.getByRole('button', { name: 'Restore this version' }).click();
+  await dialog.getByRole('button', { name: 'Restore', exact: true }).click();
+  await page.locator('.toast', { hasText: 'A link to a page that has been deleted since was left out.' }).waitFor({ timeout: 10000 });
+  ok(true, 'restoring says the link to the deleted page was left out');
+  ok(await until(async () => (await shown()) === 'The hub, with a link'), 'the page shows the restored text');
+  ok((await page.locator('.doc-editor .nb-page').count()) === 0 && !/Deleted page/.test(await shown()), 'and no “Deleted page” where the link was');
+
   ok(errors.filter((e) => !/400|409/.test(e)).length === 0, `no page errors (${errors.join(' | ')})`);
 });

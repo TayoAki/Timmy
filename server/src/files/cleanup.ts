@@ -94,30 +94,45 @@ export async function scanBacklog(limit = 50): Promise<{ scanned: number; infect
   const scanner = virusScanner();
   const out = { scanned: 0, infected: 0 };
   if (!scanner || !filesReady() || !scanning()) return out;
-  const { rows } = await sysPool.query(`select id, workspace_id, storage_key, name from asset where uploaded_at is not null and scan is distinct from 'clean' order by uploaded_at limit $1`, [limit]);
-  for (const r of rows as { id: string; workspace_id: string; storage_key: string; name: string | null }[]) {
-    const bytes = await fileStore().get(r.storage_key);
-    if (!bytes) continue;
-    let verdict;
-    try {
-      verdict = await scanner.scan(bytes);
-    } catch (e) {
-      log.warn('the virus scanner could not be asked; the backlog waits for the next pass', { error: (e as Error).message });
-      break;
+  // Walked in order, page by page, so a file that can't be read (its bytes are missing) is passed over and never
+  // holds up the ones behind it.
+  let after: { at: Date; id: string } | null = null;
+  for (;;) {
+    type Row = { id: string; workspace_id: string; storage_key: string; name: string | null; uploaded_at: Date };
+    const rows: Row[] = (
+      await sysPool.query(
+      `select id, workspace_id, storage_key, name, uploaded_at from asset
+        where uploaded_at is not null and scan is distinct from 'clean' and ($1::timestamptz is null or (uploaded_at, id) > ($1::timestamptz, $2::text))
+        order by uploaded_at, id limit 100`,
+      [after?.at ?? null, after?.id ?? null],
+      )
+    ).rows;
+    if (!rows.length) return out;
+    for (const r of rows) {
+      if (out.scanned >= limit) return out;
+      after = { at: r.uploaded_at, id: r.id };
+      const bytes = await fileStore().get(r.storage_key);
+      if (!bytes) continue;
+      let verdict;
+      try {
+        verdict = await scanner.scan(bytes);
+      } catch (e) {
+        log.warn('the virus scanner could not be asked; the backlog waits for the next pass', { error: (e as Error).message });
+        return out;
+      }
+      out.scanned++;
+      if (verdict.clean) {
+        await sysPool.query(`update asset set scan = 'clean' where id = $1`, [r.id]);
+        continue;
+      }
+      out.infected++;
+      await withWorkspace({ workspaceId: r.workspace_id }, async (tx) => {
+        await tx.query('delete from asset where id = $1 and workspace_id = $2', [r.id, r.workspace_id]);
+        await audit(tx, r.workspace_id, { actor: 'system', action: 'file.deleted', detail: { why: 'virus', virus: verdict.virus, name: r.name } });
+      });
+      await fileStore()
+        .remove(r.storage_key)
+        .catch((e: Error) => log.warn('an infected file’s bytes could not be removed from the store', { assetId: r.id, error: e.message }));
     }
-    out.scanned++;
-    if (verdict.clean) {
-      await sysPool.query(`update asset set scan = 'clean' where id = $1`, [r.id]);
-      continue;
-    }
-    out.infected++;
-    await withWorkspace({ workspaceId: r.workspace_id }, async (tx) => {
-      await tx.query('delete from asset where id = $1 and workspace_id = $2', [r.id, r.workspace_id]);
-      await audit(tx, r.workspace_id, { actor: 'system', action: 'file.deleted', detail: { why: 'virus', virus: verdict.virus, name: r.name } });
-    });
-    await fileStore()
-      .remove(r.storage_key)
-      .catch((e: Error) => log.warn('an infected file’s bytes could not be removed from the store', { assetId: r.id, error: e.message }));
   }
-  return out;
 }

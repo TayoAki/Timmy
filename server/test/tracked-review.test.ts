@@ -171,6 +171,14 @@ describe('accepting a kind reads recent mail for it', () => {
     expect(await entities()).toEqual([]);
   });
 
+  it('a look back whose job never reported reads as stopped after an hour, so the screen stops waiting for it', async () => {
+    expect((await accept('deal')).status).toBe(200);
+    jobs().queue = jobs().queue.filter((j) => j.name !== 'tracking.reread');
+    expect((await overview()).tracked[0]!.reread).toEqual({ status: 'reading', threads: 0, found: 0, days: 30 });
+    await sysPool.query(`update tracked_type set reread = jsonb_set(reread, '{startedAt}', to_jsonb((now() - interval '2 hours')::text)) where workspace_id = $1 and key = 'deal'`, [w.workspaceId]);
+    expect((await overview()).tracked[0]!.reread).toEqual({ status: 'stopped', threads: 0, found: 0, days: 30, note: 'Timmy didn’t get to read your recent mail for this.' });
+  });
+
   it('a kind stopped before the pass runs is not read for', async () => {
     await deliver(deal('Never'), { daysAgo: 2 });
     expect((await accept('deal')).status).toBe(200);

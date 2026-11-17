@@ -302,6 +302,8 @@ describe('virus scanning', () => {
     expect(attached.ok).toBe(false);
     expect(attached.error).toMatch(/isn’t in Timmy any more/);
 
+    // Earlier test files left older files behind, in a store that no longer holds their bytes: they are passed over.
+    await sysPool.query(`update asset set uploaded_at = now() - interval '1 day' where uploaded_at is not null and scan is distinct from 'clean' and workspace_id <> all($1::text[])`, [[w.workspaceId, other.workspaceId]]);
     await runJob('files.scan.backlog');
     expect(await asset(clean.assetId)).toMatchObject({ scan: 'clean' });
     expect((await download(w, clean.assetId)).status).toBe(200);

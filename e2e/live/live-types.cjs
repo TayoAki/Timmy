@@ -118,6 +118,44 @@ run('live-types', async (browser) => {
   await page.locator('.main').getByText('Nothing is tracked yet').waitFor({ timeout: 10000 });
   ok((await page.getByRole('article', { name: /^Suggestion:/ }).count()) === 0 && (await tracked()).proposals.length === 0, 'and it is not suggested again');
 
+  // What was turned down or stopped is listed, and can be brought back.
+  const down = page.getByRole('region', { name: 'Turned down' });
+  await down.waitFor({ timeout: 10000 });
+  const downText = await down.innerText();
+  ok(/Lead\s*· Turned down/.test(downText) && /Opportunity\s*· Tracking was stopped/.test(downText), 'kinds turned down or stopped are listed, saying which');
+  // While leads are turned down, an email about one is not read for it.
+  await deliver(page, { from: 'Sam Rivera <sam@globex.test>', subject: 'Website enquiry', body: 'Hello,\n\nLead: name Sam Rivera; company Globex; source website.\n\nSam' });
+  ok(await until(async () => (await api(page, 'GET', '/api/v1/state')).body.slices.threads.some((t) => t.subject === 'Website enquiry')), 'an email about a lead arrives while leads are turned down');
+  await down.getByRole('button', { name: 'Bring back leads' }).click();
+  await page.locator('.toast', { hasText: 'Lead is suggested again.' }).waitFor();
+  const back = page.getByRole('article', { name: 'Suggestion: leads' });
+  await back.waitFor({ timeout: 10000 });
+  ok(true, 'bringing leads back offers them again');
+
+  // Accepting it reads recent mail for it: the email that came while leads were turned down.
+  await back.getByRole('button', { name: 'Track leads' }).click();
+  await page.locator('.toast', { hasText: 'Timmy now tracks leads.' }).waitFor();
+  const leads = page.getByRole('article', { name: 'Lead', exact: true });
+  await leads.waitFor({ timeout: 10000 });
+  ok(await until(async () => /Read \d+ threads? from the last 30 days and found 1\./.test(await leads.innerText())), 'the kind says it read recent mail for it and found one');
+  await leads.locator('.trk-kind-toggle').click();
+  const known = page.getByRole('list', { name: 'The leads Timmy knows' });
+  await known.locator('li.trk-thing', { hasText: 'Sam Rivera' }).waitFor({ timeout: 15000 });
+  ok((await known.innerText()).includes('Lead: name Sam Rivera; company Globex; source website.'), 'the lead found in older mail is listed with the sentence it rests on');
+
+  // A second email calls him only "Sam": Timmy asks whether that is the same lead, and merges only when told to.
+  await deliver(page, { from: 'Sam Rivera <sam@globex.test>', subject: 'Following up', body: 'Hi,\n\nLead: name Sam; company Globex.\n\nSam' });
+  const same = page.getByRole('article', { name: 'Same thing: Sam and Sam Rivera' });
+  await same.waitFor({ timeout: 15000 });
+  ok(/Are “Sam” and “Sam Rivera” the same lead\?/.test(await same.innerText()), 'two names for what may be one lead are put as a question');
+  ok((await tracked()).tracked.find((k) => k.name === 'Lead').known === 2, 'and they stay two until someone answers');
+  await same.getByRole('button', { name: 'Same: keep “Sam Rivera”' }).click();
+  await page.locator('.toast', { hasText: 'Merged “Sam” into “Sam Rivera”.' }).waitFor();
+  ok(await until(async () => (await tracked()).tracked.find((k) => k.name === 'Lead').known === 1), 'merging leaves one lead');
+  const merged = known.locator('li.trk-thing', { hasText: 'Sam Rivera' });
+  ok(await until(async () => (await merged.locator('.trk-source').count()) === 2), 'which rests on both emails');
+  ok((await page.getByRole('region', { name: 'Same thing?' }).count()) === 0, 'and the question is gone');
+
   // The refused name was answered with a 400, which the browser also writes to its console. That one is expected.
   const unexpected = errors.filter((e) => !/status of 400/.test(e));
   ok(unexpected.length === 0, `no page errors (${unexpected.join(' | ')})`);

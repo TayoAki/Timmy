@@ -68,7 +68,8 @@ interface TypeRow {
   fields: TrackedField[];
   status: 'proposed' | 'certified' | 'dismissed';
   source: 'trade' | 'seen';
-  reread: TrackedReread | null;
+  /** As stored: what the screen is told, and when the look back started. */
+  reread: (TrackedReread & { startedAt?: string }) | null;
   stopped_at: Date | null;
 }
 
@@ -310,12 +311,20 @@ export async function trackedOverview(workspaceId: string): Promise<TrackedOverv
     }
     const { rows } = await tx.query(`select n.type_id, count(*)::int as known from entity n where n.workspace_id = $1 and n.type = 'thing' and ${STILL_SHOWN} group by n.type_id`, [workspaceId]);
     const known = new Map(rows.map((r) => [r.type_id as string, r.known as number]));
-    const tracked: TrackedKind[] = certified(types).map((t) => ({ id: t.id, key: t.key, name: t.name, fields: t.fields, known: known.get(t.id) ?? 0, ...(t.reread ? { reread: t.reread } : {}) }));
+    const tracked: TrackedKind[] = certified(types).map((t) => ({ id: t.id, key: t.key, name: t.name, fields: t.fields, known: known.get(t.id) ?? 0, ...(t.reread ? { reread: shownReread(t.reread) } : {}) }));
     const sameThing = await sameThingOffers(tx, workspaceId, certified(types));
     const turnedDown: TurnedDown[] = types.filter((t) => t.status === 'dismissed').map((t) => ({ key: t.key, name: t.name, stopped: !!t.stopped_at }));
     // Only said when there is something to say, so a workspace with none of either looks as it always did.
     return { proposals, tracked, ...(sameThing.length ? { sameThing } : {}), ...(turnedDown.length ? { turnedDown } : {}) };
   });
+}
+
+/** A look back that never reported (its job was lost) is not shown as still reading for ever: after an hour it reads as stopped. */
+const STALE_MS = 3600_000;
+function shownReread(r: TrackedReread & { startedAt?: string }): TrackedReread {
+  const { startedAt, ...shown } = r;
+  if (shown.status === 'reading' && startedAt && Date.parse(startedAt) < Date.now() - STALE_MS) return { ...shown, status: 'stopped', note: 'Timmy didn’t get to read your recent mail for this.' };
+  return shown;
 }
 
 /* ───────────── The same thing under two names ───────────── */
@@ -470,7 +479,7 @@ export async function acceptKind(by: By, key: string, newName?: unknown): Promis
     await audit(tx, by.workspaceId, { actor: by.userId, action: 'tracking.accepted', detail: { kind: key, name, fields: type.fields.map((f) => f.label) } });
     // Recent mail is read for it once, by a job (reread.ts). The screen says so from this moment.
     const looking = config.kindReread.threads > 0;
-    if (looking) await tx.query('update tracked_type set reread = $3::jsonb where id = $1 and workspace_id = $2', [id, by.workspaceId, JSON.stringify({ status: 'reading', threads: 0, found: 0, days: config.kindReread.days } satisfies TrackedReread)]);
+    if (looking) await tx.query('update tracked_type set reread = $3::jsonb where id = $1 and workspace_id = $2', [id, by.workspaceId, JSON.stringify({ status: 'reading', threads: 0, found: 0, days: config.kindReread.days, startedAt: new Date().toISOString() })]);
     return { ok: true, id, adopted, looking };
   });
   if (out.ok && 'looking' in out && out.looking) enqueueSoon('tracking.reread', { workspaceId: by.workspaceId, typeId: out.id }, { singletonKey: `reread:${out.id}` });
