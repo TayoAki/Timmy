@@ -68,6 +68,12 @@ export interface Calendar {
   list(workspaceId: string, conn: ConnectionRow, from: Date, to: Date, phase: Phase): Promise<{ events: CalendarEvent[]; pages: number; complete: boolean }>;
   /** One event as the calendar holds it now, or null when it has been cancelled. Throws when the provider won't show it. */
   get(workspaceId: string, conn: ConnectionRow, eventId: string, phase: Phase): Promise<CalendarEvent | null>;
+  /**
+   * Whether the calendar says, when asked for the event by its own id, that it no longer exists: shown as cancelled,
+   * or not found. False when it is still there, wherever it has moved to; null when the answer says neither.
+   * One call. It only reads.
+   */
+  gone(workspaceId: string, conn: ConnectionRow, eventId: string, phase: Phase): Promise<boolean | null>;
   /** Makes an approved event exactly as approved. Throwing means the outcome is unknown. */
   create(e: EffectRow, conn: ConnectionRow, p: EventPayload): Promise<Outcome>;
   /** Writes the approved fields of an event. `current` is the event as the calendar holds it right now. */

@@ -13,6 +13,7 @@
  *   - Only a short preview of an event's body is read. A body longer than the preview can't be rewritten from it.
  */
 import { createHash } from 'node:crypto';
+import { CalendarRefused, refusedForPermission } from './calendar-access';
 import { noteOf } from './calendar-note';
 import type { Calendar, CalendarEvent } from './calendars';
 import { callTool } from './tools';
@@ -105,6 +106,8 @@ export const outlookCalendar: Calendar = {
     let pages = 0;
     do {
       const res = await callTool(workspaceId, conn.id, 'OUTLOOK_GET_CALENDAR_VIEW', { start_datetime: stamp(from), end_datetime: stamp(to), timezone: 'UTC', select: SELECT, orderby: 'start/dateTime asc', top: 100, ...(pageToken ? { page_token: pageToken } : {}) }, phase);
+      // An account connected for mail only may not read the calendar at all. That is said apart from a passing failure.
+      if (!res.successful && refusedForPermission(res.error)) throw new CalendarRefused(res.error ?? 'the calendar was refused');
       if (!res.successful) throw new Error(res.error ?? 'the calendar could not be listed');
       const data = payload(res.data);
       for (const raw of (data.value ?? []) as GraphEvent[]) {
@@ -125,6 +128,13 @@ export const outlookCalendar: Calendar = {
     const event = fromOutlookEvent(raw, conn.account_label);
     if (!event) throw new Error('Outlook did not give the event in a form Timmy can read');
     return event;
+  },
+
+  async gone(workspaceId, conn, eventId, phase) {
+    const res = await callTool(workspaceId, conn.id, 'OUTLOOK_GET_EVENT', { event_id: eventId }, phase);
+    // A meeting its organizer cancelled, or an event deleted, is no longer in the organizer's calendar: Outlook answers "not found".
+    if (res.successful) return (payload(res.data) as GraphEvent).isCancelled === true;
+    return /ErrorItemNotFound|not found in the store|\b404\b/i.test(res.error ?? '') ? true : null;
   },
 
   async create(e, conn, p) {

@@ -204,6 +204,8 @@ export interface FakeAttachment {
   mimetype: string;
   size: number;
   sha256: string;
+  /** Outlook only: a picture placed inside the body (a signature's logo). Outlook does not count it in `hasAttachments`. */
+  inline?: boolean;
 }
 
 export interface FakeFile {
@@ -254,6 +256,12 @@ export interface FakeMailbox {
   labels: Map<string, string>;
   /** Drive only: the files in the account. */
   files: FakeFile[];
+  /** What the person allowed when connecting. Left out, everything the app asks for. */
+  scopes?: string[];
+  /** Outlook only: the mailbox has no well-known Archive folder (older Microsoft 365 mailboxes may not). */
+  noArchive?: boolean;
+  /** Outlook only: folders made in the mailbox, by display name → id. */
+  folders?: Map<string, string>;
 }
 
 /**
@@ -272,6 +280,8 @@ export class FakeComposio implements ComposioProvider {
   failNext = new Map<string, 'error' | 'timeout' | 'sent-then-timeout' | 'partial' | 'dropped'>();
   /** The address the next connect flow will sign in as. */
   nextAddress = '';
+  /** The permissions the next connect flow grants, once; null grants everything asked for. */
+  nextScopes: string[] | null = null;
   /** Files handed over with `stageFile`, by the key each was given, with the tool it was handed over for. */
   staged = new Map<string, { toolSlug: string; toolkit: string; bytes: Uint8Array }>();
 
@@ -281,6 +291,7 @@ export class FakeComposio implements ComposioProvider {
     this.calls = [];
     this.failNext.clear();
     this.nextAddress = '';
+    this.nextScopes = null;
     this.staged.clear();
   }
 
@@ -322,7 +333,8 @@ export class FakeComposio implements ComposioProvider {
 
   async link({ userId, toolkit, callbackUrl }: { userId: string; toolkit: string; callbackUrl: string }) {
     const connectedAccountId = newId('ca_fake');
-    this.accounts.set(connectedAccountId, { address: this.nextAddress || `${userId.slice(0, 8)}@example.test`, status: 'INITIATED', toolkit, userId, messages: [], events: [], notices: [], cancelled: [], labels: new Map(), files: [] });
+    this.accounts.set(connectedAccountId, { address: this.nextAddress || `${userId.slice(0, 8)}@example.test`, status: 'INITIATED', toolkit, userId, messages: [], events: [], notices: [], cancelled: [], labels: new Map(), files: [], ...(this.nextScopes ? { scopes: [...this.nextScopes] } : {}) });
+    this.nextScopes = null;
     const redirectUrl = `${config.publicUrl}/api/test/fake-connect?account=${connectedAccountId}&to=${encodeURIComponent(callbackUrl)}`;
     return { redirectUrl, connectedAccountId, authConfigId: `ac_fake_${toolkit}` };
   }
@@ -343,6 +355,9 @@ export class FakeComposio implements ComposioProvider {
   }
 
   async createTrigger(slug: string, input: { userId: string; connectedAccountId: string }) {
+    // Microsoft refuses to announce calendar changes to an app that may not read the calendar.
+    const box = this.accounts.get(input.connectedAccountId);
+    if (slug === 'OUTLOOK_EVENT_CHANGE_TRIGGER' && box && !FakeComposio.mayReadCalendar(box)) throw new Error('Subscription validation request failed: insufficient privileges to subscribe to events (fake)');
     const triggerId = newId('ti_fake');
     this.triggers.set(triggerId, { slug, connectedAccountId: input.connectedAccountId, userId: input.userId });
     return { triggerId };
@@ -361,11 +376,16 @@ export class FakeComposio implements ComposioProvider {
     return eventFrom(id, rawBody);
   }
 
+  /** Whether an account was allowed to read the calendar when it was connected. Outlook was once asked for mail only. */
+  static mayReadCalendar(box: FakeMailbox): boolean {
+    return !box.scopes || box.scopes.some((s) => /^Calendars\./.test(s));
+  }
+
   /** Puts a message in a fake mailbox and returns the signed webhook Composio would send for it. */
   deliver(connectedAccountId: string, m: Partial<FakeMessage> & { from: string; subject: string; body: string }) {
     const box = this.accounts.get(connectedAccountId);
     if (!box) throw new Error('no such fake account');
-    const msg: FakeMessage = { id: m.id ?? newId('m'), threadId: m.threadId ?? newId('t'), from: m.from, to: m.to ?? [box.address], cc: m.cc, subject: m.subject, body: m.body, at: m.at ?? new Date(), labels: m.labels ?? ['INBOX', 'UNREAD'] };
+    const msg: FakeMessage = { id: m.id ?? newId('m'), threadId: m.threadId ?? newId('t'), from: m.from, to: m.to ?? [box.address], cc: m.cc, subject: m.subject, body: m.body, at: m.at ?? new Date(), labels: m.labels ?? ['INBOX', 'UNREAD'], ...(m.categories ? { categories: [...m.categories] } : {}), ...(m.attachments ? { attachments: m.attachments.map((a) => ({ ...a })) } : {}) };
     box.messages.push(msg);
     const outlook = box.toolkit === 'outlook';
     const slug = outlook ? 'OUTLOOK_MESSAGE_TRIGGER' : 'GMAIL_NEW_GMAIL_MESSAGE';
@@ -414,8 +434,13 @@ export class FakeComposio implements ComposioProvider {
     };
   }
 
+  /** The id of the folder a mailbox files archived mail in: the well-known Archive, or one named Archive that was made later. */
+  private archiveFolder(box: FakeMailbox | undefined): string {
+    return box?.noArchive ? (box.folders?.get('Archive') ?? 'fld-none') : 'fld-archive';
+  }
+
   /** A message as Microsoft Graph returns it. */
-  private graph(m: FakeMessage) {
+  private graph(m: FakeMessage, box?: FakeMailbox) {
     const sender = /^(.*)<([^<>]+)>\s*$/.exec(m.from);
     const folder = m.labels.includes('DRAFT') ? 'drafts' : m.labels.includes('SENT') ? 'sentitems' : m.labels.includes('INBOX') ? 'inbox' : m.labels.includes('ARCHIVE') ? 'archive' : m.labels.includes('TRASH') ? 'deleteditems' : m.labels.includes('SPAM') ? 'junkemail' : 'other';
     const escape = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -430,12 +455,13 @@ export class FakeComposio implements ComposioProvider {
       sentDateTime: m.at.toISOString(),
       isRead: !m.labels.includes('UNREAD'),
       isDraft: m.labels.includes('DRAFT'),
-      parentFolderId: `fld-${folder}`,
+      parentFolderId: folder === 'archive' ? this.archiveFolder(box) : `fld-${folder}`,
       categories: m.categories ?? [],
       // Outlook hands bodies over as HTML, with a head and styles around the words.
       body: { contentType: 'html', content: m.html ?? `<html><head><style>p { margin: 0 }</style></head><body>${m.body.split(/\n\n+/).map((p) => `<p>${escape(p).replace(/\n/g, '<br>')}</p>`).join('')}</body></html>` },
       bodyPreview: m.body.slice(0, 255),
-      hasAttachments: !!m.attachments?.length,
+      // Like Outlook, pictures placed inside the body do not count.
+      hasAttachments: !!m.attachments?.some((a) => !a.inline),
     };
   }
 
@@ -492,6 +518,10 @@ export class FakeComposio implements ComposioProvider {
     const box = this.accounts.get(who.connectedAccountId);
     if (!box || box.status !== 'ACTIVE') return { successful: false, data: {}, error: 'No active connection for this account' };
     if (box.userId !== who.userId) return { successful: false, data: {}, error: 'Connected account does not belong to this user' };
+    // An account connected without calendar permission: Microsoft Graph answers every calendar call with 403.
+    if (/^OUTLOOK_(GET_CALENDAR_VIEW|GET_EVENT|CALENDAR_CREATE_EVENT|UPDATE_CALENDAR_EVENT|DELETE_CALENDAR_EVENT|CANCEL_EVENT)$/.test(slug) && !FakeComposio.mayReadCalendar(box)) {
+      return { successful: false, data: {}, error: '403 Forbidden: {"error":{"code":"ErrorAccessDenied","message":"Access is denied. Check credentials and try again."}}' };
+    }
     const fail = this.failNext.get(slug);
     if (fail === 'error') {
       this.failNext.delete(slug);
@@ -670,8 +700,26 @@ export class FakeComposio implements ComposioProvider {
         return ok({ id: 'user-1', mail: box.address, userPrincipalName: box.address, displayName: 'Stand-in person' });
       case 'OUTLOOK_GET_MAIL_FOLDER': {
         const name = String(args.mail_folder_id ?? '').toLowerCase();
-        if (!['inbox', 'sentitems', 'drafts', 'archive', 'deleteditems', 'junkemail'].includes(name)) return { successful: false, data: {}, error: 'The specified folder could not be found' };
+        if (!['inbox', 'sentitems', 'drafts', 'archive', 'deleteditems', 'junkemail'].includes(name) || (name === 'archive' && box.noArchive)) return { successful: false, data: {}, error: 'The specified folder could not be found in the store. (ErrorFolderNotFound)' };
         return ok({ id: `fld-${name}`, displayName: name });
+      }
+      case 'OUTLOOK_CREATE_MAIL_FOLDER': {
+        const name = String(args.display_name ?? '').trim();
+        if (!name) return refuse('Invalid request data provided: display_name is required');
+        // A top-level folder of the same name: Outlook refuses a second one, or hands back the first when asked to.
+        const existing = name.toLowerCase() === 'archive' && !box.noArchive ? 'fld-archive' : [...(box.folders ?? [])].find(([n]) => n.toLowerCase() === name.toLowerCase())?.[1];
+        if (existing) return args.return_existing_if_exists === true ? ok({ id: existing, displayName: name, parentFolderId: 'fld-root', childFolderCount: 0, totalItemCount: 0, unreadItemCount: 0, isHidden: false }) : refuse('A folder with the specified name already exists. (ErrorFolderExists)');
+        box.folders = box.folders ?? new Map();
+        const id = `fld-made-${box.folders.size + 1}-${randomBytes(4).toString('hex')}`;
+        box.folders.set(name, id);
+        return ok({ id, displayName: name, parentFolderId: 'fld-root', childFolderCount: 0, totalItemCount: 0, unreadItemCount: 0, isHidden: args.is_hidden === true });
+      }
+      case 'OUTLOOK_DELETE_MESSAGE': {
+        if (typeof args.message_id !== 'string') return refuse('Invalid request data provided: message_id is required');
+        const i = box.messages.findIndex((x) => x.id === args.message_id);
+        if (i < 0) return refuse('The specified object was not found in the store. (ErrorItemNotFound)');
+        box.messages.splice(i, 1);
+        return ok({});
       }
       case 'OUTLOOK_LIST_MESSAGES': {
         const filter = String(args.filter ?? '');
@@ -685,19 +733,20 @@ export class FakeComposio implements ComposioProvider {
         const start = Number(args.page_token ?? 0);
         let list = [...box.messages].sort((a, b) => b.at.getTime() - a.at.getTime()).filter((m) => m.at.getTime() >= since);
         if (conversation !== undefined) list = list.filter((m) => m.threadId === conversation);
-        if (folder !== 'allfolders') list = list.filter((m) => this.graph(m).parentFolderId === `fld-${folder}`);
+        if (folder === 'archive' && box.noArchive) return refuse('The specified folder could not be found in the store. (ErrorFolderNotFound)');
+        if (folder !== 'allfolders') list = list.filter((m) => this.graph(m, box).parentFolderId === (folder.startsWith('fld-') ? folder : `fld-${folder}`));
         const page = list.slice(start, start + max);
         // Like Outlook, only the properties that were selected come back (the id always does).
         const select = Array.isArray(args.select) ? (args.select as string[]) : null;
         const only = (g: Record<string, unknown>) => (select ? Object.fromEntries(Object.entries(g).filter(([k]) => k === 'id' || select.includes(k))) : g);
-        return ok({ value: page.map((m) => only(this.graph(m))), ...(start + max < list.length ? { next_page_token: String(start + max) } : {}) });
+        return ok({ value: page.map((m) => only(this.graph(m, box))), ...(start + max < list.length ? { next_page_token: String(start + max) } : {}) });
       }
       case 'OUTLOOK_CREATE_DRAFT': {
         const attached = this.filesOf(slug, 'outlook', args.attachment);
         if ('error' in attached) return { successful: false, data: {}, error: attached.error };
         const msg: FakeMessage = { id: newId('om'), threadId: newId('conv'), from: box.address, to: ((args.to_recipients as string[] | undefined) ?? []).map(String), cc: ((args.cc_recipients as string[] | undefined) ?? []).map(String), subject: String(args.subject ?? ''), body: String(args.body ?? ''), at: new Date(), labels: ['DRAFT'], ...(attached.files.length ? { attachments: attached.files } : {}) };
         box.messages.push(msg);
-        return ok(this.graph(msg));
+        return ok(this.graph(msg, box));
       }
       case 'OUTLOOK_CREATE_DRAFT_REPLY': {
         const original = box.messages.find((m) => m.id === args.message_id);
@@ -706,7 +755,7 @@ export class FakeComposio implements ComposioProvider {
         const author = /<([^<>]+)>\s*$/.exec(original.from)?.[1] ?? original.from;
         const msg: FakeMessage = { id: newId('om'), threadId: original.threadId, from: box.address, to: [author], cc: [], subject: `Re: ${original.subject.replace(/^Re:\s*/i, '')}`, body: '', html: `<html><head></head><body><hr><div><b>From:</b> ${author}</div><div>${original.body}</div></body></html>`, at: new Date(), labels: ['DRAFT'] };
         box.messages.push(msg);
-        return ok(this.graph(msg));
+        return ok(this.graph(msg, box));
       }
       case 'OUTLOOK_UPDATE_EMAIL': {
         const m = box.messages.find((x) => x.id === args.message_id);
@@ -723,7 +772,7 @@ export class FakeComposio implements ComposioProvider {
             m.body = htmlToText(m.html.split(/<hr\b/i)[0]!);
           } else m.body = String(b.content ?? '');
         }
-        return ok(this.graph(m));
+        return ok(this.graph(m, box));
       }
       case 'OUTLOOK_ADD_MAIL_ATTACHMENT': {
         const m = box.messages.find((x) => x.id === args.message_id);
@@ -743,7 +792,7 @@ export class FakeComposio implements ComposioProvider {
         if (!m) return { successful: false, data: {}, error: 'The specified object was not found in the store' };
         // The size given is deliberately not the file's own length: Microsoft's figure can count wrapping around the
         // file, so the check made before sending goes by name and must not depend on size.
-        return ok({ response_data: { value: (m.attachments ?? []).map((a, i) => ({ '@odata.type': '#microsoft.graph.fileAttachment', id: `att-${m.id}-${i}`, name: a.name, contentType: a.mimetype, size: a.size + 172, isInline: false })) } });
+        return ok({ response_data: { value: (m.attachments ?? []).map((a, i) => ({ '@odata.type': '#microsoft.graph.fileAttachment', id: `att-${m.id}-${i}`, name: a.name, contentType: a.mimetype, size: a.size + 172, isInline: !!a.inline })) } });
       }
       case 'OUTLOOK_SEND_DRAFT': {
         const m = box.messages.find((x) => x.id === args.message_id);
@@ -763,7 +812,11 @@ export class FakeComposio implements ComposioProvider {
         const items = move ? ((args.message_ids as string[] | undefined) ?? []).map((id) => ({ message_id: id, patch: {} as { categories?: string[] } })) : ((args.updates as { message_id: string; patch: { categories?: string[] } }[] | undefined) ?? []);
         if (!items.length || items.length > 20) return { successful: false, data: {}, error: 'A batch takes between 1 and 20 messages' };
         const to = String(args.destination_id ?? '').toLowerCase();
-        if (move && !['inbox', 'archive'].includes(to)) return { successful: false, data: {}, error: 'The destination folder could not be found' };
+        // A folder made later and named Archive is where archived mail goes in a mailbox without the well-known one.
+        const madeArchive = !!to && [...(box.folders ?? [])].some(([n, id]) => n === 'Archive' && id.toLowerCase() === to);
+        // Each move in the batch is its own request: in a mailbox with no Archive folder every one of them fails.
+        if (move && to === 'archive' && box.noArchive) return ok({ results: items.map((it) => ({ message_id: it.message_id, success: false, error: 'The specified folder could not be found in the store. (ErrorFolderNotFound)' })), total_requested: items.length, total_succeeded: 0, total_failed: items.length });
+        if (move && !['inbox', 'archive'].includes(to) && !madeArchive) return { successful: false, data: {}, error: 'The destination folder could not be found' };
         // 'partial' applies the first change of the batch and refuses the rest, as a throttled mailbox does.
         const partial = fail === 'partial';
         if (partial) this.failNext.delete(slug);

@@ -472,7 +472,7 @@ describe('when the answer is lost, or the calendar says no', () => {
     expect((await shown('Focus: write the proposal')).start.getTime()).toBe(at(26).getTime());
   });
 
-  it('a timeout after Google deleted the event is confirmed from the calendar’s own listing, and it is not deleted twice', async () => {
+  it('a timeout after Google deleted the event is confirmed by asking Google for the event by its id, and it is not deleted twice', async () => {
     fake().failNext.set('GOOGLECALENDAR_DELETE_EVENT', 'sent-then-timeout');
     await remove(w, await shown('Pricing review'));
     await releaseHolds(w);

@@ -18,7 +18,7 @@ import type { EffectRow, Outcome, Proposal } from '../gateway/gateway';
 import { readAgainSoon } from './calendar';
 import { sameNote } from './calendar-note';
 import { asBody, when } from './calendar-write';
-import { calendarFor, syncWindow, type Calendar, type CalendarEvent } from './calendars';
+import { calendarFor, type Calendar, type CalendarEvent } from './calendars';
 import { connectionById } from './tools';
 
 /** The fields of an event that live on the calendar and that Timmy may write. Times are ISO instants; attendees are the guests' addresses. */
@@ -246,8 +246,8 @@ const shows = (now: CalendarEvent, p: EventChange) =>
 
 /**
  * For a change or a deletion whose outcome is unknown: look at the calendar. A change counts as made when the event
- * shows every field it was to write; a deletion when the calendar's own listing no longer has the event. Anything
- * else proves nothing and stays unconfirmed. It is never written again.
+ * shows every field it was to write; a deletion when the calendar, asked for the event by its id, says it is
+ * cancelled or not found. Anything else proves nothing and stays unconfirmed. It is never written again.
  */
 export async function reconcileChange(e: EffectRow): Promise<Outcome> {
   const unknown: Outcome = { status: 'uncertain', error: e.error ?? 'unknown' };
@@ -258,11 +258,9 @@ export async function reconcileChange(e: EffectRow): Promise<Outcome> {
   const done: Outcome = { status: 'completed', result: { via: conn.toolkit, id: p.externalId, reconciled: true }, externalId: p.externalId };
   try {
     if (e.kind === 'calendar.delete') {
-      // The same listing the sync reads. It is evidence only if it was read whole and the event's time lies inside it.
-      const { from, to } = syncWindow();
-      if (!(new Date(p.before.end) > from && new Date(p.before.start) < to)) return unknown;
-      const listed = await cal.list(e.workspace_id, conn, from, to, 'send');
-      if (!listed.complete || listed.events.some((x) => x.id === p.externalId)) return unknown;
+      // The event is asked for by its own id. An event that was only moved, even out of the window Timmy keeps, is
+      // still found there and is not taken for deleted; only a calendar that says it is cancelled or not found settles it.
+      if ((await cal.gone(e.workspace_id, conn, p.externalId, 'send')) !== true) return unknown;
     } else {
       const now = await cal.get(e.workspace_id, conn, p.externalId, 'send');
       if (!now || !shows(now, p as EventChange)) return unknown;

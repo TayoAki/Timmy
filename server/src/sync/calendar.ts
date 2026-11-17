@@ -11,6 +11,7 @@ import { enqueueSoon } from '../jobs/jobs';
 import { newId } from '../lib/ids';
 import { log } from '../lib/log';
 import { mutate } from '../state/mutate';
+import { CalendarRefused, calendarRefused, markCalendarRefused } from './calendar-access';
 import { calendarFor, shownId, syncWindow } from './calendars';
 import { connectionById, type Phase } from './tools';
 
@@ -48,12 +49,22 @@ async function eventsBeingWritten(tx: Tx, workspaceId: string, connectionId: str
 export async function syncCalendar(workspaceId: string, connectionId: string, phase: Phase = 'sync'): Promise<CalendarSync> {
   const conn = await connectionById(workspaceId, connectionId);
   const cal = conn && calendarFor(conn.toolkit);
-  if (!conn || !cal || conn.status !== 'active') return { events: 0, shown: 0, removed: 0, pages: 0, dropped: 0 };
+  const nothing = { events: 0, shown: 0, removed: 0, pages: 0, dropped: 0 };
+  // A calendar that was refused for lack of permission is not asked again: only connecting the account again changes that.
+  if (!conn || !cal || conn.status !== 'active' || calendarRefused(conn)) return nothing;
   const { from, to } = syncWindow();
-  const listed = await cal.list(workspaceId, conn, from, to, phase).catch((err: Error) => {
-    log.warn('calendar page failed', { workspaceId, connectionId, error: err.message });
+  let listed: Awaited<ReturnType<typeof cal.list>>;
+  try {
+    listed = await cal.list(workspaceId, conn, from, to, phase);
+  } catch (err) {
+    // Refused for lack of permission: recorded once, and the job ends here rather than being retried.
+    if (err instanceof CalendarRefused) {
+      await markCalendarRefused(workspaceId, conn, err.message);
+      return nothing;
+    }
+    log.warn('calendar page failed', { workspaceId, connectionId, error: (err as Error).message });
     throw err;
-  });
+  }
   const live = listed.events;
 
   return mutate(workspaceId, 'calendar', async (tx, loaded) => {

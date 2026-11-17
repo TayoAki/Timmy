@@ -98,6 +98,14 @@ export const googleCalendar: Calendar = {
     return fromGoogle(payload(res.data) as GoogleEvent, conn.account_label);
   },
 
+  async gone(workspaceId, conn, eventId, phase) {
+    const res = await callTool(workspaceId, conn.id, 'GOOGLECALENDAR_EVENTS_GET', { calendar_id: 'primary', event_id: eventId }, phase);
+    // Google keeps a deleted event for a while and shows it as cancelled; after that it answers 404 or 410.
+    if (res.successful) return (payload(res.data) as GoogleEvent).status === 'cancelled';
+    // Only Google's own words for a missing event count; any other refusal (no connection, a busy server) proves nothing.
+    return /\b(404|410)\b|^\s*Not Found\s*$|has been deleted/i.test(res.error ?? '') ? true : null;
+  },
+
   async create(e, conn, p) {
     const start = new Date(p.start);
     const minutes = Math.round((new Date(p.end).getTime() - start.getTime()) / 60_000);

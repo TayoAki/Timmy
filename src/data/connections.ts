@@ -36,6 +36,8 @@ export interface AppConn {
   at?: Date;
   /** Microsoft: waiting for the tenant admin to approve access. */
   pendingAdmin?: boolean;
+  /** Live mode: the account was connected without permission to read its calendar, so Timmy has stopped asking for it. */
+  calendarRefused?: boolean;
 }
 
 export const APPS: AppDef[] = [

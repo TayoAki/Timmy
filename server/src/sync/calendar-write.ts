@@ -27,6 +27,11 @@ export interface EventPayload {
   end: string;
   attendees: string[];
   note?: string;
+  /**
+   * The create this one stands in for: it was waiting when the event was changed in Timmy, and was cancelled in the
+   * same command (see state/event-creates.ts). Kept for the record; the calendar is never told.
+   */
+  replaces?: string;
 }
 
 /** A day and a span of time in words, on the clock of a time zone: "Tue, Nov 17, 10:00 AM to 10:30 AM EST". */
