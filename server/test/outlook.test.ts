@@ -499,8 +499,12 @@ describe('sending files from Outlook', () => {
     }
     expect(sent()).toHaveLength(0);
     expect(calls('OUTLOOK_SEND_DRAFT')).toHaveLength(0);
-    // The drafts are still drafts: nothing left the mailbox.
-    expect(mailbox().messages.filter((m) => m.labels.includes('DRAFT')).length).toBe(4);
+    // Nothing left the mailbox, and the drafts these sends made are gone from Drafts again (they used to be left
+    // there); each send's record says which draft it removed.
+    expect(mailbox().messages.filter((m) => m.labels.includes('DRAFT')).length).toBe(0);
+    const removed = (await effects('email.send')).map((x) => x.result as { draft?: string; draftRemoved?: boolean });
+    expect(removed.every((r) => r.draftRemoved === true && !!r.draft)).toBe(true);
+    expect(calls('OUTLOOK_DELETE_MESSAGE').map((c) => c.args.message_id).sort()).toEqual(removed.map((r) => r.draft).sort());
   });
 
   it('a file larger than Outlook takes this way is refused when the email is prepared, not after the wait', async () => {

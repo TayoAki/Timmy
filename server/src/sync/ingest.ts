@@ -13,6 +13,7 @@ import { newId } from '../lib/ids';
 import { log } from '../lib/log';
 import { mutate } from '../state/mutate';
 import { onMailStored } from '../automations/triggers';
+import { withAttachmentNames } from './attachment-names';
 import { mailboxFor } from './mailbox';
 import { followMailbox, lookedAtFrom } from './mailbox-changes';
 import { paragraphs, parseSender, type MailMessage } from './message';
@@ -189,7 +190,8 @@ export async function ingestThread(workspaceId: string, connectionId: string, th
   const carried = fetched ? null : seed ? box.seed(seed) : null;
   // With neither, the job fails and the queue tries again; the nightly check is the net under that.
   if (!fetched && !carried) throw new Error('the thread could not be fetched');
-  const list = fetched ?? [carried!];
+  // Outlook names the files on new mail only when asked; Gmail already has (attachment-names.ts).
+  const list = await withAttachmentNames(workspaceId, conn, box, fetched ?? [carried!], phase);
   if (!list.length) return 0;
   // The whole thread was just fetched, so its labels are fresh: what the person did to it in the mailbox itself
   // (archived it, labelled it, read it) is picked up here as well.
@@ -303,7 +305,7 @@ export async function backfillMail(workspaceId: string, connectionId: string, op
       log.warn('backfill page failed', { workspaceId, connectionId, error: (err as Error).message });
       throw err;
     }
-    const list = page.messages;
+    const list = await withAttachmentNames(workspaceId, conn, box, page.messages, 'backfill');
     const next = page.next;
     progress.pages++;
     progress.messages += list.length;
@@ -346,7 +348,7 @@ export async function reconcileMail(workspaceId: string, connectionId: string, o
   let pageToken: string | undefined;
   do {
     const page = await box.page(workspaceId, conn, { since, pageToken, pageSize: opts.pageSize ?? (conn.toolkit === 'outlook' ? 25 : 50), phase: 'reconcile' });
-    const list = page.messages;
+    const list = await withAttachmentNames(workspaceId, conn, box, page.messages, 'reconcile');
     out.pages++;
     out.messages += list.length;
     if (list.length) {

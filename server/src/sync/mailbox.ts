@@ -80,6 +80,12 @@ export interface Mailbox {
   recentStates(workspaceId: string, conn: ConnectionRow, q: { since: Date; pageToken?: string; pageSize: number; phase: Phase }): Promise<{ messages: MessageState[]; next?: string }>;
   /** The same reading of messages that were already fetched (a whole thread, when new mail arrives). It only reads. */
   statesOf(workspaceId: string, conn: ConnectionRow, messages: MailMessage[], phase: Phase): Promise<MessageState[]>;
+  /**
+   * The names of the files one message carries, for a mailbox whose listing only says that there are some
+   * (`hasAttachments`). Pictures placed inside the body are not counted. Null when the provider would not say.
+   * One call. It only reads. Gmail's listing names the files itself and has no need of this.
+   */
+  attachmentNames?(workspaceId: string, conn: ConnectionRow, messageId: string, phase: Phase): Promise<string[] | null>;
 }
 
 const MAILBOXES: Record<string, Mailbox> = { gmail, outlook };

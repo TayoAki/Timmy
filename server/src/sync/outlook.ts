@@ -6,15 +6,20 @@
  *   - Where a message sits is a folder, not a label. The folders are looked up once and translated into the
  *     same words the rest of the code uses (INBOX, SENT, DRAFT, TRASH, SPAM).
  *   - A thread's place in Timmy is written as a category on its messages ("Timmy Follow Up" and so on), which
- *     is Outlook's closest thing to a label. Archiving moves the messages to the Archive folder.
- *   - Bodies arrive as HTML and are stored as text.
+ *     is Outlook's closest thing to a label. Archiving moves the messages to the Archive folder; a mailbox
+ *     that has none gets one, once, the first time a thread is archived.
+ *   - Bodies arrive as HTML and are stored as text. A listing says only whether a message has files; their
+ *     names are asked for apart, once, for mail not stored yet (attachment-names.ts).
  *   - A reply is made as a draft, addressed to exactly the approved people, and then sent. Outlook's own
  *     "reply" would choose the recipients itself, and what was approved is what must go out.
  *   - Files are added to the draft one at a time, and the draft is checked for exactly the approved files
  *     before it is sent. The tool that adds a file takes small ones (under 3 MB).
+ *   - A send that stops before the draft is sent (recipients refused, a file not taken) removes the draft it
+ *     made, and only that one.
  */
 import { withWorkspace } from '../db/pool';
 import { stageFiles, type FileToSend } from '../files/attachments';
+import type { Outcome } from '../gateway/gateway';
 import { log } from '../lib/log';
 import { LABEL_NAMES, type Labelled } from './labels';
 import type { Mailbox, MessageState } from './mailbox';
@@ -39,18 +44,21 @@ interface GraphMessage {
   categories?: string[];
   body?: { contentType?: string; content?: string };
   bodyPreview?: string;
+  /** Whether it carries files. Pictures placed inside the body do not count. */
+  hasAttachments?: boolean;
 }
 
 /** The folders whose meaning matters, by Outlook's own fixed names. A mailbox may lack one (not every account has Archive). */
 const WELL_KNOWN = ['inbox', 'sentitems', 'drafts', 'archive', 'deleteditems', 'junkemail'] as const;
-type Folders = Partial<Record<(typeof WELL_KNOWN)[number], string>>;
+/** `madeArchive`: the mailbox had no Archive folder, so Timmy made one; `archive` is then that folder's id, and moves go to it by id. */
+type Folders = Partial<Record<(typeof WELL_KNOWN)[number], string>> & { madeArchive?: true };
 const FOLDER_LABEL: Record<(typeof WELL_KNOWN)[number], string> = { inbox: 'INBOX', sentitems: 'SENT', drafts: 'DRAFT', archive: 'ARCHIVE', deleteditems: 'TRASH', junkemail: 'SPAM' };
 
 /** A category on a message is kept among its labels under this prefix, so it can never be mistaken for a folder. */
 const CATEGORY = 'category:';
 const TIMMY_CATEGORIES: readonly string[] = Object.values(LABEL_NAMES);
 
-const SELECT = ['id', 'conversationId', 'subject', 'from', 'toRecipients', 'ccRecipients', 'receivedDateTime', 'sentDateTime', 'isRead', 'isDraft', 'parentFolderId', 'categories', 'body', 'bodyPreview'];
+const SELECT = ['id', 'conversationId', 'subject', 'from', 'toRecipients', 'ccRecipients', 'receivedDateTime', 'sentDateTime', 'isRead', 'isDraft', 'parentFolderId', 'categories', 'body', 'bodyPreview', 'hasAttachments'];
 const stamp = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, 'Z');
 const payload = (data: Record<string, unknown>) => (data.response_data ?? data) as Record<string, unknown>;
 const addressOf = (r?: GraphRecipient) => (r?.emailAddress?.address ?? '').trim().toLowerCase();
@@ -96,8 +104,28 @@ export function fromOutlook(m: GraphMessage, f: Folders): MailMessage | null {
     subject: String(m.subject ?? '').trim() || '(no subject)',
     text: (m.body?.content ? (html ? htmlToText(m.body.content) : m.body.content) : (m.bodyPreview ?? '')).replace(/\u0000/g, ''),
     labels,
+    // Outlook's listing does not name the files; they are asked for apart, for mail not yet stored (attachment-names.ts).
     attachments: [],
+    ...(m.hasAttachments ? { hasAttachments: true } : {}),
   };
+}
+
+/**
+ * The folder archived mail goes to, by what a move takes: Outlook's own Archive folder by its fixed name, or one
+ * Timmy made by its id. A mailbox with no Archive folder gets one, once, the first time a thread is archived: it is
+ * part of carrying out that approved filing, and it is remembered on the connection so it is never made again.
+ * The tool hands back a folder of that name that is already there, so two filings at once make one folder.
+ * Returns null, with Outlook's reason, when Outlook would not make it.
+ */
+async function archiveFolder(workspaceId: string, conn: ConnectionRow, f: Folders): Promise<{ destination: string; made: boolean } | { refused: string }> {
+  if (f.archive) return { destination: f.madeArchive ? f.archive : 'archive', made: false };
+  const res = await callTool(workspaceId, conn.id, 'OUTLOOK_CREATE_MAIL_FOLDER', { display_name: 'Archive', return_existing_if_exists: true }, 'send');
+  const id = res.successful ? (payload(res.data).id as string | undefined) : undefined;
+  if (!id) return { refused: res.error ?? 'Outlook did not say which folder it made' };
+  await withWorkspace({ workspaceId }, (tx) =>
+    tx.query(`update connection set meta = jsonb_set(meta, '{folders}', coalesce(meta->'folders', '{}'::jsonb) || $2::jsonb), updated_at = now() where id = $1 and workspace_id = $3`, [conn.id, JSON.stringify({ archive: id, madeArchive: true }), workspaceId]),
+  );
+  return { destination: id, made: true };
 }
 
 /** Mail that was thrown away, marked as junk or never sent is not something to work on or to search. */
@@ -188,6 +216,25 @@ async function attachToDraft(workspaceId: string, conn: ConnectionRow, draftId: 
   }
 }
 
+/**
+ * Takes the draft this send made back out of Drafts, when the send stopped before the draft was sent: Outlook
+ * refused the reply's recipients, or the files could not be put on it. Only that draft is touched, by the id
+ * Outlook gave it a moment ago in this same send, and only before the send was asked for; nothing else in the
+ * mailbox is ever deleted. The send's result records whether it was removed. If it could not be, it stays in
+ * Drafts, unsent, as before.
+ */
+async function discardDraft(workspaceId: string, conn: ConnectionRow, draftId: string, error: string): Promise<Outcome> {
+  let removed = false;
+  try {
+    const res = await callTool(workspaceId, conn.id, 'OUTLOOK_DELETE_MESSAGE', { message_id: draftId }, 'send');
+    removed = res.successful;
+    if (!removed) log.warn('could not remove a draft a stopped send had made', { error: res.error });
+  } catch (e) {
+    log.warn('could not remove a draft a stopped send had made', { error: (e as Error).message });
+  }
+  return { status: 'failed', error, result: { draft: draftId, draftRemoved: removed } };
+}
+
 /** What is asked of Outlook when only where each message sits matters: no body and no subject. Who wrote it is asked only to tell the person's own messages apart. */
 const STATE_SELECT = ['id', 'conversationId', 'from', 'receivedDateTime', 'sentDateTime', 'isRead', 'isDraft', 'parentFolderId', 'categories'];
 const toState = (conn: ConnectionRow) => {
@@ -253,21 +300,32 @@ export const outlook: Mailbox = {
         { message_id: draft.id, to_recipients: p.to.map((address) => ({ address })), cc_recipients: (p.cc ?? []).map((address) => ({ address })), body: { contentType: 'HTML', content: replyHtml(p.body, draft.body?.content ?? '') } },
         'send',
       );
-      // Nothing has been sent at this point: the draft stays in Drafts, unsent.
-      if (!set.successful) return { status: 'failed', error: set.error ?? 'Outlook refused the reply.' };
-      if (!addressedAsApproved(payload(set.data) as GraphMessage, p)) return { status: 'failed', error: 'Outlook did not take the recipients as approved, so the reply was not sent.' };
+      // Nothing has been sent at this point. The draft this reply made is taken out of Drafts again.
+      if (!set.successful) return discardDraft(ws, conn, draft.id, set.error ?? 'Outlook refused the reply.');
+      if (!addressedAsApproved(payload(set.data) as GraphMessage, p)) return discardDraft(ws, conn, draft.id, 'Outlook did not take the recipients as approved, so the reply was not sent.');
     } else {
       const made = await callTool(ws, conn.id, 'OUTLOOK_CREATE_DRAFT', { subject: p.subject, body: p.body, is_html: false, to_recipients: p.to, cc_recipients: p.cc ?? [] }, 'send');
       draft = payload(made.data) as GraphMessage;
       if (!made.successful || !draft.id) return { status: 'failed', error: made.error ?? 'Outlook refused the message.' };
-      if (!addressedAsApproved(draft, p)) return { status: 'failed', error: 'Outlook did not take the recipients as approved, so the email was not sent.' };
+      if (!addressedAsApproved(draft, p)) return discardDraft(ws, conn, draft.id, 'Outlook did not take the recipients as approved, so the email was not sent.');
     }
     // The approved files go onto the draft, and the draft is checked for them, before anything is sent.
     const notAttached = files.length ? await attachToDraft(ws, conn, draft.id, files) : null;
-    if (notAttached) return { status: 'failed', error: notAttached };
+    if (notAttached) return discardDraft(ws, conn, draft.id, notAttached);
     const sent = await callTool(ws, conn.id, 'OUTLOOK_SEND_DRAFT', { message_id: draft.id }, 'send');
-    if (!sent.successful) return { status: 'failed', error: sent.error ?? 'Outlook refused the message.' };
+    // Refused at the very send, the draft is left where it is: whether the send started can't be told from here,
+    // and a message that did go out must not be deleted. The record says the draft may still be there.
+    if (!sent.successful) return { status: 'failed', error: sent.error ?? 'Outlook refused the message.', result: { draft: draft.id, draftRemoved: false } };
     return { status: 'completed', result: { via: 'outlook', id: draft.id, threadId: draft.conversationId ?? p.threadKey }, externalId: draft.id };
+  },
+
+  async attachmentNames(workspaceId, conn, messageId, phase) {
+    const res = await callTool(workspaceId, conn.id, 'OUTLOOK_LIST_OUTLOOK_ATTACHMENTS', { message_id: messageId, response_detail: 'minimal' }, phase);
+    if (!res.successful) return null;
+    // A picture placed inside the body (a signature's logo) is not a file the sender attached.
+    const listed = ((payload(res.data).value ?? []) as { name?: string; isInline?: boolean }[]).filter((a) => !a.isInline);
+    // The name is the sender's text: control characters go, and it is kept short.
+    return listed.map((a) => String(a.name ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 200)).filter(Boolean);
   },
 
   async findSent(e, conn, p, since) {
@@ -283,6 +341,8 @@ export const outlook: Mailbox = {
   async file(e, conn, p) {
     const ws = e.workspace_id;
     let changed = 0;
+    // Set when this filing had to make the mailbox's Archive folder; kept in the result.
+    let made: string | undefined;
     // The changes are worked out from what the mailbox shows now, so doing them again is harmless. If part of a
     // batch is refused, the conversation is read again and what is still missing is tried once more.
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -292,7 +352,23 @@ export const outlook: Mailbox = {
         break;
       }
       const plan = outlookPlan(p.box, messages);
-      if (!plan.updates.length && !plan.toInbox.length && !plan.toArchive.length) return { status: 'completed', result: { via: 'outlook', changed } };
+      const done = { via: 'outlook', changed, ...(made ? { madeFolder: made } : {}) };
+      if (!plan.updates.length && !plan.toInbox.length && !plan.toArchive.length) return { status: 'completed', result: done };
+      // Where archived mail goes is settled before anything is changed, so a mailbox that can't have one fails cleanly.
+      let archive = 'archive';
+      if (plan.toArchive.length) {
+        // A folder made twice is the same folder (the tool hands back the one already there), so no answer here is a clean failure while nothing has moved.
+        const folder = await archiveFolder(ws, conn, await folders(ws, conn, 'send')).catch((err: Error) => {
+          if (changed) throw err;
+          return { refused: err.message };
+        });
+        if ('refused' in folder) {
+          if (!changed) return { status: 'failed', error: `This Outlook mailbox has no Archive folder, and Outlook would not make one: ${folder.refused}` };
+          break;
+        }
+        archive = folder.destination;
+        if (folder.made) made = 'Archive';
+      }
       const tally = { refused: null as string | null };
       const run = async (slug: string, args: Record<string, unknown>, size: number) => {
         const res = await callTool(ws, conn.id, slug, args, 'send');
@@ -303,9 +379,9 @@ export const outlook: Mailbox = {
       };
       // Outlook takes at most 20 messages in one batch.
       for (const part of chunks(plan.updates, 20)) await run('OUTLOOK_BATCH_UPDATE_MESSAGES', { updates: part }, part.length);
-      for (const part of chunks(plan.toArchive, 20)) await run('OUTLOOK_BATCH_MOVE_MESSAGES', { message_ids: part, destination_id: 'archive' }, part.length);
+      for (const part of chunks(plan.toArchive, 20)) await run('OUTLOOK_BATCH_MOVE_MESSAGES', { message_ids: part, destination_id: archive }, part.length);
       for (const part of chunks(plan.toInbox, 20)) await run('OUTLOOK_BATCH_MOVE_MESSAGES', { message_ids: part, destination_id: 'inbox' }, part.length);
-      if (!tally.refused) return { status: 'completed', result: { via: 'outlook', changed } };
+      if (!tally.refused) return { status: 'completed', result: { via: 'outlook', changed, ...(made ? { madeFolder: made } : {}) } };
       // Refused outright, with nothing changed: a clean failure.
       if (!changed) return { status: 'failed', error: tally.refused };
     }

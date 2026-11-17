@@ -15,6 +15,8 @@ export interface MailMessage {
   text: string;
   labels: string[];
   attachments: string[];
+  /** Outlook only: the message carries files whose names a listing does not give; they are asked for separately (see attachment-names.ts). */
+  hasAttachments?: boolean;
 }
 
 const ADDRESS = /[^\s<>,;"']+@[^\s<>,;"']+\.[a-z]{2,}/gi;

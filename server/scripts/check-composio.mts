@@ -43,6 +43,9 @@ const TOOLS: Record<string, Record<string, string[]>> = {
     OUTLOOK_SEND_DRAFT: ['message_id'],
     OUTLOOK_BATCH_UPDATE_MESSAGES: ['updates'],
     OUTLOOK_BATCH_MOVE_MESSAGES: ['message_ids', 'destination_id'],
+    // A mailbox with no Archive folder gets one the first time a thread is archived; a send that stops before its draft is sent removes that draft.
+    OUTLOOK_CREATE_MAIL_FOLDER: ['display_name', 'return_existing_if_exists'],
+    OUTLOOK_DELETE_MESSAGE: ['message_id'],
     OUTLOOK_GET_CALENDAR_VIEW: ['start_datetime', 'end_datetime', 'timezone', 'select', 'orderby', 'top', 'page_token'],
     OUTLOOK_GET_EVENT: ['event_id'],
     OUTLOOK_CALENDAR_CREATE_EVENT: ['subject', 'start_datetime', 'end_datetime', 'time_zone', 'body', 'is_html', 'attendees_info'],
@@ -79,6 +82,8 @@ const TYPES: Record<string, Record<string, string>> = {
   // This one takes a single file, where the send tools take one or a list.
   OUTLOOK_ADD_MAIL_ATTACHMENT: { attachment: 'object' },
   OUTLOOK_BATCH_UPDATE_MESSAGES: { updates: 'array' },
+  // Without it a second filing would be refused because the folder the first one made is there.
+  OUTLOOK_CREATE_MAIL_FOLDER: { return_existing_if_exists: 'boolean' },
   // Who is told about a calendar write is a word, and the guest lists are lists; Outlook's event body is text on
   // create and an object (a kind and the content) on update.
   GOOGLECALENDAR_PATCH_EVENT: { send_updates: 'string', attendees: 'array', start_time: 'string', end_time: 'string' },
