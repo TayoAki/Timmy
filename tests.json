@@ -188,8 +188,8 @@
   {
    "id": "api-hardening",
    "file": "server/test/hardening.test.ts",
-   "covers": "inputs that lean on how JavaScript objects work: a record id or collection named after something every object has (“__proto__”, “constructor”, “toString”…) is refused for put, patch and remove, and nothing is saved; a “__proto__” key inside a record changes nothing; ordinary ids with dots, colons and @ still work. Clearing a field: a null in a patch takes a page’s cover or icon off (JSON has no “undefined”), the browser side sends null only inside a patch, and a field that must be there (a page’s blocks) cannot be cleared. Tasks: one without a status, a priority or a created date, or with values the board does not know, is refused for put and patch. The demo’s reload, reset and restore actions are refused on a real workspace and its state is untouched",
-   "tests": 12,
+   "covers": "inputs that lean on how JavaScript objects work: a record id or collection named after something every object has (“__proto__”, “constructor”, “toString”…) is refused for put, patch and remove, and nothing is saved; a “__proto__” key inside a record changes nothing; ordinary ids with dots, colons and @ still work. Clearing a field: a null in a patch takes a page’s cover or icon off (JSON has no “undefined”), the browser side sends null only inside a patch, and a field that must be there (a page’s blocks) cannot be cleared. Tasks: one without a status, a priority or a created date, or with values the board does not know, is refused for put and patch. The demo’s reload, reset and restore actions are refused on a real workspace and its state is untouched. A workspace’s trade is one of the app’s choices: anything else sent at sign-up is stored as “other”",
+   "tests": 13,
    "status": "pass"
   },
   {

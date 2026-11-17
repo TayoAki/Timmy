@@ -4,7 +4,7 @@
  */
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { clearsAsNull } from '../../src/live/patches';
-import { boot, newWorkspace, rows, type Client } from './helpers';
+import { boot, newWorkspace, rows, signUp, type Client } from './helpers';
 
 let w: Client;
 const ws = (ops: unknown[]) => w.cmd({ type: 'ws', ops });
@@ -127,6 +127,19 @@ describe('actions that only make sense in the demo', () => {
     expect(Object.keys(state.ws.files)).toEqual(['mine']);
     // None of the demo's sample mail arrived with it.
     expect(state.threads).toEqual([]);
+  });
+});
+
+describe('a workspace’s trade is one of the app’s choices', () => {
+  it('a trade the app does not offer is stored as “other”, and a real one is kept', async () => {
+    // One account may create three workspaces, so each case signs up on its own.
+    for (const [given, kept] of [['constructor', 'other'], ['<b>sales</b>', 'other'], ['x'.repeat(5000), 'other'], ['real-estate', 'real-estate']] as const) {
+      const c = await signUp('Trade Test');
+      const org = await c.json<{ id: string }>('POST', '/api/auth/organization/create', { name: 'Trade', slug: `trade-${Math.random().toString(36).slice(2, 10)}`, trade: given });
+      expect(org.id, given.slice(0, 20)).toBeTruthy();
+      const row = (await rows<{ trade: string }>('select trade from workspace where id = $1', [org.id]))[0];
+      expect(row?.trade, given.slice(0, 20)).toBe(kept);
+    }
   });
 });
 
