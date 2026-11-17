@@ -38,6 +38,8 @@ const roles = {
   client: ac.newRole({ reports: ['read'] }),
 };
 
+/** The kinds of work a workspace can say it does: the same list the sign-up screen offers. */
+const TRADES = new Set(['sales', 'recruiting', 'real-estate', 'home-services', 'consulting', 'agency', 'other']);
 const SIGNUP_CLOSED = 'Timmy is invite-only for now. Ask the person who runs your workspace to invite this address.';
 
 /**
@@ -151,10 +153,12 @@ function build(secret: string) {
           // Each workspace gets a settings row; its starting state is seeded the first time it loads.
           afterCreateOrganization: async ({ organization: org, user }) => {
             const o = org as { id: string; name: string; trade?: string | null };
+            // The trade picks the workspace's starting kinds of thing; anything but one of the app's choices is "other".
+            const trade = typeof o.trade === 'string' && TRADES.has(o.trade) ? o.trade : 'other';
             await sysPool.query(
               `insert into workspace (id, name, trade, owner_name, owner_email)
                values ($1, $2, $3, $4, $5) on conflict (id) do nothing`,
-              [o.id, o.name, o.trade || 'other', user.name, user.email],
+              [o.id, o.name, trade, user.name, user.email],
             );
           },
         },

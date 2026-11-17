@@ -28,9 +28,20 @@ export function defineJob(name: string, handler: Handler, cron?: string) {
   if (cron) crons.set(name, cron);
 }
 
-class BossJobs implements Jobs {
-  constructor(private boss: PgBoss) {}
+export class BossJobs implements Jobs {
+  constructor(
+    private boss: PgBoss,
+    private schema = 'pgboss',
+  ) {}
   async enqueue(name: string, data: Record<string, unknown>, opts: JobOptions = {}) {
+    // pg-boss keeps a job's key but only enforces it on queues made with one of its special policies, and ours use
+    // the standard one (which every other job needs). So the wrapper checks itself: while a job with this key is
+    // still waiting, another is not queued. Two callers at the same instant can both get through; the jobs are
+    // safe to run twice, so the worst case is one call too many, never a missed run.
+    if (opts.singletonKey) {
+      const waiting = await this.boss.getDb().executeSql(`select 1 from ${this.schema}.job where name = $1 and singleton_key = $2 and state in ('created', 'retry') limit 1`, [name, opts.singletonKey]);
+      if (waiting.rows.length) return;
+    }
     await this.boss.send(name, data, { ...(opts.startAfter !== undefined ? { startAfter: opts.startAfter } : {}), ...(opts.singletonKey ? { singletonKey: opts.singletonKey } : {}) });
   }
   async stop() {
