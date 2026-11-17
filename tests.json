@@ -102,6 +102,20 @@
    "status": "pass"
   },
   {
+   "id": "api-calendar-gaps",
+   "file": "server/test/calendar-gaps.test.ts",
+   "covers": "an Outlook account without calendar permission recorded at the first refused read, never asked again, and its card says to reconnect; the nightly re-read of every calendar, one read each, never doubled; an edit inside a new event’s undo window replaces the waiting create under the same approval rules, with exactly one write and guests told once; deleting it in the window cancels the create; a delete with an unknown outcome settled by reading the event by id",
+   "tests": 18,
+   "status": "pass"
+  },
+  {
+   "id": "api-outlook-gaps",
+   "file": "server/test/outlook-gaps.test.ts",
+   "covers": "Outlook attachment names shown, fetched only for messages with files; an Archive folder created once when the mailbox has none, and filing fails cleanly if Outlook refuses; a draft left by a send that stopped is removed, only that draft, and the effect says so",
+   "tests": 13,
+   "status": "pass"
+  },
+  {
    "id": "api-review",
    "file": "server/test/review.test.ts",
    "covers": "one test per finding of the phase 0 safety review",
@@ -120,6 +134,13 @@
    "file": "server/test/coldmail.test.ts",
    "covers": "cold email sends nothing through the provider; the compose link; sent and reply detection for leads through sync",
    "tests": 8,
+   "status": "pass"
+  },
+  {
+   "id": "api-lead-reply",
+   "file": "server/test/lead-reply.test.ts",
+   "covers": "a reply typed in the Unibox to a lead who wrote back goes through the normal reply path (an email.reply effect, approval, the undo window, sent once); refused for an unsubscribed lead or with no thread in Timmy; a first cold email still opens the mail app; a client’s approved flag changes nothing; the lead form operation is refused",
+   "tests": 11,
    "status": "pass"
   },
   {
@@ -167,8 +188,15 @@
   {
    "id": "api-drive",
    "file": "server/test/drive.test.ts",
-   "covers": "Google Drive through Composio, read-only: connect beside a mailbox; the list of recent files without folders or trash; links kept only if they are Google's; paging, resuming, and asking only for what changed since; file events; the nightly pass; Ask's file search by name, wrapped as outside content; no other workspace sees the files; disconnect removes them; reading inside a file: Google’s document structure to text, docs, sheets and slides read on demand through the connection and not stored, kinds that can’t be opened said plainly, only files on the workspace’s own list are ever asked of Drive, long files cut off and flagged, contents wrapped as outside content, no other workspace can read a file by its id",
-   "tests": 18,
+   "covers": "Google Drive through Composio, read-only: connect beside a mailbox; the list of recent files without folders or trash; links kept only if they are Google's; paging, resuming, and asking only for what changed since; file events; the nightly pass; Ask's file search by name, wrapped as outside content; no other workspace sees the files; disconnect removes them; reading inside a file: Google’s document structure to text, docs, sheets and slides read on demand through the connection and not stored, kinds that can’t be opened said plainly, only files on the workspace’s own list are ever asked of Drive, long files cut off and flagged, contents wrapped as outside content, no other workspace can read a file by its id; contents searchable with a snippet, the text gone on trash, delete and disconnect; the cap per pass; files shared long ago listed; stale trashed entries dropped by the nightly check",
+   "tests": 32,
+   "status": "pass"
+  },
+  {
+   "id": "api-onedrive",
+   "file": "server/test/onedrive.test.ts",
+   "covers": "OneDrive connected read-only: the narrow permissions asked for; the first walk and the change feed (including deletions and an expired feed link); events; search by name and by words inside Word, Excel and PowerPoint files; reading each kind; malformed, oversized, encrypted or unusual archives refused safely; downloads only over https from an allowed public host; only read-only tools callable for Drive and OneDrive accounts; nothing across workspaces or from a disconnected account",
+   "tests": 27,
    "status": "pass"
   },
   {
@@ -221,10 +249,17 @@
    "status": "pass"
   },
   {
+   "id": "api-file-care",
+   "file": "server/test/file-care.test.ts",
+   "covers": "uploads nothing has referenced for 7 days are deleted, and never one still referenced by a page, a page version, a draft, a waiting or held email or the chat settings; metadata removed from JPEG, PNG and WebP with the picture intact, a malformed file refused; virus scanning with a stand-in clamd (clean, the test virus refused and deleted, scanner down leaves the file unusable) and without a scanner",
+   "tests": 18,
+   "status": "pass"
+  },
+  {
    "id": "api-chat",
    "file": "server/test/chat.test.ts",
-   "covers": "the website chat on a real workspace: the workspace comes only from the site key and the conversation only from a signed token (forged, expired, another conversation’s or another site’s token refused); an unknown key, a chat that is off and a workspace with sending switched off all answer the same; replies come from the chat’s own rules with no model call; every reply is an effect record approved by the rule set when an owner or admin switched the chat on, and nothing is shown without one (a database trigger refuses it); a reply is shown once; switching on needs an owner or admin and a website, and only they change settings while it is on; the frame may be embedded only by the named site; a visitor’s text is stored and shown as text; leads from chats never overwrite a lead from elsewhere; take over stops Timmy; limits per visitor, address, conversation and day; streams bounded; retention deletes old conversations; nothing across workspaces; one address may send at most a set number of messages a day to one business’s chat",
-   "tests": 43,
+   "covers": "the website chat on a real workspace: the workspace comes only from the site key and the conversation only from a signed token (forged, expired, another conversation’s or another site’s token refused); an unknown key, a chat that is off and a workspace with sending switched off all answer the same; replies come from the chat’s own rules with no model call; every reply is an effect record approved by the rule set when an owner or admin switched the chat on, and nothing is shown without one (a database trigger refuses it); a reply is shown once; switching on needs an owner or admin and a website, and only they change settings while it is on; the frame may be embedded only by the named site; a visitor’s text is stored and shown as text; leads from chats never overwrite a lead from elsewhere; take over stops Timmy; limits per visitor, address, conversation and day; streams bounded; retention deletes old conversations; nothing across workspaces; one address may send at most a set number of messages a day to one business’s chat; with its own address set, the chat answers only there and the app’s routes 404 there with no cookie; the proof-of-work bot check (a missing, wrong or reused answer refused, one challenge starts one conversation); limits held across two servers; chat leads on the Speed to lead clock; the Today card raised and cleared; older conversations paged; the per-workspace stream cap; switched off when its enabler loses the role",
+   "tests": 60,
    "status": "pass"
   },
   {
@@ -232,6 +267,13 @@
    "file": "server/test/automations.test.ts",
    "covers": "the automation engine: only an owner or admin switches one on, and only when every block can run; frozen versions; new-email and schedule triggers (inbox mail only, never the mailbox’s own mail or mail an effect sent, one run per trigger event); create a task, notify, draft a reply, add to a doc, if/else, wait; “ask me first” and Send wait in Approvals and nothing goes out without a person (a Send approved by a rule or by Auto mode is refused); Send puts forward only the reply the run drafted, to the address the email came from; no step runs twice (lease checked in every write, ids derived from run and step); retries, then five failures or 100 runs an hour switch it off with the reason; a dry run writes nothing and calls no model; runs and steps readable only in their workspace",
    "tests": 52,
+   "status": "pass"
+  },
+  {
+   "id": "api-automation-gaps",
+   "file": "server/test/automation-gaps.test.ts",
+   "covers": "the dry run with a chosen email writes nothing and calls no model; one card for Draft then Send, settled together and sent once; a member sees who a card waits for; paused while no mailbox is connected and resumed after; runs over the job limit wait and all complete; a line an automation added survives a save from an editor opened before it; switched off when the person who switched it on loses the role, leaves or is removed",
+   "tests": 22,
    "status": "pass"
   },
   {
@@ -249,10 +291,24 @@
    "status": "pass"
   },
   {
+   "id": "api-mailbox-first-sight",
+   "file": "server/test/mailbox-first-sight.test.ts",
+   "covers": "a label or category already on a message when Timmy first sees it is never acted on, for Gmail and Outlook; one put on afterwards is; taken off and put back counts as the person’s; Timmy’s own filing clears the record; messages from before the record existed count as seen",
+   "tests": 13,
+   "status": "pass"
+  },
+  {
    "id": "api-ontology-types",
    "file": "server/test/ontology-types.test.ts",
    "covers": "kinds of thing for the workspace’s trade: a new workspace gets its trade’s kinds as suggestions and nothing is extracted until one is accepted; an accepted kind yields one thing with its fields and evidence, and a second thread about the same thing merges into it; a thing whose sentence is not in the thread is dropped, and so is a field whose value appears nowhere in it; a kind seen in three threads becomes a suggestion with examples, in two it does not; dismissing stops it being suggested; renaming, removing a field and stopping (which removes what was learned); only an owner or admin accepts or stops, a read-only role can look; nothing across workspaces by API, tool or row; disconnecting the mailbox removes what was learned from it; still one model read per thread, with a 1,200-token limit; wrong-shaped model output makes nothing",
    "tests": 31,
+   "status": "pass"
+  },
+  {
+   "id": "api-tracked-review",
+   "file": "server/test/tracked-review.test.ts",
+   "covers": "accepting a kind reads the last 30 days of person-written mail for it, bounded and budgeted, keeping only backed values; near-duplicate things offered for merging and merged only by an owner or admin, never automatically; dismissed and stopped kinds brought back",
+   "tests": 15,
    "status": "pass"
   },
   {
@@ -405,6 +461,13 @@
    "file": "e2e/live/live-files.cjs",
    "covers": "in the browser: a picture added to a page is uploaded, shows after a reload, and the page holds a reference, not the picture; an email with an attachment is approved with the file listed and goes out once with it; an attachment of a type that isn’t allowed is refused with the reason; on staging it runs against the real Railway bucket",
    "checks": 34,
+   "status": "pass"
+  },
+  {
+   "id": "live-onedrive",
+   "file": "e2e/live/live-onedrive.cjs",
+   "covers": "in the browser: the OneDrive card says Timmy only reads it; connecting; a Word document and a workbook found by a word inside them; reading one; a deleted file and a disconnect take files off the list",
+   "checks": 14,
    "status": "pass"
   },
   {
