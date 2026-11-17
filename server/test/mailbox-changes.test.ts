@@ -590,7 +590,7 @@ describe.each(['gmail', 'outlook'] as const)('changes made in the mailbox itself
       await reader.read();
       await reader.cancel();
     }
-    expect(jobs().queue.filter((j) => j.name === 'mail.changes').map((j) => j.data)).toEqual([{ workspaceId: w.workspaceId, gap: 60 }]);
+    expect(jobs().queue.filter((j) => j.name === 'mail.changes').map((j) => j.data)).toEqual([{ workspaceId: w.workspaceId, gap: 300 }]);
     // The morning run looked a moment ago, so this look is skipped: no call is made.
     const before = calls().length;
     await jobs().drain();
@@ -598,7 +598,7 @@ describe.each(['gmail', 'outlook'] as const)('changes made in the mailbox itself
     expect((await thread('Open tab'))!.box).toBe('inbox');
     // Opened again later, the look goes ahead.
     await later(10);
-    await jobs().enqueue('mail.changes', { workspaceId: w.workspaceId, gap: 60 });
+    await jobs().enqueue('mail.changes', { workspaceId: w.workspaceId, gap: 300 });
     await jobs().drain();
     expect(calls().slice(before)).toEqual([LIST[app]]);
     expect((await thread('Open tab'))!.box).toBe('archived');
@@ -648,7 +648,7 @@ describe('asking for a look while a tab is open', () => {
     jobs().queue = [];
     appLoaded(id);
     for (let i = 0; i < 5; i++) checkWhileOpen(id);
-    expect(queued()).toEqual([{ workspaceId: id, gap: 60 }]);
+    expect(queued()).toEqual([{ workspaceId: id, gap: 300 }]);
     jobs().queue = [];
   });
 });

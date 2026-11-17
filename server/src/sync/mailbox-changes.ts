@@ -10,6 +10,13 @@
  *
  * What is picked up is applied to Timmy's state directly. Nothing here proposes an effect or calls the
  * mailbox, so a change that came from the mailbox is never written back to it.
+ *
+ * A message can arrive already marked with one of Timmy's labels the person never put there: Outlook keeps
+ * categories on mail sent within one company, so a colleague who also files with Timmy sends "Timmy Follow Up"
+ * mail; a Gmail filter can label mail as it comes in. So what each message carries the first time Timmy sees it is
+ * recorded (`mailbox_message_seen`), and that mark is left out of what the thread is read as carrying: it is never
+ * acted on. Only a change on a message Timmy has already seen can move a thread. Once Timmy itself files the
+ * thread, the marks on its messages are Timmy's doing, and the record of them is cleared.
  */
 import type { Box, Thread } from '../../../src/data/types';
 import type { State } from '../../../src/state/store';
@@ -133,6 +140,47 @@ interface Compared {
   filings: Map<string, Filing[]>;
   /** Whether a thread needs a closer look: the mailbox shows something else than last time, or Timmy filed it since. */
   open: (key: string) => boolean;
+  /** What to write to `mailbox_message_seen`: messages seen for the first time, and records Timmy's own filing has cleared. */
+  firstSight: { message_id: string; labels: Labelled[] }[];
+}
+
+/**
+ * A message with no record of its first sight, in a thread whose last look came this long after the message arrived,
+ * was seen then, before such records were kept: its marks were taken into account at that look, so none count as
+ * found on arrival. The margin allows for a listing that lags a little behind the mail that has just arrived.
+ */
+const RECORDS_LAG_MS = 5 * 60_000;
+
+/**
+ * Takes the marks a message carried when Timmy first saw it out of what it is read as carrying, so a mark someone
+ * else put there before Timmy saw the message never moves a thread. Returns the listing as it is to be read, and
+ * what is to be recorded: each message seen for the first time with the marks it came with, and each record that
+ * Timmy's own filing of the thread, completed since, has cleared (from then on the marks are Timmy's doing).
+ */
+async function withoutFirstMarks(tx: Tx, conn: ConnectionRow, messages: MessageState[], since: Date, last: Map<string, Last>, filings: Map<string, Filing[]>): Promise<{ messages: MessageState[]; firstSight: Compared['firstSight'] }> {
+  const counted = messages.filter((m) => m.at.getTime() > since.getTime() && !m.labels.includes('DRAFT'));
+  if (!counted.length) return { messages, firstSight: [] };
+  const { rows } = await tx.query('select message_id, labels, seen_at from mailbox_message_seen where connection_id = $1 and message_id = any($2::text[])', [conn.id, counted.map((m) => m.id)]);
+  const recorded = new Map(rows.map((r) => [r.message_id as string, r as { labels: Labelled[]; seen_at: Date }]));
+  const firstSight: Compared['firstSight'] = [];
+  const out = messages.map((m) => {
+    if (m.at.getTime() <= since.getTime() || m.labels.includes('DRAFT')) return m;
+    const row = recorded.get(m.id);
+    let marks: Labelled[];
+    if (row) {
+      // Timmy filed the thread after this message was first seen: whatever it carries now is that filing's doing, or the person's since.
+      const refiled = (filings.get(m.threadKey) ?? []).some((f) => f.status === 'completed' && !!f.at && f.at.getTime() > new Date(row.seen_at).getTime());
+      // A mark it came with that has since been taken off is forgotten, so putting it back on is a change like any other.
+      marks = refiled ? [] : row.labels.filter((p) => m.filedAs.includes(p));
+      if (marks.length !== row.labels.length) firstSight.push({ message_id: m.id, labels: marks });
+    } else {
+      const was = last.get(m.threadKey);
+      marks = was && m.at.getTime() < new Date(was.seen_at).getTime() - RECORDS_LAG_MS ? [] : m.filedAs;
+      firstSight.push({ message_id: m.id, labels: marks });
+    }
+    return marks.length ? { ...m, filedAs: m.filedAs.filter((p) => !marks.includes(p)) } : m;
+  });
+  return { messages: out, firstSight };
 }
 
 /**
@@ -140,10 +188,9 @@ interface Compared {
  * threads. A filing counts as on its way while it is approved or running, while its outcome is still being
  * checked (the gateway checks for half an hour), and until the settle time after it completed has passed.
  */
-async function compare(tx: Tx, workspaceId: string, conn: ConnectionRow, messages: MessageState[], since: Date): Promise<Compared | null> {
-  const threads = threadsSeen(messages, since);
-  if (!threads.size) return null;
-  const keys = [...threads.keys()];
+async function compare(tx: Tx, workspaceId: string, conn: ConnectionRow, listed: MessageState[], since: Date): Promise<Compared | null> {
+  const keys = [...new Set(listed.filter((m) => m.at.getTime() > since.getTime()).map((m) => m.threadKey))];
+  if (!keys.length) return null;
   const seenRows = await tx.query('select thread_key, in_inbox, labels, label, unread, gone, seen_at from mailbox_seen where connection_id = $1 and thread_key = any($2::text[])', [conn.id, keys]);
   const last = new Map(seenRows.rows.map((r) => [r.thread_key as string, r as Last]));
   const filed = await tx.query(
@@ -162,22 +209,37 @@ async function compare(tx: Tx, workspaceId: string, conn: ConnectionRow, message
     if (!filings.has(r.target)) filings.set(r.target, []);
     filings.get(r.target)!.push(r);
   }
+  const { messages, firstSight } = await withoutFirstMarks(tx, conn, listed, since, last, filings);
+  const threads = threadsSeen(messages, since);
   const open = (key: string) => {
     const was = last.get(key);
     if (!was || !same(was, threads.get(key)!.seen)) return true;
     // The mailbox shows what it showed before, but Timmy filed the thread in between: the person may have undone that there.
     return (filings.get(key) ?? []).some((f) => f.pending || (!!f.at && f.at.getTime() > was.seen_at.getTime()));
   };
-  return { threads, last, filings, open };
+  return { threads, last, filings, open, firstSight };
+}
+
+/** Writes what `withoutFirstMarks` found to record: each message's first sight once, and records Timmy's filing cleared. */
+async function recordFirstSight(tx: Tx, workspaceId: string, conn: ConnectionRow, firstSight: Compared['firstSight']) {
+  if (!firstSight.length) return;
+  await tx.query(
+    `insert into mailbox_message_seen (connection_id, workspace_id, message_id, labels, seen_at)
+     select $1, $2, r.message_id, array(select jsonb_array_elements_text(r.labels)), now()
+     from jsonb_to_recordset($3::jsonb) as r(message_id text, labels jsonb)
+     on conflict (connection_id, message_id) do update set labels = excluded.labels`,
+    [conn.id, workspaceId, JSON.stringify(firstSight)],
+  );
 }
 
 /**
  * Whether a listing gives anything to do. The periodic check asks this before it locks the workspace, so a look
- * that finds nothing new costs two reads and changes nothing.
+ * that finds nothing new costs two reads and changes nothing. A message seen for the first time counts: what it
+ * came with has to be recorded before a later look can tell what was done to it.
  */
 export async function anythingNew(tx: Tx, workspaceId: string, conn: ConnectionRow, messages: MessageState[], since: Date): Promise<boolean> {
   const c = await compare(tx, workspaceId, conn, messages, since);
-  return !!c && [...c.threads.keys()].some(c.open);
+  return !!c && (c.firstSight.length > 0 || [...c.threads.keys()].some(c.open));
 }
 
 /**
@@ -238,6 +300,8 @@ export async function followMailbox(tx: Tx, state: State, workspaceId: string, c
   const result: Followed = { moved: 0, marked: 0, removed: 0, leftAlone: 0, unclear: 0, back: [] };
   const c = await compare(tx, workspaceId, conn, messages, since);
   if (!c) return { state, result };
+  // Recorded before anything else, whatever this look goes on to conclude: from here on, these marks are the ones the messages came with.
+  await recordFirstSight(tx, workspaceId, conn, c.firstSight);
   const { threads, last, filings } = c;
   let todo = [...threads.keys()].filter(c.open);
   if (!todo.length) return { state, result };

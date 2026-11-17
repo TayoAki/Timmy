@@ -6,9 +6,9 @@
  * mailbox, and never more, however many threads there are: nothing is asked per thread. Mail older than the
  * days looked at, or beyond the two pages, is left as it is.
  *
- * When it runs: with the nightly check, in the morning run, and while Timmy is in use: when someone opens the app,
- * and then every ten minutes for as long as a tab is open and someone has done something in Timmy in the last half
- * hour. A workspace nobody is using is not looked at in between: nobody would see the difference before the next
+ * When it runs: with the nightly check, in the morning run, and while Timmy is in use: when someone opens the app
+ * (at most every five minutes per mailbox, however often the page is reloaded), and then every ten minutes for as
+ * long as a tab is open and someone has done something in Timmy in the last half hour. A workspace nobody is using is not looked at in between: nobody would see the difference before the next
  * of those, and a tab left open overnight must not go on costing provider calls.
  */
 import { config } from '../config';
@@ -90,6 +90,8 @@ export async function checkMailbox(workspaceId: string, connectionId: string, op
     for (const key of out.result.back) state = await projectThread(tx, state, workspaceId, conn, key);
     // What the mailbox showed for threads that have long left the days looked at is of no more use.
     await tx.query(`delete from mailbox_seen where connection_id = $1 and seen_at < now() - interval '30 days' and thread_key <> all($2::text[])`, [conn.id, [...new Set(listed.map((m) => m.threadKey))]]);
+    // The same for what each message carried when first seen: a look only ever reads the last few days of mail.
+    await tx.query(`delete from mailbox_message_seen where connection_id = $1 and seen_at < now() - interval '30 days' and message_id <> all($2::text[])`, [conn.id, listed.map((m) => m.id)]);
     return { state, result: out.result };
   });
   // Counts only: nothing of a thread is written to the log.
@@ -137,9 +139,15 @@ export function appLoaded(workspaceId: string) {
 }
 
 /**
+ * The look asked for when the app is opened is made only if the mailbox was not looked at in this long. Each
+ * reload opens the app again, so a shorter gap let someone who reloads cause a look a minute.
+ */
+export const OPENED_GAP_SECONDS = 300;
+
+/**
  * Called while a tab is open on a workspace, as often as the caller likes (when its stream opens, and on every
  * ping). It queues a look in two cases. The app was opened since the last look was asked for: the look is made
- * unless the mailbox was looked at in the last minute. Otherwise, at most every few minutes: that look is made
+ * unless the mailbox was looked at in the last five minutes. Otherwise, at most every few minutes: that look is made
  * only while the workspace is in use (someone did something in Timmy within `idleSeconds`) and the mailbox was
  * not looked at within `everySeconds`, so a tab that is merely left open, several tabs, or several servers do
  * not multiply provider calls. Both conditions are checked in the database when the look runs.
@@ -153,6 +161,6 @@ export function checkWhileOpen(workspaceId: string) {
   forget(askedAt, now);
   askedAt.set(workspaceId, now);
   // A look asked for every five minutes and allowed every ten runs every ten; the minute less absorbs the queue's own delay.
-  const data = opened ? { workspaceId, gap: 60 } : { workspaceId, gap: Math.max(0, everySeconds - 60), idle: idleSeconds };
+  const data = opened ? { workspaceId, gap: OPENED_GAP_SECONDS } : { workspaceId, gap: Math.max(0, everySeconds - 60), idle: idleSeconds };
   enqueueSoon('mail.changes', data, { singletonKey: `changes:${workspaceId}` });
 }
