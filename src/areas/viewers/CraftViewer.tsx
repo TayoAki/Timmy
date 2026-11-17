@@ -6,7 +6,7 @@
  */
 import { Download, Maximize2, Minimize2, RotateCcw, TriangleAlert } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { NOW } from '../../data/mock';
+import { NOW, PEOPLE } from '../../data/mock';
 import type { WFile } from '../../data/ws-types';
 import { putBlob } from '../../lib/blobs';
 import { FULLSCREEN_KEY, useFullscreen } from '../../lib/fullscreen';
@@ -19,7 +19,8 @@ import '../../styles/viewers.css';
 
 type Status = 'checking' | 'missing' | 'loading' | 'opening' | 'ready' | 'failed' | 'empty';
 
-const AUTHOR = 'Taylor Morgan';
+/** Whose name the editor writes into a file's comments and changes: the signed-in person (Taylor Morgan in the demo). */
+const author = () => PEOPLE.me?.name || 'You';
 /** How long a first load may take (the app downloads once, then the browser caches it). */
 const START_TIMEOUT = 60_000;
 
@@ -40,7 +41,7 @@ export function CraftViewer({ file, app, note }: { file: WFile; app: CraftApp; n
   fileRef.current = file;
   /** Where a plain Save goes: this file, or the copy a Save As made. */
   const target = useRef<{ id: string; name: string }>({ id: file.id, name: '' });
-  const src = `/craft/${app}/index.html?host=parent&author=${encodeURIComponent(AUTHOR)}`;
+  const src = `/craft/${app}/index.html?host=parent&author=${encodeURIComponent(author())}`;
 
   // Is the app installed on this server? (A dev server answers unknown paths with the SPA page.)
   useEffect(() => {

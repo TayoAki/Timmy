@@ -16,6 +16,7 @@
  */
 import { useSyncExternalStore } from 'react';
 import { PEOPLE } from '../data/mock';
+import { isLive } from '../live/clock';
 
 /* ───────────── Settings ───────────── */
 
@@ -59,7 +60,8 @@ export const SHORTCUTS: Record<ShortcutId, { label: string; match: (e: KeyboardE
 
 /** Full names and company names from the workspace: what Whisper most often misspells. */
 export function workspaceWords(): string[] {
-  const out = new Set<string>(['Timmy', 'Northpeak']);
+  // The demo's own company is a word to know there; a real workspace starts from its own people and companies.
+  const out = new Set<string>(isLive() ? ['Timmy'] : ['Timmy', 'Northpeak']);
   for (const p of Object.values(PEOPLE)) {
     if (p.bot) continue;
     if (p.name.includes(' ')) out.add(p.name);

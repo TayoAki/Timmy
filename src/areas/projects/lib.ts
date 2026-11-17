@@ -6,7 +6,7 @@ import { NOW } from '../../data/mock';
 import type { Deal, Thread } from '../../data/types';
 import type { Block, DocBody, Project, Task, WFile, WS } from '../../data/ws-types';
 import { fmtDay, money } from '../../lib/format';
-import { firstName, midSentence, patch, put, uid, type WsOp } from '../../state/ws';
+import { firstName, midSentence, patch, put, signOff, uid, type WsOp } from '../../state/ws';
 
 export const WORK_FOLDER = 'f02';
 export const ARCHIVE_FOLDER = 'f99';
@@ -212,6 +212,6 @@ export const projectUpdate = (ws: WS, threads: Thread[], deals: Record<string, D
   ];
   return {
     subject: `${p.name}: weekly update`,
-    body: `Hi all,\n\nHere is where ${p.name} stands this week.\n\n${lines.join('\n')}\n\nBest,\nTaylor`,
+    body: `Hi all,\n\nHere is where ${p.name} stands this week.\n\n${lines.join('\n')}\n\n${signOff('Best')}`,
   };
 };

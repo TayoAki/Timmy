@@ -13,7 +13,7 @@ import { NOW } from '../../data/mock';
 import type { WFile, WS } from '../../data/ws-types';
 import { fmtStamp } from '../../lib/format';
 import { useStore, ws, type Action } from '../../state/store';
-import { MAX_STARRED, patch, pathOf, personName, put } from '../../state/ws';
+import { MAX_STARRED, patch, pathOf, personName, put, signOff } from '../../state/ws';
 import { FileActionsMenu } from '../files/FileActions';
 import { BlockText, DocEditor } from './DocEditor';
 import { DeckView } from './DeckView';
@@ -27,7 +27,7 @@ export const emailLink = (W: WS, file: WFile): Action => ({
   draft: {
     to: [],
     subject: file.name,
-    body: `Hi,\n\nHere’s the link to “${file.name}”. It’s in ${pathOf(W, file.folder).join(' › ')}.\n\nThanks,\nTaylor`,
+    body: `Hi,\n\nHere’s the link to “${file.name}”. It’s in ${pathOf(W, file.folder).join(' › ')}.\n\n${signOff('Thanks')}`,
     project: file.project,
   },
 });

@@ -5,6 +5,7 @@ import { scopedThreads } from '../state/scope';
 import { ScopeNote } from '../components/ProjectScope';
 import { useMemo, useState } from 'react';
 import { BOXES, LABEL_GUIDE, PEOPLE, PROJECTS } from '../data/mock';
+import { isLive } from '../live/clock';
 import type { Box, ProjectId, Thread } from '../data/types';
 import { dayDiff, fmtListDate } from '../lib/format';
 import { byNewest, byOldest, counterpart, inBox, isOverdue, labelOf, useStore } from '../state/store';
@@ -129,7 +130,7 @@ export function MailboxView({ box, tab }: { box: Box | ProjectId; tab: string })
       <div className="list-head">
         <span>
           {rows.length} {rows.length === 1 ? 'thread' : 'threads'}
-          {box === 'archived' && ' shown · 2,418 more searchable'}
+          {box === 'archived' && !isLive() && ' shown · 2,418 more searchable'}
         </span>
         {box === 'inbox' && rows.length > 0 && (
           <button className="btn btn-xs" onClick={() => dispatch({ type: 'navigate', route: { view: 'today', tab: 'triage' } })}>

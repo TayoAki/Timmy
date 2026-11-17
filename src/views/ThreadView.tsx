@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { NOW, PEOPLE } from '../data/mock';
-import { decisionOps, firstName, isoDay, pathOf } from '../state/ws';
+import { decisionOps, firstName, isoDay, pathOf, signOff } from '../state/ws';
 import { BlockTimeDialog } from '../areas/calendar/BlockTimeDialog';
 import { TaskDialog } from '../areas/tasks/TaskDialog';
 import { AutoTextarea, Field, Modal } from '../components/kit';
@@ -245,7 +245,7 @@ const recapBody = (t: Thread) => {
     `Where things stand: ${t.ask}.`,
     open.length ? `Open actions:\n${open.join('\n')}` : 'No open actions.',
     t.context ? `Background: ${t.context}` : '',
-    'Best,\nTaylor',
+    signOff('Best'),
   ]
     .filter(Boolean)
     .join('\n\n');
