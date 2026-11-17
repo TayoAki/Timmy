@@ -671,7 +671,7 @@ describe('Ask me first', () => {
     await tick();
     expect(await tasks()).toEqual([]);
 
-    // Who may answer: an owner or admin, or whoever switched the automation on. Not a member, an assistant or RevOps.
+    // Who may answer: an owner or admin (the person who switched it on is one, while they keep that role). Not a member, an assistant or RevOps.
     for (const role of ['member', 'assistant', 'revops']) {
       const other = await addMember(w.workspaceId, role);
       const refused = await decide(other, e!.id, 'approve');

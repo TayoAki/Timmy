@@ -71,7 +71,7 @@ export const KINDS: Kind[] = [
     color: 'var(--c-red)',
     description: 'When an email arrives that matches',
     fields: [
-      { id: 'from', label: 'From contains', type: 'text', placeholder: 'Anyone' },
+      { id: 'from', label: 'From contains', type: 'text', placeholder: 'Any sender address, or part of one' },
       { id: 'subject', label: 'Subject contains', type: 'text', placeholder: 'Any subject' },
     ],
     sample: { name: 'Jamie Lee', email: 'jamie@brightwave.co', company: 'Brightwave', subject: 'Quote for 40 seats?', snippet: 'Hi Taylor, could you send pricing for 40 seats starting in January?' },

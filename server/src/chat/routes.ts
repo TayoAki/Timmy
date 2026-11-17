@@ -113,6 +113,8 @@ export function chatRoutes(app: Hono<Env>): void {
     if (!site) return refuse(c, CLOSED);
     if (!plain(body) || typeof body.visitor !== 'string' || !BROWSER_ID.test(body.visitor) || typeof body.id !== 'string' || !BROWSER_ID.test(body.id) || typeof body.text !== 'string') return refuse(c, NOT_A_MESSAGE);
     if (!allow(`message:visitor:${site.workspaceId}:${body.visitor}`, config.chat.visitorMessagesPerMinute, 60_000)) return refuse(c, TOO_FAST);
+    // Per business per day, so one address can't use up a chat's whole daily allowance and close it to everyone else.
+    if (!allow(`message:day:${site.workspaceId}:${address}`, config.chat.addressMessagesPerDay, 86_400_000)) return refuse(c, TOO_FAST);
     const text = cleanText(body.text);
     if (!text) return refuse(c, NOT_A_MESSAGE);
     if (text.length > config.chat.maxMessageChars) return refuse(c, TOO_LONG);

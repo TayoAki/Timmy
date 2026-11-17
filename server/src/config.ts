@@ -181,6 +181,8 @@ export const config = {
     /** Messages a minute from one visitor and from one address; new conversations an hour from one address. */
     visitorMessagesPerMinute: Number(env.TIMMY_CHAT_VISITOR_PER_MINUTE ?? 12),
     addressMessagesPerMinute: Number(env.TIMMY_CHAT_ADDRESS_PER_MINUTE ?? 60),
+    /** Messages one address may send to one business's chat in a day: one address alone can't use up the day's allowance. */
+    addressMessagesPerDay: Number(env.TIMMY_CHAT_ADDRESS_PER_DAY ?? 300),
     addressConversationsPerHour: Number(env.TIMMY_CHAT_ADDRESS_CONVERSATIONS_PER_HOUR ?? 30),
     /** Reads of the public settings and stream connects a minute from one address. */
     addressReadsPerMinute: Number(env.TIMMY_CHAT_ADDRESS_READS_PER_MINUTE ?? 120),

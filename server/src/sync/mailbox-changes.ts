@@ -256,8 +256,16 @@ export async function followMailbox(tx: Tx, state: State, workspaceId: string, c
   const deleted = todo.filter((key) => threads.get(key)!.seen.gone);
   if (deleted.length) {
     const alive = await tx.query(`select distinct thread_key from item where workspace_id = $1 and connection_id = $2 and kind = 'message' and direction = 'in' and thread_key = any($3::text[]) and not (labels && array['TRASH', 'SPAM'])`, [workspaceId, conn.id, deleted]);
-    for (const r of alive.rows) threads.get(r.thread_key as string)!.seen = { inInbox: false, labels: [], unread: false, gone: false, inPart: true };
-    todo = todo.filter(c.open);
+    // A message in spam says what the provider thought of that message, not what the person did with the thread:
+    // a stranger's reply can land in spam on its own. So when the only recent messages of a thread with older mail
+    // are in spam, nothing is concluded about it. Messages the person put in the trash still count.
+    const unsure = new Set<string>();
+    for (const r of alive.rows) {
+      const key = r.thread_key as string;
+      if (threads.get(key)!.seen.spam) unsure.add(key);
+      else threads.get(key)!.seen = { inInbox: false, labels: [], unread: false, gone: false, inPart: true };
+    }
+    todo = todo.filter((key) => !unsure.has(key)).filter(c.open);
   }
   if (!todo.length) return { state, result };
 

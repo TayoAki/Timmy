@@ -13,6 +13,7 @@ import type { State } from '../../../src/state/store';
 import type { Thread } from '../../../src/data/types';
 import type { Block, Task } from '../../../src/data/ws-types';
 import { KIND, evaluate } from '../../../src/areas/automations/catalog';
+import { draftHash } from '../../../src/live/hash';
 import { draftFor } from '../agent/draft';
 import type { Tx } from '../db/pool';
 import { propose, type EffectRow, type Proposal } from '../gateway/gateway';
@@ -177,7 +178,8 @@ const draft: Exec = async ({ workspaceId, run, node }) => {
     if (out.why === 'has-draft') return async () => done('The thread already has a draft, so Timmy left it as it is', { drafted: false });
     throw new StepError(out.reason ?? 'Timmy couldn’t write that draft.', out.why === 'model' || out.why === undefined);
   }
-  return async () => done(`Drafted a reply to ${run.context.fields.email}. It waits in Approvals, and nothing is sent`, { drafted: true });
+  // The draft's fingerprint goes with the step, so a Send step later can tell the draft it wrote from one that replaced it.
+  return async () => done(`Drafted a reply to ${run.context.fields.email}. It waits in Approvals, and nothing is sent`, { drafted: true, ...(out.draft ? { draft: draftHash(out.draft) } : {}) });
 };
 
 const approve: Exec = async (env) => {
@@ -222,10 +224,12 @@ const send: Exec = async (env) => {
     const thread = threadOf(state, run);
     if (!thread) throw new StepError('The email this run started from isn’t in Timmy any more.', false);
     // Only the reply this run drafted is put forward. A draft the person wrote themselves is theirs to send.
-    const drafted = before(version.graph, node.id).some((b) => b.kind === 'draft' && run.context.steps[b.id]?.drafted === true);
-    if (!drafted) return done('Nothing was put forward: this run didn’t draft a reply on the thread (it already had a draft, or you had answered)', { proposed: false });
+    const wrote = before(version.graph, node.id).filter((b) => b.kind === 'draft' && run.context.steps[b.id]?.drafted === true).map((b) => run.context.steps[b.id]?.draft);
+    if (!wrote.length) return done('Nothing was put forward: this run didn’t draft a reply on the thread (it already had a draft, or you had answered)', { proposed: false });
     const reply = thread.draft;
     if (!reply) return done('Nothing was put forward: the draft is no longer on this thread (it was sent or discarded)', { proposed: false });
+    // Someone (a teammate, the chat) may have replaced the draft while the run waited. That draft is theirs to send.
+    if (!wrote.includes(draftHash(reply))) return done('Nothing was put forward: the draft on the thread changed after Timmy wrote it, so it is left for you to send', { proposed: false });
     // One email per thread waits at a time. If one is already waiting or on its way, this run has nothing to add.
     const waiting = await tx.query(`select 1 from effect where workspace_id = $1 and kind in ('email.send', 'email.reply') and preview->>'thread' = $2 and status in ('intended', 'approved', 'executing', 'uncertain') limit 1`, [workspaceId, thread.id]);
     if (waiting.rows[0]) return done('Nothing was put forward: this thread already has an email waiting to go out', { proposed: false });

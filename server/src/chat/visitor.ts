@@ -271,7 +271,9 @@ function withLead(state: State, w: ChatWidget, talk: Talk, leadId: string | null
   if (leadId && !state.out.leads[leadId]) return { state, leadId, created: false };
   const existing = (leadId ? state.out.leads[leadId] : undefined) ?? Object.values(state.out.leads).find((l) => l.email.toLowerCase() === email);
   if (existing) {
-    const extra = existing.source === 'chat' ? { ...existing.extra, ...answers } : { ...answers, ...existing.extra };
+    // Anyone can type any address, so a later visitor's answers only fill what is empty, on every lead: they never
+    // replace what an earlier visitor, or anyone else, already left there.
+    const extra = { ...answers, ...existing.extra };
     const same = JSON.stringify(extra) === JSON.stringify(existing.extra ?? {});
     return { state: same ? state : { ...state, out: { ...state.out, leads: { ...state.out.leads, [existing.id]: { ...existing, extra } } } }, leadId: existing.id, created: false };
   }

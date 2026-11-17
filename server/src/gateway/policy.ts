@@ -110,8 +110,9 @@ export function mayDecide(route: Route, kind: EffectKind, actor: Actor, effect: 
   if (route === 'revops') return actor.rules.approveCrm;
   if (route === 'exec') return admin || (!!effect.on_behalf_of && effect.on_behalf_of === actor.userId);
   if (k.domain === 'crm') return actor.rules.approveCrm;
-  // An automation's question is answered by an owner or admin, or by the person who switched the automation on.
-  if (k.domain === 'decision') return admin || (actor.rules.approveSends && !!effect.on_behalf_of && effect.on_behalf_of === actor.userId);
+  // An automation's question is answered by an owner or admin. Only they can switch an automation on, so the person
+  // who did is one too, unless their role has been lowered since: then they have no more say over it than any member.
+  if (k.domain === 'decision') return admin;
   // Filing that Timmy proposed can be decided by anyone who may work the inbox.
   if (k.domain === 'mail' && !k.outbound) return actor.rules.work;
   if (!actor.rules.approveSends) return false;

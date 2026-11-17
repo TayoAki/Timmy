@@ -419,7 +419,8 @@ describe('a visitor’s conversation', () => {
     await again.say('Difference Engines Ltd');
     s = await owner.state();
     expect(Object.values(s.out.leads)).toHaveLength(1);
-    expect(Object.values(s.out.leads)[0]!.extra).toMatchObject({ 'What’s your company called': 'Difference Engines Ltd', 'How many people are on your team': 'About 12' });
+    // Anyone can type an address, so the second chat only fills gaps: what the first visitor said stays.
+    expect(Object.values(s.out.leads)[0]!.extra).toMatchObject({ 'What’s your company called': 'Analytical Engines', 'How many people are on your team': 'About 12' });
     expect(again.conversation).not.toBe(v.conversation);
   });
 
@@ -896,6 +897,19 @@ describe('limits a stranger cannot get past', () => {
     }
     expect(starts).toEqual([200, 200, 429, 429]);
     expect(await count(`select count(*)::int as n from chat_message where workspace_id = $1 and sender = 'visitor'`, [owner.workspaceId])).toBe(4 + 3 + 2);
+
+    // And one address can only send so many messages to one business in a day, so it can't use up the chat's whole
+    // allowance and close it to every other visitor. Another address is not affected.
+    resetLimits();
+    Object.assign(config.chat, limits, { addressMessagesPerDay: 3 });
+    const daily = [];
+    const steady = new Visitor(siteKey);
+    steady.address = freshAddress();
+    for (let i = 0; i < 5; i++) daily.push((await steady.say(`message ${i}`)).status);
+    expect(daily).toEqual([200, 200, 200, 429, 429]);
+    const someoneElse = new Visitor(siteKey);
+    expect((await someoneElse.say('hello')).status).toBe(200);
+    Object.assign(config.chat, limits);
   });
 
   it('a conversation holds only so many messages, and a widget takes only so many conversations and messages a day', async () => {

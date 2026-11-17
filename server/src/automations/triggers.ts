@@ -92,10 +92,14 @@ export function mailFields(m: { from: string; subject: string; text: string }): 
   return { name: sender.name || local || sender.email, email: sender.email, company, subject: m.subject, snippet: m.text.replace(/\s+/g, ' ').trim().slice(0, 300) };
 }
 
-/** "From contains" and "subject contains", without regard to capitals. An empty setting matches everything. */
+/**
+ * "From contains" and "subject contains", without regard to capitals. An empty setting matches everything.
+ * "From" is matched against the address the email came from, never the display name: anyone can call themselves
+ * "ceo@bigclient.com" in the name part, and a filter on who wrote is often what stands between a stranger and a run.
+ */
 export function mailMatches(config: Record<string, string>, m: { from: string; subject: string }): boolean {
   const has = (text: string, want: string | undefined) => !want?.trim() || text.toLowerCase().includes(want.trim().toLowerCase());
-  return has(m.from, config.from) && has(m.subject, config.subject);
+  return has(parseSender(m.from).email, config.from) && has(m.subject, config.subject);
 }
 
 /**
