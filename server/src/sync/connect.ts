@@ -13,6 +13,7 @@ import { log } from '../lib/log';
 import { composio } from '../providers/composio';
 import type { Ctx } from '../state/engine';
 import { mutate } from '../state/mutate';
+import { shownPrefixes } from './calendars';
 import { driveAddress } from './files';
 import { mailboxFor } from './mailbox';
 import { meter, type ConnectionRow } from './tools';
@@ -25,8 +26,9 @@ const CONNECT: Record<ConnectableApp, { toolkit: string; kind: 'mail' | 'calenda
   // New mail in the inbox, and mail the person sent themselves (how Timmy learns a hand-sent cold email went out).
   gmail: { toolkit: 'gmail', kind: 'mail', triggers: [{ slug: 'GMAIL_NEW_GMAIL_MESSAGE', config: { labelIds: 'INBOX' } }, { slug: 'GMAIL_EMAIL_SENT_TRIGGER' }] },
   gcal: { toolkit: 'googlecalendar', kind: 'calendar', triggers: [{ slug: 'GOOGLECALENDAR_GOOGLE_CALENDAR_EVENT_SYNC_TRIGGER', config: { calendarId: 'primary' } }] },
-  // The same two events as Gmail: mail arriving in the inbox, and mail leaving through Sent Items.
-  outlook: { toolkit: 'outlook', kind: 'mail', triggers: [{ slug: 'OUTLOOK_MESSAGE_TRIGGER' }, { slug: 'OUTLOOK_SENT_MESSAGE_TRIGGER' }] },
+  // The same two events as Gmail: mail arriving in the inbox, and mail leaving through Sent Items. An Outlook account is
+  // also a calendar, so it announces a third: an event made, changed or deleted there.
+  outlook: { toolkit: 'outlook', kind: 'mail', triggers: [{ slug: 'OUTLOOK_MESSAGE_TRIGGER' }, { slug: 'OUTLOOK_SENT_MESSAGE_TRIGGER' }, { slug: 'OUTLOOK_EVENT_CHANGE_TRIGGER' }] },
   // A file made, changed, or thrown away. Drive is checked every couple of minutes by Composio rather than pushed.
   gdrive: { toolkit: 'googledrive', kind: 'files', triggers: [{ slug: 'GOOGLEDRIVE_FILE_CREATED_TRIGGER' }, { slug: 'GOOGLEDRIVE_FILE_UPDATED_TRIGGER' }, { slug: 'GOOGLEDRIVE_FILE_DELETED_OR_TRASHED_TRIGGER' }] },
 };
@@ -173,7 +175,7 @@ export async function closeConnections(workspaceId: string, filter: { appId?: st
     for (const c of list) apps[c.app_id] = { connected: false };
     // What came from a disconnected account leaves the screens with it: its mail threads and its calendar events.
     const gone = new Set(list.map((c) => c.id));
-    const eventPrefixes = list.map((c) => `gcal-${c.id.slice(-6)}-`);
+    const eventPrefixes = list.flatMap((c) => shownPrefixes(c.id));
     const threads = loaded.state.threads.filter((t) => !t.ext?.connectionId || !gone.has(t.ext.connectionId));
     const events = Object.fromEntries(Object.entries(loaded.state.ws.events).filter(([id]) => !eventPrefixes.some((p) => id.startsWith(p))));
     return { state: { ...loaded.state, threads, ws: { ...loaded.state.ws, events }, conn: { ...loaded.state.conn, apps } }, result: out };
@@ -206,6 +208,8 @@ export async function purgeConnection(workspaceId: string, connectionId: string,
     if (n < batch) break;
   }
   await withWorkspace({ workspaceId }, (tx) => tx.query(`delete from sync_cursor where connection_id = $1 and exists (select 1 from connection c where c.id = $1 and c.status <> 'active')`, [connectionId]));
+  // What the mailbox last showed for each thread (kept to pick up changes made there) goes with the mail.
+  await withWorkspace({ workspaceId }, (tx) => tx.query(`delete from mailbox_seen where connection_id = $1 and exists (select 1 from connection c where c.id = $1 and c.status <> 'active')`, [connectionId]));
   return total;
 }
 

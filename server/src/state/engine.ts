@@ -20,13 +20,14 @@ import type { Thread } from '../../../src/data/types';
 import type { RoleRules } from '../auth/roles';
 import { withWorkspace, type Tx } from '../db/pool';
 import { cancelHeld, decide, GatewayError, onReplay, propose, type EffectRow } from '../gateway/gateway';
-import type { WsOp } from '../../../src/state/ws';
-import { checkWsOps } from './ws-check';
+import { checkWsOps, withClearedFields } from './ws-check';
 import { assetRefsIn, usablePictures } from '../files/assets';
 import { attachmentsFor } from '../files/attachments';
 import { LIVE_DECISION } from '../agent/read';
+import { gateAutomations } from '../automations/gate';
 import { prepareMailSend } from '../gateway/mail';
-import { SYNCED_PREFIX, eventProposal } from '../sync/calendar-write';
+import { eventProposal } from '../sync/calendar-write';
+import { CALENDAR_TOOLKITS, isSynced } from '../sync/calendars';
 import { filingProposal, isBox } from '../sync/labels';
 import { draftHash } from '../../../src/live/hash';
 import type { Actor } from '../gateway/policy';
@@ -35,6 +36,9 @@ import { enqueueSoon } from '../jobs/jobs';
 import { log } from '../lib/log';
 import { modelReady } from '../providers/model';
 import { commitState, loadState, remember, type Commit, type Loaded, type PreImage } from './docs';
+import { chatCommand, chatCommandForRecord, sendChatRepliesNow } from '../chat/commands';
+import { chatChecked } from '../chat/settings';
+import { changeEvents } from './event-changes';
 
 enterLive();
 // Someone the workspace only knows by address still has a name when the reducer asks.
@@ -91,29 +95,12 @@ export function emailOf(loaded: Loaded, state: State, id: string): string | null
 
 /* ───────────── What the server refuses in live mode ───────────── */
 
-/**
- * Switching on something that would not really run is refused, with the reason: a switch that says On while
- * nothing happens would be a false promise. Each entry leaves this list when its engine is built.
- */
-const NOT_RUNNING: Record<string, string> = {
-  automations: 'You can draw, save and test this automation here. Running automations on a real workspace isn’t switched on yet, so it stays off.',
-  chat: 'You can set the chat up and preview it here. Putting it on a real website isn’t switched on yet, so it stays off.',
-};
-function notRunningYet(state: State, ops: WsOp[]): string | null {
-  for (const o of ops) {
-    const why = NOT_RUNNING[o.col];
-    if (!why) continue;
-    const on = o.op === 'put' ? (o.item as { on?: boolean }).on : o.op === 'patch' ? (o.patch as { on?: boolean }).on : false;
-    const was = (state.ws[o.col as 'automations' | 'chat'] as Record<string, { on?: boolean }>)[o.op === 'put' ? o.item.id : o.id]?.on;
-    if (on === true && !was) return why;
-  }
-  return null;
-}
-
 const NOT_LIVE = 'That isn’t available on a real workspace yet.';
 
 /** Actions that exist only to drive the demo. */
-const DEMO_ONLY = new Set(['reset', 'simulateReply', 'client', 'release', 'restore', 'server']);
+// “reload” is here on purpose: in the demo it re-reads the browser's saved copy, and on the server there is none,
+// so it would put the demo's sample workspace in place of the real one.
+const DEMO_ONLY = new Set(['reset', 'reload', 'simulateReply', 'client', 'release', 'restore', 'server']);
 
 /** Outbound operations that would contact someone or pretend an account is connected. Each becomes real in the sales phase. */
 const OUT_NOT_LIVE: Record<string, string> = {
@@ -135,7 +122,11 @@ const POLICY_ONLY = new Set(['addRule', 'toggleRule', 'setSchedule']);
 
 export async function runCommand(ctx: Ctx, cmd: { id: string; action: Action }): Promise<CommandResult> {
   if (!cmd.id || typeof cmd.id !== 'string' || cmd.id.length > 80) return { ok: false, rev: 0, patches: [], error: 'A command needs an id.' };
+  // A screen clears a field by sending null for it in a patch (see withClearedFields).
+  if (cmd.action?.type === 'ws') cmd = { ...cmd, action: { ...cmd.action, ops: withClearedFields(cmd.action.ops) as typeof cmd.action.ops } };
   let commit: Commit | null = null;
+  let effects: EffectRow[] | undefined;
+  const isChat = cmd.action?.type === 'chat';
   const result = await withWorkspace({ workspaceId: ctx.workspaceId, userId: ctx.user.id, lock: true }, async (tx) => {
     // The same command id always gets the same answer: a retry never applies twice.
     const dup = (await tx.query('select result, user_id from command where workspace_id = $1 and id = $2', [ctx.workspaceId, cmd.id])).rows[0];
@@ -156,11 +147,26 @@ export async function runCommand(ctx: Ctx, cmd: { id: string; action: Action }):
         else handled = { ...handled, state: await fileMoves(tx, loaded, ctx, cmd.id, handled.state) };
       }
       if (!handled.reject) handled = await addEvents(tx, loaded, ctx, cmd.id, handled);
+      // A synced event the command changed or removed is written to its calendar too (see event-changes.ts).
+      if (!handled.reject) handled = await changeEvents(tx, loaded, actorOf(ctx), cmd, handled, (id) => emailOf(loaded, handled.state, id));
+      // The website chat: who may switch it on or change it while it is on, and that nothing but the chat's own
+      // commands rewrites a visitor's conversation. Checked on what the command did, whichever command it was.
+      if (!handled.reject) {
+        const chat = await chatChecked(tx, loaded, ctx, cmd.action, handled.state);
+        handled = 'state' in chat ? { ...handled, state: chat.state, ...(chat.toast ? { toast: { text: chat.toast } } : {}) } : { state: loaded.state, reject: chat.reject };
+      }
+      // [automations] Switching one on, or changing one that is on, has to pass the engine's gate (automations/gate.ts).
+      // It looks at the command's result, like the checks above, so Undo and any other route to "on" pass through it too.
+      if (!handled.reject) {
+        const gated = await gateAutomations(tx, loaded, ctx, handled.state);
+        handled = gated.reject ? { state: loaded.state, reject: gated.reject } : { ...handled, state: gated.state, ...(gated.toast ? { toast: gated.toast } : {}) };
+      }
     } catch (err) {
       if (!(err instanceof GatewayError)) throw err;
       handled = { state: loaded.state, reject: err.message };
     }
     if (handled.reject) await tx.query('rollback to savepoint command');
+    else effects = handled.effects;
     commit = handled.reject ? null : await commitState(tx, loaded, handled.state, `cmd:${cmd.id}`);
     const out: CommandResult = {
       ok: !handled.reject,
@@ -175,14 +181,18 @@ export async function runCommand(ctx: Ctx, cmd: { id: string; action: Action }):
       ctx.workspaceId,
       cmd.id,
       ctx.user.id,
-      JSON.stringify(cmd.action).replace(/\\u0000/g, ''),
+      // A chat command is kept without a reply's words, and with nothing to undo it by: what a visitor was
+      // shown can't be taken back, and a deleted conversation must not live on in an Undo.
+      JSON.stringify(isChat ? chatCommandForRecord(cmd.action as Extract<Action, { type: 'chat' }>) : cmd.action).replace(/\\u0000/g, ''),
       JSON.stringify(out).replace(/\\u0000/g, ''),
-      JSON.stringify(commit?.pre ?? []).replace(/\\u0000/g, ''),
-      commit?.rev ?? null,
+      JSON.stringify(isChat ? [] : (commit?.pre ?? [])).replace(/\\u0000/g, ''),
+      isChat ? null : (commit?.rev ?? null),
     ]);
     return out;
   });
   if (commit) remember((commit as Commit).next);
+  // A teammate's reply to a visitor is shown now that its record is saved, not when the queue next looks.
+  await sendChatRepliesNow(ctx.workspaceId, effects);
   return result;
 }
 
@@ -212,12 +222,23 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
   }
   if (!ctx.rules.work) return { state, reject: 'Your role can’t make changes in this workspace.' };
   if (a.type === 'undo') return undo(tx, loaded, ctx, a.command);
+  if (a.type === 'chat') {
+    // A teammate acts on a visitor's conversation. The reducer says what the screen shows; the chat's own code does the rest.
+    const apply = (op: typeof a.op) => {
+      try {
+        return reduce(loaded, state, { type: 'chat', op });
+      } catch {
+        return undefined;
+      }
+    };
+    return chatCommand(tx, loaded, ctx, actorOf(ctx), cmd.id, a.op, apply);
+  }
   if (a.type === 'ws') {
     // Docs, pages, tasks, automations and chat settings arrive as plain put / patch / remove operations.
     // What is acceptable is decided here, before the reducer applies them and before anything is saved.
     // An uploaded picture is saved by reference. Which references are this workspace's own uploaded pictures is looked up first.
     const pictures = await usablePictures(tx, ctx.workspaceId, assetRefsIn((col, id) => (Object.hasOwn(state.ws, col) ? (state.ws as unknown as Record<string, Record<string, unknown>>)[col]?.[id] : undefined), a.ops));
-    const bad = checkWsOps(state, a.ops, pictures) ?? notRunningYet(state, a.ops);
+    const bad = checkWsOps(state, a.ops, pictures);
     if (bad) return { state, reject: bad };
   }
   // Rules are instructions Timmy follows for everyone (writing rules go into every drafting prompt), and the schedule
@@ -438,26 +459,28 @@ async function fileMoves(tx: Tx, loaded: Loaded, ctx: Ctx, commandId: string, ne
 /* ───────────── Calendar ───────────── */
 
 /**
- * When a command adds an event to Timmy's calendar and a Google Calendar is connected, the event is written there
- * too, through the gateway. With guests that sends invitations, so it gets the undo window, and whoever must
- * approve an invitation approves it. Changing or removing an event that already exists is not written back yet.
+ * When a command adds an event to Timmy's calendar and a calendar is connected (Google Calendar or Outlook), the
+ * event is written there too, through the gateway. With guests that sends invitations, so it gets the undo window,
+ * and whoever must approve an invitation approves it. Changing or removing an event that is already on the calendar
+ * is handled in event-changes.ts.
  */
 async function addEvents(tx: Tx, loaded: Loaded, ctx: Ctx, commandId: string, handled: Handled): Promise<Handled> {
   const prev = loaded.state;
   const next = handled.state;
   if (prev.ws.events === next.ws.events) return handled;
-  const fresh = Object.values(next.ws.events).filter((ev) => !prev.ws.events[ev.id] && !ev.id.startsWith(SYNCED_PREFIX));
+  const fresh = Object.values(next.ws.events).filter((ev) => !prev.ws.events[ev.id] && !isSynced(ev.id));
   if (!fresh.length) return handled;
   // Each new event is a write to the calendar, and with guests an invitation. One command may not ask for an unbounded number.
   if (fresh.length > config.maxEventsPerCommand) return { state: prev, reject: `That would add ${fresh.length} events at once. Timmy adds up to ${config.maxEventsPerCommand} at a time.` };
   // The person's own calendar if they connected one, otherwise the workspace's first (whose owner then approves).
-  const cal = (await tx.query(`select id from connection where workspace_id = $1 and status = 'active' and toolkit = 'googlecalendar' order by (user_id = $2) desc, created_at limit 1`, [ctx.workspaceId, ctx.user.id])).rows[0] as { id: string } | undefined;
+  // With more than one to choose from (Google Calendar and Outlook, say), it is the one that was connected first.
+  const cal = (await tx.query(`select id, toolkit from connection where workspace_id = $1 and status = 'active' and toolkit = any($3::text[]) order by (user_id = $2) desc, created_at limit 1`, [ctx.workspaceId, ctx.user.id, CALENDAR_TOOLKITS])).rows[0] as { id: string; toolkit: string } | undefined;
   if (!cal) return handled;
 
   let state = next;
   const effects = [...(handled.effects ?? [])];
   for (const ev of fresh) {
-    const made = eventProposal(ev, cal.id, (id) => emailOf(loaded, next, id));
+    const made = eventProposal(ev, cal, (id) => emailOf(loaded, next, id), loaded.workspace.timezone);
     if (!made.ok) return { state: prev, reject: made.reason };
     const p = await propose(tx, loaded, state, actorOf(ctx), { ...made.proposal, why: 'You added it in Timmy.', idempotencyKey: `cmd:${commandId}:event:${ev.id}`, source: 'user', commandId });
     // Refused at the gateway (sending is switched off): the event stays on Timmy's calendar only.

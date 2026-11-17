@@ -155,7 +155,9 @@ run('live-files', async (browser) => {
   ok((await sentMail(outsider.page)).length === 0, 'so nothing is sent from there');
   await outsider.context.close();
 
-  /* ── The website chat's picture ── */
+  /* ── The website chat's picture stays inline ── */
+  // Visitors on the customer's website are shown it, and an uploaded file is only ever handed to members of the
+  // workspace. So this picture is kept in the settings themselves, as before, and is not uploaded.
   const face = Buffer.from(await page.evaluate(() => {
     const c = document.createElement('canvas');
     c.width = 300;
@@ -168,10 +170,17 @@ run('live-files', async (browser) => {
   await page.click('button[aria-label="Outbound"]');
   await page.getByRole('tab', { name: /Website chat/ }).click();
   await page.getByRole('radio', { name: 'Set up' }).click();
+  const uploads = [];
+  const listen = (r) => r.url().includes('/api/v1/uploads') && uploads.push(r.url());
+  page.on('request', listen);
   await page.locator('.wc-look input[type="file"]').setInputFiles({ name: 'face.png', mimeType: 'image/png', buffer: face });
-  ok(await until(async () => /^asset:ast_/.test((await state())['ws.chat'].site.icon || '')), 'the chat’s picture is uploaded and its settings keep a reference to it');
-  await page.waitForFunction(() => { const i = document.querySelector('.wc-look img.wc-face'); return !!i && i.complete && i.naturalWidth > 0 && i.getAttribute('src').startsWith('/api/v1/assets/'); }, null, { timeout: 10000 });
-  ok(true, 'and it shows in the settings, from the server');
+  ok(await until(async () => /^data:image\/(png|jpeg);base64,/.test((await state())['ws.chat'].site.icon || '')), 'the chat’s picture is kept inline in its settings, ready for visitors');
+  await page.waitForFunction(() => { const i = document.querySelector('.wc-look img.wc-face'); return !!i && i.complete && i.naturalWidth > 0 && i.getAttribute('src').startsWith('data:image/'); }, null, { timeout: 10000 });
+  page.off('request', listen);
+  ok(uploads.length === 0, 'and it shows in the settings without going through the uploads');
+  // Named by reference to an upload it is refused, so no upload ever reaches the public chat.
+  const named = await api(page, 'POST', '/api/v1/commands', { id: `icon-${Date.now()}`, action: { type: 'ws', ops: [{ op: 'patch', col: 'chat', id: 'site', patch: { icon: `asset:${fileId}` } }] } });
+  ok(named.body.ok === false && /chat’s picture/.test(named.body.error), 'an uploaded file can’t be made the chat’s picture');
 
   ok(errors.filter((e) => !/400|413|415/.test(e)).length === 0, `no page errors (${errors.join(' | ')})`);
 });

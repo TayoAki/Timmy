@@ -170,7 +170,7 @@ export interface Commitment {
   quote: string;
 }
 
-const words = (t: string) => t.toLowerCase().replace(/[\s ]+/g, ' ').replace(/[“”]/g, '"').replace(/[‘’]/g, "'").trim();
+export const words = (t: string) => t.toLowerCase().replace(/[\s ]+/g, ' ').replace(/[“”]/g, '"').replace(/[‘’]/g, "'").trim();
 
 /** True when the quote is really in the text, give or take spacing and curly quotes. A model's paraphrase is not a quote. */
 export const quoted = (text: string, quote: string) => quote.trim().length >= 8 && words(text).includes(words(quote));
@@ -214,10 +214,30 @@ export async function noteCommitments(tx: Tx, workspaceId: string, thread: { id:
  */
 export async function pruneOntology(workspaceId: string): Promise<{ relations: number; entities: number }> {
   return withWorkspace({ workspaceId }, async (tx) => {
+    // A tracked thing's fields are what its remaining evidence says: a value only a deleted message gave goes with it.
+    await settleThings(tx, workspaceId);
     const rel = await tx.query(`delete from relation r where r.workspace_id = $1 and not exists (select 1 from evidence e where e.relation_id = r.id)`, [workspaceId]);
     const ent = await tx.query(`delete from entity n where n.workspace_id = $1 and not exists (select 1 from evidence e where e.entity_id = n.id) and not exists (select 1 from relation r where r.from_id = n.id or r.to_id = n.id)`, [workspaceId]);
     return { relations: rel.rowCount ?? 0, entities: ent.rowCount ?? 0 };
   });
+}
+
+/**
+ * Sets each tracked thing's fields (deals, properties… see `types.ts`) to what its evidence says: for every
+ * field, the value from the newest message that gave one. Run after a thing is read from a message and after
+ * messages are deleted, so a value never outlives the message it was read from.
+ */
+export async function settleThings(tx: Tx, workspaceId: string, entityId?: string): Promise<void> {
+  await tx.query(
+    `update entity n set attrs = coalesce((
+       select jsonb_object_agg(s.key, s.value) from (
+         select distinct on (f.key) f.key, f.value
+         from evidence e join item i on i.id = e.item_id cross join lateral jsonb_each(e.fields) f
+         where e.entity_id = n.id and e.relation_id is null and jsonb_typeof(e.fields) = 'object'
+         order by f.key, i.occurred_at desc, e.id desc) s), '{}'::jsonb)
+     where n.workspace_id = $1 and n.type = 'thing' and ($2::text is null or n.id = $2)`,
+    [workspaceId, entityId ?? null],
+  );
 }
 
 /* ───────────── Reading ───────────── */

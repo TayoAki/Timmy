@@ -189,7 +189,7 @@ export interface CalEvent {
   threadId?: string;
 }
 
-export type ActivityKind = 'triage' | 'file' | 'task' | 'draft' | 'calendar' | 'crm' | 'move' | 'send' | 'approval';
+export type ActivityKind = 'triage' | 'file' | 'task' | 'draft' | 'calendar' | 'crm' | 'move' | 'send' | 'approval' | 'automation';
 
 export interface Activity {
   id: string;

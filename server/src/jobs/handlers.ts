@@ -16,9 +16,13 @@ import { closeOrphanedConnections, purgeConnection, revokeAtProvider } from '../
 import { removeFile, syncFiles } from '../sync/files';
 import { backfillMail, ingestThread, reconcileMail } from '../sync/ingest';
 import { MAIL_TOOLKITS } from '../sync/mailbox';
+import { checkMailbox, checkWorkspaceMailboxes } from '../sync/mailbox-check';
 import { noteItems, pruneOntology } from '../ontology/ontology';
 import { projectPeople } from '../ontology/people';
+import { registerChatJobs } from '../chat/jobs';
 import { defineJob, enqueueSoon } from './jobs';
+import { isAutomationEffect, registerAutomationJobs } from '../automations/jobs';
+import { registerPageJobs } from '../pages/jobs';
 
 /** Registers every job and connects the gateway to the queue. Call once at boot. */
 /** Asks for the map to be brought up to date. One pass per workspace is queued at a time, however many items arrived. */
@@ -95,11 +99,21 @@ export function registerJobs() {
   defineJob('mail.reconcile', async (d) => {
     const workspaceId = String(d.workspaceId);
     const found = await reconcileMail(workspaceId, String(d.connectionId));
+    // The same night, what the person changed in the mailbox itself (archived, labelled, read, deleted) is picked up.
+    await checkMailbox(workspaceId, String(d.connectionId)).catch((e) => log.warn('the nightly look at the mailbox for changes failed', { workspaceId, error: (e as Error).message }));
     if (found.fresh) learn(workspaceId);
     if (found.fresh) {
       log.info('the nightly check found mail the triggers missed', { workspaceId, ...found });
       if (modelReady()) await readNewest(workspaceId, 2, 20);
     }
+  });
+
+  // A look at a workspace's mailbox for what the person changed there. Queued when the app opens and while a tab
+  // stays open (see sync/mailbox-check.ts): `gap` keeps several tabs from multiplying the looks, and `idle` stops
+  // them for a tab that is only left open. A look that fails is not retried: the next one sees the same mailbox.
+  defineJob('mail.changes', async (d) => {
+    const workspaceId = String(d.workspaceId);
+    await checkWorkspaceMailboxes(workspaceId, { minGapSeconds: Number(d.gap ?? 0), idleSeconds: Number(d.idle ?? 0) }).catch((e) => log.warn('the look at the mailbox for changes failed', { workspaceId, error: (e as Error).message }));
   });
 
   defineJob('mail.read', async (d) => {
@@ -140,6 +154,11 @@ export function registerJobs() {
   defineJob('calendar.sync', async (d) => {
     const out = await syncCalendar(String(d.workspaceId), String(d.connectionId));
     if (out.events) learn(String(d.workspaceId));
+    // An event the calendar no longer has left the store; what the map knew only from it goes too.
+    if (out.dropped) {
+      await pruneOntology(String(d.workspaceId));
+      await projectPeople(String(d.workspaceId));
+    }
   });
 
   // The list of Drive files: a pass that didn't finish carries on in a new job from where it stopped.
@@ -232,9 +251,18 @@ export function registerJobs() {
     '17 3 * * *',
   );
 
+  // The website chat: conversations past their retention period are deleted nightly.
+  registerChatJobs();
+  // Page versions past their keeping time, and pages too long in the trash.
+  registerPageJobs();
+
   onEffectApproved((e) => enqueueSoon('effect.execute', { workspaceId: e.workspace_id, effectId: e.id }, { startAfter: e.hold_until ? new Date(e.hold_until) : 0 }));
+  // [automations] The engine's own jobs (automations/jobs.ts).
+  registerAutomationJobs();
   onEffectSettled((e) => {
     if (e.run_id) enqueueSoon('run.resume', { workspaceId: e.workspace_id, runId: e.run_id });
+    // [automations] A step of an automation's run was waiting on this decision.
+    else if (isAutomationEffect(e)) enqueueSoon('automation.effect', { workspaceId: e.workspace_id, effectId: e.id });
   });
 }
 

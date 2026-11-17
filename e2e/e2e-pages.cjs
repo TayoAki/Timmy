@@ -195,6 +195,7 @@ const settle = (p) => p.waitForFunction(() => document.querySelector('.pg-save')
 
   // Trash: the page and its sub-page go; restore brings both back.
   await p.locator('.pg-top-right [aria-label^="Actions for"]').click();
+  assert(await p.locator('.menu-item', { hasText: 'Version history' }).count() === 0, 'the demo’s page menu has no Version history: versions are kept by the server on a real workspace');
   await p.locator('.menu-item, [role="menuitem"]', { hasText: 'Move to trash' }).click();
   await p.waitForSelector('.pg-trash');
   assert(/in the trash/.test(await p.locator('.pg-trash').textContent()), 'a trashed page shows the red banner');
@@ -206,8 +207,15 @@ const settle = (p) => p.waitForFunction(() => document.querySelector('.pg-save')
   await p.waitForTimeout(80);
   await p.keyboard.press('Escape');
   await p.waitForTimeout(200);
+  // The demo writes to the browser's storage 400 ms after the last change, so on a busy machine a single look can
+  // come too early. The check is the same; it looks until it holds, for up to three seconds.
+  const isBack = (s) => !!(s.ws.files['acme-running-notes'] && Object.values(s.ws.files).some((f) => f.name === 'Security questions') && !Object.keys(s.ws.trash).length);
   let st = await saved(p);
-  assert(st.ws.files['acme-running-notes'] && Object.values(st.ws.files).some((f) => f.name === 'Security questions') && !Object.keys(st.ws.trash).length, 'restore brings back the page and its sub-page');
+  for (let i = 0; i < 30 && !isBack(st); i++) {
+    await p.waitForTimeout(100);
+    st = await saved(p);
+  }
+  assert(isBack(st), 'restore brings back the page and its sub-page');
 
   // Same doc in a second tab.
   const p2 = await ctx.newPage();

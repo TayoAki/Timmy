@@ -4,7 +4,7 @@
  * move to [99] Archived, delete (shortcuts and [06] Temporary only).
  * Owned by the Files area; used by the file editors and the Drive table.
  */
-import { Archive, Copy, ExternalLink, FolderInput, FolderSymlink, Pencil, Star, StarOff, Tag, Trash2, X } from 'lucide-react';
+import { Archive, Copy, ExternalLink, FolderInput, FolderSymlink, History, Pencil, Star, StarOff, Tag, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
 import { Menu, Modal, type MenuItem } from '../../components/kit';
 import { FILING_FOLDER } from '../../data/ws-mock';
@@ -29,8 +29,10 @@ import {
 } from './drive';
 import { FolderTreePicker, NameHelper } from './pickers';
 import { descendants, isPage, trashOps } from '../docs/pages';
+import { VersionHistory } from '../docs/VersionHistory';
+import { isLive } from '../../live/clock';
 
-type Dialog = 'rename' | 'move' | 'describe' | 'shortcut' | 'copy' | null;
+type Dialog = 'rename' | 'move' | 'describe' | 'shortcut' | 'copy' | 'versions' | null;
 
 /* ───────────── Operations shared by the menu and the Drive tabs ───────────── */
 
@@ -95,6 +97,8 @@ export function FileActionsMenu({ fileId }: { fileId: string }) {
       },
     },
     { label: 'Add a shortcut to…', icon: FolderSymlink, onSelect: () => setDialog('shortcut') },
+    // On a real workspace the server keeps a page's earlier versions. The demo has no server, so it has no such entry.
+    ...(isLive() && f.kind === 'doc' && !f.shortcutOf ? [{ label: 'Version history', icon: History, onSelect: () => setDialog('versions') }] : []),
     {
       label: 'Move to [99] Archived',
       icon: Archive,
@@ -131,6 +135,7 @@ export function FileActionsMenu({ fileId }: { fileId: string }) {
       {dialog === 'rename' && <RenameDialog file={f} onClose={close} />}
       {dialog === 'describe' && <DescribeDialog file={f} onClose={close} />}
       {(dialog === 'move' || dialog === 'shortcut' || dialog === 'copy') && <PlaceDialog file={f} mode={dialog} onClose={close} />}
+      {dialog === 'versions' && <VersionHistory key={f.id} file={f} onClose={close} />}
     </span>
   );
 }

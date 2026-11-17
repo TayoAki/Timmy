@@ -97,13 +97,14 @@ export const config = {
     } as Record<string, string>,
     /**
      * The permissions asked for at sign-in, per toolkit, when they should be fewer than Composio's managed app asks
-     * for by default. Outlook's default set includes calendars, contacts, Teams chat and mailbox settings; Timmy
-     * reads and sends mail, so it asks for mail and the profile only. A toolkit not listed here (or set to an empty
-     * value) uses Composio's defaults. Google is left at the defaults: Google only lets an app ask for permissions it
-     * has been approved for, and which narrower ones Composio's Google app holds is not published.
+     * for by default. Outlook's default set includes contacts, Teams chat and mailbox settings; Timmy reads and sends
+     * mail and reads and writes the calendar, so it asks for mail, the calendar and the profile only. A toolkit not
+     * listed here (or set to an empty value) uses Composio's defaults. Google is left at the defaults: Google only
+     * lets an app ask for permissions it has been approved for, and which narrower ones Composio's Google app holds
+     * is not published.
      */
     scopes: {
-      outlook: (env.COMPOSIO_SCOPES_OUTLOOK ?? 'Mail.Read,Mail.ReadWrite,Mail.Send,offline_access,User.Read').split(',').map((x) => x.trim()).filter(Boolean),
+      outlook: (env.COMPOSIO_SCOPES_OUTLOOK ?? 'Mail.Read,Mail.ReadWrite,Mail.Send,Calendars.ReadWrite,offline_access,User.Read').split(',').map((x) => x.trim()).filter(Boolean),
       gmail: (env.COMPOSIO_SCOPES_GMAIL ?? '').split(',').map((x) => x.trim()).filter(Boolean),
       googlecalendar: (env.COMPOSIO_SCOPES_GOOGLECALENDAR ?? '').split(',').map((x) => x.trim()).filter(Boolean),
       googledrive: (env.COMPOSIO_SCOPES_GOOGLEDRIVE ?? '').split(',').map((x) => x.trim()).filter(Boolean),
@@ -173,7 +174,7 @@ export const config = {
   unattendedShare: Number(env.TIMMY_UNATTENDED_SHARE ?? 0.5),
   /** The most threads one command may file. Each is a write to the mailbox, so one command can't ask for an unbounded number. */
   maxFilingsPerCommand: Number(env.TIMMY_MAX_FILINGS_PER_COMMAND ?? 100),
-  /** The most calendar events one command may create in the connected calendar, for the same reason. */
+  /** The most calendar events one command may create in the connected calendar, or change or delete there, for the same reason. */
   maxEventsPerCommand: Number(env.TIMMY_MAX_EVENTS_PER_COMMAND ?? 20),
   /** How long synced mail is kept after its mailbox is disconnected or its workspace deleted. */
   mailRetentionDays: Number(env.TIMMY_MAIL_RETENTION_DAYS ?? 30),
@@ -196,6 +197,88 @@ export const config = {
   morningNudgeLimit: Number(env.TIMMY_MORNING_NUDGE_LIMIT ?? 5),
   /** Working days someone has to deliver what they were asked for, when the email named no date. */
   waitingDefaultDays: Number(env.TIMMY_WAITING_DEFAULT_DAYS ?? 3),
+
+  /**
+   * The website chat. Strangers type into it, so every number here is a ceiling on what one visitor, one
+   * address or one widget can make the server do or store.
+   */
+  chat: {
+    /** Signs conversation tokens. When empty, one is generated once and kept in the database. */
+    secret: env.TIMMY_CHAT_SECRET ?? '',
+    /** The longest message a visitor or a teammate can send, in characters. */
+    maxMessageChars: 2000,
+    /** The largest request body the public chat routes read, in bytes. */
+    maxBodyBytes: Number(env.TIMMY_CHAT_MAX_BODY_BYTES ?? 12 * 1024),
+    /** How many messages one visitor can send in one conversation. */
+    messagesPerConversation: Number(env.TIMMY_CHAT_MESSAGES_PER_CONVERSATION ?? 100),
+    /** New conversations a widget accepts in a day, and messages it accepts in a day. */
+    conversationsPerDay: Number(env.TIMMY_CHAT_CONVERSATIONS_PER_DAY ?? 300),
+    messagesPerDay: Number(env.TIMMY_CHAT_MESSAGES_PER_DAY ?? 5000),
+    /** Messages a minute from one visitor and from one address; new conversations an hour from one address. */
+    visitorMessagesPerMinute: Number(env.TIMMY_CHAT_VISITOR_PER_MINUTE ?? 12),
+    addressMessagesPerMinute: Number(env.TIMMY_CHAT_ADDRESS_PER_MINUTE ?? 60),
+    addressConversationsPerHour: Number(env.TIMMY_CHAT_ADDRESS_CONVERSATIONS_PER_HOUR ?? 30),
+    /** Reads of the public settings and stream connects a minute from one address. */
+    addressReadsPerMinute: Number(env.TIMMY_CHAT_ADDRESS_READS_PER_MINUTE ?? 120),
+    /** Streams open at once on one server, from one address, and for one conversation. */
+    streamsOpen: Number(env.TIMMY_CHAT_STREAMS_OPEN ?? 2000),
+    streamsPerAddress: Number(env.TIMMY_CHAT_STREAMS_PER_ADDRESS ?? 20),
+    streamsPerConversation: 3,
+    /** A visitor's stream is closed after this long; the chat window opens a new one. */
+    streamSeconds: Number(env.TIMMY_CHAT_STREAM_SECONDS ?? 600),
+    /** How long a conversation's token works after the visitor's last message, in days. */
+    tokenDays: 30,
+    /** What the Chats screen holds: this many conversations, and for each the newest messages up to these limits. */
+    shownConversations: Number(env.TIMMY_CHAT_SHOWN_CONVERSATIONS ?? 100),
+    shownMessages: 30,
+    shownChars: 8000,
+    /** A reply that could not be shown to the visitor within this many seconds is not shown late. */
+    replyFreshSeconds: 600,
+  },
+  /** The limits that keep an automation from running away. */
+  automations: {
+    /** The most runs one automation may start in an hour. Past it, the automation is switched off and says why. */
+    runsPerHour: Number(env.TIMMY_AUTOMATION_RUNS_PER_HOUR ?? 100),
+    /** How long a failed step waits before each new try, in seconds. One entry per retry: three retries, then the run fails. */
+    retrySeconds: (env.TIMMY_AUTOMATION_RETRY_SECONDS ?? '30,120,600').split(',').map((s) => Number(s.trim())).filter((n) => Number.isFinite(n) && n >= 0),
+    /** This many failed runs in a row switch the automation off, with a note saying why. */
+    failuresToSwitchOff: Number(env.TIMMY_AUTOMATION_FAILURES_TO_SWITCH_OFF ?? 5),
+    /** A scheduled run that could not start on time (the server was down) still happens if it is no later than this. */
+    lateMinutes: Number(env.TIMMY_AUTOMATION_LATE_MINUTES ?? 6 * 60),
+    /** How long a worker may hold a run before another may take it over, in seconds. A step never takes this long unless its worker died. */
+    leaseSeconds: Number(env.TIMMY_AUTOMATION_LEASE_SECONDS ?? 600),
+  },
+  /**
+   * How long a page stays in the trash before it is deleted for good. The trash dialog tells people this number.
+   * Never less than a day, so a mistyped setting can't empty everyone's trash at once.
+   */
+  trashRetentionDays: Math.max(1, Number(env.TIMMY_TRASH_RETENTION_DAYS ?? 30)),
+  /** Version history of pages: ordinary editing keeps at most one earlier copy of a page in this many minutes. */
+  pageVersionMinutes: Number(env.TIMMY_PAGE_VERSION_MINUTES ?? 5),
+  /** Version history of pages: how many copies of one page are kept, and for how many days. */
+  pageVersionsKept: Number(env.TIMMY_PAGE_VERSIONS_KEPT ?? 100),
+  pageVersionDays: Number(env.TIMMY_PAGE_VERSION_DAYS ?? 90),
+  /**
+   * Picking up what the person changed in the mailbox itself (sync/mailbox-check.ts). One look lists the messages
+   * received in the last `days`, with their labels and no bodies, in at most `maxPages` provider calls; mail older
+   * than that is left as it is. Opening the app gets a look; after that one is made every `everySeconds` while a tab
+   * stays open and someone did something in Timmy within `idleSeconds`. A thread Timmy itself filed is left alone
+   * until `settleSeconds` after the filing completed, so the mailbox has time to show it.
+   */
+  mailboxCheck: {
+    days: Number(env.TIMMY_MAILBOX_CHECK_DAYS ?? 3),
+    maxPages: Number(env.TIMMY_MAILBOX_CHECK_PAGES ?? 2),
+    /**
+     * Messages per call. Gmail's tool takes up to 500 and Outlook's up to 1,000. The Gmail tool fetches each
+     * message's labels one by one behind the call and leaves out any it could not get, so its page starts at 250
+     * until a real mailbox shows a full page holds. A mailbox with more mail in `days` than one page costs two
+     * calls a look.
+     */
+    pageSize: { gmail: Number(env.TIMMY_MAILBOX_CHECK_PAGE_GMAIL ?? 250), outlook: Number(env.TIMMY_MAILBOX_CHECK_PAGE_OUTLOOK ?? 500) } as Record<string, number>,
+    everySeconds: Number(env.TIMMY_MAILBOX_CHECK_EVERY_SECONDS ?? 600),
+    idleSeconds: Number(env.TIMMY_MAILBOX_CHECK_IDLE_SECONDS ?? 1800),
+    settleSeconds: Number(env.TIMMY_MAILBOX_SETTLE_SECONDS ?? 300),
+  },
 };
 
 export const isProd = () => config.stage === 'production';

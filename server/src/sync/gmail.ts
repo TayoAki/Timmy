@@ -3,12 +3,30 @@
  * (see labels.ts); a reply goes into the thread by its id.
  */
 import { stageFiles } from '../files/attachments';
-import { LabelsUnavailable, labelPlan, timmyLabels } from './labels';
-import type { Mailbox } from './mailbox';
-import { normalize, type MailMessage } from './message';
-import { callTool } from './tools';
+import { LabelsUnavailable, labelPlan, timmyLabels, timmyLabelsIfAny, type Labelled } from './labels';
+import type { Mailbox, MessageState } from './mailbox';
+import { normalize, parseSender, type MailMessage } from './message';
+import { callTool, type ConnectionRow, type Phase } from './tools';
 
 const list = (raw: unknown): MailMessage[] => ((raw ?? []) as Record<string, unknown>[]).map(normalize).filter((m): m is MailMessage => !!m);
+
+/** Gmail's own labels. Anything else on a message is a label a person or an app made, and only those can be Timmy's. */
+const GMAIL_OWN = /^(INBOX|SENT|DRAFT|UNREAD|TRASH|SPAM|STARRED|IMPORTANT|CHAT|CATEGORY_[A-Z_]+)$/;
+
+/** Where each message sits, and which of Timmy's labels it carries. Looks the labels' ids up only when a message carries a label that could be one of them. */
+async function states(workspaceId: string, conn: ConnectionRow, messages: MailMessage[], phase: Phase): Promise<MessageState[]> {
+  const ids = messages.some((m) => m.labels.some((l) => !GMAIL_OWN.test(l))) ? await timmyLabelsIfAny(workspaceId, conn, phase) : {};
+  const places = new Map((Object.entries(ids) as [Labelled, string][]).map(([place, id]) => [id, place]));
+  const own = (conn.account_label ?? '').toLowerCase();
+  return messages.map((m) => ({
+    id: m.id,
+    threadKey: m.threadKey,
+    at: m.at,
+    labels: m.labels,
+    filedAs: m.labels.map((l) => places.get(l)).filter((p): p is Labelled => !!p),
+    mine: m.labels.includes('SENT') || (!!own && parseSender(m.from).email === own),
+  }));
+}
 
 export const gmail: Mailbox = {
   name: 'Gmail',
@@ -95,4 +113,23 @@ export const gmail: Mailbox = {
     const lacks = (id: string) => messages.every((m) => !m.labelIds?.includes(id));
     return plan.add.every(has) && plan.remove.every(lacks);
   },
+
+  async recentStates(workspaceId, conn, q) {
+    // Labels and ids only: no message is opened. The trash and spam are included, because being there is the news.
+    const res = await callTool(
+      workspaceId,
+      conn.id,
+      'GMAIL_FETCH_EMAILS',
+      { query: `after:${Math.floor(q.since.getTime() / 1000)}`, max_results: q.pageSize, include_payload: false, verbose: false, include_spam_trash: true, ...(q.pageToken ? { page_token: q.pageToken } : {}) },
+      q.phase,
+    );
+    if (!res.successful) throw new Error(res.error ?? 'the mailbox could not be listed');
+    const messages = list(res.data.messages);
+    // A message with no label at all reads as archived. A whole page of them is far more likely a listing that
+    // came back without its labels than a mailbox where everything was archived, so it is not believed.
+    if (messages.length >= 5 && messages.every((m) => !m.labels.length)) throw new Error('the mailbox listing came without labels');
+    return { messages: await states(workspaceId, conn, messages, q.phase), next: (res.data.nextPageToken as string | null | undefined) || undefined };
+  },
+
+  statesOf: states,
 };

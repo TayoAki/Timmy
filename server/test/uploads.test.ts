@@ -346,10 +346,10 @@ describe('what the rules say, on their own', () => {
   it('a page’s picture reference counts only when the caller found it among the workspace’s own uploaded pictures', () => {
     const blocks = [{ id: 'b', type: 'image', src: 'asset:ast_1' }];
     expect(blocksProblem(blocks)).toMatch(/picture/);
-    expect(blocksProblem(blocks, new Map([['ast_2', 'page-image']]))).toMatch(/picture/);
-    expect(blocksProblem(blocks, new Map([['ast_1', 'page-image']]))).toBeNull();
+    expect(blocksProblem(blocks, new Set(['ast_2']))).toMatch(/picture/);
+    expect(blocksProblem(blocks, new Set(['ast_1']))).toBeNull();
     // Nothing shaped like a reference slips through as something else.
-    for (const src of ['asset:', 'asset:../x', 'asset:ast_1/../../y', 'asset:ast_1?x', 'ASSET:ast_1', ' asset:ast_1']) expect([src, blocksProblem([{ id: 'b', type: 'image', src }], new Map([['ast_1', 'page-image'], ['', 'page-image']]))]).toEqual([src, expect.stringMatching(/picture/)]);
+    for (const src of ['asset:', 'asset:../x', 'asset:ast_1/../../y', 'asset:ast_1?x', 'ASSET:ast_1', ' asset:ast_1']) expect([src, blocksProblem([{ id: 'b', type: 'image', src }], new Set(['ast_1', '']))]).toEqual([src, expect.stringMatching(/picture/)]);
   });
 });
 
@@ -407,21 +407,40 @@ describe('pictures on pages and in settings', () => {
     expect(((await borrowed.json()) as { error: string }).error).toMatch(/picture on that page/);
   });
 
-  it('the website chat’s picture can be an uploaded one, or an inline one as before', async () => {
-    const icon = await uploadFile(w, { purpose: 'chat-icon', type: 'image/png', bytes: samples.png('face') });
+  it('an earlier version of a page that held an uploaded picture and cover can be put back, references and all', async () => {
+    const pic = await uploadFile(w, { purpose: 'page-image', type: 'image/png', bytes: samples.png('floor plan') });
+    const cover = await uploadFile(w, { purpose: 'page-cover', type: 'image/jpeg', bytes: samples.jpeg('street') });
+    const blocks = [{ id: 'h', type: 'h1', text: 'Site visit' }, { id: 'i', type: 'image', src: `asset:${pic.assetId}` }];
+    const file = { id: 'visit', name: 'Site visit', kind: 'doc', folder: '', updated: new Date(), owner: 'me' };
+    expect((await w.cmd({ type: 'ws', ops: [{ op: 'put', col: 'files', item: file }, { op: 'put', col: 'docs', item: { id: 'visit', blocks, cover: { kind: 'image', value: `asset:${cover.assetId}` } } }] })).ok).toBe(true);
+    // The picture and the cover are taken off; what the page held before is kept as version 1.
+    expect((await w.cmd({ type: 'ws', ops: [{ op: 'patch', col: 'docs', id: 'visit', patch: { blocks: [blocks[0]], cover: null } }] })).ok).toBe(true);
+    const kept = await rows<{ blocks: unknown; cover: unknown }>(`select blocks, cover from doc_revision where workspace_id = $1 and file_id = 'visit' and version = 1`, [w.workspaceId]);
+    expect(JSON.stringify(kept[0])).toContain(`asset:${pic.assetId}`);
+    const res = await w.post('/api/v1/pages/visit/versions/1/restore');
+    expect([res.status, await res.text()]).toEqual([200, expect.stringContaining('"ok":true')]);
+    const back = (await w.state()).ws.docs.visit as unknown as { blocks: { src?: string }[]; cover?: { value: string } };
+    expect(back.blocks.map((b) => b.src).filter(Boolean)).toEqual([`asset:${pic.assetId}`]);
+    expect(back.cover?.value).toBe(`asset:${cover.assetId}`);
+  });
+
+  it('the website chat’s picture stays inline: it is shown to visitors, and an upload is never handed to anyone outside the workspace', async () => {
     const set = (value: string) => w.cmd({ type: 'ws', ops: [{ op: 'patch', col: 'chat', id: 'site', patch: { icon: value } }] });
-    expect((await set(`asset:${icon.assetId}`)).ok).toBe(true);
-    expect(((await w.state()).ws.chat.site as { icon?: string }).icon).toBe(`asset:${icon.assetId}`);
-    expect((await set(`data:image/png;base64,${'A'.repeat(120)}`)).ok).toBe(true);
+    // A small picture carried inline, as before, is kept, and is what visitors would be shown.
+    const inline = `data:image/png;base64,${'A'.repeat(120)}`;
+    expect((await set(inline)).ok).toBe(true);
+    expect(((await w.state()).ws.chat.site as { icon?: string }).icon).toBe(inline);
+    // No upload can stand in for it, whatever it was uploaded for: the assets route serves members only, so a
+    // reference here would show visitors nothing, and naming a page's picture here must never make it public.
+    for (const purpose of ['chat-icon', 'page-image'] as const) {
+      const up = await uploadFile(w, { purpose, type: 'image/png', bytes: samples.png(`face for ${purpose}`) });
+      const tried = await set(`asset:${up.assetId}`);
+      expect([purpose, tried.ok]).toEqual([purpose, false]);
+      expect(tried.error).toMatch(/chat’s picture/);
+    }
+    expect(((await w.state()).ws.chat.site as { icon?: string }).icon).toBe(inline);
     expect((await set('https://example.test/face.png')).ok).toBe(false);
     expect((await set('data:image/svg+xml;base64,PHN2Zz4=')).ok).toBe(false);
-    // The chat's picture is shown to strangers. A picture uploaded for a page can't be made public by naming it here.
-    const diagram = await uploadFile(w, { purpose: 'page-image', type: 'image/png', bytes: samples.png('internal diagram') });
-    const tried = await set(`asset:${diagram.assetId}`);
-    expect(tried.ok).toBe(false);
-    expect(tried.error).toMatch(/chat’s picture/);
-    // The other way round does no harm: the chat's picture may be put on a page.
-    expect((await w.cmd({ type: 'ws', ops: [{ op: 'put', col: 'docs', item: { id: 'about', blocks: [{ id: 'b', type: 'image', src: `asset:${icon.assetId}` }] } }] })).ok).toBe(true);
   });
 });
 

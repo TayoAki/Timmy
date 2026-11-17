@@ -64,9 +64,47 @@ run('live-pages', async (browser) => {
   await page.waitForSelector('.nb-editor');
   ok(/Guidance software/.test(await page.locator('.nb-editor').innerText()) && /Priority displays first/.test(await page.locator('.nb-editor').innerText()), 'after a reload the page shows what was typed');
 
+  // Typing that carries on while a save is on its way back is kept. On a real workspace the save's answer is a new
+  // copy of the same page; it must not replace what is on screen, or the letters typed in between are lost.
+  // The cursor is put at the end of a line by clicking it, then End. The editor reads where a click put the
+  // cursor a moment after the click, not during it. A person cannot press a key in that moment; a test can, and
+  // the key then acts on the old cursor position at the top of the page. So the test lets the page take a turn first.
+  const plain = page.locator('.nb-editor p', { hasText: 'Ship before July.' }).first();
+  await plain.click();
+  await page.waitForFunction(() => document.activeElement?.classList.contains('nb-editor') && /Ship before July\./.test(window.getSelection()?.anchorNode?.textContent || ''));
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(done, 60)))));
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Abort modes reviewed');
+  // The editor saves after a short pause. Each wait below ends a little later after that pause, so one of them
+  // lands on the moment the answer arrives, whatever the speed of the connection.
+  const words = [' with', ' the', ' crew', ' on', ' Tuesday', ' and', ' again', ' on', ' Friday'];
+  for (const [i, word] of words.entries()) {
+    await page.waitForTimeout(850 + i * 15);
+    await page.keyboard.type(word, { delay: 12 });
+  }
+  await saved();
+  const whole = /Abort modes reviewed with the crew on Tuesday and again on Friday$/;
+  const line = async () => typed(await slices()).find((t) => /Abort modes/.test(t)) || '(no such line)';
+  ok(await until(async () => whole.test(await line())), `typing that carries on while a save comes back is all kept on the server (it holds “${await line()}”)`);
+  ok(/Abort modes reviewed with the crew on Tuesday and again on Friday/.test(await page.locator('.nb-editor').innerText()), 'and is all on screen');
+
+  // Taking a cover off a page sticks. (Clearing a field is sent as "null": JSON has no word for "not set".)
+  ok((await cmd({ type: 'ws', ops: [{ op: 'patch', col: 'docs', id: 'launch-plan', patch: { cover: { kind: 'gradient', value: 'dawn' } } }] })).body.ok, 'a cover is put on the page');
+  const remove = page.locator('.pg-cover-btn', { hasText: 'Remove' });
+  await remove.waitFor({ state: 'attached', timeout: 8000 });
+  await remove.click({ force: true });
+  ok(await until(async () => (await slices())['ws.docs']['launch-plan'].cover === undefined), 'removing the cover is kept by the server');
+  await page.reload();
+  await page.locator('.main').waitFor();
+  await page.click('button[aria-label="Docs"]');
+  await page.locator('.main').getByText('Launch plan').first().click();
+  await page.waitForSelector('.nb-editor');
+  ok((await page.locator('.pg-cover-btn', { hasText: 'Remove' }).count()) === 0 && whole.test((await page.locator('.nb-editor').innerText()).split('\n').find((l) => /Abort modes/.test(l)) || ''), 'after a reload the cover is still gone and the typed line is whole');
+
   /* ── A picture on the page ── */
   // A photo as a phone saves it: a JPEG with a block of camera data (where it was taken) in front of the picture.
-  const plain = Buffer.from(await page.evaluate(() => {
+  const drawing = Buffer.from(await page.evaluate(() => {
     const c = document.createElement('canvas');
     c.width = 640;
     c.height = 400;
@@ -81,11 +119,13 @@ run('live-pages', async (browser) => {
   const marker = Buffer.alloc(4);
   marker.writeUInt16BE(0xffe1, 0);
   marker.writeUInt16BE(camera.length + 2, 2);
-  const photo = Buffer.concat([plain.subarray(0, 2), marker, camera, plain.subarray(2)]);
+  const photo = Buffer.concat([drawing.subarray(0, 2), marker, camera, drawing.subarray(2)]);
   const pictures = async () => ((await slices())['ws.docs']['launch-plan'].blocks || []).filter((b) => b.type === 'image');
   const shown = (selector) => page.waitForFunction((sel) => { const i = document.querySelector(sel); return !!i && i.complete && i.naturalWidth > 0; }, selector, { timeout: 10000 });
 
+  // The cursor goes to the end of the page. As above, the page takes a turn after the click before a key is pressed.
   await page.locator('.nb-editor').click();
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(done, 60)))));
   await page.keyboard.press('Control+End');
   await page.keyboard.press('Enter');
   await page.keyboard.type('/image');
@@ -176,12 +216,13 @@ run('live-pages', async (browser) => {
   const au = await drawn();
   ok(au.edges.length === 1 && au.nodes[1].config.title === 'Send {{company}} a welcome pack' || Object.values(au.nodes[1].config).includes('Send {{company}} a welcome pack'), 'with their connections and settings');
 
-  // A test run uses sample data and sends nothing; switching it on is refused, because nothing would run.
+  // A test run uses sample data and sends nothing. Switching this one on is refused: it starts from a form, and
+  // forms can't be connected yet. (An automation the engine can run is switched on in live-automations.)
   await page.locator('button', { hasText: 'Test run' }).click();
   await page.waitForFunction(() => document.querySelectorAll('.ae-log-list li:not(.ae-log-wait)').length === 2, null, { timeout: 8000 });
   ok(/Nothing is sent/.test(await page.locator('.ae-log').textContent()), 'a test run walks the steps with sample data and says nothing is sent');
   const on = await cmd({ type: 'ws', ops: [{ op: 'patch', col: 'automations', id: au.id, patch: { on: true } }] });
-  ok(on.body.ok === false && /isn’t switched on yet/.test(on.body.error) && (await drawn()).on === false, 'switching it on is refused with the reason, and it stays off');
+  ok(on.body.ok === false && /can’t be switched on yet\. “Form submitted” needs a lead form, and none can be connected yet\./.test(on.body.error) && (await drawn()).on === false, 'switching it on is refused with the reason (its trigger can’t run yet), and it stays off');
   const loop = await cmd({ type: 'ws', ops: [{ op: 'patch', col: 'automations', id: au.id, patch: { edges: [...au.edges, { id: 'back', from: au.nodes[1].id, to: au.nodes[0].id }] } }] });
   ok(loop.body.ok === false, 'a graph that loops back into its trigger is refused');
   await page.reload();
@@ -191,10 +232,14 @@ run('live-pages', async (browser) => {
   ok((await page.locator('.au-card', { hasText: 'Thank new customers' }).count()) === 1, 'after a reload the automation is listed, from the server');
 
   /* ── The website chat's settings ── */
+  // The chat can now really be put on a website (live-chat.cjs covers that end to end). What is checked here is
+  // the switch itself: it is refused while there is no website for the chat to show on, and works once there is.
+  const tooSoon = await cmd({ type: 'ws', ops: [{ op: 'patch', col: 'chat', id: 'site', patch: { on: true } }] });
+  ok(tooSoon.body.ok === false && /Set your website first/.test(tooSoon.body.error) && (await slices())['ws.chat'].site.on === false, 'switching the chat on is refused with the reason while no website is set, and it stays off');
   const chat = await cmd({ type: 'ws', ops: [{ op: 'patch', col: 'chat', id: 'site', patch: { domain: 'apollo.example', faq: [{ id: 'f1', q: 'When is launch?', a: 'July 16.' }] } }] });
   ok(chat.body.ok && (await slices())['ws.chat'].site.domain === 'apollo.example', 'the chat’s settings are kept');
   const chatOn = await cmd({ type: 'ws', ops: [{ op: 'patch', col: 'chat', id: 'site', patch: { on: true } }] });
-  ok(chatOn.body.ok === false && /isn’t switched on yet/.test(chatOn.body.error), 'switching the chat on is refused with the reason, because no website could load it yet');
+  ok(chatOn.body.ok === true && (await slices())['ws.chat'].site.on === true && /^[A-Za-z0-9_-]{32}$/.test((await slices())['ws.chat'].site.siteKey), 'with a website set, the owner switches the chat on, and it has its own key for the snippet');
   const forged = await cmd({ type: 'ws', ops: [{ op: 'put', col: 'chats', item: { id: 'fake', messages: [{ id: 'm', from: 'visitor', text: 'hi', at: new Date().toISOString() }], live: false, unread: true } }] });
   ok(forged.body.ok === false, 'a visitor’s conversation can’t be made up from a member’s screen');
 

@@ -84,5 +84,16 @@ run('live-filing', async (browser) => {
   await page.waitForTimeout(6000);
   ok((await sentMail(page)).length === 0, 'with the setting on, an email is still not sent until Send is pressed');
 
+  // A thread moved back to the inbox by hand has no suggestion on it. Triage lists it with every place to choose
+  // from; it used to blank the whole app.
+  ok((await api(page, 'POST', '/api/v1/commands', { id: `back-${Date.now()}`, action: { type: 'move', id: tunnel.id, box: 'inbox' } })).body.ok, 'the archived thread is moved back to the inbox');
+  ok(await until(async () => (await boxOf(tunnel.id)) === 'inbox'), 'it is in the inbox again');
+  await page.keyboard.press('Escape');
+  await page.click('button[aria-label="Today & mail"]');
+  await page.getByRole('tab', { name: /Triage/ }).click();
+  const backRow = page.locator('.triage-item', { hasText: tunnel.subject }).first();
+  await backRow.waitFor({ timeout: 10000 });
+  ok(/No suggestion for this one/.test(await backRow.innerText()) && (await backRow.locator('.suggest-pill').count()) === 0 && (await backRow.locator('.triage-alt button').count()) === 4, 'Triage lists it with the four places to choose from, and no suggestion to accept');
+
   ok(errors.length === 0, `no page errors (${errors.join(' | ')})`);
 });

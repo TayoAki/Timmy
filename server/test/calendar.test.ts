@@ -49,6 +49,25 @@ describe('calendar sync', () => {
     expect(titles).toEqual(['Made in Timmy', 'Pricing review with Dana']);
   });
 
+  it('an event deleted in Google Calendar leaves the store as well as the screen; what is outside the window is neither read nor touched', async () => {
+    const box = fake().accounts.get(cal.account)!;
+    box.events.push({ id: 'ev-old', summary: 'Three weeks ago', start: at(-24 * 21), end: at(-24 * 21 + 1), attendees: [] }, { id: 'ev-far', summary: 'In four months', start: at(24 * 120), end: at(24 * 120 + 1), attendees: [] });
+    await jobs().drain();
+    const stored = async () => (await rows<{ external_id: string }>(`select external_id from item where workspace_id = $1 and kind = 'event' order by external_id`, [w.workspaceId])).map((r) => r.external_id);
+    expect(await stored()).toEqual(['ev-1', 'ev-2']);
+    // The window asked of Google is two weeks back and two months ahead.
+    const asked = fake().calls.filter((c) => c.connectedAccountId === cal.account && c.slug === 'GOOGLECALENDAR_EVENTS_LIST').at(-1)!.args as { timeMin: string; timeMax: string };
+    expect(Math.round((Date.now() - new Date(asked.timeMin).getTime()) / 86400_000)).toBe(14);
+    expect(Math.round((new Date(asked.timeMax).getTime() - Date.now()) / 86400_000)).toBe(60);
+
+    box.events = box.events.filter((e) => e.id !== 'ev-2');
+    expect(await syncCalendar(w.workspaceId, cal.connectionId)).toMatchObject({ events: 1, removed: 1, dropped: 1 });
+    expect(await stored()).toEqual(['ev-1']);
+    // Who organizes an event and who its guests are is kept with it, for a later change made in Timmy.
+    const [kept] = await rows<{ meta: { mine: boolean; guests: string[]; shown: string } }>(`select meta from item where workspace_id = $1 and external_id = 'ev-1'`, [w.workspaceId]);
+    expect(kept!.meta).toMatchObject({ mine: true, guests: ['dana@client.test'], shown: `gcal-${cal.connectionId.slice(-6)}-ev-1` });
+  });
+
   it('a calendar change announced by the provider triggers a sync for that workspace only', async () => {
     await jobs().drain();
     const other = await newWorkspace('OtherCal');

@@ -29,9 +29,12 @@ import { Frame } from '../../components/Frame';
 import { NOW } from '../../data/mock';
 import type { AutoEdge, AutoNode, Automation } from '../../data/ws-types';
 import { fmtStamp } from '../../lib/format';
+import { isLive } from '../../live/clock';
 import { useStore, ws } from '../../state/store';
 import { patch, uid } from '../../state/ws';
 import { KIND, KINDS, ROLE_LABEL, evaluate, fill, ready, type Kind } from './catalog';
+import { kindNotYet, stepNotYet } from './real';
+import { Runs } from './Runs';
 
 type StepState = 'running' | 'done' | 'skipped';
 type FlowNode = Node<{ n: AutoNode; index: number }, 'step'>;
@@ -59,6 +62,8 @@ function StepNode({ data, selected }: NodeProps<FlowNode>) {
   if (!k) return null;
   const ok = ready(n);
   const st = run[n.id];
+  // On a real workspace, a block the engine doesn't run yet says so on its card.
+  const notYet = isLive() ? stepNotYet(n) : null;
   return (
     <div className={`ae-node${selected ? ' selected' : ''}${st ? ` ${st}` : ''}`} style={{ '--k': k.color } as CSSProperties}>
       {k.role !== 'trigger' && <Handle type="target" position={Position.Top} className="ae-handle" />}
@@ -76,6 +81,11 @@ function StepNode({ data, selected }: NodeProps<FlowNode>) {
         </span>
       </div>
       <p className="ae-node-sum">{k.summary(n.config)}</p>
+      {notYet && (
+        <span className="ae-notyet-tag" title={notYet}>
+          Can’t run yet
+        </span>
+      )}
       {st === 'done' && <CheckCircle2 size={16} className="ae-node-check" aria-label="Done in the test run" />}
       {k.id === 'condition' ? (
         <>
@@ -121,7 +131,9 @@ function Canvas({ a }: { a: Automation }) {
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(toFlowEdges(a));
   const [name, setName] = useState(a.name);
   const [selected, setSelected] = useState<string | null>(null);
-  const [tab, setTab] = useState<'blocks' | 'settings'>('blocks');
+  const [tab, setTab] = useState<'blocks' | 'settings' | 'runs'>('blocks');
+  // On a real workspace the server keeps the drawing and decides whether it may be switched on.
+  const live = isLive();
   const [locked, setLocked] = useState(false);
   const [run, setRun] = useState<Record<string, StepState>>({});
   const [log, setLog] = useState<{ id: string; text: string; skipped?: boolean }[] | null>(null);
@@ -131,7 +143,9 @@ function Canvas({ a }: { a: Automation }) {
   const savedRef = useRef(JSON.stringify(fromFlow(toFlowNodes(a), toFlowEdges(a))));
 
   const current = fromFlow(nodes, edges);
-  const dirty = JSON.stringify(current) !== savedRef.current || name.trim() !== a.name;
+  // On a real workspace "saved" means the server has it: a save the server refused shows as unsaved again.
+  const saved = live ? JSON.stringify(fromFlow(toFlowNodes(a), toFlowEdges(a))) : savedRef.current;
+  const dirty = JSON.stringify(current) !== saved || name.trim() !== a.name;
   const trigger = nodes.find((n) => KIND[n.data.n.kind]?.role === 'trigger');
   const canPublish = !!trigger && edges.some((e) => e.source === trigger.id);
   const sel = nodes.find((n) => n.id === selected);
@@ -379,7 +393,14 @@ function Canvas({ a }: { a: Automation }) {
               <button role="tab" aria-selected={tab === 'settings'} onClick={() => setTab('settings')} disabled={!sel}>
                 Settings
               </button>
+              {live && (
+                <button role="tab" aria-selected={tab === 'runs'} onClick={() => setTab('runs')}>
+                  Runs
+                </button>
+              )}
             </div>
+
+            {tab === 'runs' && live && <Runs id={a.id} on={a.on} note={a.note} />}
 
             {tab === 'blocks' && (
               <div className="ae-palette">
@@ -413,6 +434,7 @@ function Canvas({ a }: { a: Automation }) {
                             <span className="ae-card-app">{k.app}</span>
                           </span>
                           <span className="ae-card-desc">{k.description}</span>
+                          {live && kindNotYet(k.id) && <span className="ae-card-soon">You can draw and test it. It can’t run on a real workspace yet.</span>}
                         </span>
                       </button>
                     ))}
@@ -472,6 +494,11 @@ function StepSettings({
     });
   };
   const template = k.fields.find((f) => f.type === 'template');
+  const live = isLive();
+  const notYet = live ? stepNotYet(n) : null;
+  // On a real workspace "Add to a doc" offers the workspace's own Timmy docs, not the demo's sample names.
+  const ownDocs = Object.values(state.ws.files).filter((f) => f.kind === 'doc' && !f.trashed && !!state.ws.docs[f.id]).map((f) => f.name);
+  const optionsOf = (f: Kind['fields'][number]) => (live && k.id === 'doc' && f.id === 'doc' ? [...new Set([...ownDocs, ...(n.config.doc ? [n.config.doc] : [])])].sort() : f.options!);
 
   return (
     <div className="ae-settings">
@@ -484,6 +511,12 @@ function StepSettings({
           <span className="muted">{k.description}</span>
         </span>
       </header>
+
+      {notYet && (
+        <p className="ae-notyet" role="note">
+          {notYet} You can still draw this step and test it; the automation can’t be switched on with it.
+        </p>
+      )}
 
       <details className="ae-acc" open>
         <summary>Account</summary>
@@ -504,7 +537,7 @@ function StepSettings({
             {f.type === 'select' ? (
               <select className="input" value={n.config[f.id] ?? ''} onChange={(e) => onChange(f.id, e.target.value)}>
                 <option value="">Choose…</option>
-                {f.options!.map((o) => (
+                {optionsOf(f).map((o) => (
                   <option key={o} value={o}>
                     {o}
                   </option>
@@ -569,5 +602,7 @@ function StepSettings({
 function connectedFor(app: string, apps?: Record<string, { connected?: boolean } | undefined>): boolean | null {
   const key = ({ Gmail: 'gmail', 'Google Drive': 'gdrive', Calendar: 'gcal', Slack: 'slack' } as Record<string, string>)[app];
   if (!key) return null;
+  // On a real workspace the mailbox is Gmail or Outlook; either one serves the email blocks.
+  if (key === 'gmail' && isLive()) return !!(apps?.gmail?.connected || apps?.outlook?.connected);
   return !!apps?.[key]?.connected;
 }

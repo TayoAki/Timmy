@@ -136,9 +136,22 @@ export const fromDoc = (doc: JSONContent): Block[] => (doc.content ?? []).map(no
 /** Same content, ignoring key order: used to skip no-op saves and echo updates. */
 export const sameBlocks = (a: Block[], b: Block[]) => a.length === b.length && JSON.stringify(a.map(norm)) === JSON.stringify(b.map(norm));
 
-const norm = (b: Block) => {
-  const o = b as unknown as Record<string, unknown>;
+/**
+ * A value with every object's keys in one order and its empty fields left out, at every depth. The server's copy
+ * of a page comes back with keys in the database's order, so two copies of the same blocks only compare equal this way.
+ */
+const canon = (v: unknown): unknown => {
+  if (Array.isArray(v)) return v.map(canon);
+  if (v instanceof Date) return v.toISOString();
+  if (!v || typeof v !== 'object') return v;
+  const o = v as Record<string, unknown>;
   const out: Record<string, unknown> = {};
-  for (const k of Object.keys(o).sort()) if (o[k] !== undefined && o[k] !== null && !(k === 'indent' && o[k] === 0)) out[k] = o[k];
+  for (const k of Object.keys(o).sort()) if (o[k] !== undefined && o[k] !== null) out[k] = canon(o[k]);
+  return out;
+};
+
+const norm = (b: Block) => {
+  const out = canon(b) as Record<string, unknown>;
+  if (out.indent === 0) delete out.indent;
   return out;
 };

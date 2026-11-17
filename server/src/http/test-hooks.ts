@@ -9,10 +9,13 @@ import { config, isLocal } from '../config';
 import { withWorkspace } from '../db/pool';
 import { executeEffect } from '../gateway/gateway';
 import { inlineJobs } from '../jobs/jobs';
-import { fakeComposio, signWebhook } from '../providers/composio';
+import { fakeComposio, signWebhook, type FakeEvent } from '../providers/composio';
+import { CALENDAR_TOOLKITS } from '../sync/calendars';
 import { MAIL_TOOLKITS } from '../sync/mailbox';
+import { checkMailbox } from '../sync/mailbox-check';
 import { lastMailTo } from '../providers/email';
 import { ctxOf, requireWorkspace, type Env } from './session';
+import { pageTestRoutes } from '../pages/routes';
 
 export function testRoutes(app: Hono<Env>): void {
   // On a deployed server (staging) the hooks need the test token. The one exception is the page that stands in
@@ -25,6 +28,8 @@ export function testRoutes(app: Hono<Env>): void {
     }
     await next();
   });
+
+  pageTestRoutes(app);
 
   app.get('/api/test/outbox', async (c) => c.json({ mail: await lastMailTo(String(c.req.query('to') ?? '')) }));
 
@@ -48,10 +53,20 @@ export function testRoutes(app: Hono<Env>): void {
       fake.nextAddress = String(body.address);
       return c.json({ ok: true });
     }
-    // What the stand-in Google Calendar holds for this workspace, so a test can see what was created and who was invited.
-    if (body.op === 'calendar') {
-      const cal = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => (await tx.query(`select connected_account_id from connection where workspace_id = $1 and status = 'active' and app_id = 'gcal' order by created_at limit 1`, [ctx.workspaceId])).rows[0]);
-      return c.json({ events: cal ? (fake.accounts.get(cal.connected_account_id)?.events ?? []) : [] });
+    // What the stand-in calendar (Google's or Outlook's) holds for this workspace, so a test can see what was created,
+    // changed or deleted there, and who was told. `calendar-event` puts an event on it, as if made in the calendar itself,
+    // and has the provider announce it.
+    if (body.op === 'calendar' || body.op === 'calendar-event') {
+      const cal = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => (await tx.query(`select connected_account_id, toolkit from connection where workspace_id = $1 and status = 'active' and toolkit = any($2::text[]) order by created_at limit 1`, [ctx.workspaceId, CALENDAR_TOOLKITS])).rows[0]);
+      const account = cal ? fake.accounts.get(cal.connected_account_id) : undefined;
+      if (body.op === 'calendar') return c.json({ events: account?.events ?? [], notices: account?.notices ?? [] });
+      if (!cal || !account) return c.json({ error: 'no connected calendar' }, 409);
+      const event = body.event as FakeEvent;
+      account.events = [...account.events.filter((e) => e.id !== event.id), event];
+      const said = fake.event(cal.connected_account_id, cal.toolkit === 'outlook' ? 'OUTLOOK_EVENT_CHANGE_TRIGGER' : 'GOOGLECALENDAR_GOOGLE_CALENDAR_EVENT_SYNC_TRIGGER', cal.toolkit === 'outlook' ? { event_type: 'created', id: event.id } : { event_type: 'created', event_id: event.id });
+      const res = await app.request('/api/hooks/composio', { method: 'POST', headers: said.webhook.headers, body: said.webhook.body });
+      await inlineJobs()?.drain('calendar.sync');
+      return c.json({ ok: res.ok });
     }
     // The stand-in Drive: a file is made, changed or thrown away there, and the provider announces it.
     if (body.op === 'file' || body.op === 'file-trash') {
@@ -108,6 +123,28 @@ export function testRoutes(app: Hono<Env>): void {
       await inlineJobs()?.drain('mail.ingest');
       return c.json({ ok: res.ok });
     }
+    // The person does something to a thread in their own mail app: takes it out of the inbox, puts a label on it,
+    // reads it, deletes it. `add` and `remove` are label words (INBOX, UNREAD, TRASH, …) or the names of labels;
+    // `categories`, for Outlook, replaces the categories on the thread's messages.
+    if (body.op === 'in-mailbox') {
+      const box = fake.accounts.get(conn.connected_account_id)!;
+      const idOf = (name: string) => {
+        if (/^[A-Z_]+$/.test(name)) return name;
+        // A label the person made by hand gets an id the way Gmail gives one.
+        if (!box.labels.has(name)) box.labels.set(name, `Label_${box.labels.size + 1}`);
+        return box.labels.get(name)!;
+      };
+      const add = ((body.add as string[] | undefined) ?? []).map(idOf);
+      const remove = ((body.remove as string[] | undefined) ?? []).map(idOf);
+      const touched = box.messages.filter((m) => m.subject.replace(/^Re: /, '') === String(body.subject));
+      for (const m of touched) {
+        m.labels = [...new Set([...m.labels.filter((l) => !remove.includes(l)), ...add])];
+        if (Array.isArray(body.categories)) m.categories = (body.categories as string[]).map(String);
+      }
+      return c.json({ ok: touched.length > 0 });
+    }
+    // Looks at the mailbox for what the person changed there, now, instead of waiting for the next scheduled look.
+    if (body.op === 'check-mailbox') return c.json({ checked: await checkMailbox(ctx.workspaceId, conn.id) });
     if (body.op === 'fail') {
       fake.failNext.set(String(body.slug), body.mode as 'error');
       return c.json({ ok: true });

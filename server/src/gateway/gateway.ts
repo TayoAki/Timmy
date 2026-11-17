@@ -13,7 +13,7 @@ import { withWorkspace, type Tx } from '../db/pool';
 import { hashOf, newId } from '../lib/ids';
 import { log } from '../lib/log';
 import { commitState, loadState, remember, type Loaded } from '../state/docs';
-import { shownId } from '../sync/calendar-write';
+import { afterEventChange, isEventChange } from '../sync/calendar-change';
 import { EXECUTORS, reconcile } from './executors';
 import { KINDS, approverFor, mayDecide, neverAllowed, reachesSomeoneElse, ruleCovers, type Actor, type EffectKind, type PolicyRow, type Route } from './policy';
 
@@ -120,7 +120,7 @@ function pendingOf(e: EffectRow): PendingEffect {
   const domain = KINDS[e.kind].domain;
   return {
     id: e.id,
-    kind: e.kind === 'mail.modify' ? 'filing' : domain === 'mail' ? 'email' : domain,
+    kind: e.kind === 'mail.modify' ? 'filing' : domain === 'mail' || domain === 'chat' ? 'email' : domain,
     title: e.preview.title ?? KINDS[e.kind].label,
     why: e.preview.why ?? '',
     preview: { from: e.preview.from, to: e.preview.to, cc: e.preview.cc, subject: e.preview.subject, body: e.preview.body, lines: e.preview.lines, ...(e.preview.attachments?.length ? { attachments: e.preview.attachments } : {}) },
@@ -134,7 +134,8 @@ function pendingOf(e: EffectRow): PendingEffect {
 }
 
 function withPending(state: State, e: EffectRow): State {
-  const show = e.status === 'intended' || (e.status === 'approved' && !!e.hold_until);
+  // A chat reply is never queued for a decision: it is approved as it is proposed, or not proposed at all.
+  const show = KINDS[e.kind].domain !== 'chat' && (e.status === 'intended' || (e.status === 'approved' && !!e.hold_until));
   const rest = state.pending.filter((p) => p.id !== e.id);
   return { ...state, pending: show ? [pendingOf(e), ...rest] : rest };
 }
@@ -386,6 +387,8 @@ async function settle(workspaceId: string, claimed: EffectRow, outcome: Outcome)
 
 /** What the screens show once a send has gone out, failed, or is unconfirmed. */
 function afterEffect(loaded: Loaded, state0: State, e: EffectRow, outcome: Outcome): State {
+  // An automation's question changes nothing on the screens by being answered; its run carries on by itself.
+  if (e.kind === 'automation.ask') return state0;
   // Filing that Timmy proposed (from the chat) moves the thread on the screens once the mailbox has it.
   // A move the person made themselves is already on the screens; it is what proposed the filing.
   if (e.kind === 'mail.modify') {
@@ -394,17 +397,20 @@ function afterEffect(loaded: Loaded, state0: State, e: EffectRow, outcome: Outco
     const moved = replay(loaded, state0, { type: 'move', id: p.threadId, box: p.box, quiet: true, by: 'timmy' });
     return moved ? { ...moved, toasts: state0.toasts, route: state0.route } : state0;
   }
-  // An event made in Timmy now exists in Google Calendar: the Google copy takes its place, under the id the
+  // An event made in Timmy now exists on the calendar: the calendar's copy takes its place, under the id the
   // calendar sync uses, so the next sync updates it instead of adding a second one.
   if (e.kind === 'calendar.create') {
     const p = e.payload as { eventId?: string; connectionId?: string };
     const local = p.eventId ? state0.ws.events[p.eventId] : undefined;
-    if (outcome.status !== 'completed' || !outcome.externalId || !local || !p.eventId || !p.connectionId) return state0;
-    const id = shownId(p.connectionId, outcome.externalId);
+    const id = outcome.status === 'completed' ? outcome.result.shown : undefined;
+    if (!local || !p.eventId || typeof id !== 'string' || !id) return state0;
     const events = Object.fromEntries(Object.entries(state0.ws.events).filter(([k]) => k !== p.eventId));
     const tasks = Object.fromEntries(Object.entries(state0.ws.tasks).map(([k, t]) => [k, t.event === p.eventId ? { ...t, event: id } : t]));
     return { ...state0, ws: { ...state0.ws, events: { ...events, [id]: { ...local, id } }, tasks } };
   }
+  // A change or a deletion the calendar has taken shows on Timmy's calendar. One it refused changes nothing here:
+  // the calendar is read again after every such write, and that puts the screen right.
+  if (isEventChange(e.kind)) return outcome.status === 'completed' ? afterEventChange(state0, e) : state0;
   const threadId = e.preview.thread;
   if (!threadId) return state0;
   let state = state0;

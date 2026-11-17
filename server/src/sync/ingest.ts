@@ -12,7 +12,9 @@ import { withWorkspace, type Tx } from '../db/pool';
 import { newId } from '../lib/ids';
 import { log } from '../lib/log';
 import { mutate } from '../state/mutate';
+import { onMailStored } from '../automations/triggers';
 import { mailboxFor } from './mailbox';
+import { followMailbox, lookedAtFrom } from './mailbox-changes';
 import { paragraphs, parseSender, type MailMessage } from './message';
 import { connectionById, type ConnectionRow, type Phase } from './tools';
 
@@ -189,9 +191,22 @@ export async function ingestThread(workspaceId: string, connectionId: string, th
   if (!fetched && !carried) throw new Error('the thread could not be fetched');
   const list = fetched ?? [carried!];
   if (!list.length) return 0;
+  // The whole thread was just fetched, so its labels are fresh: what the person did to it in the mailbox itself
+  // (archived it, labelled it, read it) is picked up here as well.
+  const states = fetched ? await box.statesOf(workspaceId, conn, fetched, phase).catch(() => null) : null;
   return mutate(workspaceId, 'sync', async (tx, loaded) => {
     const stored = await storeMessages(tx, loaded.state, workspaceId, conn, list);
-    return { state: stored.state, result: stored.fresh };
+    if (!states) return { state: stored.state, result: stored.fresh };
+    // Taking the mail in comes first. If picking up the change fails, the mail is still stored and the next look tries again.
+    await tx.query('savepoint mailbox_changes');
+    try {
+      const followed = await followMailbox(tx, stored.state, workspaceId, conn, states, lookedAtFrom());
+      return { state: followed.state, result: stored.fresh };
+    } catch (err) {
+      await tx.query('rollback to savepoint mailbox_changes');
+      log.warn('could not pick up what changed in the mailbox', { workspaceId, connectionId, error: (err as Error).message });
+      return { state: stored.state, result: stored.fresh };
+    }
   });
 }
 
@@ -208,7 +223,9 @@ async function storeMessages(tx: Tx, state: State, workspaceId: string, conn: Co
   const keys = [...new Set(list.map((m) => m.threadKey))];
   let next = state;
   for (const key of keys) next = await projectThread(tx, next, workspaceId, conn, key);
-  return { state: noteLeadMail(next, fresh), fresh: fresh.length, threads: keys.length };
+  // [automations] New mail may start automations. Their runs are recorded here, in the transaction that stores the mail.
+  next = await onMailStored(tx, noteLeadMail(next, fresh), workspaceId, conn, fresh);
+  return { state: next, fresh: fresh.length, threads: keys.length };
 }
 
 /* ───────────── Mail to and from leads ───────────── */

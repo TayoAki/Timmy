@@ -2,6 +2,7 @@ import type { State } from '../../../src/state/store';
 import { blankState } from '../../../src/live/blank';
 import { SLICES, SLICE_BY_NAME, applyPatches, diffState, fromWire, toWire, writeAt, type Patch } from '../../../src/live/patches';
 import type { Tx } from '../db/pool';
+import { keepPageVersions } from '../pages/versions';
 
 export interface WorkspaceRow {
   id: string;
@@ -253,6 +254,8 @@ export async function commitState(tx: Tx, cur: Loaded, next: State, origin = 'co
   if (removes.length) {
     await tx.query(`delete from state_doc d using unnest($2::text[], $3::text[]) as t(s, i) where d.workspace_id = $1 and d.slice = t.s and d.id = t.i`, [workspaceId, removes.map((r) => r.s), removes.map((r) => r.id)]);
   }
+  // A page whose contents this save replaces has its earlier contents kept as a version (see pages/versions.ts).
+  await keepPageVersions(tx, workspaceId, cur.state, patches, origin);
   await tx.query('insert into state_change (workspace_id, rev, patches, origin) values ($1, $2, $3::jsonb, $4)', [workspaceId, rev, clean(toWire(patches)), origin]);
   await tx.query('update workspace set state_rev = $2 where id = $1', [workspaceId, rev]);
   await tx.query('select pg_notify($1, $2)', ['timmy_state', `${workspaceId}:${rev}`]);

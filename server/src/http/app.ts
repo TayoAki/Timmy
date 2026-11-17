@@ -18,18 +18,24 @@ import { runCommand } from '../state/engine';
 import { MAX_STREAMS_PER_PERSON, stillAllowed, streamsOf, subscribe, type Subscriber } from '../state/hub';
 import { rulesFor } from '../auth/roles';
 import { loadState } from '../state/docs';
+import { calendarFor } from '../sync/calendars';
 import { ConnectError, TOOLKITS, closeConnections, disconnect, finishConnect, startConnect } from '../sync/connect';
 import { mailboxFor } from '../sync/mailbox';
+import { appLoaded, checkWhileOpen } from '../sync/mailbox-check';
 import { summarizePage } from '../agent/pages';
 import { BudgetError } from '../providers/model';
 import { fromWire, pickSlices, toWire } from '../../../src/live/patches';
 import type { Action } from '../../../src/state/store';
 import { MAX_FILE_BYTES, fileSize } from '../../../src/lib/files';
+import { chatFrameRoutes, chatRoutes } from '../chat/routes';
 import { agentRoutes } from './agent';
+import { automationRoutes } from './automations';
 import { assetHeaders, fileRoutes, isFileUpload } from './files';
 import { membership, workspacesOf } from '../auth/members';
 import { ctxOf, requireRead, requireSession, requireWorkspace, sameOrigin, sessionOf, type Env } from './session';
 import { testRoutes } from './test-hooks';
+import { pageRoutes } from '../pages/routes';
+import { trackedRoutes } from './tracked';
 
 const wire = (body: unknown, status = 200) => new Response(toWire(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
 
@@ -42,8 +48,13 @@ export function buildApp(): Hono<Env> {
     return c.json({ error: 'Something went wrong on our side.' }, 500);
   });
 
+  // The website chat's loader and frame are loaded by other people's websites, so they set their own headers.
+  // They are registered first, which keeps the app's own headers below from being applied to them.
+  chatFrameRoutes(app);
+
   // Uploaded files get stricter headers than the rest of the app. Registered first, so they are set last and stand.
   app.use('/api/v1/assets/*', assetHeaders);
+
   // Browser protections on every response. The app opens its own document viewers in frames, so framing is allowed
   // from this origin only. A full content-security policy for scripts is still to come (see STATUS.md).
   app.use(
@@ -90,7 +101,8 @@ export function buildApp(): Hono<Env> {
     const threadKey = box?.threadKeyOf(event.data) ?? '';
     if (box && threadKey) enqueueSoon('mail.ingest', { workspaceId: conn.workspace_id, connectionId: conn.id, threadKey, seed: event.data });
     // Any calendar event means the window may have changed; one sync per connection covers a burst of them.
-    if (conn.toolkit === 'googlecalendar') enqueueSoon('calendar.sync', { workspaceId: conn.workspace_id, connectionId: conn.id }, { singletonKey: `cal:${conn.id}` });
+    // An Outlook account announces mail and calendar events alike, so its calendar is asked which this one is.
+    if (calendarFor(conn.toolkit)?.announces(event.triggerSlug)) enqueueSoon('calendar.sync', { workspaceId: conn.workspace_id, connectionId: conn.id }, { singletonKey: `cal:${conn.id}` });
     if (conn.toolkit === 'googledrive') {
       // A file thrown away leaves the list at once. Anything else means "the list changed": one pass per connection covers a burst.
       const gone = event.triggerSlug === 'GOOGLEDRIVE_FILE_DELETED_OR_TRASHED_TRIGGER' ? String(event.data.file_id ?? '') : '';
@@ -131,6 +143,8 @@ export function buildApp(): Hono<Env> {
   app.get('/api/v1/state', requireWorkspace, requireRead, async (c) => {
     const ctx = ctxOf(c);
     const loaded = await withWorkspace({ workspaceId: ctx.workspaceId, lock: true }, (tx) => loadState(tx, ctx.workspaceId));
+    // A page that opens loads its state here, once. The stream it opens next uses that to tell a real opening from a reconnect.
+    appLoaded(ctx.workspaceId);
     return wire({ rev: loaded.rev, slices: pickSlices(loaded.state), me: { name: loaded.workspace.owner_name, email: loaded.workspace.owner_email, company: loaded.workspace.name } });
   });
 
@@ -164,10 +178,13 @@ export function buildApp(): Hono<Env> {
         off();
       });
       send('hello', { rev });
+      // What the person changes in the mailbox itself is picked up when the app opens, and every few minutes while Timmy is in use.
+      checkWhileOpen(ctx.workspaceId);
       while (open) {
         await stream.sleep(15_000);
         sub.checkedAt = 0;
         if (!(await stillAllowed(sub))) break;
+        checkWhileOpen(ctx.workspaceId);
         send('ping', {});
       }
       off();
@@ -229,7 +246,8 @@ export function buildApp(): Hono<Env> {
     // The first sync is queued once, when the connection has just become active; opening the link again queues nothing.
     if (!conn.justConnected) return c.redirect(`/?connect=ok&app=${conn.app_id}`);
     if (TOOLKITS[conn.app_id]?.kind === 'mail') enqueueSoon('mail.backfill', { workspaceId: ctx.workspaceId, connectionId: conn.id, days: config.backfillFastDays }, { singletonKey: `bf:${conn.id}` });
-    if (TOOLKITS[conn.app_id]?.kind === 'calendar') enqueueSoon('calendar.sync', { workspaceId: ctx.workspaceId, connectionId: conn.id }, { singletonKey: `cal:${conn.id}` });
+    // An Outlook account is a mailbox and a calendar at once: both are read.
+    if (calendarFor(conn.toolkit)) enqueueSoon('calendar.sync', { workspaceId: ctx.workspaceId, connectionId: conn.id }, { singletonKey: `cal:${conn.id}` });
     if (TOOLKITS[conn.app_id]?.kind === 'files') enqueueSoon('files.sync', { workspaceId: ctx.workspaceId, connectionId: conn.id }, { singletonKey: `files:${conn.id}` });
     return c.redirect(`/?connect=ok&app=${conn.app_id}`);
   });
@@ -299,6 +317,12 @@ export function buildApp(): Hono<Env> {
 
   agentRoutes(app);
   fileRoutes(app);
+  chatRoutes(app);
+  // [automations] The test run and the list of runs (http/automations.ts).
+  automationRoutes(app);
+  // A page's version history, and how long the trash keeps a page.
+  pageRoutes(app);
+  trackedRoutes(app);
 
   if (config.testHooks) testRoutes(app);
 

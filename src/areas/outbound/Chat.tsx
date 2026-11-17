@@ -4,6 +4,11 @@
  * over), try it in a live preview, and read or take over visitors' chats.
  * The preview answers from your own questions and help desk answers; nothing
  * in the preview is saved.
+ *
+ * On a real workspace (live mode) the same screens drive the real chat: the
+ * snippet carries the workspace's own key, visitors' conversations arrive from
+ * the server, and a teammate's actions on them are the chat's named commands.
+ * Booking a call and pictures from visitors are not part of that yet.
  */
 import {
   ArrowUp,
@@ -31,99 +36,27 @@ import { NOW, PEOPLE } from '../../data/mock';
 import type { ChatConvo, ChatMsg, ChatWidget } from '../../data/ws-types';
 import { fmtStamp } from '../../lib/format';
 import { useStore, ws } from '../../state/store';
-import { patch, put, uid } from '../../state/ws';
+import { patch, put, registerMail, uid } from '../../state/ws';
 import { chatWidgetFor } from '../../data/ws-mock';
+import { followUpName, newTalk, respond, type Talk } from '../../lib/chat-bot';
+import { isLive } from '../../live/clock';
+import { fromWire } from '../../live/patches';
+import { useProfile } from '../../live/LiveApp';
 import { shrinkImage } from '../docs/editor/nodeviews';
-import { pictureUrl } from '../../lib/files';
-import { LIVE } from '../../live/config';
-import { uploadPicture } from '../../live/upload';
 
 const OWNER = PEOPLE.me!.name.split(' ')[0]!;
+/** Who "you" is on this screen: the demo's owner, or on a real workspace the person signed in. */
+const me = () => (isLive() ? (PEOPLE.me?.name.split(' ')[0] ?? 'You') : OWNER);
 const COLORS = ['#3f51d9', '#0f766e', '#d9730d', '#c14c8a', '#1c1b19', '#2f8a5b'];
 const SLOTS = ['Tue, Nov 17 at 10:00 AM', 'Tue, Nov 17 at 2:30 PM', 'Wed, Nov 18 at 11:00 AM'];
-const EMAIL = /[\w.+-]+@[\w-]+\.[\w.-]+/;
-const STOP = new Set(['the', 'and', 'you', 'your', 'are', 'for', 'with', 'how', 'what', 'does', 'have', 'there', 'can', 'any', 'is', 'do', 'a', 'an', 'it', 'of', 'to', 'in', 'on', 'we', 'i', 'my']);
-const SYN: Record<string, string> = { price: 'cost', pricing: 'cost', much: 'cost', costs: 'cost', expensive: 'cost', trial: 'free', saml: 'sso', okta: 'sso', login: 'sso' };
-
-const words = (t: string) =>
-  t
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .split(/\s+/)
-    .filter((w) => w.length > 1 && !STOP.has(w))
-    .map((w) => SYN[w] ?? w);
-
-/** The help desk answer that best matches what the visitor wrote, if any matches well. */
-export function matchFaq(faq: ChatWidget['faq'], text: string) {
-  const t = new Set(words(text));
-  let best: { f: ChatWidget['faq'][number]; score: number } | null = null;
-  for (const f of faq) {
-    const q = words(f.q);
-    const score = q.filter((w) => t.has(w)).length / Math.max(1, Math.min(q.length, 3));
-    if (score > (best?.score ?? 0)) best = { f, score };
-  }
-  return best && best.score >= 0.5 ? best.f : null;
-}
-
-/* ───────────── What the preview bot says ───────────── */
-
-interface Talk {
-  email?: string;
-  name?: string;
-  q: number;
-  answers: Record<string, string>;
-  booked?: string;
-  handedOff?: boolean;
-}
-
-type Reply = { text: string; slots?: boolean };
-
-export function respond(w: ChatWidget, st: Talk, text: string): { replies: Reply[]; st: Talk } {
-  const next: Talk = { ...st, answers: { ...st.answers } };
-  const ask = (): Reply[] => {
-    if (!next.email) return [{ text: 'What’s the best email to reach you?' }];
-    const q = w.questions[next.q];
-    if (q) return [{ text: q.text }];
-    if (w.booking && !next.booked) return [{ text: `Thanks! Want to talk it through with ${OWNER}? Pick a time:`, slots: true }];
-    return [{ text: `Thanks! ${OWNER} will be in touch at ${next.email}.` }];
-  };
-
-  if (/\b(human|person|someone|agent|real|talk to|speak to|manager|call me|phone)\b/i.test(text)) {
-    next.handedOff = true;
-    const em = text.match(EMAIL)?.[0];
-    if (em) next.email = em;
-    if (w.handoff === 'book') return { replies: [{ text: `Happy to set that up with ${OWNER}. Pick a time:`, slots: true }], st: next };
-    if (w.handoff === 'email' && !next.email) return { replies: [{ text: `Leave your email and ${OWNER} will write back today.` }], st: next };
-    return { replies: [{ text: `I’ve let ${OWNER} know. They’ll reply here${next.email ? `, or by email at ${next.email}` : '. What’s the best email in case you step away?'}` }], st: next };
-  }
-
-  const em = text.match(EMAIL)?.[0];
-  if (em && !next.email) {
-    next.email = em;
-    const local = em.split('@')[0]!.split(/[._-]/)[0]!;
-    next.name = local.charAt(0).toUpperCase() + local.slice(1);
-    const rest = ask();
-    return { replies: [{ text: `Thanks, ${next.name}! ${rest[0]!.text}`, slots: rest[0]!.slots }], st: next };
-  }
-
-  const f = matchFaq(w.faq, text);
-  if (f) return { replies: [{ text: f.a }, ...(next.email ? [] : ask())], st: next };
-
-  if (next.email && next.q < w.questions.length) {
-    next.answers[w.questions[next.q]!.id] = text.trim();
-    next.q += 1;
-    return { replies: ask(), st: next };
-  }
-
-  if (!next.email) return { replies: [{ text: `Good question. I don’t have that answer yet, so ${OWNER} will reply. What’s the best email to reach you?` }], st: next };
-  return { replies: [{ text: `Thanks. I’ve passed that to ${OWNER}.` }], st: next };
-}
+/** How long a real workspace may keep visitors' conversations, in months. */
+const RETENTION = [1, 3, 6, 12, 24];
 
 /* ───────────── Shared pieces ───────────── */
 
 function BotFace({ w, size = 34 }: { w: ChatWidget; size?: number }) {
   return w.icon ? (
-    <img className="wc-face" src={pictureUrl(w.icon)} alt="" width={size} height={size} />
+    <img className="wc-face" src={w.icon} alt="" width={size} height={size} />
   ) : (
     <span className="wc-face mark" style={{ width: size, height: size }}>
       <TimmyMark size={size} />
@@ -138,11 +71,12 @@ function Bubble({ m, w, visitor }: { m: ChatMsg; w: ChatWidget; visitor?: string
   const mine = m.from === 'visitor';
   return (
     <div className={`wc-row${mine ? ' visitor' : ''}`}>
-      {mine ? <span className="wc-face visitor">{visitor ?? <MessageCircle size={14} />}</span> : m.from === 'you' ? <span className="wc-face you">{OWNER[0]}</span> : <BotFace w={w} size={26} />}
+      {mine ? <span className="wc-face visitor">{visitor ?? <MessageCircle size={14} />}</span> : m.from === 'you' ? <span className="wc-face you">{(m.by ?? me())[0]}</span> : <BotFace w={w} size={26} />}
       <div className={`wc-bubble ${m.from}`} style={mine ? ({ '--wc': w.color } as CSSProperties) : undefined}>
         <span className="wc-time">
-          {m.from === 'you' ? `${OWNER} · ` : m.from === 'timmy' ? 'Timmy · ' : ''}
+          {m.from === 'you' ? `${m.by ?? me()} · ` : m.from === 'timmy' ? 'Timmy · ' : ''}
           {timeOf(m.at)}
+          {m.undelivered && <span className="wc-undelivered"> · Not shown to the visitor</span>}
         </span>
         {m.image ? <img className="wc-img" src={m.image} alt="Attached by the visitor" /> : <p>{m.text}</p>}
       </div>
@@ -163,7 +97,7 @@ export function ChatTab() {
         <div>
           <h2 className="au-title">Website chat</h2>
           <p className="muted">
-            Timmy answers visitors on {w.domain || 'your site'} from your help desk answers, asks your questions and books calls. You can take over any chat.
+            Timmy answers visitors on {w.domain || 'your site'} from your help desk answers{isLive() ? ' and asks your questions' : ', asks your questions and books calls'}. You can take over any chat.
           </p>
         </div>
         <Segmented
@@ -209,7 +143,13 @@ function Setup({ w }: { w: ChatWidget }) {
   const [fa, setFa] = useState('');
   const upload = useRef<HTMLInputElement>(null);
   const validDomain = /^(?!-)[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(domain.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, ''));
-  const snippet = `<script src="https://timmy.app/chat.js" data-site="${w.domain || 'your-site'}" async></script>`;
+  // On a real workspace the snippet loads the chat from this server, with the key the server made for this website.
+  const live = isLive();
+  const profile = useProfile();
+  const mayRun = !live || !!profile?.profile.can.policy;
+  const snippet = live ? `<script src="${window.location.origin}/chat.js" data-site="${w.siteKey ?? ''}" async></script>` : `<script src="https://timmy.app/chat.js" data-site="${w.domain || 'your-site'}" async></script>`;
+  const [privacy, setPrivacy] = useState(w.privacyUrl ?? '');
+  const validPrivacy = privacy.trim() === '' || /^https:\/\/[^\s"'<>\\]{1,500}$/.test(privacy.trim());
 
   return (
     <div className="wc-setup">
@@ -220,12 +160,28 @@ function Setup({ w }: { w: ChatWidget }) {
           aside={
             <span className={`ae-switch${w.on ? ' on' : ''}`}>
               <span>{w.on ? 'On' : 'Off'}</span>
-              <button role="switch" aria-checked={w.on} aria-label="Show the chat on your website" className="ae-switch-track" onClick={() => set({ on: !w.on }, w.on ? 'The chat is hidden on your site' : 'The chat is live on your site')}>
+              <button
+                role="switch"
+                aria-checked={w.on}
+                aria-label="Show the chat on your website"
+                className="ae-switch-track"
+                disabled={!mayRun}
+                title={mayRun ? undefined : 'Only an owner or admin can switch the chat on or off'}
+                // On a real workspace the server answers: switching on needs a website and an owner or admin.
+                onClick={() => set({ on: !w.on }, live ? undefined : w.on ? 'The chat is hidden on your site' : 'The chat is live on your site')}
+              >
                 <span className="ae-switch-thumb" />
               </button>
             </span>
           }
         >
+          {live && (
+            <p className="muted wc-live-note">
+              {mayRun
+                ? 'While the chat is on, Timmy answers visitors by itself, word for word from the settings on this page. Switching it on is your OK for those answers, so only an owner or admin can switch it on, or change it while it is on.'
+                : 'Only an owner or admin can switch the chat on, or change these settings while it is on.'}
+            </p>
+          )}
           <label className="field">
             <span className="field-label">Website</span>
             <span className="wc-domain">
@@ -243,21 +199,26 @@ function Setup({ w }: { w: ChatWidget }) {
         </Section>
 
         <Section title="Code snippet" hint="Paste this into the <head> of your website, or send it to whoever runs it.">
-          <div className="wc-code">
-            <pre>
-              <code>{snippet}</code>
-            </pre>
-            <button
-              className="btn btn-xs"
-              onClick={() => {
-                navigator.clipboard?.writeText(snippet).catch(() => undefined);
-                dispatch({ type: 'toast', text: 'Copied. Paste it before </head> on your website.' });
-              }}
-            >
-              <Copy size={13} aria-hidden />
-              Copy
-            </button>
-          </div>
+          {live && !w.siteKey ? (
+            <p className="muted wc-live-note">Enter your website above first. The snippet is made for that website, and the chat only shows there.</p>
+          ) : (
+            <div className="wc-code">
+              <pre>
+                <code>{snippet}</code>
+              </pre>
+              <button
+                className="btn btn-xs"
+                onClick={() => {
+                  navigator.clipboard?.writeText(snippet).catch(() => undefined);
+                  dispatch({ type: 'toast', text: 'Copied. Paste it before </head> on your website.' });
+                }}
+              >
+                <Copy size={13} aria-hidden />
+                Copy
+              </button>
+            </div>
+          )}
+          {live && w.siteKey && <p className="muted wc-live-note">The chat only appears on {w.domain || 'the website above'}, with or without “www.”. Pasted anywhere else, it stays hidden.</p>}
         </Section>
 
         <Section title="Look" hint="Name, picture and colour, so the chat feels like yours.">
@@ -280,13 +241,7 @@ function Setup({ w }: { w: ChatWidget }) {
                 hidden
                 onChange={async (e) => {
                   const f = e.target.files?.[0];
-                  if (!f) return;
-                  // On a real workspace the picture is uploaded and the settings keep a reference to it. The demo keeps it inline.
-                  if (!LIVE) return set({ icon: await shrinkImage(f, 256) }, 'Picture updated');
-                  uploadPicture(f, 'chat-icon', 256).then(
-                    (icon) => set({ icon }, 'Picture updated'),
-                    (err: Error) => dispatch({ type: 'toast', text: err.message, tone: 'warn' }),
-                  );
+                  if (f) set({ icon: await shrinkImage(f, 256) }, 'Picture updated');
                 }}
               />
             </div>
@@ -386,25 +341,65 @@ function Setup({ w }: { w: ChatWidget }) {
           <div className="wc-radios" role="radiogroup" aria-label="Hand-off">
             {(
               [
-                ['notify', `Tell ${OWNER} and wait`, 'You get a heads-up and can take over the chat.'],
-                ['book', 'Offer a call', 'Timmy shows three free times from your calendar.'],
+                ['notify', `Tell ${me()} and wait`, 'You get a heads-up and can take over the chat.'],
+                ['book', 'Offer a call', live ? 'Not available yet.' : 'Timmy shows three free times from your calendar.'],
                 ['email', 'Take an email', 'You reply by email later.'],
               ] as const
-            ).map(([id, label, hint]) => (
-              <label key={id} className={`wc-radio${w.handoff === id ? ' on' : ''}`}>
-                <input type="radio" name="handoff" checked={w.handoff === id} onChange={() => set({ handoff: id })} />
-                <span>
-                  <strong>{label}</strong>
-                  <span className="muted">{hint}</span>
-                </span>
-              </label>
-            ))}
+            ).map(([id, label, hint]) => {
+              // Booking from the chat isn't built for real workspaces yet, so that choice can't be picked or look picked.
+              // A chat that was set to it takes an email instead, and the screen shows that.
+              const unavailable = live && id === 'book';
+              const picked = live && w.handoff === 'book' ? id === 'email' : w.handoff === id;
+              return (
+                <label key={id} className={`wc-radio${picked ? ' on' : ''}${unavailable ? ' unavailable' : ''}`}>
+                  <input type="radio" name="handoff" checked={picked} disabled={unavailable} onChange={() => set({ handoff: id })} />
+                  <span>
+                    <strong>{label}</strong>
+                    <span className="muted">{hint}</span>
+                  </span>
+                </label>
+              );
+            })}
           </div>
-          <label className="wc-check">
-            <input type="checkbox" checked={w.booking} onChange={(e) => set({ booking: e.target.checked })} />
-            Offer to book a call once the questions are answered
-          </label>
+          {live ? (
+            <p className="muted wc-live-note">Booking a call from the chat isn’t available yet. Timmy takes the visitor’s email instead, and you can reply or email them from Chats.</p>
+          ) : (
+            <label className="wc-check">
+              <input type="checkbox" checked={w.booking} onChange={(e) => set({ booking: e.target.checked })} />
+              Offer to book a call once the questions are answered
+            </label>
+          )}
         </Section>
+
+        {live && (
+          <Section title="Privacy" hint="Visitors’ chats are personal data. Say where your privacy policy is, and how long chats are kept.">
+            <label className="field">
+              <span className="field-label">Privacy policy link</span>
+              <input
+                className="input"
+                placeholder="https://your-site.com/privacy"
+                value={privacy}
+                aria-invalid={!validPrivacy}
+                disabled={!mayRun}
+                onChange={(e) => setPrivacy(e.target.value)}
+                onBlur={() => validPrivacy && privacy.trim() !== (w.privacyUrl ?? '') && set({ privacyUrl: privacy.trim() })}
+              />
+              {!validPrivacy && <span className="field-error">Enter the full address, starting with https://</span>}
+              <span className="muted wc-live-note">When set, Timmy shows a short notice with this link whenever it asks a visitor for their email.</span>
+            </label>
+            <label className="field">
+              <span className="field-label">Keep chats for</span>
+              <select className="input" aria-label="Keep chats for" value={w.retentionMonths ?? 12} disabled={!mayRun} onChange={(e) => set({ retentionMonths: Number(e.target.value) })}>
+                {RETENTION.map((m) => (
+                  <option key={m} value={m}>
+                    {m === 1 ? '1 month' : `${m} months`}
+                  </option>
+                ))}
+              </select>
+              <span className="muted wc-live-note">Older chats are deleted for good. You can also delete any single chat from Chats.</span>
+            </label>
+          </Section>
+        )}
       </div>
 
       <div className="wc-preview-col">
@@ -420,8 +415,9 @@ function Preview({ w }: { w: ChatWidget }) {
   const [open, setOpen] = useState(true);
   const [tab, setTab] = useState<'chat' | 'help'>('chat');
   const first = (): ChatMsg[] => [{ id: 'g', from: 'timmy', text: w.greeting, at: NOW }];
-  const [msgs, setMsgs] = useState<(ChatMsg & { slots?: boolean })[]>(first);
-  const [talk, setTalk] = useState<Talk>({ q: 0, answers: {} });
+  const [msgs, setMsgs] = useState<(ChatMsg & { slots?: boolean; privacy?: boolean })[]>(first);
+  const [talk, setTalk] = useState<Talk>(newTalk);
+  const live = isLive();
   const [typing, setTyping] = useState(false);
   const [text, setText] = useState('');
   const body = useRef<HTMLDivElement>(null);
@@ -440,12 +436,13 @@ function Preview({ w }: { w: ChatWidget }) {
     setMsgs((m) => [...m, { id: uid('m'), from: 'visitor', text: t.trim(), at: NOW, image }]);
     setText('');
     if (image) return;
-    const { replies, st } = respond(w, talk, t);
+    // A real website gets what the server says: the business follows up (never a person's name), and no call is offered.
+    const { replies, st } = respond(w, talk, t, live ? { owner: followUpName(w), booking: false } : { owner: OWNER, booking: true });
     setTalk(st);
     setTyping(true);
     window.setTimeout(() => {
       setTyping(false);
-      setMsgs((m) => [...m, ...replies.map((r) => ({ id: uid('m'), from: 'timmy' as const, text: r.text, at: NOW, slots: r.slots }))]);
+      setMsgs((m) => [...m, ...replies.map((r) => ({ id: uid('m'), from: 'timmy' as const, text: r.text, at: NOW, slots: r.slots, privacy: live && !!r.asksEmail && !!w.privacyUrl }))]);
     }, 750);
   };
 
@@ -460,7 +457,7 @@ function Preview({ w }: { w: ChatWidget }) {
 
   const restart = () => {
     setMsgs(first());
-    setTalk({ q: 0, answers: {} });
+    setTalk(newTalk());
     setTyping(false);
   };
 
@@ -487,9 +484,12 @@ function Preview({ w }: { w: ChatWidget }) {
         <span className="wc-ph w80 thin" />
         <span className="wc-ph w70 thin" />
       </div>
-      <p className="wc-preview-note">Preview. It answers from your settings; nothing here is saved.</p>
+      <p className="wc-preview-note">
+        Preview. It answers from your settings; nothing here is saved.{live && !w.on ? ' The chat is off, so visitors don’t see it yet.' : ''}
+      </p>
 
-      {w.on && open && (
+      {/* On a real workspace the preview can be tried before the chat is switched on for visitors. */}
+      {(w.on || live) && open && (
         <div className="wc-window" style={{ '--wc': w.color } as CSSProperties} role="dialog" aria-label={`${w.name} chat`}>
           <header className="wc-win-head">
             <BotFace w={w} />
@@ -517,6 +517,14 @@ function Preview({ w }: { w: ChatWidget }) {
                 {msgs.map((m) => (
                   <div key={m.id}>
                     <Bubble m={m} w={w} />
+                    {m.privacy && w.privacyUrl && (
+                      <p className="wc-privacy muted">
+                        Your email is only used to reply to you.{' '}
+                        <a href={w.privacyUrl} target="_blank" rel="noopener noreferrer">
+                          Privacy policy
+                        </a>
+                      </p>
+                    )}
                     {m.slots && !talk.booked && (
                       <div className="wc-slots">
                         {SLOTS.map((s) => (
@@ -547,10 +555,13 @@ function Preview({ w }: { w: ChatWidget }) {
                   say(text);
                 }}
               >
-                <button type="button" className="icon-btn sm" aria-label="Attach a picture" onClick={() => file.current?.click()}>
-                  <Paperclip size={15} />
-                </button>
-                <input placeholder="Type your message" value={text} onChange={(e) => setText(e.target.value)} aria-label="Message" />
+                {/* Visitors can't send pictures on a real website yet, so the preview doesn't offer it there. */}
+                {!live && (
+                  <button type="button" className="icon-btn sm" aria-label="Attach a picture" onClick={() => file.current?.click()}>
+                    <Paperclip size={15} />
+                  </button>
+                )}
+                <input placeholder="Type your message" value={text} maxLength={live ? 2000 : undefined} onChange={(e) => setText(e.target.value)} aria-label="Message" />
                 <button type="submit" className="wc-send" aria-label="Send" disabled={!text.trim()}>
                   <ArrowUp size={15} />
                 </button>
@@ -581,9 +592,9 @@ function Preview({ w }: { w: ChatWidget }) {
           <footer className="wc-foot">Powered by Timmy</footer>
         </div>
       )}
-      {w.on ? (
+      {w.on || live ? (
         <button className="wc-launcher" style={{ '--wc': w.color } as CSSProperties} aria-label={open ? 'Hide the chat' : 'Open the chat'} onClick={() => setOpen((o) => !o)}>
-          {open ? <X size={22} /> : w.icon ? <img src={pictureUrl(w.icon)} alt="" /> : <MessageCircle size={24} />}
+          {open ? <X size={22} /> : w.icon ? <img src={w.icon} alt="" /> : <MessageCircle size={24} />}
         </button>
       ) : (
         <p className="wc-off">The chat is off, so visitors don’t see it.</p>
@@ -611,19 +622,48 @@ function Chats({ w }: { w: ChatWidget }) {
   );
   const cur = openId ? state.ws.chats[openId] : undefined;
   const set = (id: string, change: Partial<ChatConvo>, toast?: string) => dispatch(ws([patch('chats', id, change)], toast ? { toast } : undefined));
+  const live = isLive();
+  // The newest messages of each chat arrive with the screen; older ones are read from the server when asked for.
+  const [older, setOlder] = useState<{ id: string; messages: ChatMsg[] } | null>(null);
+  const shown = cur && older?.id === cur.id ? [...older.messages.filter((m) => !cur.messages.some((x) => x.id === m.id)), ...cur.messages] : (cur?.messages ?? []);
 
   useEffect(() => {
     body.current?.scrollTo({ top: body.current.scrollHeight });
   }, [openId, cur?.messages.length]);
 
+  /*
+   * What a teammate does to a chat. In the demo these are plain edits to the sample data. On a real workspace
+   * each one is a named command the server acts on: a reply reaches the visitor through the Action gateway,
+   * taking over stops Timmy, and deleting removes the stored conversation.
+   */
+  const markRead = (c: ChatConvo) => (live ? dispatch({ type: 'chat', op: { op: 'read', id: c.id } }) : set(c.id, { unread: false }));
+  const star = (c: ChatConvo) => (live ? dispatch({ type: 'chat', op: { op: 'star', id: c.id, on: !c.starred } }) : set(c.id, { starred: !c.starred }));
+  const takeOver = (c: ChatConvo) =>
+    live ? dispatch({ type: 'chat', op: { op: 'takeOver', id: c.id, on: !c.live } }) : set(c.id, { live: !c.live, urgent: c.live ? c.urgent : false }, c.live ? 'Timmy is answering this chat again' : 'You’re live. Timmy stops answering in this chat.');
+  const remove = (c: ChatConvo) => {
+    if (!window.confirm('Delete this chat for good? Its messages are removed from Timmy and can’t be brought back.')) return;
+    setOpenId(null);
+    dispatch({ type: 'chat', op: { op: 'delete', id: c.id } });
+  };
+  const loadOlder = async (c: ChatConvo) => {
+    try {
+      const res = await fetch(`/api/v1/chat/conversations/${encodeURIComponent(c.id)}/messages`, { credentials: 'same-origin' });
+      if (!res.ok) throw new Error('not loaded');
+      setOlder({ id: c.id, messages: fromWire<{ messages: ChatMsg[] }>(await res.text()).messages });
+    } catch {
+      dispatch({ type: 'toast', text: 'The earlier messages couldn’t be loaded. Try again.', tone: 'warn' });
+    }
+  };
+
   const openChat = (c: ChatConvo) => {
     setOpenId(c.id);
-    if (c.unread) set(c.id, { unread: false });
+    if (c.unread) markRead(c);
   };
 
   const send = () => {
     if (!cur || !text.trim()) return;
-    set(cur.id, { messages: [...cur.messages, { id: uid('m'), from: 'you', text: text.trim(), at: NOW }], urgent: false });
+    if (live) dispatch({ type: 'chat', op: { op: 'reply', id: cur.id, text: text.trim(), message: uid('m'), by: PEOPLE.me?.name } });
+    else set(cur.id, { messages: [...cur.messages, { id: uid('m'), from: 'you', text: text.trim(), at: NOW }], urgent: false });
     setText('');
   };
 
@@ -688,11 +728,12 @@ function Chats({ w }: { w: ChatWidget }) {
                 </span>
               </span>
               {cur.live && <span className="wc-live">Live</span>}
-              <button className={`icon-btn${cur.starred ? ' on' : ''}`} aria-pressed={!!cur.starred} aria-label={cur.starred ? 'Unstar' : 'Star'} onClick={() => set(cur.id, { starred: !cur.starred })}>
+              <button className={`icon-btn${cur.starred ? ' on' : ''}`} aria-pressed={!!cur.starred} aria-label={cur.starred ? 'Unstar' : 'Star'} onClick={() => star(cur)}>
                 <Star size={17} fill={cur.starred ? 'currentColor' : 'none'} />
               </button>
               {cur.email && (
-                <button className="btn btn-sm" onClick={() => dispatch({ type: 'compose', draft: { to: [cur.email!], subject: `Following up on your chat`, body: `Hi ${cur.name?.split(' ')[0] ?? 'there'},\n\nThanks for chatting with us on ${w.domain}.\n\n${OWNER}` } })}>
+                // The follow-up is an ordinary email: it opens as a draft, and goes out only when you send it.
+                <button className="btn btn-sm" onClick={() => dispatch({ type: 'compose', draft: { to: [live ? registerMail(cur.email!) : cur.email!], subject: `Following up on your chat`, body: `Hi ${cur.name?.split(' ')[0] ?? 'there'},\n\nThanks for chatting with us on ${w.domain}.\n\n${me()}` } })}>
                   <Mail size={14} aria-hidden />
                   Email
                 </button>
@@ -704,7 +745,7 @@ function Chats({ w }: { w: ChatWidget }) {
                   aria-checked={cur.live}
                   aria-label="Take over this chat"
                   className="ae-switch-track"
-                  onClick={() => set(cur.id, { live: !cur.live, urgent: cur.live ? cur.urgent : false }, cur.live ? 'Timmy is answering this chat again' : 'You’re live. Timmy stops answering in this chat.')}
+                  onClick={() => takeOver(cur)}
                 >
                   <span className="ae-switch-thumb" />
                 </button>
@@ -727,7 +768,12 @@ function Chats({ w }: { w: ChatWidget }) {
               </div>
             )}
             <div className="wc-thread-body" ref={body}>
-              {cur.messages.map((m) => (
+              {live && !!cur.earlier && older?.id !== cur.id && (
+                <button className="btn btn-xs btn-ghost wc-earlier" onClick={() => void loadOlder(cur)}>
+                  Show {cur.earlier} earlier {cur.earlier === 1 ? 'message' : 'messages'}
+                </button>
+              )}
+              {shown.map((m) => (
                 <Bubble key={m.id} m={m} w={w} visitor={initials(cur)} />
               ))}
             </div>
@@ -738,10 +784,11 @@ function Chats({ w }: { w: ChatWidget }) {
                 send();
               }}
             >
-              <Paperclip size={15} className="muted" aria-hidden />
+              {!live && <Paperclip size={15} className="muted" aria-hidden />}
               <input
                 placeholder={cur.live ? `Reply to ${cur.name?.split(' ')[0] ?? 'the visitor'}` : 'Timmy is answering. Take over to reply yourself.'}
                 value={text}
+                maxLength={live ? 2000 : undefined}
                 disabled={!cur.live}
                 onChange={(e) => setText(e.target.value)}
                 aria-label="Your reply"
@@ -750,7 +797,16 @@ function Chats({ w }: { w: ChatWidget }) {
                 Send
               </button>
             </form>
-            <p className="wc-meta muted">Last message {fmtStamp(cur.messages.at(-1)?.at ?? NOW)}</p>
+            <p className="wc-meta muted">
+              Last message {fmtStamp(cur.messages.at(-1)?.at ?? NOW)}
+              {live && (
+                // A visitor can ask for their conversation to be removed; this removes it from Timmy for good.
+                <button className="wc-delete" onClick={() => remove(cur)}>
+                  <Trash2 size={12} aria-hidden />
+                  Delete this chat
+                </button>
+              )}
+            </p>
           </>
         )}
       </section>

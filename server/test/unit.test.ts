@@ -211,14 +211,19 @@ describe('Composio toolkit versions', () => {
 });
 
 describe('permissions asked for at sign-in', () => {
-  it('Outlook asks for mail and the profile only; a changed set gets a config of its own; Google keeps Composio’s defaults', async () => {
+  it('Outlook asks for mail, the calendar and the profile only; a changed set gets a config of its own; Google keeps Composio’s defaults', async () => {
     const { managedAuthConfig } = await import('../src/providers/composio');
     const outlook = managedAuthConfig('outlook');
-    expect(outlook.scopes).toEqual(['Mail.Read', 'Mail.ReadWrite', 'Mail.Send', 'offline_access', 'User.Read']);
-    expect(outlook.scopes!.some((s) => /Calendars|Contacts|Chat|MailboxSettings/.test(s))).toBe(false);
+    // What it asked for while it read mail only, and the one thing added for the calendar: to read and write it.
+    const mailOnly = ['Mail.Read', 'Mail.ReadWrite', 'Mail.Send', 'offline_access', 'User.Read'];
+    expect([...outlook.scopes!].sort()).toEqual([...mailOnly, 'Calendars.ReadWrite'].sort());
+    expect(outlook.scopes!.some((s) => /Contacts|Chat|MailboxSettings|Files|Tasks|Notes|Sites|Directory|\.Shared|\.All/.test(s))).toBe(false);
     expect(outlook.name).toMatch(/^timmy-outlook-[0-9a-f]{8}$/);
     const before = [...config.composio.scopes.outlook!];
     try {
+      // The set changed, so it is a config of its own: the one made for mail alone is not quietly reused.
+      config.composio.scopes.outlook = mailOnly;
+      expect(managedAuthConfig('outlook').name).not.toBe(outlook.name);
       config.composio.scopes.outlook = [...before, 'Calendars.Read'];
       expect(managedAuthConfig('outlook').name).not.toBe(outlook.name);
       // The same set in another order is the same config.

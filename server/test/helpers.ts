@@ -20,6 +20,10 @@ let n = 0;
 export async function boot(): Promise<Hono<Env>> {
   if (app) return app;
   await migrate();
+  // Every test file shares one database. Jobs that sweep "every connected mailbox" (the nightly check, the
+  // files pass) would otherwise also see the accounts earlier files left connected, and one such sweep stops
+  // after 200 jobs. Each file starts with none connected and sees only its own.
+  await sysPool.query(`update connection set status = 'disconnected', disconnected_at = now(), updated_at = now() where status in ('active', 'pending')`);
   await initAuth();
   registerJobs();
   app = buildApp();
@@ -123,6 +127,9 @@ export async function releaseHolds(c: Client): Promise<number> {
   const out = await c.json<{ ran: number }>('POST', '/api/test/release-holds', {});
   return out.ran;
 }
+
+/** A task as the screens make one. The server refuses a task the board could not draw, so fixtures use a whole one. */
+export const task = (id: string, title: string, extra: Record<string, unknown> = {}) => ({ id, title, status: 'todo', priority: 'normal', created: new Date('2026-11-16T09:00:00Z'), ...extra });
 
 export const rows = async <T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> => (await sysPool.query(sql, params)).rows as T[];
 

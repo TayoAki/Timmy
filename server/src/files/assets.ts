@@ -147,14 +147,11 @@ export function assetRefsIn(current: (col: string, id: string) => unknown, ops: 
   return [...found];
 }
 
-/**
- * Which of these ids are pictures this workspace has uploaded, each with what it was uploaded for.
- * An id from anywhere else is simply not among them.
- */
-export async function usablePictures(tx: Tx, workspaceId: string, ids: string[]): Promise<Map<string, UploadPurpose>> {
-  if (!ids.length) return new Map();
-  const { rows } = await tx.query('select id, purpose from asset where workspace_id = $1 and id = any($2::text[]) and uploaded_at is not null and content_type = any($3::text[])', [workspaceId, ids, PICTURE_TYPES]);
-  return new Map(rows.map((r) => [r.id as string, r.purpose as UploadPurpose]));
+/** Which of these ids are pictures this workspace has uploaded. An id from anywhere else is simply not among them. */
+export async function usablePictures(tx: Tx, workspaceId: string, ids: string[]): Promise<Set<string>> {
+  if (!ids.length) return new Set();
+  const { rows } = await tx.query('select id from asset where workspace_id = $1 and id = any($2::text[]) and uploaded_at is not null and content_type = any($3::text[])', [workspaceId, ids, PICTURE_TYPES]);
+  return new Set(rows.map((r) => r.id as string));
 }
 
 /* ───────────── Removal ───────────── */

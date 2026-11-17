@@ -19,6 +19,7 @@ import { BudgetError, checkBudget, modelReady } from '../providers/model';
 import { mutate, readState } from '../state/mutate';
 import { reconcileMail } from '../sync/ingest';
 import { MAIL_TOOLKITS } from '../sync/mailbox';
+import { checkMailbox } from '../sync/mailbox-check';
 import { draftNudge, draftReply, wantsNudge } from './draft';
 import { needsReading, readThread } from './read';
 
@@ -115,6 +116,8 @@ export async function morningRun(workspaceId: string, now = new Date()): Promise
   // 1. Mail the triggers missed.
   const boxes = await withWorkspace({ workspaceId }, async (tx) => (await tx.query(`select id from connection where workspace_id = $1 and status = 'active' and toolkit = any($2::text[])`, [workspaceId, MAIL_TOOLKITS])).rows as { id: string }[]);
   for (const b of boxes) await reconcileMail(workspaceId, b.id).catch((e) => log.warn('the morning mail check failed', { workspaceId, error: (e as Error).message }));
+  // And what the person did in the mailbox itself since: a thread they archived or deleted there is not drafted for.
+  for (const b of boxes) await checkMailbox(workspaceId, b.id).catch((e) => log.warn('the morning look at the mailbox for changes failed', { workspaceId, error: (e as Error).message }));
 
   const run: MorningRun = { at: now, sorted: 0, drafted: 0 };
   let { state } = await readState(workspaceId);

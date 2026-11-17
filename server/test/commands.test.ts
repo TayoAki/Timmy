@@ -3,7 +3,7 @@ import { subscribe } from '../src/state/hub';
 import { startHub, stopHub } from '../src/state/hub';
 import { forget } from '../src/state/docs';
 import { mutate } from '../src/state/mutate';
-import { addMember, boot, newWorkspace, rows, type Client } from './helpers';
+import { addMember, boot, newWorkspace, rows, type Client, task } from './helpers';
 
 let w: Client;
 beforeAll(async () => {
@@ -28,7 +28,7 @@ describe('a new workspace', () => {
 
 describe('commands', () => {
   it('apply the reducer’s change, persist it and report it as patches', async () => {
-    const out = await w.cmd({ type: 'ws', ops: [{ op: 'put', col: 'tasks', item: { id: 't1', title: 'Write the plan', done: false, due: new Date('2026-11-20T17:00:00Z') } }] });
+    const out = await w.cmd({ type: 'ws', ops: [{ op: 'put', col: 'tasks', item: task('t1', 'Write the plan', { due: new Date('2026-11-20T17:00:00Z') }) }] });
     expect(out.ok).toBe(true);
     expect(out.patches).toMatchObject([{ s: 'ws.tasks', id: 't1' }]);
     forget();
@@ -65,7 +65,7 @@ describe('commands', () => {
   });
 
   it('undo puts back exactly what the command changed', async () => {
-    await w.cmd({ type: 'ws', ops: [{ op: 'put', col: 'tasks', item: { id: 't2', title: 'Keep me' } }] });
+    await w.cmd({ type: 'ws', ops: [{ op: 'put', col: 'tasks', item: task('t2', 'Keep me') }] });
     const out = await w.cmd({ type: 'ws', ops: [{ op: 'remove', col: 'tasks', id: 't2' }, { op: 'put', col: 'notes', item: { id: 'n1', text: 'New note' } }] });
     expect((await w.state()).ws.tasks.t2).toBeUndefined();
     expect((await w.cmd({ type: 'undo', command: out.id })).ok).toBe(true);
@@ -78,7 +78,7 @@ describe('commands', () => {
   });
 
   it('undo leaves alone anything changed since', async () => {
-    await w.cmd({ type: 'ws', ops: [{ op: 'put', col: 'tasks', item: { id: 't3', title: 'v1' } }] });
+    await w.cmd({ type: 'ws', ops: [{ op: 'put', col: 'tasks', item: task('t3', 'v1') }] });
     const edit = await w.cmd({ type: 'ws', ops: [{ op: 'patch', col: 'tasks', id: 't3', patch: { title: 'v2' } }] });
     await w.cmd({ type: 'ws', ops: [{ op: 'patch', col: 'tasks', id: 't3', patch: { title: 'v3' } }] });
     const undone = await w.cmd({ type: 'undo', command: edit.id });

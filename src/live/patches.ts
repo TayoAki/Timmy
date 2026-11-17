@@ -93,6 +93,18 @@ export const toWire = (value: unknown): string => JSON.stringify(value);
 export const fromWire = <T = unknown>(text: string): T => JSON.parse(text, (_k, v) => (typeof v === 'string' && ISO_DATE.test(v) ? new Date(v) : v)) as T;
 export const viaWire = <T>(value: T): T => fromWire<T>(toWire(value));
 
+/**
+ * JSON drops a field whose value is undefined, so a patch that clears a field (`{ cover: undefined }`) would
+ * reach the server empty and change nothing. On the way out such a field is sent as null, as JSON merge patch
+ * does; the server reads a null in a patch as “clear this field”.
+ */
+export function clearsAsNull<A extends { type: string }>(action: A): A {
+  const a = action as unknown as { type: string; ops?: { op: string; patch?: Record<string, unknown> }[] };
+  if (a.type !== 'ws' || !Array.isArray(a.ops) || !a.ops.some((o) => o.op === 'patch' && o.patch && Object.values(o.patch).includes(undefined))) return action;
+  const ops = a.ops.map((o) => (o.op === 'patch' && o.patch ? { ...o, patch: Object.fromEntries(Object.entries(o.patch).map(([k, v]) => [k, v === undefined ? null : v])) } : o));
+  return { ...action, ops } as A;
+}
+
 const same = (a: unknown, b: unknown) => a === b || toWire(a) === toWire(b);
 
 /* ───────────── Diff ───────────── */

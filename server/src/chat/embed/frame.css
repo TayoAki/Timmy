@@ -1,0 +1,415 @@
+/* Timmy website chat: the page inside the frame. The bubble, and the window it opens. */
+
+:root {
+  --wc: #3f51d9;
+  --text: #1c1b19;
+  --text-2: #55534e;
+  --text-3: #85827b;
+  --line: #e6e4df;
+  --surface: #ffffff;
+  --surface-2: #f5f4f1;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  color: var(--text);
+  font: 14px/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+button:focus-visible,
+input:focus-visible,
+a:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--wc);
+  outline-offset: 2px;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* ── The bubble ── */
+
+.tc-launcher {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--wc);
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+  transition: transform 0.15s ease-out;
+}
+
+.tc-launcher:hover {
+  transform: scale(1.06);
+}
+
+.tc-launcher img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tc-launcher svg {
+  width: 26px;
+  height: 26px;
+}
+
+/* A reply arrived while the window was closed. */
+.tc-dot {
+  position: absolute;
+  right: 14px;
+  bottom: 58px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #e5484d;
+  border: 2px solid #fff;
+}
+
+/* ── The window ── */
+
+.tc-window {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  bottom: 84px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+}
+
+.tc-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 10px 12px 14px;
+  background: var(--wc);
+  color: #fff;
+}
+
+.tc-face {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--wc);
+  overflow: hidden;
+}
+
+.tc-face img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tc-face svg {
+  width: 18px;
+  height: 18px;
+}
+
+.tc-face.small {
+  width: 26px;
+  height: 26px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+.tc-face.small svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tc-title {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.tc-title strong {
+  font-size: 14.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tc-online {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: #6ee7a8;
+}
+
+.tc-close {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: #fff;
+}
+
+.tc-close:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.tc-close svg {
+  width: 16px;
+  height: 16px;
+}
+
+.tc-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tc-tabs button {
+  height: 26px;
+  padding: 0 11px;
+  border-radius: 99px;
+  border: 1px solid var(--line);
+  font-size: 12px;
+  font-weight: 560;
+  color: var(--text-3);
+}
+
+.tc-tabs button[aria-selected='true'] {
+  color: var(--text);
+  border-color: var(--text-3);
+  background: var(--surface-2);
+}
+
+.tc-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.tc-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 7px;
+}
+
+.tc-row.visitor {
+  flex-direction: row-reverse;
+}
+
+.tc-bubble {
+  max-width: 82%;
+  padding: 7px 11px 8px;
+  border-radius: 14px 14px 14px 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  font-size: 13.5px;
+}
+
+.tc-bubble p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tc-row.visitor .tc-bubble {
+  border-radius: 14px 14px 4px 14px;
+  background: var(--wc);
+  border-color: var(--wc);
+  color: #fff;
+}
+
+.tc-row.unsent .tc-bubble {
+  opacity: 0.55;
+}
+
+.tc-who {
+  display: block;
+  margin-bottom: 1px;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+
+.tc-privacy {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.tc-privacy a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.tc-typing {
+  display: flex;
+  gap: 4px;
+  padding: 11px 12px;
+}
+
+.tc-typing i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-3);
+  animation: tc-dot 1s ease-in-out infinite;
+}
+
+.tc-typing i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.tc-typing i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes tc-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+/* A plain sentence from the chat itself: a limit was reached, or the chat is closed. */
+.tc-notice {
+  margin: 0;
+  padding: 7px 12px;
+  border-top: 1px solid var(--line);
+  background: #fdf6e3;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.tc-compose {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 8px 8px 12px;
+  border-top: 1px solid var(--line);
+}
+
+.tc-compose input {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.tc-compose input:focus,
+.tc-compose input:focus-visible {
+  outline: none;
+}
+
+.tc-send {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--wc);
+  color: #fff;
+}
+
+.tc-send:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.tc-send svg {
+  width: 16px;
+  height: 16px;
+}
+
+.tc-foot {
+  padding: 5px 0 7px;
+  text-align: center;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+
+/* ── Help desk ── */
+
+.tc-help-intro {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.tc-faq {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.tc-faq summary {
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 560;
+  cursor: pointer;
+}
+
+.tc-faq p {
+  margin: 0;
+  padding: 0 12px 10px;
+  font-size: 13px;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tc-launcher,
+  .tc-typing i {
+    transition: none;
+    animation: none;
+  }
+}

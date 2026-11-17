@@ -152,6 +152,14 @@ Library › **Automations**: draw what happens when an email, a form, a file, a 
 
 Code: `src/areas/automations/` (catalog.ts: the blocks; Editor.tsx; List.tsx).
 
+**On a real workspace** an automation that is switched on really runs (engine version 1, `server/src/automations/`):
+
+- **What runs:** New email and On a schedule start it; Create a task, Notify me (in Timmy), Add to a doc, Draft a reply, Ask me first, Send the email, If / else and Wait are carried out. The other blocks (forms, Drive folders, meetings, deals, the CRM, Save to Drive, campaigns, Slack) can be drawn and test-run, say so on the canvas (`real.ts`), and keep the automation off with the reason.
+- **Who and what is checked:** only an owner or admin switches one on, or changes the steps of one that is on. Each time, the steps are frozen as a version, and a run keeps the version it started with.
+- **Nothing is sent without a person:** a Send step puts the reply Timmy drafted forward in Approvals, addressed to whoever sent the email and nobody else; it goes out only after someone approves it, with the usual undo window. Ask me first waits in Approvals too.
+- **Runs:** the editor's Runs tab (`Runs.tsx`) lists recent runs and what each step did. An automation that starts more than 100 runs in an hour, or fails five times in a row, is switched off with a note saying why.
+- **API:** `POST /api/v1/automations/:id/test` is a dry run (`{ "sample": true }`, or `{ "eventId": … }` for a recent email) that carries nothing out; `GET /api/v1/automations/:id/runs` lists runs. Tests: `server/test/automations.test.ts`, `e2e/live/live-automations.cjs`.
+
 ## Website chat
 
 Outbound › **Website chat** is the chat bubble for your site.

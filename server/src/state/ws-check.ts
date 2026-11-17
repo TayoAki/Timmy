@@ -19,6 +19,12 @@ import { assetIdOf } from '../../../src/lib/files';
 const COLLECTIONS: ReadonlySet<string> = new Set(WS_COLLECTIONS);
 /** Ids made here and by the screens. An id taken from an email address may carry a plus sign. */
 const ID = /^[\w.:@+-]{1,200}$/;
+/**
+ * Names every object already answers to (“constructor”, “toString”, “__proto__”…). Records are kept in plain objects
+ * keyed by id, so an id with one of these names would read as there when it is not, or replace the object's own workings.
+ */
+const BUILT_IN = new Set(Object.getOwnPropertyNames(Object.prototype));
+const okId = (id: string) => ID.test(id) && !BUILT_IN.has(id);
 const plain = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype;
 const text = (v: unknown, max: number) => typeof v === 'string' && v.length <= max;
 
@@ -37,15 +43,14 @@ export const MAX_BLOCKS = 5000;
  * The ids of this workspace's uploaded pictures that a change may refer to, looked up by the caller before the
  * check. A reference ("asset:" and an id) is accepted only when its id is among them, so a picture from another
  * workspace, one whose bytes never arrived, or a file that is not a picture is refused like any other bad value.
- * With none given, no reference is accepted. Each id comes with what the picture was uploaded for.
+ * With none given, no reference is accepted.
  */
-export type Pictures = ReadonlyMap<string, string>;
-const NO_PICTURES: Pictures = new Map();
+export type Pictures = ReadonlySet<string>;
+const NO_PICTURES: Pictures = new Set();
 
-/** Whether a value refers to one of the workspace's uploaded pictures; with `purpose`, to one uploaded for exactly that. */
-const uploaded = (v: unknown, pictures: Pictures, purpose?: string) => {
+const uploaded = (v: unknown, pictures: Pictures) => {
   const id = assetIdOf(v);
-  return id !== null && pictures.has(id) && (purpose === undefined || pictures.get(id) === purpose);
+  return id !== null && pictures.has(id);
 };
 /** A web address, an uploaded picture of this workspace, or a small picture carried inline (older pages have those). */
 const picture = (v: unknown, pictures: Pictures) => uploaded(v, pictures) || (typeof v === 'string' && v.length <= MAX_INLINE_PICTURE && PICTURE.test(v));
@@ -102,10 +107,9 @@ export function blocksProblem(blocks: unknown, pictures: Pictures = NO_PICTURES)
 }
 
 function docProblem(doc: Record<string, unknown>, pictures: Pictures): string | null {
-  if (doc.blocks !== undefined) {
-    const bad = blocksProblem(doc.blocks, pictures);
-    if (bad) return bad;
-  }
+  // Every page has its list of blocks, even an empty one: the editor draws from it.
+  const bad = blocksProblem(doc.blocks, pictures);
+  if (bad) return bad;
   if (doc.icon !== undefined && !text(doc.icon, 16)) return 'That page’s icon isn’t valid.';
   if (doc.cover !== undefined && doc.cover !== null) {
     const c = doc.cover;
@@ -120,6 +124,13 @@ function docProblem(doc: Record<string, unknown>, pictures: Pictures): string | 
 /* ───────────── Automations ───────────── */
 
 export const MAX_STEPS = 60;
+
+/**
+ * Settings whose choices are the workspace's own records, as "step.setting". The names the demo's canvas
+ * lists for them mean nothing on a real workspace, so they are not checked against that list here; whether
+ * the record exists is checked where the workspace is known (automations/canrun.ts).
+ */
+const OWN_RECORDS = new Set(['doc.doc']);
 
 /**
  * What is wrong with an automation's graph, in the words the person sees. `strict` is asked when it is
@@ -181,7 +192,7 @@ export function automationProblems(a: Pick<Automation, 'nodes' | 'edges'>, stric
     const k = KIND[n.kind]!;
     for (const f of k.fields) {
       if (f.type === 'select' && !n.config[f.id]) out.push(`“${k.label}” needs its “${f.label}” set.`);
-      if (f.type === 'select' && n.config[f.id] && f.options && !f.options.includes(n.config[f.id]!)) out.push(`“${k.label}” has a “${f.label}” that isn’t one of the choices.`);
+      if (f.type === 'select' && n.config[f.id] && f.options && !OWN_RECORDS.has(`${k.id}.${f.id}`) && !f.options.includes(n.config[f.id]!)) out.push(`“${k.label}” has a “${f.label}” that isn’t one of the choices.`);
     }
     if (k.id === 'condition') {
       if (!n.config.value) out.push('“If / else” needs a value to compare with.');
@@ -195,35 +206,76 @@ export function automationProblems(a: Pick<Automation, 'nodes' | 'edges'>, stric
 function automationProblem(a: Record<string, unknown>): string | null {
   if (!text(a.name, 200) || (a.description !== undefined && !text(a.description, 2000))) return 'That automation’s name or description is too long.';
   if (a.on !== undefined && typeof a.on !== 'boolean') return 'The automation isn’t in a form Timmy can save.';
+  if (a.note !== undefined && !text(a.note, 600)) return 'The automation isn’t in a form Timmy can save.';
   const problems = automationProblems(a as unknown as Automation, a.on === true);
   return problems.length ? problems.join(' ') : null;
 }
 
 /* ───────────── Website chat ───────────── */
 
-function chatProblem(w: Record<string, unknown>, pictures: Pictures): string | null {
+/** How long visitors' conversations may be kept, in months. */
+export const CHAT_RETENTION_MONTHS = [1, 3, 6, 12, 24];
+
+function chatProblem(w: Record<string, unknown>): string | null {
   const c = w as Partial<ChatWidget> & Record<string, unknown>;
   if (c.id !== 'site') return 'A workspace has one website chat.';
   if (typeof c.on !== 'boolean' || typeof c.booking !== 'boolean') return 'Those chat settings aren’t in a form Timmy can save.';
   if (!(typeof c.domain === 'string' && (c.domain === '' || /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(c.domain)) && c.domain.length <= 253)) return 'Enter the website as a plain address, like example.com.';
   if (!text(c.name, 80) || !text(c.greeting, 600)) return 'The chat’s name or greeting is too long.';
   if (!(typeof c.color === 'string' && /^#[0-9a-f]{6}$/i.test(c.color))) return 'Pick the chat’s colour from the palette.';
-  // The picture is one this workspace uploaded as the chat's picture, or (as before uploads existed) a small one
-  // carried inline. It is shown to strangers on a website, so a picture uploaded for a page can't be put here:
-  // only what was uploaded to be public can become public.
-  if (c.icon !== undefined && c.icon !== '' && !uploaded(c.icon, pictures, 'chat-icon') && !(typeof c.icon === 'string' && c.icon.length <= 300_000 && /^data:image\/(png|jpeg|jpg|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(c.icon))) return 'The chat’s picture has to be an uploaded PNG, JPEG, GIF or WebP.';
+  // The chat's picture stays a small one carried inline, never a reference to an upload: it is shown to strangers
+  // on someone else's website, and an uploaded file is only ever handed to signed-in members of the workspace.
+  if (c.icon !== undefined && c.icon !== '' && !(typeof c.icon === 'string' && c.icon.length <= 300_000 && /^data:image\/(png|jpeg|jpg|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(c.icon))) return 'The chat’s picture has to be a PNG, JPEG, GIF or WebP under 200 KB.';
   if (c.handoff !== 'notify' && c.handoff !== 'book' && c.handoff !== 'email') return 'Those chat settings aren’t in a form Timmy can save.';
   if (!Array.isArray(c.questions) || c.questions.length > 10 || !c.questions.every((q) => plain(q) && typeof q.id === 'string' && ID.test(q.id) && text(q.text, 300))) return 'The chat can ask up to 10 questions, each up to 300 characters.';
   if (!Array.isArray(c.faq) || c.faq.length > 60 || !c.faq.every((f) => plain(f) && typeof f.id === 'string' && ID.test(f.id) && text(f.q, 300) && text(f.a, 2000))) return 'The chat can hold up to 60 answers, each up to 2,000 characters.';
+  // The link is shown to every visitor, so it is a plain https address and nothing else.
+  if (c.privacyUrl !== undefined && c.privacyUrl !== '' && !(typeof c.privacyUrl === 'string' && /^https:\/\/[^\s"'<>\\]{1,500}$/.test(c.privacyUrl))) return 'The privacy policy link has to be a web address that starts with https://.';
+  if (c.retentionMonths !== undefined && !CHAT_RETENTION_MONTHS.includes(c.retentionMonths as number)) return 'Chats can be kept for 1, 3, 6, 12 or 24 months.';
+  // Whether this is the right key is the chat's own check (the server makes it); here it only has to look like one.
+  if (c.siteKey !== undefined && !(typeof c.siteKey === 'string' && /^[A-Za-z0-9_-]{20,64}$/.test(c.siteKey))) return 'The key in the code snippet is made by Timmy and can’t be changed.';
+  return null;
+}
+
+/* ───────────── Tasks ───────────── */
+
+const TASK_STATUS = new Set(['todo', 'doing', 'done']);
+const TASK_PRIORITY = new Set(['high', 'normal', 'low']);
+const date = (v: unknown) => (v instanceof Date && !Number.isNaN(v.getTime())) || (typeof v === 'string' && v.length <= 40 && !Number.isNaN(Date.parse(v)));
+
+/** A task every screen can draw. One without a status or a priority breaks the board for everyone in the workspace. */
+function taskProblem(t: Record<string, unknown>): string | null {
+  const refused = 'That task isn’t in a form Timmy can save.';
+  if (!text(t.title, 500)) return 'A task’s title can be up to 500 characters.';
+  if (!TASK_STATUS.has(t.status as string) || !TASK_PRIORITY.has(t.priority as string)) return refused;
+  if (t.notes !== undefined && !text(t.notes, 20_000)) return 'A task’s notes can be up to 20,000 characters.';
+  if (!date(t.created) || (t.due !== undefined && !date(t.due))) return refused;
+  for (const k of ['project', 'thread', 'contact', 'event']) if (t[k] !== undefined && !text(t[k], 200)) return refused;
   return null;
 }
 
 /* ───────────── Every change ───────────── */
 
+/**
+ * JSON has no way to say “undefined”, so a screen that clears a field (taking the cover off a page) sends null
+ * for it, as JSON merge patch does. Here a null in a patch becomes “not set” again, which is how the reducer
+ * and the checks below understand a cleared field. Anything that isn't a well-formed patch is left as it came.
+ */
+export function withClearedFields(ops: unknown): unknown {
+  if (!Array.isArray(ops)) return ops;
+  return ops.map((o) => {
+    if (!plain(o) || o.op !== 'patch' || !plain(o.patch) || !Object.values(o.patch).includes(null)) return o;
+    return { ...o, patch: Object.fromEntries(Object.entries(o.patch).map(([k, v]) => [k, v === null ? undefined : v])) };
+  });
+}
+
 /** The settings on a visitor's conversation that a member may flip. Everything else in it is written by the server. */
 const CHAT_FLAGS = new Set(['unread', 'starred']);
 
-const CHECKS: Partial<Record<string, (item: Record<string, unknown>, pictures: Pictures) => string | null>> = { docs: docProblem, automations: automationProblem, chat: chatProblem };
+const CHECKS: Partial<Record<string, (item: Record<string, unknown>, pictures: Pictures) => string | null>> = { docs: docProblem, automations: automationProblem, chat: chatProblem, tasks: taskProblem };
+
+/** The record a collection really holds under an id: its own, never something every object has. */
+const ownRecord = (col: Record<string, unknown> | undefined, id: string) => (col && Object.hasOwn(col, id) ? (col[id] as Record<string, unknown>) : null);
 
 /**
  * Looks at a batch of workspace operations before the reducer applies them.
@@ -235,7 +287,7 @@ export function checkWsOps(state: State, ops: unknown, pictures: Pictures = NO_P
   if (!Array.isArray(ops) || ops.length > 400) return refused;
   // Later operations in a batch see what earlier ones did.
   const staged = new Map<string, Record<string, unknown> | null>();
-  const current = (col: string, id: string) => (staged.has(`${col}/${id}`) ? staged.get(`${col}/${id}`)! : (((state.ws as unknown as Record<string, Record<string, unknown>>)[col]?.[id] as Record<string, unknown> | undefined) ?? null));
+  const current = (col: string, id: string) => (staged.has(`${col}/${id}`) ? staged.get(`${col}/${id}`)! : (ownRecord((state.ws as unknown as Record<string, Record<string, unknown>>)[col], id)));
   for (const o of ops) {
     if (!plain(o) || typeof o.col !== 'string' || !COLLECTIONS.has(o.col)) return refused;
     const col = o.col;
@@ -253,6 +305,8 @@ export function checkWsOps(state: State, ops: unknown, pictures: Pictures = NO_P
     } else if (o.op === 'patch') {
       if (typeof o.id !== 'string' || !plain(o.patch)) return refused;
       id = o.id;
+      // Checked here as well as below: the reducer would act on a built-in name even though no record has it.
+      if (!okId(id)) return refused;
       const before = current(col, id);
       // A patch to something that isn't there changes nothing; the reducer skips it too.
       if (!before) continue;
@@ -263,7 +317,7 @@ export function checkWsOps(state: State, ops: unknown, pictures: Pictures = NO_P
       id = o.id;
       item = null;
     } else return refused;
-    if (!ID.test(id)) return refused;
+    if (!okId(id)) return refused;
 
     if (col === 'chat' && o.op === 'remove') return 'The website chat’s settings can be changed, not removed.';
     if (item) {
