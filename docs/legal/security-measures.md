@@ -13,7 +13,7 @@ Draft, Nov 16, 2026. This is Annex 2 of the data processing agreement, and the p
 | Runs of the assistant, proposed and completed actions ("effect records"), model usage, the audit log | Postgres on Railway | The audit log cannot be changed or deleted by the application; it goes only when its workspace is purged. |
 | Access tokens for connected Google and Microsoft accounts | **Composio**, not Timmy | Timmy's database holds only an identifier for each connection. Timmy's servers never see a token. |
 | Prompts and answers | Not stored by the model provider (zero-data-retention routing) | Timmy stores the conversation in the workspace's state so the user can see it. |
-| Uploaded pictures and attachments | The Railway bucket `timmy-files` | Being merged (Nov 16): until then pictures are small and stored inside the page. |
+| Uploaded pictures and attachments | The Railway bucket `timmy-files`, under a key that starts with the workspace's id, behind an asset record with row-level security | Files travel through Timmy's server both ways; the browser never sees the bucket or its key. Served only to members of the workspace, as downloads that a browser will not run. Older pictures stored inside a page are still accepted. |
 
 ## How one customer is kept apart from another
 
@@ -43,6 +43,10 @@ Draft, Nov 16, 2026. This is Annex 2 of the data processing agreement, and the p
 - Visitors are answered from rules the customer wrote, by plain code. What a visitor types is never given to a model, and is stored and shown as text.
 - Each reply is recorded before it is shown, and is shown only while an owner or admin has the chat switched on. The database itself refuses a reply without that record.
 - Limits apply per visitor, per network address, per conversation and per day, and the number of open connections is bounded.
+
+## When an account is disconnected
+
+Its mail and calendar events leave the screens and Ask at once. In the same step they are removed from the record of changes that open tabs catch up from, from the command history that Undo reads, and from copies made elsewhere (a lead's reply in the outbound inbox); finished runs' transcripts are cleared. Undo never puts back mail from a mailbox that is no longer connected. The stored copy is then deleted by a job.
 
 ## Secrets
 
@@ -80,7 +84,7 @@ These are known and planned; none is hidden behind a claim above.
 - **Staff access**: there is no staff console, and no record of staff access to the database. Access is whoever holds the Railway project. The application's database role derives its password from the owner role's inside the server; it should have a separately held credential.
 - **Encryption at rest** is whatever Railway provides for volumes and buckets **[CONFIRM with Railway]**; Timmy adds no field-level encryption of its own.
 - **An incident response plan** and an on-call contact are not written.
-- **An independent penetration test** has not been done (`penetration-test-scope.md` is the brief for one). Internal reviews have: two safety reviews, a security audit and a code review, each with fixes and tests (see `STATUS.md`).
+- **An independent penetration test** has not been done (`penetration-test-scope.md` is the brief for one). Internal reviews have: three safety reviews (the last, on Nov 17, by two independent reviewers who proved 24 breaks with tests, all fixed), a security audit and a code review, each with fixes and tests (see `STATUS.md`).
 - **SOC 2** is planned (Type I by the paid launch), not started.
 - **A real mailbox** has not yet been connected end to end; everything above is tested against stand-ins for Google, Microsoft and the model, and against Composio's real tool definitions.
 - **Uploaded files are not scanned for malware.**
