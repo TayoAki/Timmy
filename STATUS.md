@@ -314,6 +314,19 @@ The closing safety review ran on the code with six merged and is described above
 - `e2e/live/live-chat.cjs` (new) clears the three starter questions a new workspace's chat has on this branch before asking its own.
 - `e2e/e2e-pages.cjs` (demo) read the browser's saved state 280 ms after pressing Restore, while the demo saves 400 ms after the last change. Under load it failed 2 runs in 3. The check is unchanged; it now looks until it holds, for up to three seconds.
 
+## Closing the known gaps (Nov 17, 2026, in progress)
+
+Every gap listed under "Known gaps to close in phase 1" that code can close is being closed, in five builds, each in its own copy of the repo with its own database, then reviewed, merged and tested here together:
+- **Calendars and Outlook mail**: detect an Outlook account without calendar permission and say to reconnect; a nightly calendar re-read; an edit made inside a new event's undo window reaches the calendar; an unknown delete settled by reading the event; Outlook attachment names; an Archive folder created when missing; a draft left by a refused reply removed; a category already on a message at first sight never moves a thread; a mailbox look on opening the app at most every five minutes.
+- **Drive and OneDrive**: file contents searchable (plain full-text, no model); files shared long ago listed; stale trashed files dropped nightly; OneDrive connected read-only through Composio, searched and read.
+- **Website chat**: served from its own address when one is set (`CHAT_PUBLIC_URL`); a proof-of-work bot check; per-address limits shared across servers; chat leads on the Speed to lead clock; a Today card when a visitor asks for a person; older conversations browsable; a per-workspace stream cap; switched off when the person who switched it on loses the role.
+- **Automations**: Test run uses the server's dry run; one card for Draft then Send; members see who a card waits for; paused while no mailbox is connected; the workspace's job limit applies; a line added to a page survives an open editor's next save; switched off when the person who switched it on loses the role.
+- **Pages, files, the ontology and leftovers**: a deleted page's versions come back with Undo; restore leaves out links to deleted pages; unused uploads cleaned up; location data stripped on the server; virus scanning ready to switch on (ClamAV); accepting a kind reads recent mail for it; near-duplicate things offered for merging; dismissed kinds can be brought back; demo wording off real screens; a Unibox reply to a lead goes through approval; a client's `approved: true` ignored; forms can't be marked connected.
+
+After they are merged: the code debt listed below (the gateway's screen list moved out, routes split, stand-ins moved to a testing folder, typed job payloads, and a separately held database credential for the system role).
+
+Not closable in code: what only a real account can confirm (how calendars show times, whether Outlook notifies guests, whether attachments really arrive, Gmail's snooze).
+
 ## Needs your attention
 
 - [ ] **Production sign-up is invite-only since the audit.** To create your own account on production, add your address to the `app` service's variables: `TIMMY_SIGNUP_ALLOW=you@example.com` (several addresses, or whole domains like `@example.com`, separated by commas). People you invite to a workspace can sign up without being on the list. `TIMMY_SIGNUP=open` opens it to everyone; I recommend leaving that until a mail provider is in place and sign-ups can verify their address. Staging stays open, which the test suites need.
