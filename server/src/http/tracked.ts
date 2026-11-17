@@ -1,10 +1,11 @@
 /**
  * The review screen's routes: what Timmy offers to track, what it tracks, and the things it knows of each kind.
  * Anyone who may read the workspace can look. Accepting, dismissing, renaming, removing a field and stopping
- * decide what Timmy reads out of everyone's mail from now on, so they need the role that sets policy.
+ * decide what Timmy reads out of everyone's mail from now on, so they need the role that sets policy. So do
+ * bringing back a kind that was turned down, and merging two things or saying they are not the same.
  */
 import type { Context, Hono } from 'hono';
-import { acceptKind, changeKind, dismissKind, stopTracking, thingsOf, trackedOverview, type Decided } from '../ontology/types';
+import { acceptKind, bringBackKind, changeKind, dismissKind, keepApart, mergeThings, stopTracking, thingsOf, trackedOverview, type Decided } from '../ontology/types';
 import { ctxOf, requireRead, requireWorkspace, type Env } from './session';
 
 const ID = /^[\w-]{1,60}$/;
@@ -53,6 +54,34 @@ export function trackedRoutes(app: Hono<Env>): void {
     const body = (await c.req.json().catch(() => ({}))) as { name?: unknown; removeField?: unknown };
     if (body?.name === undefined && body?.removeField === undefined) return c.json({ error: 'Say what to change: a new name, or a field to remove.' }, 400);
     return answer(c, await changeKind(by, id, { name: body.name, removeField: body.removeField }));
+  });
+
+  // A kind that was turned down or stopped is offered again.
+  app.post('/api/v1/tracked/proposals/:key/bring-back', requireWorkspace, async (c) => {
+    const by = decider(c);
+    if (!by) return refused(c);
+    const key = c.req.param('key');
+    if (!KEY.test(key)) return c.json({ error: 'Not found' }, 404);
+    return answer(c, await bringBackKind(by, key));
+  });
+
+  // "Same thing?": merge one into the other, or say they differ.
+  app.post('/api/v1/tracked/:id/merge', requireWorkspace, async (c) => {
+    const by = decider(c);
+    if (!by) return refused(c);
+    const id = c.req.param('id');
+    if (!ID.test(id)) return c.json({ error: 'Not found' }, 404);
+    const body = (await c.req.json().catch(() => ({}))) as { keep?: unknown; merge?: unknown };
+    return answer(c, await mergeThings(by, id, body?.keep, body?.merge));
+  });
+
+  app.post('/api/v1/tracked/:id/apart', requireWorkspace, async (c) => {
+    const by = decider(c);
+    if (!by) return refused(c);
+    const id = c.req.param('id');
+    if (!ID.test(id)) return c.json({ error: 'Not found' }, 404);
+    const body = (await c.req.json().catch(() => ({}))) as { a?: unknown; b?: unknown };
+    return answer(c, await keepApart(by, id, body?.a, body?.b));
   });
 
   app.delete('/api/v1/tracked/:id', requireWorkspace, async (c) => {

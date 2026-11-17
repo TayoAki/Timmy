@@ -34,6 +34,19 @@ export interface TrackedProposal {
   examples: { name: string; fields: [string, string][]; source: TrackedSource }[];
 }
 
+/** How the look back through recent mail went, after a kind was accepted. */
+export interface TrackedReread {
+  status: 'reading' | 'done' | 'stopped';
+  /** Threads read. */
+  threads: number;
+  /** Things of the kind found in them. */
+  found: number;
+  /** How far back it looked. */
+  days: number;
+  /** Why it stopped early, in words. */
+  note?: string;
+}
+
 /** A kind someone accepted. Only these are read out of the mail and used. */
 export interface TrackedKind {
   id: string;
@@ -42,6 +55,24 @@ export interface TrackedKind {
   fields: TrackedField[];
   /** How many things of this kind Timmy knows. */
   known: number;
+  /** Set once the kind was accepted, when Timmy looked back through recent mail for it. */
+  reread?: TrackedReread;
+}
+
+/** Two things of one kind whose names suggest they are the same one ("Acme" and "Acme Corp"). Never merged without a person. */
+export interface SameThing {
+  kind: { id: string; name: string };
+  /** The one with the shorter name. */
+  a: { id: string; name: string };
+  b: { id: string; name: string };
+}
+
+/** A kind that was turned down, or tracked and then stopped. It can be brought back. */
+export interface TurnedDown {
+  key: string;
+  name: string;
+  /** True when it had been tracked before it was stopped. */
+  stopped: boolean;
 }
 
 export interface TrackedThing {
@@ -56,6 +87,10 @@ export interface TrackedThing {
 export interface TrackedOverview {
   proposals: TrackedProposal[];
   tracked: TrackedKind[];
+  /** Pairs that may be the same thing, offered to an owner or admin to merge. Absent when there are none. */
+  sameThing?: SameThing[];
+  /** Kinds turned down or stopped, newest first. Absent when there are none. */
+  turnedDown?: TurnedDown[];
 }
 
 /** "property" → "properties", for sentences about a kind. Plain English rules; an odd plural reads slightly off, nothing more. */

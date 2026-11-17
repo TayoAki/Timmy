@@ -108,6 +108,12 @@ export const api = {
   dismissTracking: (key: string) => call('POST', `/api/v1/tracked/proposals/${encodeURIComponent(key)}/dismiss`, {}),
   changeTracked: (id: string, change: { name?: string; removeField?: string }) => call('PATCH', `/api/v1/tracked/${encodeURIComponent(id)}`, change),
   stopTracking: (id: string) => call<{ removed: number }>('DELETE', `/api/v1/tracked/${encodeURIComponent(id)}`),
+  /** Offers a kind that was turned down or stopped again, as a suggestion. */
+  bringBackTracking: (key: string) => call('POST', `/api/v1/tracked/proposals/${encodeURIComponent(key)}/bring-back`, {}),
+  /** "Same thing?": keeps one and moves everything the other rests on to it. */
+  mergeThings: (kindId: string, keep: string, merge: string) => call<{ moved: number }>('POST', `/api/v1/tracked/${encodeURIComponent(kindId)}/merge`, { keep, merge }),
+  /** "Same thing?": no, they differ; not asked again. */
+  keepThingsApart: (kindId: string, a: string, b: string) => call('POST', `/api/v1/tracked/${encodeURIComponent(kindId)}/apart`, { a, b }),
 };
 
 export interface AutomationRun {

@@ -2,20 +2,21 @@
  * "What Timmy tracks": the one place to review the kinds of thing Timmy keeps a record of from the mail,
  * beyond people and companies (deals, properties, candidates…). Real workspaces only; the demo never shows it.
  *
- * Three parts: what Timmy suggests tracking (accept, accept under another name, or dismiss), what is tracked
- * (rename, remove a field, stop), and for a tracked kind the things themselves, each with the sentence and
- * the email it came from.
+ * The parts: what Timmy suggests tracking (accept, accept under another name, or dismiss), what is tracked
+ * (rename, remove a field, stop) with how the look back through recent mail went, and for a tracked kind the
+ * things themselves, each with the sentence and the email it came from. Two things that may be the same one are
+ * asked about ("Same thing?"), and kinds that were turned down or stopped can be brought back.
  *
  * Every kind name, field name, value and sentence on this screen was read out of other people's mail by a
  * model. They are only ever rendered as text.
  */
-import { ChevronDown, ChevronRight, CircleSlash, Pencil, Quote, Shapes, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, CircleSlash, Pencil, Quote, RotateCcw, Shapes, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { EmptyState, Field, Menu, Modal } from '../../components/kit';
 import { fmtDate } from '../../lib/format';
 import { api } from '../../live/api';
 import { useProfile } from '../../live/LiveApp';
-import { listed, plural, withArticle, type TrackedKind, type TrackedOverview, type TrackedProposal, type TrackedSource, type TrackedThing } from '../../live/tracked';
+import { listed, plural, withArticle, type SameThing, type TrackedKind, type TrackedOverview, type TrackedProposal, type TrackedReread, type TrackedSource, type TrackedThing, type TurnedDown } from '../../live/tracked';
 import { useStore } from '../../state/store';
 import { SectionHead } from '../projects/ui';
 import '../../styles/tracked.css';
@@ -65,6 +66,14 @@ export function Tracked() {
     const soon = window.setTimeout(() => void load(), 600);
     return () => window.clearTimeout(soon);
   }, [load, state.threads]);
+
+  // While Timmy reads recent mail for a kind just accepted, the screen looks again every few seconds until it is done.
+  const reading = !!data?.tracked.some((k) => k.reread?.status === 'reading');
+  useEffect(() => {
+    if (!reading) return;
+    const again = window.setTimeout(() => void load(), 2500);
+    return () => window.clearTimeout(again);
+  }, [reading, data, load]);
 
   /** Runs one change, says what happened, and shows the list as the server now has it. */
   const act = async (change: () => Promise<unknown>, done: string): Promise<boolean> => {
@@ -119,13 +128,13 @@ export function Tracked() {
                     busy={busy}
                     canOpen={canOpen}
                     openEmail={openEmail}
-                    onAccept={() => void act(() => api.acceptTracking(p.key), `Timmy now tracks ${lower(p.name)}.`)}
+                    onAccept={() => void act(() => api.acceptTracking(p.key), `Timmy now tracks ${lower(p.name)}. It is reading your recent mail for them.`)}
                     onRename={() =>
                       setNaming({
                         title: `Track ${lower(p.name)} under another name`,
                         action: 'Track',
                         start: text(p.name),
-                        save: (name) => act(() => api.acceptTracking(p.key, name), `Timmy now tracks ${plural(name).toLowerCase()}.`),
+                        save: (name) => act(() => api.acceptTracking(p.key, name), `Timmy now tracks ${plural(name).toLowerCase()}. It is reading your recent mail for them.`),
                       })
                     }
                     onDismiss={() => void act(() => api.dismissTracking(p.key), `Timmy won’t suggest ${lower(p.name)} again.`)}
@@ -167,6 +176,35 @@ export function Tracked() {
               </div>
             )}
           </section>
+
+          {data.sameThing && data.sameThing.length > 0 && (
+            <section className="section" aria-label="Same thing?">
+              <SectionHead title="Same thing?" sub={can ? 'These names look like one thing written two ways. Nothing is merged unless you say so.' : 'These names look like one thing written two ways. An owner or admin can merge them.'} />
+              <div className="trk-list">
+                {data.sameThing.map((pair) => (
+                  <SamePair
+                    key={`${pair.a.id} ${pair.b.id}`}
+                    pair={pair}
+                    can={can}
+                    busy={busy}
+                    onMerge={(keep, merge) => void act(() => api.mergeThings(pair.kind.id, keep.id, merge.id), `Merged “${text(merge.name)}” into “${text(keep.name)}”. Everything it rested on is kept.`)}
+                    onApart={() => void act(() => api.keepThingsApart(pair.kind.id, pair.a.id, pair.b.id), `Kept “${text(pair.a.name)}” and “${text(pair.b.name)}” apart. Timmy won’t ask again.`)}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {data.turnedDown && data.turnedDown.length > 0 && (
+            <section className="section" aria-label="Turned down">
+              <SectionHead title="Turned down" sub="Kinds you said no to, or stopped tracking. Bring one back to see it as a suggestion again." />
+              <ul className="trk-down">
+                {data.turnedDown.map((k) => (
+                  <Down key={k.key} k={k} can={can} busy={busy} onBringBack={() => void act(() => api.bringBackTracking(k.key), `${text(k.name)} is suggested again. Nothing is read for it until it is accepted.`)} />
+                ))}
+              </ul>
+            </section>
+          )}
         </>
       )}
 
@@ -336,6 +374,7 @@ function Kind({
           />
         )}
       </div>
+      {k.reread && <RereadNote r={k.reread} kinds={kinds} />}
       {open && (
         <div className="trk-kind-body">
           {failed ? (
@@ -372,6 +411,76 @@ function Kind({
         </div>
       )}
     </article>
+  );
+}
+
+/** How the look back through recent mail went, in a line. */
+function RereadNote({ r, kinds }: { r: TrackedReread; kinds: string }) {
+  const threads = r.threads === 1 ? '1 thread' : `${r.threads} threads`;
+  const found = r.found === 0 ? `found no ${kinds}` : r.found === 1 ? 'found 1' : `found ${r.found}`;
+  const line =
+    r.status === 'reading'
+      ? `Reading your mail from the last ${r.days} days for ${kinds}…`
+      : r.status === 'done'
+        ? r.threads === 0
+          ? `Looked through your mail from the last ${r.days} days: no thread needed reading again.`
+          : `Read ${threads} from the last ${r.days} days and ${found}.`
+        : `${r.threads ? `Read ${threads} and ${found}. ` : ''}${text(r.note) || 'Timmy stopped reading early.'}`;
+  return (
+    <p className="trk-reread" role="status">
+      {line}
+    </p>
+  );
+}
+
+/** Two things that may be one: keep either name, or say they differ. */
+function SamePair({ pair, can, busy, onMerge, onApart }: { pair: SameThing; can: boolean; busy: boolean; onMerge: (keep: { id: string; name: string }, merge: { id: string; name: string }) => void; onApart: () => void }) {
+  const a = text(pair.a.name);
+  const b = text(pair.b.name);
+  const kind = text(pair.kind.name).toLowerCase();
+  return (
+    <article className="card ap-card" aria-label={`Same thing: ${a} and ${b}`}>
+      <div className="ap-head">
+        <h3 className="ap-title">
+          Are “{a}” and “{b}” the same {kind}?
+        </h3>
+        <p className="ap-why">One name has every word of the other. Merging keeps one name and every sentence behind both; mail that uses the other name adds to it from then on.</p>
+      </div>
+      <div className="trk-actions">
+        {can ? (
+          <>
+            <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => onMerge(pair.b, pair.a)}>
+              Same: keep “{b}”
+            </button>
+            <button className="btn btn-sm" disabled={busy} onClick={() => onMerge(pair.a, pair.b)}>
+              Same: keep “{a}”
+            </button>
+            <button className="btn btn-ghost btn-sm" disabled={busy} onClick={onApart}>
+              Different
+            </button>
+          </>
+        ) : (
+          <span className="field-hint">An owner or admin can merge these.</span>
+        )}
+      </div>
+    </article>
+  );
+}
+
+/** A kind that was turned down or stopped. */
+function Down({ k, can, busy, onBringBack }: { k: TurnedDown; can: boolean; busy: boolean; onBringBack: () => void }) {
+  return (
+    <li className="trk-down-row">
+      <span>
+        <strong>{text(k.name)}</strong>
+        <span className="muted"> · {k.stopped ? 'Tracking was stopped' : 'Turned down'}</span>
+      </span>
+      {can && (
+        <button className="btn btn-sm" disabled={busy} aria-label={`Bring back ${lower(k.name)}`} onClick={onBringBack}>
+          <RotateCcw size={13} /> Bring back
+        </button>
+      )}
+    </li>
   );
 }
 

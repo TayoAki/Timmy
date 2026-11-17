@@ -230,7 +230,8 @@ export class FakeModel implements ModelProvider {
       const clear = /^archive thread \S+$/i.test((words[words.length - 1] ?? '').trim());
       return { content: clear ? '{"decision":"approve","reason":"The user asked for exactly this."}' : '{"decision":"ask","reason":"The stand-in judge asks unless the request is exact."}' };
     }
-    if (req.route === 'read') {
+    // A look back through recent mail for a newly accepted kind is the same read (see ontology/reread.ts).
+    if (req.route === 'read' || req.route === 'reread') {
       // The stand-in reads two plain patterns out of the thread: "should we A or B?" and "I'll send X by <date>".
       const content = req.messages[req.messages.length - 1]!.content;
       const mail = content.slice(content.indexOf('<untrusted source="mail">'));

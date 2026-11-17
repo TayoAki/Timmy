@@ -24,6 +24,7 @@ import { defineJob, enqueueSoon } from './jobs';
 import { isAutomationEffect, registerAutomationJobs } from '../automations/jobs';
 import { registerPageJobs } from '../pages/jobs';
 import { registerFileJobs } from '../files/jobs';
+import { registerTrackingJobs } from '../ontology/jobs';
 
 /** Registers every job and connects the gateway to the queue. Call once at boot. */
 /** Asks for the map to be brought up to date. One pass per workspace is queued at a time, however many items arrived. */
@@ -261,6 +262,8 @@ export function registerJobs() {
   registerPageJobs();
   // Uploaded files nothing uses any more, and files kept before a virus scanner was set up.
   registerFileJobs();
+  // Reading recent mail for a kind someone just accepted to track.
+  registerTrackingJobs();
 
   onEffectApproved((e) => enqueueSoon('effect.execute', { workspaceId: e.workspace_id, effectId: e.id }, { startAfter: e.hold_until ? new Date(e.hold_until) : 0 }));
   // [automations] The engine's own jobs (automations/jobs.ts).
