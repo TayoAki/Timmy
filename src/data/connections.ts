@@ -28,6 +28,8 @@ export interface AppDef {
   soon?: boolean;
   /** Reached with a token instead of a Composio connect page. */
   token?: boolean;
+  /** Shown on a real workspace only; the preview's cards stay as they were. */
+  liveOnly?: boolean;
 }
 
 export interface AppConn {
@@ -50,7 +52,23 @@ export const APPS: AppDef[] = [
     reads: 'Files you open in Timmy or file from mail',
     writes: 'Files Timmy creates or files for you',
     account: 'taylor@northpeak.example',
-    live: { reads: 'The names, types and owners of your files, so Ask can find them', writes: 'Nothing', note: 'Timmy keeps a list of your files and links to them. It does not open the files themselves yet, and it changes nothing in Drive.' },
+    live: {
+      reads: 'The names, types and owners of your files, and the words in your recent Google Docs, Sheets and Slides, so Ask can find and read them',
+      writes: 'Nothing',
+      note: 'Timmy keeps a list of your files with links to them, and the words of Google Docs, Sheets and Slides changed in the last 90 days, so Ask can find a file by what it says. It changes nothing in Drive. Disconnecting deletes all of it from Timmy.',
+    },
+  },
+  {
+    id: 'onedrive',
+    name: 'OneDrive',
+    group: 'Mail and calendar',
+    mark: 'OD',
+    color: 'var(--c-sky)',
+    reads: 'The names, types and owners of your files, and the words in your recent Word, Excel and PowerPoint files, so Ask can find and read them',
+    writes: 'Nothing',
+    note: 'Microsoft is asked only to let Timmy read your own files. Timmy keeps a list of your files with links to them, and the words of Word, Excel and PowerPoint files changed in the last 90 days, so Ask can find a file by what it says. It changes nothing in OneDrive, and it connects apart from your mailbox. Disconnecting deletes all of it from Timmy.',
+    account: 'taylor@northpeak-group.example',
+    liveOnly: true,
   },
   {
     id: 'outlook',
@@ -65,7 +83,7 @@ export const APPS: AppDef[] = [
     live: {
       reads: 'Outlook mail and calendar',
       writes: 'Sends you approve, categories and archiving for the threads you file, and the events you add, change or delete in Timmy',
-      note: 'If your company requires an admin to approve new apps, Microsoft’s sign-in page will say so: ask your admin to approve it there, then connect again. If you connected Outlook before Timmy read its calendar, disconnect it and connect again, so Microsoft can ask you for the calendar. OneDrive is not read yet. A workspace has one mailbox, so disconnect Gmail first if it is connected.',
+      note: 'If your company requires an admin to approve new apps, Microsoft’s sign-in page will say so: ask your admin to approve it there, then connect again. If you connected Outlook before Timmy read its calendar, disconnect it and connect again, so Microsoft can ask you for the calendar. OneDrive has its own card. A workspace has one mailbox, so disconnect Gmail first if it is connected.',
     },
   },
   { id: 'hubspot', name: 'HubSpot', group: 'CRM', mark: 'Hs', color: 'var(--c-amber)', reads: 'Contacts, companies, deals and activity', writes: 'Deal and stage changes, call and email activity, after approval', account: 'Northpeak portal' },

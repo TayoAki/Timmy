@@ -94,6 +94,7 @@ export const config = {
       googlecalendar: env.COMPOSIO_AUTH_CONFIG_GOOGLECALENDAR ?? '',
       googledrive: env.COMPOSIO_AUTH_CONFIG_GOOGLEDRIVE ?? '',
       outlook: env.COMPOSIO_AUTH_CONFIG_OUTLOOK ?? '',
+      one_drive: env.COMPOSIO_AUTH_CONFIG_ONE_DRIVE ?? '',
     } as Record<string, string>,
     /**
      * The permissions asked for at sign-in, per toolkit, when they should be fewer than Composio's managed app asks
@@ -108,6 +109,10 @@ export const config = {
       gmail: (env.COMPOSIO_SCOPES_GMAIL ?? '').split(',').map((x) => x.trim()).filter(Boolean),
       googlecalendar: (env.COMPOSIO_SCOPES_GOOGLECALENDAR ?? '').split(',').map((x) => x.trim()).filter(Boolean),
       googledrive: (env.COMPOSIO_SCOPES_GOOGLEDRIVE ?? '').split(',').map((x) => x.trim()).filter(Boolean),
+      // OneDrive is only read: the person's own files (Files.Read, not .All or ReadWrite), the profile to show whose
+      // drive it is, and offline access so the connection lasts. The workbook tools would need write permission, so
+      // spreadsheets are downloaded and read here instead (src/sync/office-text.ts).
+      one_drive: (env.COMPOSIO_SCOPES_ONE_DRIVE ?? 'Files.Read,offline_access,User.Read').split(',').map((x) => x.trim()).filter(Boolean),
     } as Record<string, string[]>,
     /**
      * The version of each Composio toolkit this code was written against. Composio changes tool names and
@@ -120,8 +125,15 @@ export const config = {
       googlecalendar: '20261111_00',
       outlook: '20261116_00',
       googledrive: '20261104_00',
+      one_drive: '20261116_00',
       ...(JSON.parse(env.COMPOSIO_TOOLKIT_VERSIONS || '{}') as Record<string, string>),
     } as Record<string, string>,
+    /**
+     * Where a file a tool hands back (OneDrive's download) may be fetched from: Composio's own store and the cloud
+     * stores behind it. Anything else is refused before a request is made, and so is a host whose address is a
+     * private one. Comma-separated host names; a leading dot means "any host ending in this".
+     */
+    fileHosts: (env.COMPOSIO_FILE_HOSTS ?? 'storage.composio.dev,.amazonaws.com,.blob.core.windows.net').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean),
   },
 
   /**
@@ -162,6 +174,26 @@ export const config = {
 
   /** How far back the first pass over a newly connected Drive goes, by when a file last changed. */
   driveBackfillDays: Number(env.TIMMY_DRIVE_BACKFILL_DAYS ?? 90),
+  /**
+   * Files shared with the person, listed when a Drive is first read even if nobody has changed them for longer
+   * than the window above: the most recently shared, up to this many.
+   */
+  driveSharedMax: Number(env.TIMMY_DRIVE_SHARED_MAX ?? 200),
+  /**
+   * The first read of a OneDrive walks the whole drive (Microsoft lists it in no useful order) and keeps what changed
+   * inside the window. It stops after this many pages of 200 and from then on follows changes only.
+   */
+  oneDriveFirstPages: Number(env.TIMMY_ONEDRIVE_FIRST_PAGES ?? 50),
+  /**
+   * What synced files say is read and kept so Ask can search it: only files changed inside the window above, at most
+   * `perPass` files each pass, and none larger than `maxBytes` (a larger one is listed by name only).
+   */
+  fileText: {
+    perPass: Number(env.TIMMY_FILE_TEXT_PER_PASS ?? 40),
+    maxBytes: Number(env.TIMMY_FILE_TEXT_MAX_MB ?? 10) * 1024 * 1024,
+  },
+  /** Each night, this many stored Drive files are asked about one by one, so one deleted for good or unshared drops off. */
+  filesCheckBatch: Number(env.TIMMY_FILES_CHECK_BATCH ?? 25),
 
   /**
    * The most a workspace may set its own limits to. The limits guard the workspace against a runaway month;

@@ -27,7 +27,7 @@ export function ConnectionsView() {
       <p className="page-sub">
         {on} apps connected.{' '}
         {isLive()
-          ? 'Each one connects through Composio: Timmy reads what you connect, and anything it writes waits for approval. You sign in on Composio’s page; Timmy never sees your password. Gmail, Outlook, Google Calendar and Google Drive can be connected today; the others follow.'
+          ? 'Each one connects through Composio: Timmy reads what you connect, and anything it writes waits for approval. You sign in on Composio’s page; Timmy never sees your password. Gmail, Outlook, Google Calendar, Google Drive and OneDrive can be connected today; the others follow.'
           : 'Each one connects through Composio, except Treg, which uses a token. Timmy reads what you connect, and anything it writes waits for approval. In this preview, connecting is simulated and nothing leaves your browser.'}
       </p>
 
@@ -39,7 +39,7 @@ export function ConnectionsView() {
             </h2>
           </div>
           <ul className="conn-grid">
-            {APPS.filter((a) => a.group === g).map((a) => (
+            {APPS.filter((a) => a.group === g && (!a.liveOnly || isLive())).map((a) => (
               <AppCard key={a.id} app={a} onConnect={() => setConnecting(a)} />
             ))}
           </ul>

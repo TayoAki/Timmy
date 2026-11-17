@@ -16,7 +16,7 @@ import { composio } from '../providers/composio';
 import type { Ctx } from '../state/engine';
 import { mutate } from '../state/mutate';
 import { shownPrefixes } from './calendars';
-import { driveAddress } from './files';
+import { fileAccount } from './file-sources';
 import { mailboxFor } from './mailbox';
 import { meter, type ConnectionRow } from './tools';
 
@@ -33,6 +33,8 @@ const CONNECT: Record<ConnectableApp, { toolkit: string; kind: 'mail' | 'calenda
   outlook: { toolkit: 'outlook', kind: 'mail', triggers: [{ slug: 'OUTLOOK_MESSAGE_TRIGGER' }, { slug: 'OUTLOOK_SENT_MESSAGE_TRIGGER' }, { slug: 'OUTLOOK_EVENT_CHANGE_TRIGGER' }] },
   // A file made, changed, or thrown away. Drive is checked every couple of minutes by Composio rather than pushed.
   gdrive: { toolkit: 'googledrive', kind: 'files', triggers: [{ slug: 'GOOGLEDRIVE_FILE_CREATED_TRIGGER' }, { slug: 'GOOGLEDRIVE_FILE_UPDATED_TRIGGER' }, { slug: 'GOOGLEDRIVE_FILE_DELETED_OR_TRASHED_TRIGGER' }] },
+  // OneDrive is read only, and is its own app beside Outlook. The same three events as Drive, also checked by Composio every couple of minutes.
+  onedrive: { toolkit: 'one_drive', kind: 'files', triggers: [{ slug: 'ONE_DRIVE_FILE_CREATED_TRIGGER' }, { slug: 'ONE_DRIVE_ITEM_UPDATED_TRIGGER' }, { slug: 'ONE_DRIVE_ITEM_DELETED_TRIGGER' }] },
 };
 export const TOOLKITS: Record<string, (typeof CONNECT)[ConnectableApp] | undefined> = CONNECT;
 const MAIL_APPS = Object.entries(CONNECT).filter(([, app]) => app.kind === 'mail').map(([id]) => id);
@@ -124,7 +126,7 @@ export async function finishConnect(ctx: Ctx, connectionId: string): Promise<(Co
   let label = acct.label ?? null;
   const box = mailboxFor(conn.toolkit);
   if (box) label = (await box.address(ctx.workspaceId, connectionId)) ?? label;
-  if (app.kind === 'files') label = (await driveAddress(ctx.workspaceId, connectionId)) ?? label;
+  if (app.kind === 'files') label = (await fileAccount(ctx.workspaceId, connectionId, conn.toolkit)) ?? label;
   const triggers: string[] = [];
   for (const t of app.triggers) {
     try {

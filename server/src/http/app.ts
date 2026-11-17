@@ -19,6 +19,7 @@ import { MAX_STREAMS_PER_PERSON, stillAllowed, streamsOf, subscribe, type Subscr
 import { rulesFor } from '../auth/roles';
 import { loadState } from '../state/docs';
 import { calendarFor } from '../sync/calendars';
+import { fileEvent } from '../sync/file-sources';
 import { ConnectError, TOOLKITS, closeConnections, disconnect, finishConnect, startConnect } from '../sync/connect';
 import { mailboxFor } from '../sync/mailbox';
 import { appLoaded, checkWhileOpen } from '../sync/mailbox-check';
@@ -108,12 +109,10 @@ export function buildApp(): Hono<Env> {
     // Any calendar event means the window may have changed; one sync per connection covers a burst of them.
     // An Outlook account announces mail and calendar events alike, so its calendar is asked which this one is.
     if (calendarFor(conn.toolkit)?.announces(event.triggerSlug)) enqueueSoon('calendar.sync', { workspaceId: conn.workspace_id, connectionId: conn.id }, { singletonKey: `cal:${conn.id}` });
-    if (conn.toolkit === 'googledrive') {
-      // A file thrown away leaves the list at once. Anything else means "the list changed": one pass per connection covers a burst.
-      const gone = event.triggerSlug === 'GOOGLEDRIVE_FILE_DELETED_OR_TRASHED_TRIGGER' ? String(event.data.file_id ?? '') : '';
-      if (gone) enqueueSoon('files.remove', { workspaceId: conn.workspace_id, connectionId: conn.id, fileId: gone });
-      else enqueueSoon('files.sync', { workspaceId: conn.workspace_id, connectionId: conn.id }, { singletonKey: `files:${conn.id}` });
-    }
+    // Drive and OneDrive: a file thrown away leaves the list at once. Anything else means "the list changed": one pass per connection covers a burst.
+    const fileJob = fileEvent(conn.toolkit, event.triggerSlug, event.data);
+    if (fileJob && 'remove' in fileJob) enqueueSoon('files.remove', { workspaceId: conn.workspace_id, connectionId: conn.id, fileId: fileJob.remove });
+    else if (fileJob) enqueueSoon('files.sync', { workspaceId: conn.workspace_id, connectionId: conn.id }, { singletonKey: `files:${conn.id}` });
     await sysPool.query('update webhook_event set processed_at = now() where id = $1', [event.id]);
     return c.json({ ok: true });
   });

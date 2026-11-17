@@ -10,6 +10,7 @@ import { withWorkspace } from '../db/pool';
 import { executeEffect } from '../gateway/gateway';
 import { inlineJobs } from '../jobs/jobs';
 import { fakeComposio, signWebhook, type FakeEvent } from '../providers/composio';
+import { fakeFileEvent } from '../providers/fake-files';
 import { CALENDAR_TOOLKITS } from '../sync/calendars';
 import { MAIL_TOOLKITS } from '../sync/mailbox';
 import { checkMailbox } from '../sync/mailbox-check';
@@ -70,29 +71,23 @@ export function testRoutes(app: Hono<Env>): void {
       await inlineJobs()?.drain('calendar.sync');
       return c.json({ ok: res.ok });
     }
-    // The stand-in Drive: a file is made, changed or thrown away there, and the provider announces it.
+    // The stand-in Drive (or OneDrive, with `app: 'onedrive'`): a file is made, changed or thrown away there, and the provider announces it.
     if (body.op === 'file' || body.op === 'file-trash') {
-      const drive = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => (await tx.query(`select connected_account_id from connection where workspace_id = $1 and status = 'active' and app_id = 'gdrive' order by created_at limit 1`, [ctx.workspaceId])).rows[0]);
-      if (!drive) return c.json({ error: 'no connected Drive' }, 409);
-      const account = fake.accounts.get(drive.connected_account_id)!;
-      let event;
-      if (body.op === 'file') {
-        const file = fake.addFile(drive.connected_account_id, body.file as { name: string });
-        event = fake.event(drive.connected_account_id, 'GOOGLEDRIVE_FILE_CREATED_TRIGGER', { event_type: 'created', file: { id: file.id, name: file.name } });
-      } else {
-        const file = account.files.find((f) => f.name === String(body.name));
-        if (!file) return c.json({ error: 'no such file' }, 404);
-        file.trashed = true;
-        event = fake.event(drive.connected_account_id, 'GOOGLEDRIVE_FILE_DELETED_OR_TRASHED_TRIGGER', { event_type: 'trashed', file_id: file.id, name: file.name });
-      }
-      const res = await app.request('/api/hooks/composio', { method: 'POST', headers: event.webhook.headers, body: event.webhook.body });
+      const appId = body.app === 'onedrive' ? 'onedrive' : 'gdrive';
+      const drive = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => (await tx.query(`select connected_account_id from connection where workspace_id = $1 and status = 'active' and app_id = $2 order by created_at limit 1`, [ctx.workspaceId, appId])).rows[0]);
+      if (!drive) return c.json({ error: appId === 'onedrive' ? 'no connected OneDrive' : 'no connected Drive' }, 409);
+      const event = fakeFileEvent(fake, drive.connected_account_id, appId, body.op === 'file' ? { add: body.file as { name: string } } : { trash: String(body.name) });
+      if (!event) return c.json({ error: 'no such file' }, 404);
+      const res = await app.request('/api/hooks/composio', { method: 'POST', headers: event.headers, body: event.body });
       await inlineJobs()?.drain();
       // The list is brought up to date by a job. The hook answers once the file is on it (or off it), so a test can go straight on.
+      // A new file with words in it is also waited for until those words can be searched.
       const wanted = body.op === 'file';
       const name = String(body.op === 'file' ? (body.file as { name: string }).name : body.name);
+      const words = wanted && !!((body.file as { text?: string; rows?: unknown[] }).text || (body.file as { rows?: unknown[] }).rows);
       let listed = !wanted;
-      for (let i = 0; i < 40 && listed !== wanted; i++) {
-        listed = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => (await tx.query(`select 1 from item where workspace_id = $1 and kind = 'file' and subject = $2 limit 1`, [ctx.workspaceId, name])).rows.length > 0);
+      for (let i = 0; i < 100 && listed !== wanted; i++) {
+        listed = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => (await tx.query(`select 1 from item i ${words ? 'join item_body b on b.item_id = i.id' : ''} where i.workspace_id = $1 and i.kind = 'file' and i.subject = $2 limit 1`, [ctx.workspaceId, name])).rows.length > 0);
         if (listed !== wanted) await new Promise((r) => setTimeout(r, 150));
       }
       return c.json({ ok: res.ok && listed === wanted });
