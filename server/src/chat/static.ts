@@ -1,14 +1,14 @@
 /**
- * The three small files a visitor's browser loads: the loader a business pastes into its website, and the
- * script and stylesheet of the chat's own frame. They are plain text files next to this one (in `embed/`),
- * served as they are. The build copies them beside the bundled server (see build.mjs).
+ * The small files a visitor's browser loads: the loader a business pastes into its website, the script and
+ * stylesheet of the chat's own frame, and the worker that does the bot check's work. They are plain text files
+ * next to this one (in `embed/`), served as they are. The build copies them beside the bundled server (see build.mjs).
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from '../config';
 
-export type EmbedFile = 'loader.js' | 'frame.js' | 'frame.css';
+export type EmbedFile = 'loader.js' | 'frame.js' | 'frame.css' | 'work.js';
 
 function embedDir(): string {
   const here = dirname(fileURLToPath(import.meta.url));
@@ -39,6 +39,7 @@ export const FRAME_PAGE = `<!doctype html>
 </head>
 <body>
 <div id="chat"></div>
+<script src="/chat/work.js"></script>
 <script src="/chat/frame.js"></script>
 </body>
 </html>

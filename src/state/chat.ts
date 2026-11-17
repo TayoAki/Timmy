@@ -19,6 +19,22 @@ export type ChatOp =
   | { op: 'read'; id: string }
   | { op: 'delete'; id: string };
 
+/**
+ * Visitors' chats that want a person right now: the visitor asked for one and no teammate has taken the chat
+ * over yet. They show as cards on Today and as a notice across the app, and drop off by themselves once someone
+ * takes over or answers (both clear the flag). Newest first.
+ */
+export const wantsPerson = (s: State): ChatConvo[] =>
+  Object.values(s.ws.chats ?? {})
+    .filter((c) => c.urgent && !c.live)
+    .sort((a, b) => (b.messages.at(-1)?.at.getTime() ?? 0) - (a.messages.at(-1)?.at.getTime() ?? 0));
+
+/** The newest chat a lead from the website chat came from, found by the address they left. */
+export const chatOfLead = (s: State, email: string): ChatConvo | undefined =>
+  Object.values(s.ws.chats ?? {})
+    .filter((c) => !!c.email && c.email.toLowerCase() === email.toLowerCase())
+    .sort((a, b) => (b.messages.at(-1)?.at.getTime() ?? 0) - (a.messages.at(-1)?.at.getTime() ?? 0))[0];
+
 export interface ChatHelpers {
   toast: (s: State, text: string) => Toast[];
 }

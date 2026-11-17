@@ -5,9 +5,12 @@
  *   - what a business's website loads: the loader script and the chat's frame (`/chat.js`, `/chat/frame…`);
  *   - what the frame calls, with no sign-in: the public settings, sending a message, and the visitor's stream
  *     (`/api/public/chat/:siteKey/…`);
- *   - what a signed-in teammate calls: a conversation's full transcript (`/api/v1/chat/…`).
+ *   - what a signed-in teammate calls: a conversation's full transcript, the conversations older than the ones on
+ *     the Chats screen, and the address the code snippet loads from (`/api/v1/chat/…`).
  *
- * The public routes never read a session cookie. The workspace comes from the site key and nothing else.
+ * The first two are the chat's public side. When the chat has its own address (CHAT_PUBLIC_URL) they are served
+ * there and nowhere else (host.ts); otherwise from the app's own address. The public routes never read a session
+ * cookie. The workspace comes from the site key and nothing else.
  */
 import type { Context, Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
@@ -18,16 +21,21 @@ import { config } from '../config';
 import { withWorkspace } from '../db/pool';
 import { ctxOf, requireRead, requireWorkspace, type Env } from '../http/session';
 import { readState } from '../state/mutate';
+import { checkChallenge, newChallenge, type Proof } from './challenge';
 import { watch, type VisitorMessage } from './hub';
-import { addressOf, allow, hold } from './limits';
+import { addressOf, hold, limits } from './limits';
 import { allowedParents, publicChat, siteOf } from './site';
 import { FRAME_PAGE, NO_FRAME_PAGE, embedFile } from './static';
 import { conversationOf } from './token';
-import { CLOSED, ENDED, NOT_A_MESSAGE, TOO_FAST, TOO_LONG, cleanText, visitorSays, type Said } from './visitor';
+import { CHECK, CLOSED, ENDED, NOT_A_MESSAGE, TOO_FAST, TOO_LONG, cleanText, visitorSays, type Said } from './visitor';
 
 /** An id a visitor's browser made up: its visitor id, or its id for one message. */
 const BROWSER_ID = /^[A-Za-z0-9_-]{16,64}$/;
 const CONVERSATION_ID = /^[A-Za-z0-9_]{8,60}$/;
+
+const MINUTE = 60_000;
+const HOUR = 3_600_000;
+const DAY = 86_400_000;
 
 /* ───────────── What a website loads ───────────── */
 
@@ -42,7 +50,7 @@ export function chatFrameRoutes(app: Hono<Env>): void {
     'cache-control': cache,
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'no-referrer',
-    ...(config.publicUrl.startsWith('https://') ? { 'strict-transport-security': 'max-age=15552000; includeSubDomains' } : {}),
+    ...((config.chat.publicUrl || config.publicUrl).startsWith('https://') ? { 'strict-transport-security': 'max-age=15552000; includeSubDomains' } : {}),
     ...more,
   });
 
@@ -50,14 +58,17 @@ export function chatFrameRoutes(app: Hono<Env>): void {
   app.get('/chat.js', () => new Response(embedFile('loader.js'), { headers: headers('text/javascript; charset=utf-8', 'public, max-age=300', { 'cross-origin-resource-policy': 'cross-origin' }) }));
   app.get('/chat/frame.js', () => new Response(embedFile('frame.js'), { headers: headers('text/javascript; charset=utf-8', 'public, max-age=300', { 'cross-origin-resource-policy': 'same-origin' }) }));
   app.get('/chat/frame.css', () => new Response(embedFile('frame.css'), { headers: headers('text/css; charset=utf-8', 'public, max-age=300', { 'cross-origin-resource-policy': 'same-origin' }) }));
+  // The bot check's work runs in a worker the frame starts from its own address. The worker needs nothing but its own code.
+  app.get('/chat/work.js', () => new Response(embedFile('work.js'), { headers: headers('text/javascript; charset=utf-8', 'public, max-age=300', { 'cross-origin-resource-policy': 'same-origin', 'content-security-policy': "default-src 'none'" }) }));
 
   app.get('/chat/frame', async (c) => {
     const site = await siteOf(c.req.query('site'));
     const parents = site ? allowedParents(site.domain) : [];
     const ok = parents.length > 0;
-    // The frame may load its own script and stylesheet, show an inline picture and call its own server. Nothing
-    // else: no inline script, no other origin, no forms. And only the business's website may put it on a page.
-    const policy = ["default-src 'none'", "script-src 'self'", "style-src 'self'", 'img-src data:', "connect-src 'self'", "base-uri 'none'", "form-action 'none'", `frame-ancestors ${ok ? parents.join(' ') : "'none'"}`].join('; ');
+    // The frame may load its own script and stylesheet (and start its own worker), show an inline picture and call
+    // its own server. Nothing else: no inline script, no other origin, no forms. And only the business's website may
+    // put it on a page.
+    const policy = ["default-src 'none'", "script-src 'self'", "worker-src 'self'", "style-src 'self'", 'img-src data:', "connect-src 'self'", "base-uri 'none'", "form-action 'none'", `frame-ancestors ${ok ? parents.join(' ') : "'none'"}`].join('; ');
     return new Response(ok ? FRAME_PAGE : NO_FRAME_PAGE, {
       status: ok ? 200 : 404,
       headers: headers('text/html; charset=utf-8', 'no-store', {
@@ -71,14 +82,14 @@ export function chatFrameRoutes(app: Hono<Env>): void {
   });
 }
 
-/* ───────────── What the frame and teammates call ───────────── */
+/* ───────────── What the frame calls ───────────── */
 
 const plain = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** A refusal is always a plain sentence in JSON. A visitor never gets an error page. */
 const refuse = (c: Context, said: Said) => {
   const no = said as Extract<Said, { ok: false }>;
-  return c.json({ ok: false, notice: no.notice, ...(no.reset ? { reset: true } : {}) }, no.status as 400, { 'cache-control': 'no-store' });
+  return c.json({ ok: false, notice: no.notice, ...(no.reset ? { reset: true } : {}), ...(no.recheck ? { recheck: true } : {}) }, no.status as 400, { 'cache-control': 'no-store' });
 };
 
 /** Waits, unless woken first. */
@@ -92,35 +103,52 @@ function pause(ms: number, onWake: (wake: () => void) => void): Promise<void> {
   });
 }
 
-export function chatRoutes(app: Hono<Env>): void {
+export function chatPublicRoutes(app: Hono<Env>): void {
   // A chat message is small. Anything bigger is refused before it is read.
   app.use('/api/public/chat/*', bodyLimit({ maxSize: config.chat.maxBodyBytes, onError: (c) => refuse(c, TOO_LONG) }));
 
   app.get('/api/public/chat/:siteKey/config', async (c) => {
-    if (!allow(`read:${addressOf(c)}`, config.chat.addressReadsPerMinute, 60_000)) return refuse(c, TOO_FAST);
+    if (!(await limits.allow([{ key: `read:${addressOf(c)}`, limit: config.chat.addressReadsPerMinute, windowMs: MINUTE }]))) return refuse(c, TOO_FAST);
     const site = await siteOf(c.req.param('siteKey'));
     if (!site) return refuse(c, CLOSED);
     const w = (await readState(site.workspaceId)).state.ws.chat.site;
     if (!w) return refuse(c, CLOSED);
-    return c.json(publicChat(w), 200, { 'cache-control': 'public, max-age=30' });
+    // Each window gets its own challenge for the bot check, so this answer is never kept by a cache.
+    return c.json({ ...publicChat(w), challenge: await newChallenge(site.workspaceId) }, 200, { 'cache-control': 'no-store' });
   });
 
   app.post('/api/public/chat/:siteKey/messages', async (c) => {
     const address = addressOf(c);
-    if (!allow(`message:address:${address}`, config.chat.addressMessagesPerMinute, 60_000)) return refuse(c, TOO_FAST);
+    // An address this server has already turned away this minute is turned away again before anything is read.
+    if (await limits.refusedHere([`message:address:${address}`])) return refuse(c, TOO_FAST);
     const body = (await c.req.json().catch(() => null)) as unknown;
     const site = await siteOf(c.req.param('siteKey'));
     if (!site) return refuse(c, CLOSED);
-    if (!plain(body) || typeof body.visitor !== 'string' || !BROWSER_ID.test(body.visitor) || typeof body.id !== 'string' || !BROWSER_ID.test(body.id) || typeof body.text !== 'string') return refuse(c, NOT_A_MESSAGE);
-    if (!allow(`message:visitor:${site.workspaceId}:${body.visitor}`, config.chat.visitorMessagesPerMinute, 60_000)) return refuse(c, TOO_FAST);
-    // Per business per day, so one address can't use up a chat's whole daily allowance and close it to everyone else.
-    if (!allow(`message:day:${site.workspaceId}:${address}`, config.chat.addressMessagesPerDay, 86_400_000)) return refuse(c, TOO_FAST);
+    if (!plain(body) || typeof body.visitor !== 'string' || !BROWSER_ID.test(body.visitor) || typeof body.id !== 'string' || !BROWSER_ID.test(body.id) || typeof body.text !== 'string') {
+      // A malformed request still counts against its address, so trying shapes is no way around the limit.
+      await limits.allow([{ key: `message:address:${address}`, limit: config.chat.addressMessagesPerMinute, windowMs: MINUTE }]);
+      return refuse(c, NOT_A_MESSAGE);
+    }
+    const continues = body.conversation !== undefined || body.token !== undefined;
+    const counted = await limits.allow([
+      { key: `message:address:${address}`, limit: config.chat.addressMessagesPerMinute, windowMs: MINUTE },
+      { key: `message:visitor:${site.workspaceId}:${body.visitor}`, limit: config.chat.visitorMessagesPerMinute, windowMs: MINUTE },
+      // Per business per day, so one address can't use up a chat's whole daily allowance and close it to everyone else.
+      { key: `message:day:${site.workspaceId}:${address}`, limit: config.chat.addressMessagesPerDay, windowMs: DAY },
+      ...(continues ? [] : [{ key: `new:address:${address}`, limit: config.chat.addressConversationsPerHour, windowMs: HOUR }]),
+    ]);
+    if (!counted) return refuse(c, TOO_FAST);
     const text = cleanText(body.text);
     if (!text) return refuse(c, NOT_A_MESSAGE);
     if (text.length > config.chat.maxMessageChars) return refuse(c, TOO_LONG);
-    const continues = body.conversation !== undefined || body.token !== undefined;
     if (continues && (typeof body.conversation !== 'string' || typeof body.token !== 'string')) return refuse(c, ENDED);
-    if (!continues && !allow(`new:address:${address}`, config.chat.addressConversationsPerHour, 3_600_000)) return refuse(c, TOO_FAST);
+    // A first message has to bring the bot check's work: a challenge this server signed, solved. Whether it was
+    // used before is checked where the conversation would start.
+    let proof: Proof | null = null;
+    if (!continues) {
+      proof = await checkChallenge(site.workspaceId, body.challenge, body.answer);
+      if (!proof) return refuse(c, CHECK);
+    }
     const after = typeof body.after === 'number' && Number.isSafeInteger(body.after) && body.after > 0 ? body.after : 0;
 
     const said = await visitorSays(site, {
@@ -128,6 +156,7 @@ export function chatRoutes(app: Hono<Env>): void {
       clientId: body.id,
       text,
       ...(continues ? { conversation: body.conversation as string, token: body.token as string } : {}),
+      ...(proof ? { proof } : {}),
       ...(typeof body.page === 'string' ? { page: body.page } : {}),
       after,
     });
@@ -137,7 +166,7 @@ export function chatRoutes(app: Hono<Env>): void {
 
   app.get('/api/public/chat/:siteKey/stream', async (c) => {
     const address = addressOf(c);
-    if (!allow(`read:${address}`, config.chat.addressReadsPerMinute, 60_000)) return refuse(c, TOO_FAST);
+    if (!(await limits.allow([{ key: `read:${address}`, limit: config.chat.addressReadsPerMinute, windowMs: MINUTE }]))) return refuse(c, TOO_FAST);
     const siteKey = c.req.param('siteKey');
     const site = await siteOf(siteKey);
     if (!site) return refuse(c, CLOSED);
@@ -148,8 +177,14 @@ export function chatRoutes(app: Hono<Env>): void {
     const exists = async () => !!conversationId && !!(await withWorkspace({ workspaceId }, (tx) => tx.query('select 1 from chat_conversation where id = $1 and workspace_id = $2', [conversationId, workspaceId]))).rowCount;
     if (!conversationId || conversationId !== c.req.query('conversation') || !(await exists())) return refuse(c, ENDED);
 
-    // Open streams are counted three ways: for this server as a whole, per address and per conversation.
-    const places = [hold('stream:all', config.chat.streamsOpen), hold(`stream:address:${address}`, config.chat.streamsPerAddress), hold(`stream:conversation:${conversationId}`, config.chat.streamsPerConversation)];
+    // Open streams are counted four ways: for this server as a whole, per business (so one customer's visitors
+    // can't take every place on the server), per address and per conversation.
+    const places = [
+      hold('stream:all', config.chat.streamsOpen),
+      hold(`stream:workspace:${workspaceId}`, config.chat.streamsPerWorkspace),
+      hold(`stream:address:${address}`, config.chat.streamsPerAddress),
+      hold(`stream:conversation:${conversationId}`, config.chat.streamsPerConversation),
+    ];
     const free = () => places.forEach((give) => give?.());
     if (places.some((p) => !p)) {
       free();
@@ -191,6 +226,65 @@ export function chatRoutes(app: Hono<Env>): void {
       }
     });
   });
+}
+
+/* ───────────── What a teammate calls ───────────── */
+
+/** One page of the conversations kept beyond the ones on the Chats screen. */
+const PAGE = 30;
+/** Where a page of older conversations continues: the last one's time (as the database wrote it) and id. */
+const CURSOR = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,6})?[+-]\d{2}(?::\d{2})?)~([A-Za-z0-9_]{8,60})$/;
+
+export function chatMemberRoutes(app: Hono<Env>): void {
+  /** The address a business's website loads the chat from, for the code snippet. Null: the app's own address. */
+  app.get('/api/v1/chat/loader', requireWorkspace, requireRead, (c) => c.json({ loader: config.chat.publicUrl ? `${config.chat.publicUrl}/chat.js` : null }, 200, { 'cache-control': 'no-store' }));
+
+  /**
+   * The conversations kept beyond the newest ones on the Chats screen, newest first, a page at a time (30 unless
+   * `limit` asks for 1 to 50), read from the stored copy inside the caller's own workspace. `before` is the
+   * `next` of the page before.
+   */
+  app.get('/api/v1/chat/conversations', requireWorkspace, requireRead, async (c) => {
+    const ctx = ctxOf(c);
+    const before = c.req.query('before');
+    const at = before === undefined ? null : CURSOR.exec(Buffer.from(before, 'base64url').toString('utf8'));
+    if (before !== undefined && !at) return c.json({ error: 'That page doesn’t exist.' }, 400);
+    const asked = Number(c.req.query('limit') ?? PAGE);
+    const size = Number.isInteger(asked) && asked >= 1 && asked <= 50 ? asked : PAGE;
+    // The ones the screen already lists are left out: this is for the rest.
+    const listed = Object.keys((await readState(ctx.workspaceId)).state.ws.chats ?? {});
+    const rows = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) =>
+      (
+        await tx.query(
+          `select c.id, c.name, c.email, c.page, c.urgent, c.live, c.last_message_at as at, c.last_message_at::text as at_text,
+             (select count(*)::int from chat_message m where m.conversation_id = c.id and m.workspace_id = c.workspace_id) as messages,
+             last.sender as last_from, left(last.body, 140) as last_text
+           from chat_conversation c
+           left join lateral (select sender, body from chat_message m where m.conversation_id = c.id and m.workspace_id = c.workspace_id and m.seq is not null order by m.seq desc limit 1) last on true
+           where c.workspace_id = $1 and not (c.id = any($2::text[]))
+             and ($3::timestamptz is null or (c.last_message_at, c.id) < ($3::timestamptz, $4::text))
+           order by c.last_message_at desc, c.id desc
+           limit $5`,
+          [ctx.workspaceId, listed, at?.[1] ?? null, at?.[2] ?? '', size + 1],
+        )
+      ).rows,
+    );
+    const page = rows.slice(0, size);
+    const last = page.at(-1);
+    const next = rows.length > size && last ? Buffer.from(`${last.at_text as string}~${last.id as string}`).toString('base64url') : null;
+    const conversations = page.map((r) => ({
+      id: r.id as string,
+      ...(r.name ? { name: r.name as string } : {}),
+      ...(r.email ? { email: r.email as string } : {}),
+      ...(r.page ? { page: r.page as string } : {}),
+      urgent: r.urgent as boolean,
+      live: r.live as boolean,
+      at: new Date(r.at as Date),
+      messages: r.messages as number,
+      ...(r.last_text !== null ? { last: { from: r.last_from === 'visitor' ? 'visitor' : r.last_from === 'timmy' ? 'timmy' : 'you', text: r.last_text as string } } : {}),
+    }));
+    return new Response(toWire({ conversations, next }), { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
+  });
 
   /**
    * A conversation's whole transcript, for a teammate. The Chats screen holds only the newest messages of each
@@ -217,4 +311,10 @@ export function chatRoutes(app: Hono<Env>): void {
     }));
     return new Response(toWire({ messages }), { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
   });
+}
+
+/** Both kinds of route on the app itself. Its own same-origin check covers them; when the chat has its own address, host.ts keeps the public ones off this one. */
+export function chatRoutes(app: Hono<Env>): void {
+  chatPublicRoutes(app);
+  chatMemberRoutes(app);
 }

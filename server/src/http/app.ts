@@ -28,6 +28,8 @@ import { fromWire, pickSlices, toWire } from '../../../src/live/patches';
 import type { Action } from '../../../src/state/store';
 import { MAX_FILE_BYTES, fileSize } from '../../../src/lib/files';
 import { chatFrameRoutes, chatRoutes } from '../chat/routes';
+import { chatHostGate } from '../chat/host';
+import { chatEnablerChanged } from '../chat/enabler';
 import { agentRoutes } from './agent';
 import { automationRoutes } from './automations';
 import { assetHeaders, fileRoutes, isFileUpload } from './files';
@@ -48,6 +50,8 @@ export function buildApp(): Hono<Env> {
     return c.json({ error: 'Something went wrong on our side.' }, 500);
   });
 
+  // When the website chat has its own address, requests for it are answered by the chat alone (chat/host.ts).
+  chatHostGate(app);
   // The website chat's loader and frame are loaded by other people's websites, so they set their own headers.
   // They are registered first, which keeps the app's own headers below from being applied to them.
   chatFrameRoutes(app);
@@ -120,6 +124,7 @@ export function buildApp(): Hono<Env> {
     const leaving = c.req.method === 'POST' && c.req.path === '/api/auth/organization/leave' ? await leaver(c.req.raw.clone()) : null;
     const res = await auth().handler(c.req.raw);
     if (leaving && res.ok) await closeConnections(leaving.workspaceId, { userId: leaving.userId }, leaving.userId).catch((e) => log.error('could not close a leaving member’s connections', { error: (e as Error).message }));
+    if (leaving && res.ok) await chatEnablerChanged(leaving.workspaceId, leaving.userId);
     return res;
   });
 

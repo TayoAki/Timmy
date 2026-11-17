@@ -226,6 +226,21 @@ export const config = {
     streamsOpen: Number(env.TIMMY_CHAT_STREAMS_OPEN ?? 2000),
     streamsPerAddress: Number(env.TIMMY_CHAT_STREAMS_PER_ADDRESS ?? 20),
     streamsPerConversation: 3,
+    /** Streams one business's visitors may hold open at once on one server, so one customer can't take the whole pool. */
+    streamsPerWorkspace: Number(env.TIMMY_CHAT_STREAMS_PER_WORKSPACE ?? 200),
+    /**
+     * The chat's own address, such as https://chat.example.com: a second domain on this same service. When set,
+     * the loader, the frame and the public chat routes answer only there, and that address answers nothing else.
+     * When empty, they are served from the app's own address.
+     */
+    publicUrl: (env.CHAT_PUBLIC_URL ?? '').trim().replace(/\/$/, ''),
+    /**
+     * The bot check: how hard the small piece of work is that a visitor's browser does before its first message
+     * starts a conversation, in bits (each one more doubles it; 18 is about a quarter of a million tries).
+     */
+    challengeBits: Number(env.TIMMY_CHAT_CHALLENGE_BITS ?? 18),
+    /** How long a challenge handed to a chat window can be used, in minutes. */
+    challengeMinutes: 60,
     /** A visitor's stream is closed after this long; the chat window opens a new one. */
     streamSeconds: Number(env.TIMMY_CHAT_STREAM_SECONDS ?? 600),
     /** How long a conversation's token works after the visitor's last message, in days. */
@@ -292,6 +307,10 @@ export function assertSafeConfig() {
   if (config.testHooks && !isLocal() && config.testToken.length < 24) throw new Error('Test hooks on a deployed server need TIMMY_TEST_TOKEN (24 characters or more).');
   if (isProd() && !new URL(config.databaseUrl).password) throw new Error('The production database URL must carry a password.');
   if (isProd() && config.files.store === 'standin') throw new Error('The stand-in file store cannot be used in production: files would be lost at the next restart.');
+  // The chat's own address is a whole origin on another host than the app's, and on https wherever it is public.
+  const chat = config.chat.publicUrl;
+  if (chat && (!/^https?:\/\/[a-z0-9.-]+(:\d{1,5})?$/i.test(chat) || new URL(chat).host === new URL(config.publicUrl).host)) throw new Error('CHAT_PUBLIC_URL must be an address such as https://chat.example.com, on another host than the app.');
+  if (chat && isProd() && !chat.startsWith('https://')) throw new Error('CHAT_PUBLIC_URL must start with https:// in production.');
 }
 
 /** The model a workspace runs on: its own choice if that is still on the list, else the default. */

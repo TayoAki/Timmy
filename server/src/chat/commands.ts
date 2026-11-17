@@ -68,7 +68,7 @@ export async function chatCommand(tx: Tx, loaded: Loaded, ctx: Ctx, actor: Actor
       const text = cleanText(op.text);
       if (!text) return { state, reject: 'Write something first.' };
       if (text.length > config.chat.maxMessageChars) return { state, reject: `That reply is too long. Keep it under ${config.chat.maxMessageChars.toLocaleString('en-US')} characters.` };
-      const conv = (await tx.query('select id, live from chat_conversation where id = $1 and workspace_id = $2 for update', [op.id, workspaceId])).rows[0] as { id: string; live: boolean } | undefined;
+      const conv = (await tx.query('select id, live, lead_id from chat_conversation where id = $1 and workspace_id = $2 for update', [op.id, workspaceId])).rows[0] as { id: string; live: boolean; lead_id: string | null } | undefined;
       if (!conv || !shown) return { state, reject: GONE };
       if (!conv.live) return { state, reject: 'Take over the chat before you reply. Until then Timmy is answering.' };
       if (!(await tx.query('select 1 from chat_widget where workspace_id = $1 and is_on', [workspaceId])).rowCount) return { state, reject: 'The website chat is switched off, so the visitor can’t be reached.' };
@@ -99,7 +99,7 @@ export async function chatCommand(tx: Tx, loaded: Loaded, ctx: Ctx, actor: Actor
       const c = next.ws.chats[op.id]!;
       const { messages, dropped } = newestMessages(c.messages);
       const trimmed = dropped ? { ...next, ws: { ...next.ws, chats: { ...next.ws.chats, [c.id]: { ...c, messages, earlier: (c.earlier ?? 0) + dropped } } } } : next;
-      return { state: trimmed, effects: [p.effect] };
+      return { state: firstReply(trimmed, conv.lead_id), effects: [p.effect] };
     }
 
     case 'delete': {
@@ -112,6 +112,17 @@ export async function chatCommand(tx: Tx, loaded: Loaded, ctx: Ctx, actor: Actor
     default:
       return { state, reject: 'That isn’t a command.' };
   }
+}
+
+/**
+ * A person answering in the chat is the lead's first reply: it stops their clock on Speed to lead, the same as
+ * an email or a call would. Timmy's own answers don't count; they come from the settings, not from someone.
+ */
+function firstReply(state: State, leadId: string | null): State {
+  const lead = leadId && Object.hasOwn(state.out.leads, leadId) ? state.out.leads[leadId] : undefined;
+  if (!lead || !lead.receivedAt || lead.firstReplyAt) return state;
+  const answered = { ...lead, firstReplyAt: new Date(), status: lead.status === 'new' || lead.status === 'queued' ? ('contacted' as const) : lead.status };
+  return { ...state, out: { ...state.out, leads: { ...state.out.leads, [lead.id]: answered } } };
 }
 
 /**
