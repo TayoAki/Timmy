@@ -1,4 +1,5 @@
 import { composeLink } from './compose-link';
+import { wroteBack } from '../state/outbound';
 import { draftHash } from './hash';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { NOW, PEOPLE, PROJECTS, setUnknownPerson } from '../data/mock';
@@ -136,6 +137,12 @@ export function LiveStoreProvider({ profile, snapshot, children }: { profile: Li
       if (action.type === 'out' && action.op.op === 'send' && action.op.channel === 'email') {
         const lead = shown.current.out.leads[action.op.lead];
         if (!lead) return;
+        // A lead who wrote back is answered in their own thread, like any reply: the server holds it for the undo
+        // window, or for someone's OK, and says which. Nothing is shown as sent before it has gone.
+        if (wroteBack(shown.current, lead.id)) {
+          void send(commandId(), action);
+          return;
+        }
         const apps = shown.current.conn.apps;
         const app = apps.gmail?.connected ? 'gmail' : apps.outlook?.connected ? 'outlook' : 'mailto';
         const link = composeLink(app, { to: lead.email, subject: action.op.subject ?? '', body: action.op.body, from: app === 'mailto' ? undefined : apps[app]?.account });

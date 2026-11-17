@@ -136,6 +136,49 @@ const quietHours = (s: State) => {
 };
 
 /** A first email to someone who never asked to hear from you. */
+/**
+ * Whether the lead has written back by email. On a real workspace, answering them is then an ordinary reply in
+ * their thread (held for the undo window, approved like any send); only the first cold email opens the mail app.
+ */
+export const wroteBack = (s: Pick<State, 'out'>, leadId: string) => s.out.messages.some((m) => m.lead === leadId && m.dir === 'in' && m.channel === 'email');
+
+/** A reply to the lead from Timmy that the Unibox doesn't hold yet: waiting for an OK, inside its undo window, or sent and not yet seen in Sent. */
+export interface ReplyOnItsWay {
+  id: string;
+  body: string;
+  at: Date;
+  status: 'waiting' | 'holding' | 'sent';
+  /** For `waiting`: whose OK it needs. For `holding`: when it goes. */
+  who?: string;
+  sendsAt?: Date;
+}
+
+/**
+ * Replies sent to the lead through Timmy, read from the lead's own mail thread: the Unibox copy of a sent email
+ * only arrives once sync sees it in Sent, so until then the thread is what knows about it. A message the Unibox
+ * already holds (its copy carries the same message id) is not listed twice.
+ */
+export function repliesOnTheirWay(s: Pick<State, 'out' | 'threads' | 'pending'>, lead: Lead): ReplyOnItsWay[] {
+  const mine = s.out.messages.filter((m) => m.lead === lead.id);
+  const known = new Set(mine.map((m) => m.id));
+  const tail = `-${lead.id}`;
+  const theirs = new Set(mine.filter((m) => m.dir === 'in' && m.id.startsWith('gm-') && m.id.endsWith(tail)).map((m) => m.id.slice(3, -tail.length)));
+  if (!theirs.size) return [];
+  const address = `mail:${(lead.email ?? '').toLowerCase()}`;
+  const out: ReplyOnItsWay[] = [];
+  for (const t of s.threads) {
+    if (!t.messages.some((m) => theirs.has(m.id))) continue;
+    const pending = s.pending.filter((p) => p.thread === t.id && p.kind === 'email');
+    for (const p of pending) if (p.status === 'waiting') out.push({ id: p.id, body: p.preview.body ?? '', at: p.at, status: 'waiting', who: p.who });
+    const holding = pending.find((p) => p.status === 'holding');
+    for (const m of t.messages) {
+      if (m.from !== 'me' || !m.to.includes(address) || known.has(`gm-${m.id}${tail}`)) continue;
+      out.push({ id: m.id, body: m.body.join('\n\n'), at: m.at, ...(holding ? { status: 'holding' as const, sendsAt: holding.sendsAt } : { status: 'sent' as const }) });
+    }
+  }
+  return out;
+}
+
 const isCold = (s: State, lead: Lead) => lead.source !== 'form' && !s.out.messages.some((m) => m.lead === lead.id && m.status !== 'draft' && (m.dir === 'in' || m.channel === 'email'));
 
 /* ───────────── The reducer ───────────── */
