@@ -237,6 +237,8 @@ export function registerJobs() {
       await sysPool.query(`delete from email_outbox where created_at < now() - interval '7 days'`);
       // A command's stored answer is only needed for a retry or an undo, both long past after a month.
       await sysPool.query(`delete from command where at < now() - interval '30 days'`);
+      // A finished run's transcript is only kept to resume it, which it never will be again.
+      await sysPool.query(`delete from run_checkpoint c using run r where r.id = c.run_id and r.status in ('completed', 'failed', 'cancelled') and c.created_at < now() - interval '1 day'`);
       const purged = await purgeDeletedWorkspaces(sysPool, config.mailRetentionDays);
       if (purged) log.info('removed the data of deleted workspaces', { workspaces: purged });
     },

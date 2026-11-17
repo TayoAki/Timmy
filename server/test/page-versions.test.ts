@@ -109,12 +109,13 @@ describe('keeping versions', () => {
     expect(kept.map((v) => [v.version, v.reason, v.author])).toEqual([[1, 'edit', w.userId], [2, 'before-timmy', w.userId]]);
     expect(kept[1]!.blocks).toEqual(blocks);
 
-    // What is on screen is what Timmy will type into, so that is what is kept when the editor sends it.
+    // What a screen sends is summarised, but only what the page really held is kept as a version: anyone could
+    // otherwise put words into the page's history that the page never had (found by the safety review, Nov 17).
     const onScreen = [...blocks, { id: 'p2', type: 'p', text: 'Typed a second ago and not saved.' }];
     expect((await w.post('/api/v1/pages/plan/summarize', { blocks: onScreen })).status).toBe(200);
     kept = await stored('plan');
     expect(kept.map((v) => v.reason)).toEqual(['edit', 'before-timmy', 'before-timmy']);
-    expect(kept[2]!.blocks).toEqual(onScreen);
+    expect(kept[2]!.blocks).toEqual(blocks);
 
     // The editor then types the summary in and saves: that save belongs to the copy just kept.
     await save('plan', [...onScreen, { id: 's', type: 'callout', text: 'Timmy’s summary, from what’s on this page' }]);

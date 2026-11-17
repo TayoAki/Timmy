@@ -40,10 +40,14 @@ export async function emptyOldTrash(workspaceId: string, days = config.trashRete
 
     const gone = new Set<string>();
     for (const root of roots) {
-      const ids = [root.id, ...Object.values(trash).filter((t) => t.trashRoot === root.id).map((t) => t.id)];
+      // Each page is checked on its own: a sub-page goes with its root only if it has itself been in the trash as long
+      // (a screen can write any record into the trash, tied to any root), and never while it is still listed as a page.
+      const ids = [root.id, ...Object.values(trash).filter((t) => t.trashRoot === root.id && old.has(t.id)).map((t) => t.id)].filter((id) => !Object.hasOwn(state.ws.files, id));
+      if (!ids.length) continue;
       for (const id of ids) gone.add(id);
       await audit(tx, workspaceId, { actor: 'system', action: 'page.deleted', detail: { page: root.id, name: root.name, pages: ids.length, why: `in the trash for more than ${days} days` } });
     }
+    if (!gone.size) return { result: 0 };
     const ops: WsOp[] = [...gone].flatMap((id) => [remove('trash', id), remove('docs', id)]);
     // A link to a page that no longer exists is taken off every page that still does.
     for (const [id, doc] of Object.entries(state.ws.docs)) {

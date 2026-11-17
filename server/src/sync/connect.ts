@@ -3,6 +3,7 @@
  * person presses Connect, signs in on Composio's page, and comes back here.
  * Timmy never sees a password or a token.
  */
+import { forgetFromHistory } from '../state/forget';
 import type { ConnectableApp } from '../../../src/live/connectable';
 import { config } from '../config';
 import { withWorkspace } from '../db/pool';
@@ -178,7 +179,22 @@ export async function closeConnections(workspaceId: string, filter: { appId?: st
     const eventPrefixes = list.flatMap((c) => shownPrefixes(c.id));
     const threads = loaded.state.threads.filter((t) => !t.ext?.connectionId || !gone.has(t.ext.connectionId));
     const events = Object.fromEntries(Object.entries(loaded.state.ws.events).filter(([id]) => !eventPrefixes.some((p) => id.startsWith(p))));
-    return { state: { ...loaded.state, threads, ws: { ...loaded.state.ws, events }, conn: { ...loaded.state.conn, apps } }, result: out };
+    // A lead's reply is also copied into the Unibox, under "gm-<message>-<lead>". Those copies go with the mailbox.
+    const fromThere = new Set(
+      (await tx.query(`select external_id from item where workspace_id = $1 and connection_id = any($2::text[]) and kind = 'message'`, [workspaceId, [...gone]])).rows.map((r) => r.external_id as string),
+    );
+    const copied = (m: { id: string; lead: string }) => m.id.startsWith('gm-') && m.id.endsWith(`-${m.lead}`) && fromThere.has(m.id.slice(3, m.id.length - m.lead.length - 1));
+    const messages = loaded.state.out.messages.filter((m) => !copied(m));
+    // And out of the workspace's history: what tabs catch up from, and what Undo would put back.
+    await forgetFromHistory(tx, workspaceId, [
+      { s: 'threads', ids: loaded.state.threads.filter((t) => !threads.includes(t)).map((t) => t.id) },
+      { s: 'ws.events', ids: Object.keys(loaded.state.ws.events).filter((id) => !Object.hasOwn(events, id)) },
+      { s: 'out.messages', ids: loaded.state.out.messages.filter(copied).map((m) => m.id) },
+    ]);
+    // The transcripts of Ask's finished runs can hold what its searches found in that mailbox. They are only kept to
+    // resume a run that is waiting, so a finished one's go now.
+    await tx.query(`delete from run_checkpoint where workspace_id = $1 and run_id in (select id from run where workspace_id = $1 and status in ('completed', 'failed', 'cancelled'))`, [workspaceId]);
+    return { state: { ...loaded.state, threads, ws: { ...loaded.state.ws, events }, out: { ...loaded.state.out, messages }, conn: { ...loaded.state.conn, apps } }, result: out };
   });
   for (const c of closed) {
     enqueueSoon('connection.revoke', { connectedAccountId: c.account, triggers: c.triggers });

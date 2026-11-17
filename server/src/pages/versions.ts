@@ -80,6 +80,12 @@ export async function keepVersion(tx: Tx, workspaceId: string, pageId: string, c
      returning version`,
     [workspaceId, pageId, json(contents.blocks), contents.icon ?? null, contents.cover ? json(contents.cover) : null, author, reason, firstWords(contents.blocks).replace(/\u0000/g, ''), contents.blocks.length],
   );
+  // The number kept holds at every moment, not only after the hourly job: the oldest beyond it go now.
+  await tx.query(
+    `delete from doc_revision where workspace_id = $1 and file_id = $2 and version <= (
+       select version from doc_revision where workspace_id = $1 and file_id = $2 order by version desc offset $3 limit 1)`,
+    [workspaceId, pageId, config.pageVersionsKept],
+  );
   return rows[0].version as number;
 }
 

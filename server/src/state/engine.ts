@@ -519,7 +519,10 @@ async function undo(tx: Tx, loaded: Loaded, ctx: Ctx, commandId: string, allowed
     else if (p.before === null) patches.push({ s: p.s, id: p.id, rm: true });
     else patches.push({ s: p.s, id: p.id, v: fromWire(p.before) });
   }
-  next = applyPatches(next, patches);
+  // Mail from a mailbox that has been disconnected since is never put back, whatever the command held.
+  const active = new Set((await tx.query(`select id from connection where workspace_id = $1 and status = 'active'`, [ctx.workspaceId])).rows.map((r) => r.id as string));
+  const fromClosed = (p: Patch) => p.s === 'threads' && 'v' in p && !!(p.v as { ext?: { connectionId?: string } })?.ext?.connectionId && !active.has((p.v as { ext: { connectionId: string } }).ext.connectionId);
+  next = applyPatches(next, patches.filter((p) => !fromClosed(p)));
   await tx.query('update command set undone_at = now() where workspace_id = $1 and id = $2', [ctx.workspaceId, commandId]);
   return { state: next, toast: { text: skipped ? 'Undone, except what has changed since.' : effects.length ? 'Undone. Nothing was sent.' : 'Undone.' } };
 }
