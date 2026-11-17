@@ -125,7 +125,8 @@ run('live-types', async (browser) => {
   ok(/Lead\s*· Turned down/.test(downText) && /Opportunity\s*· Tracking was stopped/.test(downText), 'kinds turned down or stopped are listed, saying which');
   // While leads are turned down, an email about one is not read for it.
   await deliver(page, { from: 'Sam Rivera <sam@globex.test>', subject: 'Website enquiry', body: 'Hello,\n\nLead: name Sam Rivera; company Globex; source website.\n\nSam' });
-  ok(await until(async () => (await api(page, 'GET', '/api/v1/state')).body.slices.threads.some((t) => t.subject === 'Website enquiry')), 'an email about a lead arrives while leads are turned down');
+  // Its first read is waited for, so that it happens while leads are still turned down.
+  ok(await until(async () => (await api(page, 'GET', '/api/v1/state')).body.slices.threads.some((t) => t.subject === 'Website enquiry' && t.suggestion && !t.suggestion.provisional)), 'an email about a lead arrives, and is read, while leads are turned down');
   await down.getByRole('button', { name: 'Bring back leads' }).click();
   await page.locator('.toast', { hasText: 'Lead is suggested again.' }).waitFor();
   const back = page.getByRole('article', { name: 'Suggestion: leads' });
@@ -137,7 +138,7 @@ run('live-types', async (browser) => {
   await page.locator('.toast', { hasText: 'Timmy now tracks leads.' }).waitFor();
   const leads = page.getByRole('article', { name: 'Lead', exact: true });
   await leads.waitFor({ timeout: 10000 });
-  ok(await until(async () => /Read \d+ threads? from the last 30 days and found 1\./.test(await leads.innerText())), 'the kind says it read recent mail for it and found one');
+  ok(await until(async () => /Read \d+ threads? from the last 30 days and found 1\./.test(await leads.innerText())), `the kind says it read recent mail for it and found one (${JSON.stringify(await leads.innerText())}; ${JSON.stringify((await tracked()).tracked.find((k) => k.name === 'Lead'))})`);
   await leads.locator('.trk-kind-toggle').click();
   const known = page.getByRole('list', { name: 'The leads Timmy knows' });
   await known.locator('li.trk-thing', { hasText: 'Sam Rivera' }).waitFor({ timeout: 15000 });
