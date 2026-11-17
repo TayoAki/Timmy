@@ -19,7 +19,7 @@ import { CampaignView } from './Campaign';
 import { CampaignsTab } from './Campaigns';
 import { CallsTab } from './Calls';
 import { DraftsTab } from './Drafts';
-import { callQueue } from '../../state/leads';
+import { callQueue, waitingForFirstReply } from '../../state/leads';
 import { ChannelsTab } from './Channels';
 import { LeadPanel } from './LeadPanel';
 import { LeadsTab } from './Leads';
@@ -37,7 +37,7 @@ export function useOutboundCounts() {
   const leads = Object.values(state.out.leads);
   return {
     unread: leads.filter((l) => l.unread).length,
-    waiting: leads.filter((l) => l.source === 'form' && !l.firstReplyAt && l.status !== 'not-interested').length,
+    waiting: waitingForFirstReply(state).length,
     review: Object.values(state.out.campaigns).filter((c) => c.status === 'review').length,
     drafts: draftsOf(state).length,
   };
@@ -226,7 +226,7 @@ export function OutboundContext() {
   }
 
   const unread = Object.values(state.out.leads).filter((l) => l.unread);
-  const waiting = Object.values(state.out.leads).filter((l) => l.source === 'form' && !l.firstReplyAt && l.status !== 'not-interested');
+  const waiting = waitingForFirstReply(state);
   const today = coldToday(state);
   return (
     <>
@@ -241,7 +241,7 @@ export function OutboundContext() {
                   <LeadMark lead={l} size={24} />
                   <span>
                     {name(l)}
-                    <span className="lead-sub">Form lead · waiting {Math.max(1, Math.round((liveNow().getTime() - l.receivedAt!.getTime()) / 60000))} min</span>
+                    <span className="lead-sub">{l.source === 'chat' ? 'Website chat' : 'Form lead'} · waiting {Math.max(1, Math.round((liveNow().getTime() - l.receivedAt!.getTime()) / 60000))} min</span>
                   </span>
                 </button>
               </li>

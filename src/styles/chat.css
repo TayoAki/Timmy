@@ -982,6 +982,64 @@
   max-width: 220px;
 }
 
+/* Chats older than the ones listed (real workspaces): under the list, read from the server a page at a time. */
+.wc-older {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 4px 4px;
+  border-top: 1px solid var(--line);
+}
+
+.wc-older > .btn {
+  align-self: center;
+}
+
+.wc-older-title {
+  padding: 2px 8px;
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.wc-older ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.wc-older-tag {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 99px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-2);
+  background: var(--surface-2);
+}
+
+/* A visitor asking for a person: Today's card, and the notice across the app. */
+.urg-chat-face {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.toast.chat-notice {
+  background: #5a1f1f;
+}
+
+[data-theme='dark'] .toast.chat-notice {
+  background: #6b2525;
+  color: #fbeaea;
+}
+
 @media (max-width: 1240px) {
   .wc-setup {
     grid-template-columns: 1fr;

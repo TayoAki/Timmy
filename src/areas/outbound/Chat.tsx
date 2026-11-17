@@ -88,7 +88,9 @@ function Bubble({ m, w, visitor }: { m: ChatMsg; w: ChatWidget; visitor?: string
 
 export function ChatTab() {
   const { state } = useStore();
-  const [view, setView] = useState<'setup' | 'chats'>(() => (Object.values(state.ws.chats ?? {}).some((c) => c.unread) ? 'chats' : 'setup'));
+  // A link to one chat (from Today, the notice, Speed to lead) opens it.
+  const asked = state.route.view === 'outbound' && state.route.id && Object.hasOwn(state.ws.chats ?? {}, state.route.id) ? state.route.id : undefined;
+  const [view, setView] = useState<'setup' | 'chats'>(() => (asked || Object.values(state.ws.chats ?? {}).some((c) => c.unread) ? 'chats' : 'setup'));
   const w = state.ws.chat?.site ?? chatWidgetFor(PEOPLE.me?.company ?? 'Your business');
   const unread = Object.values(state.ws.chats ?? {}).filter((c) => c.unread).length;
   return (
@@ -110,12 +112,33 @@ export function ChatTab() {
           ]}
         />
       </div>
-      {view === 'setup' ? <Setup w={w} /> : <Chats w={w} />}
+      {view === 'setup' ? <Setup w={w} /> : <Chats w={w} asked={asked} />}
     </div>
   );
 }
 
 /* ───────────── Set up ───────────── */
+
+/**
+ * Where a website loads the chat from, on a real workspace: the chat's own address when the server has one (so
+ * the chat runs apart from the app), else this app's address.
+ */
+function useLoader(live: boolean): string | undefined {
+  const [loader, setLoader] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    if (!live) return;
+    let on = true;
+    const own = `${window.location.origin}/chat.js`;
+    fetch('/api/v1/chat/loader', { credentials: 'same-origin' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((d: { loader?: unknown } | null) => on && setLoader(typeof d?.loader === 'string' && /^https?:\/\/[^\s"'<>]+\/chat\.js$/.test(d.loader) ? d.loader : own))
+      .catch(() => on && setLoader(own));
+    return () => {
+      on = false;
+    };
+  }, [live]);
+  return loader;
+}
 
 function Section({ title, hint, children, aside }: { title: string; hint: string; children: ReactNode; aside?: ReactNode }) {
   return (
@@ -147,7 +170,8 @@ function Setup({ w }: { w: ChatWidget }) {
   const live = isLive();
   const profile = useProfile();
   const mayRun = !live || !!profile?.profile.can.policy;
-  const snippet = live ? `<script src="${window.location.origin}/chat.js" data-site="${w.siteKey ?? ''}" async></script>` : `<script src="https://timmy.app/chat.js" data-site="${w.domain || 'your-site'}" async></script>`;
+  const loader = useLoader(live);
+  const snippet = live ? `<script src="${loader ?? ''}" data-site="${w.siteKey ?? ''}" async></script>` : `<script src="https://timmy.app/chat.js" data-site="${w.domain || 'your-site'}" async></script>`;
   const [privacy, setPrivacy] = useState(w.privacyUrl ?? '');
   const validPrivacy = privacy.trim() === '' || /^https:\/\/[^\s"'<>\\]{1,500}$/.test(privacy.trim());
 
@@ -201,6 +225,8 @@ function Setup({ w }: { w: ChatWidget }) {
         <Section title="Code snippet" hint="Paste this into the <head> of your website, or send it to whoever runs it.">
           {live && !w.siteKey ? (
             <p className="muted wc-live-note">Enter your website above first. The snippet is made for that website, and the chat only shows there.</p>
+          ) : live && !loader ? (
+            <p className="muted wc-live-note">Getting the snippet…</p>
           ) : (
             <div className="wc-code">
               <pre>
@@ -605,12 +631,139 @@ function Preview({ w }: { w: ChatWidget }) {
 
 /* ───────────── Visitors' chats ───────────── */
 
-function Chats({ w }: { w: ChatWidget }) {
+/** A chat older than the ones the screen lists, as the server describes it. */
+interface OlderChat {
+  id: string;
+  name?: string;
+  email?: string;
+  page?: string;
+  at: Date;
+  messages: number;
+  last?: { from: ChatMsg['from']; text: string };
+}
+
+const olderInitials = (c: OlderChat) => initials({ id: c.id, name: c.name, email: c.email, messages: [], live: false, unread: false });
+
+/**
+ * The chats kept beyond the newest ones listed above, read from the server a page at a time (real workspaces
+ * only). They can be read and deleted; a newer message from the visitor brings a chat back to the list above.
+ */
+function OlderChats({ openId, onOpen }: { openId?: string; onOpen: (c: OlderChat) => void }) {
+  const { dispatch } = useStore();
+  const [pages, setPages] = useState<{ items: OlderChat[]; next: string | null } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const more = async (next?: string) => {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/v1/chat/conversations${next ? `?before=${encodeURIComponent(next)}` : ''}`, { credentials: 'same-origin' });
+      if (!res.ok) throw new Error('not loaded');
+      const page = fromWire<{ conversations: OlderChat[]; next: string | null }>(await res.text());
+      setPages((p) => {
+        const kept = next ? (p?.items ?? []) : [];
+        return { items: [...kept, ...page.conversations.filter((c) => !kept.some((x) => x.id === c.id))], next: page.next };
+      });
+    } catch {
+      dispatch({ type: 'toast', text: 'The older chats couldn’t be loaded. Try again.', tone: 'warn' });
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!pages)
+    return (
+      <div className="wc-older">
+        <button className="btn btn-xs btn-ghost" disabled={busy} onClick={() => void more()}>
+          Show older chats
+        </button>
+      </div>
+    );
+  return (
+    <div className="wc-older" role="region" aria-label="Older chats">
+      <h4 className="wc-older-title">Older chats</h4>
+      <ul>
+        {pages.items.map((c) => (
+          <li key={c.id}>
+            <button className={`wc-card${c.id === openId ? ' on' : ''}`} onClick={() => onOpen(c)}>
+              <span className="wc-av">{olderInitials(c)}</span>
+              <span className="wc-card-text">
+                <span className="wc-card-top">
+                  <strong>{c.name ?? c.email ?? 'Visitor'}</strong>
+                  <span className="wc-card-time">{timeOf(c.at)}</span>
+                </span>
+                <span className="wc-card-prev">{c.last ? `${c.last.from === 'visitor' ? '' : c.last.from === 'you' ? 'You: ' : 'Timmy: '}${c.last.text}` : 'Nothing was shown to the visitor'}</span>
+              </span>
+            </button>
+          </li>
+        ))}
+        {pages.items.length === 0 && <li className="wc-none muted">No older chats. Every chat is listed above.</li>}
+      </ul>
+      {pages.next && (
+        <button className="btn btn-xs btn-ghost" disabled={busy} onClick={() => void more(pages.next!)}>
+          Show more
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** An older chat, read from the stored copy. It can be read and deleted, not answered: it is not on the list of live chats. */
+function OlderThread({ c, w, onGone }: { c: OlderChat; w: ChatWidget; onGone: () => void }) {
+  const { dispatch } = useStore();
+  const [messages, setMessages] = useState<ChatMsg[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let on = true;
+    fetch(`/api/v1/chat/conversations/${encodeURIComponent(c.id)}/messages`, { credentials: 'same-origin' })
+      .then(async (res) => {
+        if (!res.ok) throw new Error('not loaded');
+        const got = fromWire<{ messages: ChatMsg[] }>(await res.text()).messages;
+        if (on) setMessages(got);
+      })
+      .catch(() => on && setFailed(true));
+    return () => {
+      on = false;
+    };
+  }, [c.id]);
+  const remove = () => {
+    if (!window.confirm('Delete this chat for good? Its messages are removed from Timmy and can’t be brought back.')) return;
+    dispatch({ type: 'chat', op: { op: 'delete', id: c.id } });
+    onGone();
+  };
+  return (
+    <>
+      <header className="wc-thread-head">
+        <span className="wc-av wc-av-lg">{olderInitials(c)}</span>
+        <span className="wc-thread-who">
+          <strong>{c.name ?? 'Visitor'}</strong>
+          <span className="muted">{[c.email, c.page && `on ${w.domain}${c.page}`].filter(Boolean).join(' · ') || `on ${w.domain}`}</span>
+        </span>
+        <span className="wc-older-tag">Older chat</span>
+      </header>
+      <div className="wc-thread-body">
+        {failed && <p className="muted wc-none">This chat couldn’t be loaded. It may have been deleted.</p>}
+        {!failed && !messages && <p className="muted wc-none">Loading…</p>}
+        {messages?.map((m) => (
+          <Bubble key={m.id} m={m} w={w} visitor={olderInitials(c)} />
+        ))}
+      </div>
+      <p className="wc-meta muted">
+        Last message {fmtStamp(c.at)}. Read only: a new message from the visitor brings this chat back to the list.
+        <button className="wc-delete" onClick={remove}>
+          <Trash2 size={12} aria-hidden />
+          Delete this chat
+        </button>
+      </p>
+    </>
+  );
+}
+
+function Chats({ w, asked }: { w: ChatWidget; asked?: string }) {
   const { state, dispatch } = useStore();
   const all = Object.values(state.ws.chats ?? {}).sort((a, b) => (b.messages.at(-1)?.at.getTime() ?? 0) - (a.messages.at(-1)?.at.getTime() ?? 0));
   const [filter, setFilter] = useState<'unread' | 'all' | 'starred'>(() => (all.some((c) => c.unread) ? 'unread' : 'all'));
   const [q, setQ] = useState('');
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(asked ?? null);
+  // On a real workspace, a chat older than the ones listed here, opened from the list below them.
+  const [past, setPast] = useState<OlderChat | null>(null);
   const [text, setText] = useState('');
   const body = useRef<HTMLDivElement>(null);
   const list = useMemo(
@@ -656,9 +809,19 @@ function Chats({ w }: { w: ChatWidget }) {
   };
 
   const openChat = (c: ChatConvo) => {
+    setPast(null);
     setOpenId(c.id);
     if (c.unread) markRead(c);
   };
+  // A link to one chat opens it (even when this screen is already showing), and it is then read.
+  useEffect(() => {
+    const c = asked ? state.ws.chats[asked] : undefined;
+    if (!c) return;
+    setPast(null);
+    setOpenId(c.id);
+    if (c.unread) markRead(c);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asked]);
 
   const send = () => {
     if (!cur || !text.trim()) return;
@@ -708,10 +871,21 @@ function Chats({ w }: { w: ChatWidget }) {
           })}
           {list.length === 0 && <li className="wc-none muted">{filter === 'unread' ? 'You’re all caught up.' : filter === 'starred' ? 'No starred chats.' : 'No chats yet.'}</li>}
         </ul>
+        {live && filter === 'all' && !q.trim() && (
+          <OlderChats
+            openId={past?.id}
+            onOpen={(c) => {
+              setOpenId(null);
+              setPast(c);
+            }}
+          />
+        )}
       </aside>
 
       <section className="wc-thread">
-        {!cur ? (
+        {past ? (
+          <OlderThread key={past.id} c={past} w={w} onGone={() => setPast(null)} />
+        ) : !cur ? (
           <div className="wc-empty">
             <MessagesSquare size={22} aria-hidden />
             <strong>Pick a chat</strong>

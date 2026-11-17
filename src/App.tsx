@@ -30,6 +30,7 @@ import { Film } from './film/Film';
 import { ThemeProvider } from './state/theme';
 import { LIVE } from './live/config';
 import { LiveApp } from './live/LiveApp';
+import { ChatNotice } from './areas/outbound/ChatNotice';
 import { AppearanceView } from './views/AppearanceView';
 import { MailboxView } from './views/MailboxView';
 import { ActivityView, RulesView } from './views/OtherViews';
@@ -156,6 +157,8 @@ function Toasts() {
   const { state } = useStore();
   return (
     <div className="toasts" role="status" aria-live="polite">
+      {/* On a real workspace: a visitor in the website chat is asking for a person. It stays until someone takes over. */}
+      {LIVE && <ChatNotice />}
       {state.toasts.map((t) => (
         <ToastItem key={t.id} toast={t} />
       ))}

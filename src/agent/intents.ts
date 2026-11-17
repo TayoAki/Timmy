@@ -23,6 +23,7 @@ import type { Plan, WidgetCall } from './plan';
 import type { Campaign } from '../data/outbound-types';
 import { fitOf, liveNow, pct, project, statsOf, writeSequence } from '../lib/outbound';
 import { coldToday } from '../state/outbound';
+import { onTheClock, waitingForFirstReply } from '../state/leads';
 import { callLead, callList, findLead, findNewLeads, logCallNotes, textLead } from './outboundIntents';
 
 /* ───────────── Reading the request ───────────── */
@@ -653,8 +654,8 @@ function outboundReplies(s: State, l: string): Plan | null {
 /** "Any new form leads?", "speed to lead" */
 function formLeads(s: State, l: string): Plan | null {
   if (!/(form leads?|speed to lead|inbound leads?|website leads?|demo requests?|new leads?)/.test(l)) return null;
-  const waiting = Object.values(s.out.leads).filter((x) => x.source === 'form' && !x.firstReplyAt && x.status !== 'not-interested');
-  const today = Object.values(s.out.leads).filter((x) => x.source === 'form' && x.receivedAt && dayDiff(x.receivedAt) === 0);
+  const waiting = waitingForFirstReply(s);
+  const today = Object.values(s.out.leads).filter((x) => onTheClock(x) && x.receivedAt && dayDiff(x.receivedAt) === 0);
   return {
     steps: ['Checked your connected forms'],
     text: waiting.length
