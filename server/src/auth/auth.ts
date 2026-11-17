@@ -11,6 +11,7 @@ import { enqueueSoon } from '../jobs/jobs';
 import { addSecret, log } from '../lib/log';
 import { sendMail } from '../providers/email';
 import { closeConnections } from '../sync/connect';
+import { chatEnablerChanged } from '../chat/enabler';
 
 /**
  * What each role may do beyond Better Auth's own organization permissions.
@@ -142,6 +143,11 @@ function build(secret: string) {
           // A person who leaves takes their connected accounts with them; a deleted workspace stops reading altogether.
           afterRemoveMember: async ({ member, organization: org }) => {
             await closeConnections(org.id, { userId: member.userId }, 'system').catch((e) => log.error('could not close a removed member’s connections', { error: (e as Error).message }));
+            await chatEnablerChanged(org.id, member.userId);
+          },
+          // The website chat runs only while whoever switched it on is still an owner or admin (chat/enabler.ts).
+          afterUpdateMemberRole: async ({ member, organization: org }) => {
+            await chatEnablerChanged(org.id, member.userId);
           },
           beforeDeleteOrganization: async ({ organization: org }) => {
             await closeConnections(org.id, {}, 'system').catch((e) => log.error('could not close a deleted workspace’s connections', { error: (e as Error).message }));

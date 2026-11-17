@@ -30,7 +30,7 @@ const meFirst = () => PEOPLE.me?.name.split(' ')[0] ?? 'there';
 import { todaysEvents } from '../state/ws';
 import type { Box, Thread } from '../data/types';
 import { dayDiff, dueInfo, fmtDate, fmtLongDate, fmtShortTime, fmtTime, plural } from '../lib/format';
-import { boxTag, byOldest, counterpart, inBox, labelOf, useStore, type TodayTab } from '../state/store';
+import { boxTag, byOldest, counterpart, inBox, labelOf, useStore, type State, type TodayTab } from '../state/store';
 import { type Approval } from '../state/approvals';
 import { eventInScope, scopedApprovals, scopedThreads } from '../state/scope';
 import { ScopeNote } from '../components/ProjectScope';
@@ -53,6 +53,11 @@ import { LeadMark } from '../areas/outbound/shared';
 import { speed } from '../areas/outbound/LeadPanel';
 import { playStory } from '../story/StoryPlayer';
 import { AutomationNotices } from '../areas/automations/Notices';
+import { ChatPersonRow } from '../areas/outbound/ChatNotice';
+import { chatOfLead, wantsPerson } from '../state/chat';
+
+/** A visitor in the website chat waiting for a person: real workspaces only, and not while a project is in focus. */
+const chatsWantingPerson = (s: State) => (isLive() && !s.scope ? wantsPerson(s) : []);
 
 export function TodayView({ tab }: { tab: TodayTab }) {
   const { state, dispatch } = useStore();
@@ -87,7 +92,7 @@ function Brief() {
   const triage = inBox(state.threads, 'inbox');
   const ranked = rank(scopedThreads(state, openThreads(state.threads)));
   const alerts = state.scope ? [] : leadAlerts(state);
-  const urgent = ranked.filter((x) => x.u.level === 'urgent').length + alerts.length;
+  const urgent = ranked.filter((x) => x.u.level === 'urgent').length + alerts.length + chatsWantingPerson(state).length;
   const approvals = scopedApprovals(state);
   const focus = state.focus;
   const scopeProject = state.scope ? state.ws.projects[state.scope] : undefined;
@@ -234,9 +239,12 @@ function UrgentSection({ ranked, alerts = [], limit }: { ranked: { t: Thread; u:
   const soon = ranked.filter((x) => x.u.level === 'soon').length;
   const later = ranked.length - urgent.length - soon;
   const full = mode === 'urgent' ? urgent : ranked;
+  // On a real workspace, a visitor waiting in the website chat for a person comes before everything else.
+  const people = chatsWantingPerson(state);
+  const peopleRows = limit && !all ? people.slice(0, limit) : people;
   // Leads come first: a lead waiting minutes, or a meeting they confirmed for today, can't wait for the inbox.
-  const leadRows = limit && !all ? alerts.slice(0, limit) : alerts;
-  const room = limit && !all ? Math.max(0, limit - leadRows.length) : Infinity;
+  const leadRows = limit && !all ? alerts.slice(0, Math.max(0, limit - peopleRows.length)) : alerts;
+  const room = limit && !all ? Math.max(0, limit - leadRows.length - peopleRows.length) : Infinity;
   const rows = full.slice(0, room);
   const setMode = (brief: 'urgent' | 'all') => dispatch({ type: 'setSchedule', schedule: { brief } });
 
@@ -254,18 +262,21 @@ function UrgentSection({ ranked, alerts = [], limit }: { ranked: { t: Thread; u:
           value={mode}
           onChange={setMode}
           options={[
-            { id: 'urgent', label: `Urgent · ${urgent.length + alerts.length}` },
-            { id: 'all', label: `Everything · ${ranked.length + alerts.length}` },
+            { id: 'urgent', label: `Urgent · ${urgent.length + alerts.length + people.length}` },
+            { id: 'all', label: `Everything · ${ranked.length + alerts.length + people.length}` },
           ]}
         />
       </div>
-      {rows.length + leadRows.length > 0 ? (
+      {rows.length + leadRows.length + peopleRows.length > 0 ? (
         <ol className="card urg-list">
+          {peopleRows.map((c, i) => (
+            <ChatPersonRow key={c.id} c={c} n={i + 1} />
+          ))}
           {leadRows.map((a, i) => (
-            <LeadAlertRow key={a.lead.id} alert={a} n={i + 1} />
+            <LeadAlertRow key={a.lead.id} alert={a} n={i + 1 + peopleRows.length} />
           ))}
           {rows.map(({ t, u }, j) => {
-            const i = j + leadRows.length;
+            const i = j + leadRows.length + peopleRows.length;
             const who = t.box === 'waiting' && t.waiting ? t.waiting.on : counterpart(t);
             return (
               <li key={t.id} className="urg-row">
@@ -300,14 +311,14 @@ function UrgentSection({ ranked, alerts = [], limit }: { ranked: { t: Thread; u:
           <span>Everything open can wait until later in the week.</span>
         </div>
       )}
-      {rows.length + leadRows.length < full.length + alerts.length && (
+      {rows.length + leadRows.length + peopleRows.length < full.length + alerts.length + people.length && (
         <p className="urg-more">
           <button className="link-btn" onClick={() => setAll(true)}>
-            Show {full.length + alerts.length - rows.length - leadRows.length} more
+            Show {full.length + alerts.length + people.length - rows.length - leadRows.length - peopleRows.length} more
           </button>
         </p>
       )}
-      {mode === 'urgent' && rows.length === full.length && leadRows.length === alerts.length && (soon > 0 || later > 0) && (
+      {mode === 'urgent' && rows.length === full.length && leadRows.length === alerts.length && peopleRows.length === people.length && (soon > 0 || later > 0) && (
         <p className="urg-more">
           {soon > 0 && `${plural(soon, 'more thing')} for this week`}
           {soon > 0 && later > 0 && ' and '}
@@ -386,10 +397,11 @@ function LeadAlertRow({ alert: a, n }: { alert: LeadAlert; n: number }) {
   useTick(a.kind === 'waiting');
   const lead = a.lead;
   const who = `${lead.first} ${lead.last}`.trim();
-  const open = () => dispatch({ type: 'navigate', route: { view: 'outbound', tab: 'unibox', filter: a.kind === 'waiting' ? 'forms' : 'replies', id: lead.id } });
+  const fromChat = a.kind === 'waiting' && lead.source === 'chat';
+  const open = () => dispatch({ type: 'navigate', route: fromChat ? { view: 'outbound', tab: 'chat', id: chatOfLead(state, lead.email)?.id } : { view: 'outbound', tab: 'unibox', filter: a.kind === 'waiting' ? 'forms' : 'replies', id: lead.id } });
   const waited = liveNow().getTime() - a.at.getTime();
   const late = a.kind === 'waiting' && !!a.sla && waited > a.sla * 60000;
-  const form = state.out.forms[lead.form ?? '']?.name;
+  const form = fromChat ? 'Website chat' : state.out.forms[lead.form ?? '']?.name;
   return (
     <li className="urg-row urg-lead">
       <span className="urg-rank" aria-hidden>
@@ -435,7 +447,7 @@ function LeadAlertRow({ alert: a, n }: { alert: LeadAlert; n: number }) {
 function CalmBrief({ ranked, alerts, approvals }: { ranked: { t: Thread; u: UrgencyInfo }[]; alerts: LeadAlert[]; approvals: number }) {
   const { state, dispatch } = useStore();
   const [showUrgent, setShowUrgent] = useState(false);
-  const urgent = [...alerts, ...ranked.filter((x) => x.u.level === 'urgent')];
+  const urgent = [...chatsWantingPerson(state), ...alerts, ...ranked.filter((x) => x.u.level === 'urgent')];
   const quiet = state.focus;
   const next = todaysEvents(state.ws).find((e) => e.end > NOW && e.kind !== 'personal' && eventInScope(state, e));
   return (

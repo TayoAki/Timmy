@@ -10,6 +10,9 @@ import type { FormSource, Lead } from '../../data/outbound-types';
 import { fmtStamp, plural } from '../../lib/format';
 import { liveNow } from '../../lib/outbound';
 import { canText } from '../../state/outbound';
+import { chatOfLead } from '../../state/chat';
+import { onTheClock } from '../../state/leads';
+import { isLive } from '../../live/clock';
 import { useStore } from '../../state/store';
 import { EmptyState } from '../../components/kit';
 import { CallDialog, MessageDialog, speed } from './LeadPanel';
@@ -25,6 +28,9 @@ function useTick(on = true) {
   }, [on]);
 }
 
+/** Where a lead from the website chat came from, shown where a form's name goes. Five minutes, like a form's default target. */
+const CHAT_SOURCE = { name: 'Website chat', sla: 5 };
+
 const clock = (ms: number) => {
   const s = Math.max(0, Math.floor(ms / 1000));
   const h = Math.floor(s / 3600);
@@ -35,8 +41,9 @@ const clock = (ms: number) => {
 export function SpeedTab() {
   const { state, dispatch } = useStore();
   const forms = Object.values(state.out.forms);
+  // On a real workspace, visitors who left their email in the website chat are on the clock too.
   const leads = Object.values(state.out.leads)
-    .filter((l) => l.source === 'form' && l.receivedAt)
+    .filter((l) => onTheClock(l) && l.receivedAt)
     .sort((a, b) => b.receivedAt!.getTime() - a.receivedAt!.getTime());
   const waiting = leads.filter((l) => !l.firstReplyAt && l.status !== 'not-interested');
   useTick(waiting.length > 0);
@@ -85,7 +92,11 @@ export function SpeedTab() {
       <div className="out-head">
         <div>
           <h1 className="page-title">Speed to lead</h1>
-          <p className="page-sub">Leads from your forms, with a clock on each one. Answer inside a few minutes and you’re far more likely to reach them; Timmy can send the first reply for you.</p>
+          <p className="page-sub">
+            {isLive()
+              ? 'Leads from your forms and your website chat, with a clock on each one until a person replies. Answer inside a few minutes and you’re far more likely to reach them.'
+              : 'Leads from your forms, with a clock on each one. Answer inside a few minutes and you’re far more likely to reach them; Timmy can send the first reply for you.'}
+          </p>
         </div>
         <div className="out-head-actions">
           <button className="btn demo-only" onClick={simulate}>
@@ -116,7 +127,7 @@ export function SpeedTab() {
         <div className="stat-tile">
           <dt>Booked</dt>
           <dd>{leads.filter((l) => l.status === 'meeting').length}</dd>
-          <span className="stat-sub">from {plural(leads.length, 'form lead')}</span>
+          <span className="stat-sub">from {plural(leads.length, isLive() ? 'lead' : 'form lead')}</span>
         </div>
       </dl>
 
@@ -131,7 +142,7 @@ export function SpeedTab() {
         ) : (
           <ul className="spd-queue">
             {waiting.map((l) => {
-              const f = state.out.forms[l.form ?? ''];
+              const f = state.out.forms[l.form ?? ''] ?? (l.source === 'chat' ? CHAT_SOURCE : undefined);
               const sla = (f?.sla ?? 5) * 60000;
               const age = liveNow().getTime() - l.receivedAt!.getTime();
               const ratio = Math.min(1, age / sla);
@@ -144,7 +155,8 @@ export function SpeedTab() {
                       <strong>{name(l)}</strong>
                       <span className="muted">
                         {l.title ? `${l.title}, ` : ''}
-                        {l.company} · {f?.name}
+                        {l.company ? `${l.company} · ` : ''}
+                        {f?.name}
                       </span>
                     </div>
                     <div className="spd-clock" role="timer" aria-label={`${late ? 'Late' : 'Waiting'}: ${clock(age)}`}>
@@ -170,7 +182,12 @@ export function SpeedTab() {
                       <Phone size={14} />
                       Call
                     </button>
-                    <button className="btn btn-sm btn-ghost" onClick={() => dispatch({ type: 'navigate', route: { view: 'outbound', tab: 'unibox', filter: 'forms', id: l.id } })}>
+                    <button
+                      className="btn btn-sm btn-ghost"
+                      onClick={() =>
+                        dispatch({ type: 'navigate', route: l.source === 'chat' ? { view: 'outbound', tab: 'chat', id: chatOfLead(state, l.email)?.id } : { view: 'outbound', tab: 'unibox', filter: 'forms', id: l.id } })
+                      }
+                    >
                       Open
                     </button>
                   </div>
@@ -184,7 +201,7 @@ export function SpeedTab() {
       <section className="section" aria-labelledby="recent-title">
         <div className="section-head">
           <h2 className="section-title" id="recent-title">
-            Recent form leads
+            {isLive() ? 'Recent leads' : 'Recent form leads'}
           </h2>
         </div>
         <div className="lead-table-wrap">
@@ -200,7 +217,7 @@ export function SpeedTab() {
             </thead>
             <tbody>
               {leads.map((l) => {
-                const f = state.out.forms[l.form ?? ''];
+                const f = state.out.forms[l.form ?? ''] ?? (l.source === 'chat' ? CHAT_SOURCE : undefined);
                 const took = l.firstReplyAt ? l.firstReplyAt.getTime() - l.receivedAt!.getTime() : null;
                 return (
                   <tr key={l.id}>

@@ -20,6 +20,8 @@ export default defineConfig({
       TIMMY_TEST_HOOKS: '1',
       TIMMY_SEND_HOLD_SECONDS: '30',
       PUBLIC_URL: 'http://localhost:8787',
+      // The website chat's bot check stays on in every test; a small difficulty keeps the many test visitors quick.
+      TIMMY_CHAT_CHALLENGE_BITS: '8',
       DATABASE_URL: process.env.DATABASE_URL ?? 'postgres://timmy_owner:timmy@localhost:5432/timmy_test',
       // Stand-ins shaped like real keys, so tests can prove they never reach a prompt or a log.
       // Built at run time so no key-shaped string sits in the repository.

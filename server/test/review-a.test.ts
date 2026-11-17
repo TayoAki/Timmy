@@ -9,6 +9,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { ChatWidget } from '../../src/data/ws-types';
 import type { Lead } from '../../src/data/outbound-types';
+import { zeroBits } from '../src/chat/challenge';
 import { resetLimits } from '../src/chat/limits';
 import type { EffectRow } from '../src/gateway/gateway';
 import type { FakeMessage } from '../src/providers/composio';
@@ -154,11 +155,19 @@ class Visitor {
   token?: string;
   after = 0;
   constructor(public siteKey: string) {}
+  /** A first message brings the bot check's work, as the chat window does: a challenge from the settings, solved. */
+  async proof() {
+    const res = await (await boot()).request(`/api/public/chat/${this.siteKey}/config`, { headers: { 'x-real-ip': this.address } });
+    const { challenge } = (await res.json()) as { challenge: { id: string; bits: number } };
+    let n = 0;
+    while (zeroBits(challenge.id, String(n)) < challenge.bits) n++;
+    return { challenge: challenge.id, answer: String(n) };
+  }
   async say(text: string) {
     const res = await (await boot()).request(`/api/public/chat/${this.siteKey}/messages`, {
       method: 'POST',
       headers: { origin: ORIGIN, 'content-type': 'application/json', 'x-real-ip': this.address },
-      body: JSON.stringify({ visitor: this.id, id: hex(), text, after: this.after, ...(this.conversation ? { conversation: this.conversation, token: this.token } : {}) }),
+      body: JSON.stringify({ visitor: this.id, id: hex(), text, after: this.after, ...(this.conversation ? { conversation: this.conversation, token: this.token } : await this.proof()) }),
     });
     const body = (await res.json()) as { ok: boolean; conversation?: string; token?: string; messages?: { seq: number; from: string; text: string }[] };
     if (body.ok) {

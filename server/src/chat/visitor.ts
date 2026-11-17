@@ -21,6 +21,7 @@ import { newId } from '../lib/ids';
 import { log } from '../lib/log';
 import type { Loaded } from '../state/docs';
 import { mutate } from '../state/mutate';
+import type { Proof } from './challenge';
 import { announce, announceEverywhere, visibleSince, type VisitorMessage } from './hub';
 import { TIMMY_REPLY } from './settings';
 import { withActivity, withConversation } from './shown';
@@ -36,6 +37,8 @@ export interface Incoming {
   /** Both present for a conversation that already exists; both absent for a first message. */
   conversation?: string;
   token?: string;
+  /** A first message: the bot check's challenge it solved (see challenge.ts). It may start one conversation. */
+  proof?: Proof;
   page?: string;
   /** The place of the last message the chat window already has. */
   after?: number;
@@ -43,8 +46,11 @@ export interface Incoming {
 
 export type Said =
   | { ok: true; conversation: string; token: string; messages: VisitorMessage[] }
-  /** Refused, with a plain sentence for the visitor. `reset` tells the chat window to forget its conversation. */
-  | { ok: false; status: number; notice: string; reset?: boolean };
+  /**
+   * Refused, with a plain sentence for the visitor. `reset` tells the chat window to forget its conversation;
+   * `recheck` tells it to fetch a new challenge for the bot check, do its work and send again.
+   */
+  | { ok: false; status: number; notice: string; reset?: boolean; recheck?: boolean };
 
 /** The same words whether the key is unknown, the chat is off, or it was switched off a moment ago. */
 export const CLOSED: Said = { ok: false, status: 404, notice: 'This chat isn’t available right now.' };
@@ -53,6 +59,8 @@ export const ENDED: Said = { ok: false, status: 403, notice: 'This conversation 
 export const TOO_FAST: Said = { ok: false, status: 429, notice: 'You’re sending messages quickly. Wait a moment and try again.' };
 export const TOO_LONG: Said = { ok: false, status: 413, notice: `That message is too long. Keep it under ${config.chat.maxMessageChars.toLocaleString('en-US')} characters.` };
 export const NOT_A_MESSAGE: Said = { ok: false, status: 400, notice: 'That message couldn’t be sent. Reload the page and try again.' };
+/** The same words whether the bot check's answer is missing, wrong, expired, made for another site or already used. */
+export const CHECK: Said = { ok: false, status: 403, notice: 'The chat couldn’t start just now. Send your message again.', recheck: true };
 const FULL: Said = { ok: false, status: 429, notice: 'This conversation has reached its limit. Please reach us another way, or start a new chat later.' };
 const BUSY: Said = { ok: false, status: 429, notice: 'The chat is very busy today. Please try again tomorrow, or reach us another way.' };
 
@@ -144,6 +152,14 @@ async function store(tx: Tx, state0: State, loaded: Loaded, knownId: string | nu
   const fresh = !conv;
   if (!conv) {
     conv = { id: newId('cv'), visitor_id: input.visitor, live: false, urgent: false, email: null, name: null, talk: newTalk(), lead_id: null, page: input.page && PAGE.test(input.page) ? input.page : null, visitor_messages: 0 };
+    // The bot check: a solved challenge starts this conversation and no other. Kept in this same transaction, so
+    // a message turned away below leaves it unused.
+    if (!input.proof) return { result: CHECK as Stored };
+    const spent = await tx.query(
+      `insert into chat_challenge (workspace_id, nonce, expires_at, conversation_id) values ($1, $2, to_timestamp($3), $4) on conflict (workspace_id, nonce) do nothing returning nonce`,
+      [workspaceId, input.proof.nonce, input.proof.expires, conv.id],
+    );
+    if (!spent.rowCount) return { result: CHECK as Stored };
     await tx.query('insert into chat_conversation (id, workspace_id, visitor_id, talk, page) values ($1, $2, $3, $4::jsonb, $5)', [conv.id, workspaceId, conv.visitor_id, JSON.stringify(conv.talk), conv.page]);
   }
   await tx.query(

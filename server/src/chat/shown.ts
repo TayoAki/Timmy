@@ -29,17 +29,25 @@ export function withConversation(state: State, convo: ChatConvo): State {
   const { messages, dropped } = newestMessages(convo.messages);
   const earlier = (convo.earlier ?? 0) + dropped;
   const chats: Record<string, ChatConvo> = { ...state.ws.chats, [convo.id]: { ...convo, messages, ...(earlier ? { earlier } : {}) } };
-  const over = Object.keys(chats).length - config.chat.shownConversations;
-  if (over > 0) {
-    // Conversations a teammate starred or took over are the last to go; among the rest, the ones nobody has written in for longest.
-    const kept = (c: ChatConvo) => Number(!!c.starred || c.live);
-    const oldest = Object.values(chats)
-      .filter((c) => c.id !== convo.id)
-      .sort((a, b) => kept(a) - kept(b) || lastAt(a) - lastAt(b))
-      .slice(0, over);
-    for (const c of oldest) delete chats[c.id];
-  }
-  return { ...state, ws: { ...state.ws, chats } };
+  return { ...state, ws: { ...state.ws, chats: newestConversations(chats, config.chat.shownConversations, convo.id) } };
+}
+
+/**
+ * The conversations the screen keeps when it may hold `cap` of them. The rest stay in the stored copy, where
+ * the list of older chats reads them. `keep` (the one that just changed) always stays.
+ */
+export function newestConversations(chats: Record<string, ChatConvo>, cap: number, keep?: string): Record<string, ChatConvo> {
+  const over = Object.keys(chats).length - cap;
+  if (over <= 0) return chats;
+  const out = { ...chats };
+  // Conversations a teammate starred or took over are the last to go; among the rest, the ones nobody has written in for longest.
+  const kept = (c: ChatConvo) => Number(!!c.starred || c.live);
+  const oldest = Object.values(out)
+    .filter((c) => c.id !== keep)
+    .sort((a, b) => kept(a) - kept(b) || lastAt(a) - lastAt(b))
+    .slice(0, over);
+  for (const c of oldest) delete out[c.id];
+  return out;
 }
 
 /** Takes conversations out of the state (they were deleted, or their retention period ended). */

@@ -7,6 +7,7 @@
  * Everything that arrives from the network or from the visitor is put on the page as text (textContent),
  * never as markup, so nothing anyone types can become part of the page. The page that holds the frame is
  * told only how to show it (hidden, bubble or open), and is never listened to.
+ * Before the first message of a conversation it does the bot check's small piece of work (work.js).
  * Plain JavaScript, no dependencies.
  */
 (function () {
@@ -73,6 +74,9 @@
   /* ── State ── */
 
   var settings = null;
+  /** The bot check: the challenge the server handed out, and the work on it (see work.js). */
+  var check = null;
+  var solving = null;
   var isOpen = false;
   var tab = 'chat';
   /** Messages the server has confirmed, in the conversation's order. */
@@ -302,6 +306,97 @@
     show(open ? 'open' : 'bubble');
     render();
     if (open && tab === 'chat') input.focus();
+    // A visitor who opens the chat may write: the bot check's work starts now, so it is usually done by then.
+    if (open && !(conversation && token)) proof();
+  }
+
+  /* ── The bot check: a small piece of work before the first message of a conversation ── */
+
+  function usable(c) {
+    return !!c && typeof c.id === 'string' && /^[\x21-\x7e]{1,200}$/.test(c.id) && typeof c.bits === 'number' && c.bits >= 0 && c.bits <= 24;
+  }
+
+  /** A new challenge, from the public settings. */
+  function freshCheck() {
+    return fetch(api + '/config', { headers: { accept: 'application/json' }, credentials: 'omit', cache: 'no-store' })
+      .then(function (res) {
+        return res.ok ? res.json() : null;
+      })
+      .then(function (data) {
+        return data && usable(data.challenge) ? data.challenge : null;
+      });
+  }
+
+  /** Does the work in a worker, or in small pieces here when the browser won't start one. Resolves to the answer, or null. */
+  function work(c) {
+    return new Promise(function (resolve) {
+      var worker;
+      try {
+        worker = new Worker('/chat/work.js');
+      } catch (e) {
+        worker = null;
+      }
+      if (worker) {
+        worker.onmessage = function (event) {
+          worker.terminate();
+          var answer = event.data && event.data.answer;
+          resolve(typeof answer === 'string' && /^\d{1,15}$/.test(answer) ? answer : null);
+        };
+        worker.onerror = function () {
+          worker.terminate();
+          inPieces(c, resolve);
+        };
+        worker.postMessage({ challenge: c.id, bits: c.bits });
+      } else {
+        inPieces(c, resolve);
+      }
+    });
+  }
+  function inPieces(c, resolve) {
+    var helper = window.timmyChatWork;
+    var run = helper && helper.solver(c.id, c.bits);
+    if (!run) return resolve(null);
+    var most = helper.most(c.bits);
+    var next = 0;
+    (function piece() {
+      var found = run(next, 20000);
+      next += 20000;
+      if (found !== null) resolve(found);
+      else if (next >= most) resolve(null);
+      else window.setTimeout(piece, 0);
+    })();
+  }
+
+  /** The challenge and its answer for the next new conversation, worked out once. Resolves to null if it can't be. */
+  function proof() {
+    if (!solving) {
+      var started = check ? Promise.resolve(check) : freshCheck();
+      solving = started
+        .then(function (c) {
+          if (!c) return null;
+          check = c;
+          return work(c).then(function (answer) {
+            return answer === null ? null : { challenge: c.id, answer: answer };
+          });
+        })
+        .catch(function () {
+          return null;
+        });
+      // A failed attempt is not kept: the next message tries again from the start.
+      var mine = solving;
+      mine.then(function (p) {
+        if (!p && solving === mine) {
+          check = null;
+          solving = null;
+        }
+      });
+    }
+    return solving;
+  }
+  /** The challenge was used, or turned down: the next new conversation needs a new one. */
+  function spend() {
+    check = null;
+    solving = null;
   }
 
   /* ── Messages from the server ── */
@@ -459,14 +554,35 @@
 
     var payload = { visitor: visitor, id: mine.client, text: text, after: last };
     if (page) payload.page = page;
-    if (conversation && token) {
+    var starting = !(conversation && token);
+    if (!starting) {
       payload.conversation = conversation;
       payload.token = token;
     }
+    // The first message of a conversation carries the bot check's answer. If the server turns the challenge
+    // down (it ran out, or the difficulty went up), a new one is fetched and worked on, and the message sent once more.
+    var attempt = function (again) {
+      var sent = starting
+        ? proof().then(function (p) {
+            if (!p) return { ok: false, notice: NOT_SENT };
+            payload.challenge = p.challenge;
+            payload.answer = p.answer;
+            return post(payload);
+          })
+        : post(payload);
+      return sent.then(function (out) {
+        if (starting && out && out.recheck === true) {
+          spend();
+          if (!again) return attempt(true);
+        }
+        return out;
+      });
+    };
     var finish = function (out) {
       busy = false;
       typing = false;
       if (out && out.ok === true && typeof out.conversation === 'string' && typeof out.token === 'string') {
+        if (starting) spend();
         conversation = out.conversation;
         token = out.token;
         remember('conversation', conversation);
@@ -488,7 +604,7 @@
       render();
       if (isOpen) input.focus();
     };
-    post(payload)
+    attempt(false)
       .catch(function () {
         return { ok: false, notice: NOT_SENT };
       })
@@ -511,6 +627,7 @@
       // No settings means the chat is off for this website: the frame stays hidden and nothing more is asked.
       if (!data || typeof data !== 'object' || typeof data.name !== 'string') return;
       settings = data;
+      if (usable(data.challenge)) check = data.challenge;
       build();
       render();
       show('bubble');

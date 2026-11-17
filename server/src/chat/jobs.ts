@@ -1,7 +1,7 @@
 /**
  * Keeping visitors' conversations only as long as the workspace chose (12 months unless it set otherwise).
  * Once a night every conversation whose last message is older than that is deleted: the stored copy, and the
- * copy on the Chats screen.
+ * copy on the Chats screen. Once an hour the limits and the bot check's challenges that can no longer apply go.
  */
 import { sysPool } from '../db/pool';
 import { audit } from '../gateway/gateway';
@@ -9,6 +9,7 @@ import { defineJob } from '../jobs/jobs';
 import { log } from '../lib/log';
 import { mutate } from '../state/mutate';
 import { deleteConversations } from './commands';
+import { sweepLimits } from './limits';
 import { DEFAULT_RETENTION_MONTHS } from './settings';
 import { withoutConversations } from './shown';
 
@@ -44,5 +45,15 @@ export function registerChatJobs() {
       if (total) log.info('removed website chats past their retention period', { conversations: total });
     },
     '23 4 * * *',
+  );
+  defineJob(
+    'chat.sweep',
+    async () => {
+      // Limits whose window has ended, and the bot check's challenges past the time they could have been used.
+      const counts = await sweepLimits();
+      const spent = (await sysPool.query('delete from chat_challenge where expires_at < now()')).rowCount ?? 0;
+      if (counts + spent > 1000) log.info('swept the website chat’s old limits and challenges', { counts, spent });
+    },
+    '41 * * * *',
   );
 }

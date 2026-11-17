@@ -3,20 +3,24 @@
  * owner set. Strangers type into it, so these tests treat every visitor as hostile and check, one property at
  * a time, what a visitor, another visitor, another workspace and an ordinary member can and cannot do.
  */
+import pg from 'pg';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatConvo, ChatWidget } from '../../src/data/ws-types';
 import { followUpName, matchFaq, newTalk, respond } from '../../src/lib/chat-bot';
+import { wantsPerson } from '../../src/state/chat';
+import { leadAlerts, onTheClock, waitingForFirstReply } from '../../src/state/leads';
+import { newChallenge, zeroBits } from '../src/chat/challenge';
 import { sendChatReply } from '../src/chat/deliver';
 import type { VisitorMessage } from '../src/chat/hub';
 import { removeExpiredChats } from '../src/chat/jobs';
-import { resetLimits } from '../src/chat/limits';
+import { LimitStore, resetLimits } from '../src/chat/limits';
 import { allowedParents } from '../src/chat/site';
 import { embedFile } from '../src/chat/static';
 import { chatSecret, conversationOf, issueToken, textMark } from '../src/chat/token';
-import { config } from '../src/config';
+import { assertSafeConfig, config } from '../src/config';
 import { executeEffect, type EffectRow } from '../src/gateway/gateway';
 import { recent } from '../src/lib/log';
-import { addMember, appPool, boot, jobs, newWorkspace, rows, sysPool, withWorkspace, type Client } from './helpers';
+import { addMember, appPool, authPool, boot, jobs, newWorkspace, rows, sysPool, withWorkspace, type Client } from './helpers';
 
 const ORIGIN = 'http://localhost:8787';
 const FAQ = [
@@ -31,10 +35,14 @@ const EMAIL_QUESTION = 'What’s the best email to reach you?';
 
 let seq = 0;
 const hex = (n = 32) => Array.from({ length: n }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+/** A number that solves a bot-check challenge, found the way the chat window's worker finds one. */
+const solve = (challenge: string, bits: number) => {
+  for (let n = 0; ; n++) if (zeroBits(challenge, String(n)) >= bits) return String(n);
+};
 /** Each visitor in a test comes from their own address unless the test says otherwise. */
 const freshAddress = () => `10.${(++seq >> 8) & 255}.${seq & 255}.${1 + Math.floor(Math.random() * 250)}`;
 
-type Answer = { ok: boolean; notice?: string; reset?: boolean; conversation?: string; token?: string; messages?: VisitorMessage[] };
+type Answer = { ok: boolean; notice?: string; reset?: boolean; recheck?: boolean; conversation?: string; token?: string; messages?: VisitorMessage[] };
 
 /** A stranger on the customer's website: no account, no cookies, only what the chat window keeps. */
 class Visitor {
@@ -44,6 +52,17 @@ class Visitor {
   token?: string;
   seen: VisitorMessage[] = [];
   constructor(public siteKey: string) {}
+
+  /**
+   * The bot check's work for a first message, the way the chat window does it: a challenge from the public
+   * settings, and a number that solves it. Empty when the settings don't answer (the chat is off or unknown).
+   */
+  async proof(): Promise<{ challenge?: string; answer?: string }> {
+    const res = await (await boot()).request(`/api/public/chat/${this.siteKey}/config`, { headers: { 'x-real-ip': this.address } });
+    if (res.status !== 200) return {};
+    const { challenge } = (await res.json()) as { challenge: { id: string; bits: number } };
+    return { challenge: challenge.id, answer: solve(challenge.id, challenge.bits) };
+  }
 
   async post(body: unknown, headers: Record<string, string> = {}) {
     const res = await (await boot()).request(`/api/public/chat/${this.siteKey}/messages`, {
@@ -57,7 +76,7 @@ class Visitor {
 
   /** Sends one message the way the chat window does, and remembers the conversation and what came back. */
   async say(text: string, extra: Record<string, unknown> = {}) {
-    const out = await this.post({ visitor: this.id, id: hex(), text, ...(this.conversation ? { conversation: this.conversation, token: this.token } : {}), after: this.seen.at(-1)?.seq ?? 0, ...extra });
+    const out = await this.post({ visitor: this.id, id: hex(), text, ...(this.conversation ? { conversation: this.conversation, token: this.token } : await this.proof()), after: this.seen.at(-1)?.seq ?? 0, ...extra });
     if (out.body.ok) {
       this.conversation = out.body.conversation;
       this.token = out.body.token;
@@ -358,7 +377,7 @@ describe('getting it onto a website', () => {
     const js = await pub('/chat/frame.js');
     expect(js.headers.get('content-type')).toMatch(/^text\/javascript/);
     expect((await pub('/chat/frame.css')).headers.get('content-type')).toMatch(/^text\/css/);
-    for (const file of ['loader.js', 'frame.js'] as const) {
+    for (const file of ['loader.js', 'frame.js', 'work.js'] as const) {
       expect(embedFile(file)).not.toMatch(/innerHTML|outerHTML|insertAdjacentHTML|document\.write|\beval\(|new Function|srcdoc/);
     }
     // The frame never listens to the page that holds it, and never sends it anything but how to be shown.
@@ -371,7 +390,9 @@ describe('getting it onto a website', () => {
     const res = await pub(`/api/public/chat/${siteKey}/config`);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ name: 'Acme Support', color: '#3f51d9', greeting: 'Hi there!', questions: QUESTIONS, faq: FAQ, privacyUrl: 'https://acme.example/privacy' });
+    // And a challenge for the bot check, new for every window, so the answer is never kept by a cache.
+    expect(body).toEqual({ name: 'Acme Support', color: '#3f51d9', greeting: 'Hi there!', questions: QUESTIONS, faq: FAQ, privacyUrl: 'https://acme.example/privacy', challenge: { id: expect.stringMatching(/^c1\./), bits: config.chat.challengeBits } });
+    expect(res.headers.get('cache-control')).toBe('no-store');
     // Nothing that identifies the workspace, its people, or how it is set up behind the scenes.
     const text = JSON.stringify(body);
     for (const secret of [owner.workspaceId, owner.userId, owner.email, siteKey, 'acme.example"', 'handoff', 'retention', 'Public Owner']) expect(text).not.toContain(secret);
@@ -583,7 +604,7 @@ describe('every message that reaches a visitor is an effect record', () => {
     const { owner, siteKey } = await chatOn('Replay');
     const v = new Visitor(siteKey);
     // The very first message, sent again because its answer was lost: one conversation, one set of replies.
-    const first = { visitor: v.id, id: hex(), text: 'What does it cost?', after: 0 };
+    const first = { visitor: v.id, id: hex(), text: 'What does it cost?', after: 0, ...(await v.proof()) };
     const a = await v.post(first);
     const b = await v.post(first);
     expect(b.body.conversation).toBe(a.body.conversation);
@@ -716,7 +737,7 @@ describe('one visitor can never reach another’s conversation', () => {
       expect(await stream.res.json()).toEqual(ended);
     }
     // Claiming to be B (B's visitor id is not a secret B's browser ever sends to A, but suppose it leaked) starts a new chat; it opens nothing.
-    const posing = await a.post({ visitor: b.id, id: hex(), text: 'I am Bob' });
+    const posing = await a.post({ visitor: b.id, id: hex(), text: 'I am Bob', ...(await a.proof()) });
     expect(posing.body.conversation).not.toBe(b.conversation);
     expect(JSON.stringify(posing.body)).not.toContain('4242');
     expect(await stored()).toBe(before + 2);
@@ -1129,5 +1150,589 @@ describe('nothing secret is written to the log', () => {
     // The token never rides in an address: the stream takes it from a header only.
     const inAddress = await (await boot()).request(`/api/public/chat/${siteKey}/stream?conversation=${v.conversation}&token=${v.token}`, { headers: { 'x-real-ip': freshAddress() } });
     expect(inAddress.status).toBe(403);
+  });
+});
+
+/* ───────────── The chat's own address ───────────── */
+
+const CHAT_URL = 'https://chat.timmy.test';
+const CHAT_HOST = 'chat.timmy.test';
+const APP_HOST = 'localhost:8787';
+
+/** A request for one host name, as a browser or a script sends it: no cookies unless the test gives some. */
+const onHost = async (host: string, path: string, init: { method?: string; headers?: Record<string, string>; body?: string } = {}) =>
+  (await boot()).request(path, { method: init.method ?? 'GET', headers: { host, 'x-real-ip': freshAddress(), ...init.headers }, ...(init.body !== undefined ? { body: init.body } : {}) });
+
+describe('the chat’s own address (CHAT_PUBLIC_URL)', () => {
+  it('every chat route answers on the chat’s address, and none of them on the app’s', async () => {
+    const { owner, siteKey } = await chatOn('OwnHost');
+    config.chat.publicUrl = CHAT_URL;
+    // On the chat's address: the loader, the frame and its files, the settings, a first message, and the stream.
+    for (const path of ['/chat.js', '/chat/frame.js', '/chat/frame.css', '/chat/work.js']) expect([path, (await onHost(CHAT_HOST, path)).status]).toEqual([path, 200]);
+    const frame = await onHost(CHAT_HOST, `/chat/frame?site=${siteKey}`);
+    expect(frame.status).toBe(200);
+    expect(frame.headers.get('content-security-policy')).toContain('frame-ancestors https://acme.example https://www.acme.example');
+    const settingsThere = await onHost(CHAT_HOST, `/api/public/chat/${siteKey}/config`);
+    expect(settingsThere.status).toBe(200);
+    expect(settingsThere.headers.get('x-frame-options')).toBe('SAMEORIGIN');
+    const { challenge } = (await settingsThere.json()) as { challenge: { id: string; bits: number } };
+    const v = new Visitor(siteKey);
+    const json = { origin: CHAT_URL, 'sec-fetch-site': 'same-origin', 'content-type': 'application/json' };
+    const first = await onHost(CHAT_HOST, `/api/public/chat/${siteKey}/messages`, { method: 'POST', headers: json, body: JSON.stringify({ visitor: v.id, id: hex(), text: 'What does it cost?', challenge: challenge.id, answer: solve(challenge.id, challenge.bits) }) });
+    expect(first.status).toBe(200);
+    const said = (await first.json()) as Required<Answer>;
+    expect(said.messages.map((m) => m.text)).toEqual(['What does it cost?', FAQ[0]!.a, EMAIL_QUESTION]);
+    const next = await onHost(CHAT_HOST, `/api/public/chat/${siteKey}/messages`, { method: 'POST', headers: json, body: JSON.stringify({ visitor: v.id, id: hex(), text: 'ada@lovelace.example', conversation: said.conversation, token: said.token }) });
+    expect(next.status).toBe(200);
+    const stream = await onHost(CHAT_HOST, `/api/public/chat/${siteKey}/stream?conversation=${said.conversation}&after=0`, { headers: { authorization: `Bearer ${said.token}` } });
+    expect(stream.status).toBe(200);
+    expect(stream.headers.get('content-type')).toMatch(/event-stream/);
+    await stream.body!.cancel();
+    // Writes to the chat's address come from the chat's own frame: a page on the app's address (or any other) is refused.
+    for (const origin of [ORIGIN, 'https://evil.example']) {
+      const forged = await onHost(CHAT_HOST, `/api/public/chat/${siteKey}/messages`, { method: 'POST', headers: { ...json, origin, 'sec-fetch-site': 'cross-site' }, body: JSON.stringify({ visitor: v.id, id: hex(), text: 'x', conversation: said.conversation, token: said.token }) });
+      expect([origin, forged.status]).toEqual([origin, 403]);
+    }
+
+    // On the app's own address (with its Host header, or none at all) none of these paths exist.
+    const paths = ['/chat.js', '/chat/frame.js', '/chat/frame.css', '/chat/work.js', `/chat/frame?site=${siteKey}`, `/api/public/chat/${siteKey}/config`, `/api/public/chat/${siteKey}/stream?conversation=${said.conversation}&after=0`];
+    for (const host of [APP_HOST, '']) {
+      for (const path of paths) {
+        const res = host ? await onHost(host, path, { headers: { authorization: `Bearer ${said.token}` } }) : await pub(path, { authorization: `Bearer ${said.token}` });
+        expect([host, path, res.status]).toEqual([host, path, 404]);
+        expect(res.headers.get('content-security-policy') ?? '').not.toContain('frame-ancestors https://acme.example');
+      }
+      const post = await (await boot()).request(`/api/public/chat/${siteKey}/messages`, {
+        method: 'POST',
+        headers: { ...(host ? { host } : {}), origin: ORIGIN, 'content-type': 'application/json', 'x-real-ip': freshAddress() },
+        body: JSON.stringify({ visitor: v.id, id: hex(), text: 'through the app', conversation: said.conversation, token: said.token }),
+      });
+      expect([host, post.status]).toEqual([host, 404]);
+    }
+    expect(await count(`select count(*)::int as n from chat_message where conversation_id = $1 and sender = 'visitor'`, [said.conversation])).toBe(2);
+    // The app itself carries on at its own address, including a teammate reading the transcript.
+    expect((await owner.get('/api/v1/state')).status).toBe(200);
+    expect((await owner.get(`/api/v1/chat/conversations/${said.conversation}/messages`)).status).toBe(200);
+  });
+
+  it('on the chat’s address every app route answers 404, and no cookie is ever set or read there', async () => {
+    const { owner, siteKey } = await chatOn('OwnHostApp');
+    config.chat.publicUrl = CHAT_URL;
+    const cookie = [...owner.cookies].map(([k, v]) => `${k}=${v}`).join('; ');
+    const stranger = `stranger.${hex(8)}@example.test`;
+    const tries: [string, string, unknown?][] = [
+      ['GET', '/'],
+      ['GET', '/index.html'],
+      ['GET', '/assets/index.js'],
+      ['GET', '/chat'],
+      ['GET', '/api/health'],
+      ['GET', '/api/v1/me'],
+      ['GET', '/api/v1/state'],
+      ['GET', '/api/v1/stream'],
+      ['GET', '/api/v1/settings'],
+      ['GET', '/api/v1/audit'],
+      ['GET', '/api/v1/chat/loader'],
+      ['GET', '/api/v1/chat/conversations'],
+      ['GET', '/api/auth/get-session'],
+      ['POST', '/api/auth/sign-up/email', { name: 'Stranger', email: stranger, password: 'correct-horse-battery-9' }],
+      ['POST', '/api/auth/sign-in/email', { email: owner.email, password: 'correct-horse-battery-9' }],
+      ['POST', '/api/auth/sign-in/magic-link', { email: owner.email }],
+      ['POST', '/api/auth/sign-out', {}],
+      ['POST', '/api/v1/commands', { id: 'cmd-there', action: { type: 'ws', ops: [{ op: 'patch', col: 'chat', id: 'site', patch: { greeting: 'Planted' } }] } }],
+      ['POST', '/api/hooks/composio', {}],
+      ['POST', '/api/test/release-holds', {}],
+      ['GET', '/api/public/chat'],
+    ];
+    for (const [method, path, body] of tries) {
+      const res = await onHost(CHAT_HOST, path, { method, headers: { cookie, origin: CHAT_URL, ...(body !== undefined ? { 'content-type': 'application/json' } : {}) }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
+      expect([method, path, res.status, res.headers.get('set-cookie')]).toEqual([method, path, 404, null]);
+    }
+    // None of it happened: no account, and the greeting is as it was.
+    expect((await authPool.query('select count(*)::int as n from "user" where email = $1', [stranger])).rows[0].n).toBe(0);
+    expect((await widget(owner)).greeting).not.toBe('Planted');
+    // The chat's own routes there set no cookie either, even for a browser that sends the app's.
+    for (const path of ['/chat.js', `/chat/frame?site=${siteKey}`, `/api/public/chat/${siteKey}/config`]) expect([path, (await onHost(CHAT_HOST, path, { headers: { cookie } })).headers.get('set-cookie')]).toEqual([path, null]);
+    // The same session still works on the app's own address.
+    expect((await owner.get('/api/v1/me')).status).toBe(200);
+  });
+
+  it('the snippet loads from the chat’s address; the address is matched exactly; without the setting nothing changes', async () => {
+    const { owner, siteKey } = await chatOn('Snippet');
+    // Without the setting the chat is served as before, whatever the host, and the screen uses the app's own address.
+    expect(await owner.json('GET', '/api/v1/chat/loader')).toEqual({ loader: null });
+    for (const host of [CHAT_HOST, 'anything.test', APP_HOST]) {
+      expect([host, (await onHost(host, '/chat.js')).status]).toEqual([host, 200]);
+      expect([host, (await onHost(host, `/api/public/chat/${siteKey}/config`)).status]).toEqual([host, 200]);
+    }
+    expect((await onHost(CHAT_HOST, '/api/health')).status).toBe(200);
+
+    config.chat.publicUrl = CHAT_URL;
+    expect(await owner.json('GET', '/api/v1/chat/loader')).toEqual({ loader: 'https://chat.timmy.test/chat.js' });
+    // The loader opens the frame on the address it was itself loaded from, so the snippet keeps the chat on that address.
+    const loader = await (await onHost(CHAT_HOST, '/chat.js')).text();
+    expect(loader).toContain('new URL(script.src, location.href).origin');
+    expect(loader).toContain("origin + '/chat/frame?site='");
+    // Written another way (capitals, the scheme's own port, a final dot) it is the same address; another port or name is not.
+    for (const same of ['CHAT.Timmy.test', 'chat.timmy.test:443', 'chat.timmy.test.']) {
+      expect([same, (await onHost(same, '/chat.js')).status, (await onHost(same, '/api/health')).status]).toEqual([same, 200, 404]);
+    }
+    for (const other of ['chat.timmy.test:8443', 'evil-chat.timmy.test', 'chat.timmy.test.evil.example', 'chat.timmy.test/x', 'x@chat.timmy.test']) {
+      expect([other, (await onHost(other, '/chat.js')).status, (await onHost(other, '/api/health')).status]).toEqual([other, 404, 200]);
+    }
+    // Only people who may read the workspace are told.
+    const client = await addMember(owner.workspaceId, 'client');
+    expect((await client.get('/api/v1/chat/loader')).status).toBe(403);
+  });
+
+  it('the server won’t start with an address that isn’t a whole one on another host, or plain http in production', () => {
+    for (const bad of ['chat.timmy.test', 'https://chat.timmy.test/chat', 'https://chat.timmy.test/?x=1', 'http://localhost:8787', 'javascript:alert(1)', 'https://user@chat.timmy.test']) {
+      config.chat.publicUrl = bad;
+      expect(() => assertSafeConfig(), bad).toThrow(/CHAT_PUBLIC_URL/);
+    }
+    config.chat.publicUrl = CHAT_URL;
+    expect(() => assertSafeConfig()).not.toThrow();
+    config.chat.publicUrl = '';
+    expect(() => assertSafeConfig()).not.toThrow();
+  });
+});
+
+/* ───────────── The bot check ───────────── */
+
+describe('the bot check before a conversation starts', () => {
+  const REFUSED = { ok: false, notice: 'The chat couldn’t start just now. Send your message again.', recheck: true };
+  /** A number that does not solve a challenge. */
+  const unsolved = (id: string, bits: number) => {
+    let n = 0;
+    while (zeroBits(id, String(n)) >= bits) n++;
+    return String(n);
+  };
+
+  it('a first message without the work, with a wrong answer, or with a forged, expired or other chat’s challenge is refused and starts nothing', async () => {
+    const { owner, siteKey } = await chatOn('Bots');
+    const other = await chatOn('OtherBots', {}, 'other-bots.example');
+    // One browser tries many times here; the limit per visitor is not what this test is about.
+    config.chat.visitorMessagesPerMinute = 100;
+    const v = new Visitor(siteKey);
+    const { challenge, answer } = (await v.proof()) as { challenge: string; answer: string };
+    expect(zeroBits(challenge, answer)).toBeGreaterThanOrEqual(config.chat.challengeBits);
+    const [version, nonce, exp, bits, signature] = challenge.split('.') as [string, string, string, string, string];
+    const theirs = await new Visitor(other.siteKey).proof();
+    const old = await newChallenge(owner.workspaceId, Date.now() - 2 * 3_600_000);
+    const longer = [version, nonce, String(Number(exp) + 86_400), bits, signature].join('.');
+    const easier = [version, nonce, exp, '0', signature].join('.');
+    const madeUp = [version, nonce, exp, bits, 'A'.repeat(43)].join('.');
+    const attempts: [string, Record<string, unknown>][] = [
+      ['no work at all', {}],
+      ['a challenge with no answer', { challenge }],
+      ['an answer with no challenge', { answer }],
+      ['a wrong answer', { challenge, answer: unsolved(challenge, Number(bits)) }],
+      ['another business’s challenge, solved', theirs],
+      ['a challenge made easier', { challenge: easier, answer: '0' }],
+      ['a challenge made to last longer', { challenge: longer, answer: solve(longer, Number(bits)) }],
+      ['a made-up signature', { challenge: madeUp, answer: solve(madeUp, Number(bits)) }],
+      ['a challenge that ran out', { challenge: old.id, answer: solve(old.id, old.bits) }],
+      ['not a challenge', { challenge: 'null', answer: '1' }],
+      ['an answer that isn’t a number', { challenge, answer: `${answer}.0` }],
+      ['answers of the wrong kind', { challenge: [challenge], answer: Number(answer) }],
+    ];
+    for (const [what, extra] of attempts) {
+      const out = await v.post({ visitor: v.id, id: hex(), text: 'hello', ...extra });
+      expect([what, out.status, out.body]).toEqual([what, 403, REFUSED]);
+    }
+    expect(await count('select count(*)::int as n from chat_conversation where workspace_id = $1', [owner.workspaceId])).toBe(0);
+    expect(await count('select count(*)::int as n from chat_message where workspace_id = $1', [owner.workspaceId])).toBe(0);
+    expect(await count('select count(*)::int as n from chat_challenge where workspace_id = $1', [owner.workspaceId])).toBe(0);
+    // None of those used the real challenge up: solved, it starts the conversation.
+    const ok = await v.post({ visitor: v.id, id: hex(), text: 'hello', challenge, answer });
+    expect(ok.status).toBe(200);
+    expect(await count('select count(*)::int as n from chat_conversation where workspace_id = $1', [owner.workspaceId])).toBe(1);
+  });
+
+  it('a solved challenge starts exactly one conversation, however often and by whomever it is sent', async () => {
+    const { owner, siteKey } = await chatOn('OneEach');
+    const conversations = () => count('select count(*)::int as n from chat_conversation where workspace_id = $1', [owner.workspaceId]);
+    const v = new Visitor(siteKey);
+    const proof = await v.proof();
+    const first = { visitor: v.id, id: hex(), text: 'What does it cost?', after: 0, ...proof };
+    const a = await v.post(first);
+    expect(a.status).toBe(200);
+    // The same message again (its answer was lost on the way) is the same conversation, not a refusal and not a second one.
+    const again = await v.post(first);
+    expect([again.status, again.body.conversation]).toEqual([200, a.body.conversation]);
+    // The same work sent with another message, by the same browser or by others, is refused.
+    const reuse = await v.post({ ...first, id: hex(), text: 'and another thing' });
+    expect([reuse.status, reuse.body]).toEqual([403, REFUSED]);
+    const replays = await Promise.all(
+      Array.from({ length: 6 }, () => {
+        const x = new Visitor(siteKey);
+        return x.post({ visitor: x.id, id: hex(), text: 'me too', ...proof });
+      }),
+    );
+    expect(replays.map((r) => r.status)).toEqual(replays.map(() => 403));
+    expect(await conversations()).toBe(1);
+    // Many browsers racing with one fresh solved challenge: one of them starts a conversation, the rest are turned away.
+    const shared = await new Visitor(siteKey).proof();
+    const race = await Promise.all(
+      Array.from({ length: 8 }, () => {
+        const x = new Visitor(siteKey);
+        return x.post({ visitor: x.id, id: hex(), text: 'racing', ...shared });
+      }),
+    );
+    expect(race.filter((r) => r.status === 200)).toHaveLength(1);
+    expect(race.filter((r) => r.status === 403 && r.body.recheck === true)).toHaveLength(7);
+    expect(await conversations()).toBe(2);
+    expect(await count('select count(*)::int as n from chat_challenge where workspace_id = $1', [owner.workspaceId])).toBe(2);
+    // Messages inside a conversation need no new work.
+    v.conversation = a.body.conversation;
+    v.token = a.body.token;
+    for (const text of ['ada@lovelace.example', 'Analytical Engines']) expect((await v.say(text)).status).toBe(200);
+    expect(await count('select count(*)::int as n from chat_challenge where workspace_id = $1', [owner.workspaceId])).toBe(2);
+    // The used challenges are the workspace's own, under row-level security like the rest of the chat.
+    const other = await newWorkspace('OtherSpent');
+    expect((await withWorkspace({ workspaceId: other.workspaceId }, (tx) => tx.query('select count(*)::int as n from chat_challenge'))).rows[0].n).toBe(0);
+  });
+
+  it('a message turned away leaves its challenge unused; the difficulty is a setting, and a raised one asks for new work', async () => {
+    const { owner, siteKey } = await chatOn('Difficulty');
+    // The day's conversations are used up: the message is turned away, and its work is still good tomorrow.
+    await sysPool.query(`insert into chat_counter (workspace_id, day, conversations, messages) values ($1, current_date, $2, 0) on conflict (workspace_id, day) do update set conversations = excluded.conversations`, [owner.workspaceId, config.chat.conversationsPerDay]);
+    const v = new Visitor(siteKey);
+    const proof = await v.proof();
+    const busy = await v.post({ visitor: v.id, id: hex(), text: 'hello', ...proof });
+    expect([busy.status, busy.body.notice]).toEqual([429, 'The chat is very busy today. Please try again tomorrow, or reach us another way.']);
+    expect(await count('select count(*)::int as n from chat_challenge where workspace_id = $1', [owner.workspaceId])).toBe(0);
+    await sysPool.query(`update chat_counter set conversations = 0 where workspace_id = $1 and day = current_date`, [owner.workspaceId]);
+    expect((await v.post({ visitor: v.id, id: hex(), text: 'hello', ...proof })).status).toBe(200);
+
+    // The settings hand out the difficulty in force; an answer short of it is refused.
+    config.chat.challengeBits = 12;
+    const hard = new Visitor(siteKey);
+    const res = await pub(`/api/public/chat/${siteKey}/config`);
+    const { challenge } = (await res.json()) as { challenge: { id: string; bits: number } };
+    expect(challenge.bits).toBe(12);
+    let near = 0;
+    while (!(zeroBits(challenge.id, String(near)) >= 8 && zeroBits(challenge.id, String(near)) < 12)) near++;
+    expect((await hard.post({ visitor: hard.id, id: hex(), text: 'hello', challenge: challenge.id, answer: String(near) })).body).toEqual(REFUSED);
+    expect((await hard.post({ visitor: hard.id, id: hex(), text: 'hello', challenge: challenge.id, answer: solve(challenge.id, 12) })).status).toBe(200);
+    // Work done for an easier challenge, handed out before the difficulty went up, is no longer enough.
+    config.chat.challengeBits = 4;
+    const early = await new Visitor(siteKey).proof();
+    config.chat.challengeBits = 12;
+    const late = new Visitor(siteKey);
+    expect((await late.post({ visitor: late.id, id: hex(), text: 'hello', ...early })).body).toEqual(REFUSED);
+  });
+
+  it('the frame does the work in a worker before the first message, and only then', () => {
+    const frame = embedFile('frame.js');
+    expect(frame).toContain("new Worker('/chat/work.js')");
+    expect(frame).toMatch(/payload\.challenge = p\.challenge;\s+payload\.answer = p\.answer;/);
+    // A message in a conversation that exists carries its token and no work.
+    expect(frame).toMatch(/var starting = !\(conversation && token\);/);
+    const page = embedFile('work.js');
+    expect(page).not.toMatch(/fetch\(|XMLHttpRequest|importScripts\(/);
+  });
+});
+
+/* ───────────── Limits every server shares ───────────── */
+
+describe('limits every server shares', () => {
+  /** A second server: its own connections to the same database, its own memory. */
+  const server = () => new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 2 });
+
+  it('two servers over one database count an address together, in windows, and keep no address', async () => {
+    const pools = [server(), server()];
+    try {
+      const [one, two] = pools.map((p) => new LimitStore(p)) as [LimitStore, LimitStore];
+      const address = freshAddress();
+      const check = [{ key: `test:address:${address}`, limit: 3, windowMs: 60_000 }];
+      const got: boolean[] = [];
+      for (const store of [one, two, one, two, one]) got.push(await store.allow(check));
+      expect(got).toEqual([true, true, true, false, false]);
+      // Asked at the same moment from both, the limit holds between them.
+      const crowd = [{ key: `test:crowd:${freshAddress()}`, limit: 7, windowMs: 60_000 }];
+      const at = await Promise.all(Array.from({ length: 20 }, (_, i) => (i % 2 ? one : two).allow(crowd)));
+      expect(at.filter(Boolean)).toHaveLength(7);
+      // When the window ends (moved into the past here), the count starts again on either server.
+      await sysPool.query(`update chat_limit set until = now() - interval '1 second' where until between now() and now() + interval '61 seconds'`);
+      expect(await two.allow(check, Date.now() + 61_000)).toBe(true);
+      expect(await one.allow(check, Date.now() + 61_000)).toBe(true);
+      // What is stored is a fingerprint keyed with the server's secret, never the address.
+      expect(await count('select count(*)::int as n from chat_limit where key like $1', [`%${address}%`])).toBe(0);
+      expect(await count(`select count(*)::int as n from chat_limit where key !~ '^[A-Za-z0-9_-]{32}$'`)).toBe(0);
+      // And the app's own database role can't read the counts at all.
+      await expect(withWorkspace({ workspaceId: 'any' }, (tx) => tx.query('select count(*) from chat_limit'))).rejects.toThrow(/permission denied/);
+    } finally {
+      await Promise.all(pools.map((p) => p.end()));
+    }
+  });
+
+  it('the public routes count against the shared limits: what another server counted holds here, and the other way round', async () => {
+    const { owner, siteKey } = await chatOn('Shared');
+    config.chat.addressMessagesPerMinute = 3;
+    const v = new Visitor(siteKey);
+    const pool = server();
+    try {
+      const elsewhere = new LimitStore(pool);
+      const key = [{ key: `message:address:${v.address}`, limit: 3, windowMs: 60_000 }];
+      // Another server already took two of this address's three messages this minute.
+      expect([await elsewhere.allow(key), await elsewhere.allow(key)]).toEqual([true, true]);
+      expect((await v.say('one')).status).toBe(200);
+      expect((await v.say('two')).status).toBe(429);
+      // A header anyone can send doesn't make it another address: only Railway's X-Real-IP counts.
+      const spoofed = await v.post({ visitor: v.id, id: hex(), text: 'three', conversation: v.conversation, token: v.token }, { 'x-forwarded-for': freshAddress() });
+      expect(spoofed.status).toBe(429);
+      // The refusal here holds on the other server too.
+      expect(await elsewhere.allow(key)).toBe(false);
+      // The caps per day are still counted in the workspace's own table.
+      expect((await rows<{ messages: number }>('select messages from chat_counter where workspace_id = $1 and day = current_date', [owner.workspaceId]))[0]!.messages).toBe(1);
+    } finally {
+      await pool.end();
+    }
+  });
+});
+
+/* ───────────── Speed to lead ───────────── */
+
+describe('chat leads on the Speed to lead clock', () => {
+  it('a visitor who leaves an email waits on the clock until a teammate answers in the chat; Timmy’s own answers don’t stop it', async () => {
+    const { owner, siteKey } = await chatOn('Clock');
+    const v = new Visitor(siteKey);
+    await v.say('Hi, I am ada@lovelace.example');
+    await v.say('Analytical Engines');
+    let s = await owner.state();
+    const lead = Object.values(s.out.leads)[0]!;
+    expect(lead).toMatchObject({ source: 'chat', email: 'ada@lovelace.example', status: 'new' });
+    expect(lead.receivedAt).toBeInstanceOf(Date);
+    expect(lead.firstReplyAt).toBeUndefined();
+    // Counted where form leads are counted: Speed to lead, the badges, and Today's leads waiting for a reply.
+    expect(onTheClock(lead)).toBe(true);
+    expect(waitingForFirstReply(s).map((l) => l.id)).toEqual([lead.id]);
+    expect(leadAlerts(s)).toEqual([expect.objectContaining({ kind: 'waiting', lead: expect.objectContaining({ id: lead.id }) })]);
+    // Taking the chat over is not an answer yet.
+    await chat(owner, { op: 'takeOver', id: v.conversation, on: true });
+    expect(waitingForFirstReply(await owner.state())).toHaveLength(1);
+    // A teammate's reply in the chat is the first reply: the clock stops.
+    expect((await chat(owner, { op: 'reply', id: v.conversation, text: 'Hi Ada, happy to help.', message: 'm-clock-1' })).ok).toBe(true);
+    s = await owner.state();
+    const answered = s.out.leads[lead.id]!;
+    expect(answered.firstReplyAt).toBeInstanceOf(Date);
+    expect(answered.firstReplyAt!.getTime()).toBeGreaterThanOrEqual(lead.receivedAt!.getTime());
+    expect(answered.status).toBe('contacted');
+    expect(waitingForFirstReply(s)).toEqual([]);
+    expect(leadAlerts(s)).toEqual([]);
+    // A later reply doesn't move the time of the first.
+    await chat(owner, { op: 'reply', id: v.conversation, text: 'Anything else?', message: 'm-clock-2' });
+    expect((await owner.state()).out.leads[lead.id]!.firstReplyAt).toEqual(answered.firstReplyAt);
+  });
+});
+
+/* ───────────── A visitor asking for a person ───────────── */
+
+describe('a visitor asking for a person', () => {
+  it('raises the card on Today and the notice in the app for every member, until a teammate takes over or answers', async () => {
+    const { owner, siteKey } = await chatOn('Needs');
+    const member = await addMember(owner.workspaceId, 'member', 'Mel Member');
+    const ids = async (c: Client) => wantsPerson(await c.state()).map((x) => x.id);
+    const v = new Visitor(siteKey);
+    await v.say('What does it cost?');
+    expect(await ids(owner)).toEqual([]);
+    await v.say('Can I talk to a human?');
+    expect(await ids(owner)).toEqual([v.conversation]);
+    expect(await ids(member)).toEqual([v.conversation]);
+    expect(await ids(await newWorkspace('NeedsElsewhere'))).toEqual([]);
+    // A teammate takes over: gone, for everyone.
+    expect((await chat(member, { op: 'takeOver', id: v.conversation, on: true })).ok).toBe(true);
+    expect(await ids(owner)).toEqual([]);
+    expect(await ids(member)).toEqual([]);
+    // Handed back, the visitor asks again, and a second visitor asks too: both are raised, newest first.
+    await chat(member, { op: 'takeOver', id: v.conversation, on: false });
+    await v.say('Please, a real person');
+    const w = new Visitor(siteKey);
+    await w.say('I need to speak to someone');
+    expect(await ids(owner)).toEqual([w.conversation, v.conversation]);
+    // Taking over and answering clears it, and the visitor writing again while a person is there raises nothing.
+    await chat(owner, { op: 'takeOver', id: w.conversation, on: true });
+    expect((await chat(owner, { op: 'reply', id: w.conversation, text: 'I’m here. How can I help?', message: 'm-needs' })).ok).toBe(true);
+    await w.say('Great, can I talk to a person about pricing?');
+    expect(await ids(owner)).toEqual([v.conversation]);
+    expect((await rows<{ urgent: boolean }>('select urgent from chat_conversation where id = $1', [w.conversation]))[0]!.urgent).toBe(false);
+    // The activity log keeps its line for each time someone asked.
+    expect((await owner.state()).activity.filter((a) => /asked for a person/.test(a.text))).toHaveLength(3);
+  });
+});
+
+/* ───────────── Older conversations ───────────── */
+
+describe('conversations older than the Chats screen holds', () => {
+  type Page = { conversations: { id: string; at: Date; messages: number; last?: { from: string; text: string }; urgent: boolean; live: boolean }[]; next: string | null };
+
+  it('are listed a page at a time, newest first, from the stored copy, inside the workspace', async () => {
+    const { owner, siteKey } = await chatOn('Older');
+    Object.assign(config.chat, { shownConversations: 3 });
+    const made: string[] = [];
+    for (let i = 0; i < 8; i++) {
+      const v = new Visitor(siteKey);
+      await v.say(`visitor number ${i}`);
+      made.push(v.conversation!);
+    }
+    const listed = Object.keys((await owner.state()).ws.chats);
+    expect(listed).toHaveLength(3);
+    const older = made.filter((id) => !listed.includes(id)).reverse();
+    expect(older).toHaveLength(5);
+
+    const all = await owner.json<Page>('GET', '/api/v1/chat/conversations');
+    expect(all.conversations.map((c) => c.id)).toEqual(older);
+    expect(all.next).toBeNull();
+    const top = all.conversations[0]!;
+    expect(top.at).toBeInstanceOf(Date);
+    expect(top.messages).toBe(await count('select count(*)::int as n from chat_message where conversation_id = $1', [top.id]));
+    expect(top).toMatchObject({ urgent: false, live: false, last: { from: 'timmy', text: expect.any(String) } });
+    // Two at a time: the pages join up with nothing missed or repeated.
+    const seen: string[] = [];
+    const sizes: number[] = [];
+    let next: string | null = null;
+    do {
+      const page: Page = await owner.json<Page>('GET', `/api/v1/chat/conversations?limit=2${next ? `&before=${next}` : ''}`);
+      seen.push(...page.conversations.map((c) => c.id));
+      sizes.push(page.conversations.length);
+      next = page.next;
+    } while (next);
+    expect(seen).toEqual(older);
+    expect(sizes).toEqual([2, 2, 1]);
+    const cursor = (await owner.json<Page>('GET', '/api/v1/chat/conversations?limit=2')).next!;
+    // An older one's whole transcript can be read.
+    expect((await owner.json<{ messages: unknown[] }>('GET', `/api/v1/chat/conversations/${older[4]}/messages`)).messages.length).toBeGreaterThan(0);
+
+    // Another workspace sees only its own, whatever page it asks for, and can't read one of these by id.
+    const other = await chatOn('OtherOlder', {}, 'other-older.example');
+    expect((await other.owner.json<Page>('GET', '/api/v1/chat/conversations')).conversations).toEqual([]);
+    expect((await other.owner.json<Page>('GET', `/api/v1/chat/conversations?before=${cursor}`)).conversations).toEqual([]);
+    expect((await other.owner.get(`/api/v1/chat/conversations/${older[0]}/messages`)).status).toBe(404);
+    // A page that isn't one is refused; a role that may not read the workspace is refused.
+    for (const bad of ['x', Buffer.from(`2026-01-01 00:00:00+00~x'; drop table chat_message; --`).toString('base64url'), Buffer.from('yesterday~cv_aaaaaaaaaaaa').toString('base64url')]) {
+      expect([bad, (await owner.get(`/api/v1/chat/conversations?before=${bad}`)).status]).toEqual([bad, 400]);
+    }
+    expect((await (await addMember(owner.workspaceId, 'client')).get('/api/v1/chat/conversations')).status).toBe(403);
+    expect((await (await addMember(owner.workspaceId, 'member')).get('/api/v1/chat/conversations')).status).toBe(200);
+
+    // Deleting an older one removes it from the stored copy and from the list.
+    expect((await chat(owner, { op: 'delete', id: older[0] })).ok).toBe(true);
+    expect((await owner.json<Page>('GET', '/api/v1/chat/conversations')).conversations.map((c) => c.id)).toEqual(older.slice(1));
+    expect(await count('select count(*)::int as n from chat_message where conversation_id = $1', [older[0]])).toBe(0);
+  });
+});
+
+/* ───────────── The shared pool of streams ───────────── */
+
+describe('the streams one business can hold open', () => {
+  it('one business’s visitors can only hold so many streams on a server; another business is not affected', async () => {
+    const a = await chatOn('PoolA');
+    const b = await chatOn('PoolB', {}, 'pool-b.example');
+    config.chat.streamsPerWorkspace = 2;
+    const visitors: Visitor[] = [];
+    for (let i = 0; i < 3; i++) {
+      const v = new Visitor(a.siteKey);
+      await v.say('hello');
+      visitors.push(v);
+    }
+    const open = [await visitors[0]!.stream(), await visitors[1]!.stream()];
+    expect(open.map((s) => s.res.status)).toEqual([200, 200]);
+    const third = await visitors[2]!.stream();
+    expect(third.res.status).toBe(429);
+    expect((await third.res.json()).notice).toMatch(/Wait a moment/);
+    // Another business's visitor still gets a place.
+    const vb = new Visitor(b.siteKey);
+    await vb.say('hello');
+    const theirs = await vb.stream();
+    expect(theirs.res.status).toBe(200);
+    // A place given back is a place free.
+    await open[0]!.close();
+    await new Promise((r) => setTimeout(r, 50));
+    const again = await visitors[2]!.stream();
+    expect(again.res.status).toBe(200);
+    for (const s of [open[1]!, theirs, again]) await s.close();
+  });
+});
+
+/* ───────────── Whoever switched it on ───────────── */
+
+describe('the chat switches off when whoever switched it on loses the right to', () => {
+  const memberId = async (workspaceId: string, userId: string) => (await authPool.query('select id from member where "organizationId" = $1 and "userId" = $2', [workspaceId, userId])).rows[0].id as string;
+  /** A workspace whose admin set the chat up and switched it on. */
+  async function onByAdmin(name: string) {
+    const owner = await newWorkspace(name);
+    expect((await settings(owner, { domain: `${name.toLowerCase()}.example`, name: 'Acme Support', faq: FAQ })).ok).toBe(true);
+    const admin = await addMember(owner.workspaceId, 'admin', `${name} Admin`);
+    expect((await settings(admin, { on: true })).ok).toBe(true);
+    const siteKey = (await widget(owner)).siteKey!;
+    expect((await pub(`/api/public/chat/${siteKey}/config`)).status).toBe(200);
+    return { owner, admin, siteKey };
+  }
+  async function expectOff(owner: Client, siteKey: string, who: string) {
+    expect((await widget(owner)).on).toBe(false);
+    expect((await rows<{ is_on: boolean }>('select is_on from chat_widget where workspace_id = $1', [owner.workspaceId]))[0]!.is_on).toBe(false);
+    expect((await pub(`/api/public/chat/${siteKey}/config`)).status).toBe(404);
+    expect((await pub(`/chat/frame?site=${siteKey}`)).status).toBe(404);
+    expect(await count(`select count(*)::int as n from policy where workspace_id = $1 and kind = 'chat.reply' and enabled`, [owner.workspaceId])).toBe(0);
+    const notes = (await owner.state()).activity.filter((a) => a.text.startsWith('For owners and admins: the website chat is switched off.'));
+    expect(notes).toHaveLength(1);
+    expect(notes[0]!.text).toContain(`${who} switched it on and is no longer an owner or admin here`);
+    expect(await count(`select count(*)::int as n from audit_log where workspace_id = $1 and action = 'chat.switched_off' and actor = 'system'`, [owner.workspaceId])).toBe(1);
+  }
+
+  it('lowered from admin to member: off, with a note to owners and admins; another owner or admin switches it on again under their name', async () => {
+    const { owner, admin, siteKey } = await onByAdmin('Lowered');
+    const v = new Visitor(siteKey);
+    expect((await v.say('hello')).status).toBe(200);
+    // Someone else's role changing changes nothing, and nor does an owner becoming an admin (still allowed).
+    const bystander = await addMember(owner.workspaceId, 'admin', 'Bea Bystander');
+    expect((await owner.post('/api/auth/organization/update-member-role', { memberId: await memberId(owner.workspaceId, bystander.userId), role: 'member', organizationId: owner.workspaceId })).status).toBe(200);
+    expect((await owner.post('/api/auth/organization/update-member-role', { memberId: await memberId(owner.workspaceId, admin.userId), role: 'owner', organizationId: owner.workspaceId })).status).toBe(200);
+    expect((await owner.post('/api/auth/organization/update-member-role', { memberId: await memberId(owner.workspaceId, admin.userId), role: 'admin', organizationId: owner.workspaceId })).status).toBe(200);
+    expect((await widget(owner)).on).toBe(true);
+    expect((await pub(`/api/public/chat/${siteKey}/config`)).status).toBe(200);
+
+    expect((await owner.post('/api/auth/organization/update-member-role', { memberId: await memberId(owner.workspaceId, admin.userId), role: 'member', organizationId: owner.workspaceId })).status).toBe(200);
+    await expectOff(owner, siteKey, 'Lowered Admin');
+    expect((await v.say('are you there?')).body).toEqual({ ok: false, notice: 'This chat isn’t available right now.' });
+    // The person lowered can't switch it back on; an owner can, and the rule then names them.
+    expect((await settings(admin, { on: true })).error).toMatch(/Only an owner or admin/);
+    expect((await settings(owner, { on: true })).ok).toBe(true);
+    expect((await pub(`/api/public/chat/${siteKey}/config`)).status).toBe(200);
+    expect(await rows(`select created_by from policy where workspace_id = $1 and kind = 'chat.reply' and enabled`, [owner.workspaceId])).toEqual([{ created_by: owner.userId }]);
+    expect((await v.say('back again?')).status).toBe(200);
+    // Now that the owner runs it, the old switcher's next change is nothing to the chat.
+    expect((await owner.post('/api/auth/organization/update-member-role', { memberId: await memberId(owner.workspaceId, admin.userId), role: 'client', organizationId: owner.workspaceId })).status).toBe(200);
+    expect((await widget(owner)).on).toBe(true);
+  });
+
+  it('removed from the workspace, or leaving it: off', async () => {
+    const removed = await onByAdmin('Removed');
+    expect((await removed.owner.post('/api/auth/organization/remove-member', { memberIdOrEmail: removed.admin.email, organizationId: removed.owner.workspaceId })).status).toBe(200);
+    await expectOff(removed.owner, removed.siteKey, 'Removed Admin');
+
+    const leaving = await onByAdmin('Leaving');
+    expect((await leaving.admin.post('/api/auth/organization/leave', { organizationId: leaving.owner.workspaceId })).status).toBe(200);
+    await expectOff(leaving.owner, leaving.siteKey, 'Leaving Admin');
+    // Another admin switches it on again.
+    const second = await addMember(leaving.owner.workspaceId, 'admin', 'Second Admin');
+    expect((await settings(second, { on: true })).ok).toBe(true);
+    expect((await pub(`/api/public/chat/${leaving.siteKey}/config`)).status).toBe(200);
+  });
+
+  it('even if the switch-off never ran, the chat answers nobody while whoever switched it on lacks the role', async () => {
+    const { owner, admin, siteKey } = await onByAdmin('Failsafe');
+    const v = new Visitor(siteKey);
+    expect((await v.say('hello')).status).toBe(200);
+    // The role changed behind the auth library's back, so no hook ran.
+    await authPool.query('update member set role = $3 where "organizationId" = $1 and "userId" = $2', [owner.workspaceId, admin.userId, 'member']);
+    expect((await rows<{ is_on: boolean }>('select is_on from chat_widget where workspace_id = $1', [owner.workspaceId]))[0]!.is_on).toBe(true);
+    expect((await pub(`/api/public/chat/${siteKey}/config`)).status).toBe(404);
+    expect((await pub(`/chat/frame?site=${siteKey}`)).status).toBe(404);
+    expect((await v.say('anyone?')).status).toBe(404);
+    expect((await v.stream()).res.status).toBe(404);
+    // Given the role back, it answers again: it was never switched off.
+    await authPool.query('update member set role = $3 where "organizationId" = $1 and "userId" = $2', [owner.workspaceId, admin.userId, 'admin']);
+    expect((await pub(`/api/public/chat/${siteKey}/config`)).status).toBe(200);
   });
 });

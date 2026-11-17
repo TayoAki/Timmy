@@ -8,7 +8,18 @@
 import { NOW } from '../data/mock';
 import type { Lead, OutMessage } from '../data/outbound-types';
 import { fmtTime } from '../lib/format';
+import { isLive } from '../live/clock';
 import type { State } from './store';
+
+/**
+ * Leads on the Speed to lead clock: they arrived on their own and wait for a person's first reply. Form leads,
+ * and on a real workspace also the visitors who left their email in the website chat (Timmy's own answers there
+ * come from the settings, so they don't stop the clock; a teammate's reply does).
+ */
+export const onTheClock = (l: Lead) => l.source === 'form' || (isLive() && l.source === 'chat');
+
+/** Leads on the clock still waiting for a first reply, the way Speed to lead and the badges count them. */
+export const waitingForFirstReply = (s: State) => Object.values(s.out.leads).filter((l) => onTheClock(l) && !l.firstReplyAt && l.status !== 'not-interested');
 
 const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -135,7 +146,7 @@ export function leadAlerts(s: State): LeadAlert[] {
       out.push({ lead, kind: 'confirmed', at: yes.at, quote: yes.quote });
       continue;
     }
-    if (lead.source === 'form' && lead.receivedAt && !lead.firstReplyAt && !CLOSED.includes(lead.status)) {
+    if (onTheClock(lead) && lead.receivedAt && !lead.firstReplyAt && !CLOSED.includes(lead.status)) {
       out.push({ lead, kind: 'waiting', at: lead.receivedAt, sla: s.out.forms[lead.form ?? '']?.sla });
     }
   }
@@ -168,7 +179,7 @@ export function callQueue(s: State): CallItem[] {
       out.push({ lead, kind: 'callback', due: lead.callbackAt, why: `Callback you set${lead.callbackNote ? `: ${lead.callbackNote}` : ''}` });
       continue;
     }
-    if (lead.source === 'form' && lead.receivedAt && !lead.firstReplyAt && lead.status !== 'meeting') {
+    if (onTheClock(lead) && lead.receivedAt && !lead.firstReplyAt && lead.status !== 'meeting') {
       out.push({ lead, kind: 'form', due: lead.receivedAt, why: 'Form lead waiting for a first reply' });
       continue;
     }

@@ -20,6 +20,10 @@ export interface Site {
  * workspace whose sending is switched off all give the same answer from the same single lookup, so a caller
  * can't tell them apart.
  *
+ * The chat answers strangers under a rule its owner or admin set by switching it on, so it also counts as off
+ * once that person is no longer an owner or admin there. The chat is switched off when that happens (enabler.ts);
+ * this keeps it closed even if that step never ran, whatever way the role was lost.
+ *
  * This is the one read the chat makes before a workspace is known, so it is the one read made by the system
  * role. Everything after it runs inside that workspace, under row-level security.
  */
@@ -27,7 +31,9 @@ export async function siteOf(siteKey: string | undefined): Promise<Site | null> 
   if (!siteKey || !SITE_KEY.test(siteKey)) return null;
   const { rows } = await sysPool.query(
     `select c.workspace_id, c.domain from chat_widget c join workspace w on w.id = c.workspace_id
-     where c.site_key = $1 and c.is_on and c.domain <> '' and not w.kill_switch and w.deleted_at is null`,
+     where c.site_key = $1 and c.is_on and c.domain <> '' and not w.kill_switch and w.deleted_at is null
+       and exists (select 1 from auth.member m where m."organizationId" = c.workspace_id and m."userId" = c.switched_on_by
+                   and string_to_array(replace(m.role, ' ', ''), ',') && array['owner', 'admin'])`,
     [siteKey],
   );
   return rows[0] ? { workspaceId: rows[0].workspace_id as string, domain: rows[0].domain as string } : null;
