@@ -300,15 +300,20 @@ describe('an event changed while its create is still waiting', () => {
     expect(account(gcal).events).toMatchObject([{ summary: 'Original title' }]);
   });
 
-  it('Undo of the change from its row in Approvals does the same', async () => {
-    await add(w, 'ev-row', 'Before');
+  it('Undo on the waiting row in Approvals stops the write, and never leads to another: nothing is created', async () => {
+    await add(w, 'ev-row', 'Before', ['mail:dana@client.test']);
     await edit(w, 'ev-row', { title: 'After' });
     const waiting = (await effects(w, 'calendar.create')).at(-1)!;
-    expect((await w.cmd({ type: 'effect', id: waiting.id, approve: false })).ok).toBe(true);
+    const out = await w.cmd({ type: 'effect', id: waiting.id, approve: false });
+    expect(out.ok).toBe(true);
+    expect(out.toast?.text).toMatch(/Nothing was sent/);
+    // The change is taken back in Timmy; nothing waits to go out.
     expect((await w.state()).ws.events['ev-row']).toMatchObject({ title: 'Before' });
+    expect((await w.state()).pending).toEqual([]);
+    expect((await effects(w, 'calendar.create')).map((e) => e.status)).toEqual(['cancelled', 'cancelled']);
     await releaseHolds(w);
-    expect(creates()).toHaveLength(1);
-    expect(account(gcal).events).toMatchObject([{ summary: 'Before' }]);
+    expect(creates()).toHaveLength(0);
+    expect(account(gcal).notices).toEqual([]);
   });
 
   it('deleting the event while its create waits cancels the create: nothing is written and nobody is invited', async () => {

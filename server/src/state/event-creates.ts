@@ -14,8 +14,10 @@
  *   - A create that is already running cannot be replaced, so the change is refused, with a word to try again in a
  *     moment. The cancel and the claim that starts a create both need the record to be waiting; only one of them wins.
  *   - Deleting the event while its create waits cancels the create: nothing is written.
- *   - Undo of the change brings back the event as it was, and with it a create of that event (the one the change
- *     replaced can't be revived, so a new one is proposed, under the same rules).
+ *   - Undo of the change (on its notice) brings back the event as it was, and with it a create of that event (the
+ *     one the change replaced can't be revived, so a new one is proposed, under the same rules and with its own
+ *     undo window). Undo on the waiting row in Approvals is a person stopping that write, so it never leads to
+ *     another: the event goes back as it was, in Timmy only.
  *   - Someone else's waiting create is only replaced by an owner or admin, as only they may undo someone else's send.
  *   - A change to what only Timmy keeps (the linked task, the kind) leaves the create as it is.
  */
@@ -44,17 +46,6 @@ const written = (p: EventPayload) => JSON.stringify([p.title, new Date(p.start).
 const REPLACED = 'Replaced by a change made to the event before it was added';
 const DELETED = 'The event was deleted in Timmy before it was added';
 
-/**
- * The command an action takes back, if it is an Undo: the Undo on a notice names it, and Undo on a waiting row in
- * Approvals names the effect, which carries the command that made it (the engine undoes that command).
- */
-async function undoneBy(tx: Tx, workspaceId: string, a: Action): Promise<string | null> {
-  if (a.type === 'undo') return a.command;
-  const effectId = a.type === 'effect' && !a.approve ? a.id : a.type === 'resolve' && a.key.startsWith('eff:') && a.option !== 'approve' && a.option !== 'send' ? a.key.slice(4) : null;
-  if (!effectId) return null;
-  return ((await tx.query(`select command_id from effect where id = $1 and workspace_id = $2 and source = 'user'`, [effectId, workspaceId])).rows[0]?.command_id as string | null | undefined) ?? null;
-}
-
 export async function followWaitingCreates<H extends Step>(tx: Tx, loaded: Loaded, actor: Actor, cmd: { id: string; action: Action }, handled: H, emailOf: (personId: string) => string | null): Promise<H> {
   const prev = loaded.state.ws.events;
   const next = handled.state.ws.events;
@@ -65,7 +56,9 @@ export async function followWaitingCreates<H extends Step>(tx: Tx, loaded: Loade
   if (!touched.length) return handled;
   const workspaceId = loaded.workspace.id;
   const refuse = (reject: string): H => ({ ...handled, state: loaded.state, reject });
-  const undone = await undoneBy(tx, workspaceId, cmd.action);
+  // Only the Undo on the change's own notice takes the change back and so restores the create it replaced. Undo on
+  // the waiting row in Approvals stops that write: the event goes back as it was, in Timmy only, and nothing is sent.
+  const undone = cmd.action.type === 'undo' ? cmd.action.command : null;
 
   let state = handled.state;
   const effects = [...(handled.effects ?? [])];
