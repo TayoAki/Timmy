@@ -1,18 +1,18 @@
 /**
  * The automation engine's background work: carrying a run forward, picking a run up again once a person
  * has decided, and a once-a-minute pass that starts scheduled automations and catches anything whose own
- * job was lost.
+ * job was lost (and any automation still on whose owner or admin no longer is one).
  */
 import { sysPool } from '../db/pool';
-import type { EffectRow } from '../gateway/gateway';
 import { defineJob, enqueueSoon } from '../jobs/jobs';
+import { log } from '../lib/log';
 import { decidedWaits, effectSettled, readyRuns, runAutomation } from './runner';
+import { switchOffWithoutOwner, workspacesWithoutOwner } from './roles';
 import { dueSchedules, fireSchedule } from './triggers';
 
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Whether an effect was put forward by a step of an automation's run. Its key says so: "run:arun_…:node:…". */
-export const isAutomationEffect = (e: Pick<EffectRow, 'idempotency_key'>) => /^run:arun_[^:]+:node:/.test(e.idempotency_key);
+export { isAutomationEffect } from './keys';
 
 export function registerAutomationJobs() {
   defineJob('automation.run', async (d) => {
@@ -37,6 +37,9 @@ export function registerAutomationJobs() {
   defineJob(
     'automation.sweep',
     async () => {
+      // First, so nothing below starts for it: an automation whose owner or admin lost that role in a way no hook saw
+      // is switched off here (roles.ts).
+      for (const workspaceId of await workspacesWithoutOwner(sysPool)) await switchOffWithoutOwner(workspaceId).catch((e) => log.error('could not switch off an automation whose owner or admin left', { workspaceId, error: (e as Error).message }));
       for (const s of await dueSchedules(sysPool)) await fireSchedule(s.workspace_id, s.automation_id);
       for (const r of await readyRuns(sysPool)) enqueueSoon('automation.run', { workspaceId: r.workspace_id, runId: r.id }, { singletonKey: `arun:${r.id}` });
       for (const w of await decidedWaits(sysPool)) enqueueSoon('automation.effect', { workspaceId: w.workspace_id, effectId: w.effect_id }, { singletonKey: `aeff:${w.effect_id}` });

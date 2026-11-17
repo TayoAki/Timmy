@@ -5,6 +5,7 @@
  */
 import { forgetFromHistory } from '../state/forget';
 import type { ConnectableApp } from '../../../src/live/connectable';
+import { pauseWithoutMailbox, resumeWithMailbox } from '../automations/mailbox';
 import { config } from '../config';
 import { withWorkspace } from '../db/pool';
 import { audit } from '../gateway/gateway';
@@ -141,7 +142,9 @@ export async function finishConnect(ctx: Ctx, connectionId: string): Promise<(Co
     await tx.query('update connection set account_label = $2, updated_at = now() where id = $1', [connectionId, label]);
     await audit(tx, ctx.workspaceId, { actor: ctx.user.id, action: 'connection.active', detail: { app: conn.app_id, connectionId, account: label, triggers: triggers.length } });
     const s = loaded.state;
-    return { state: { ...s, conn: { ...s.conn, apps: { ...s.conn.apps, [conn.app_id]: { connected: true, account: label ?? undefined, at: new Date() } } } }, result: null };
+    const next = { ...s, conn: { ...s.conn, apps: { ...s.conn.apps, [conn.app_id]: { connected: true, account: label ?? undefined, at: new Date() } } } };
+    // [automations] New-email automations that were paused for want of a mailbox carry on (automations/mailbox.ts).
+    return { state: app.kind === 'mail' ? await resumeWithMailbox(tx, loaded, next) : next, result: null };
   });
   // The mailbox owner's address is who "me" is in this workspace's mail.
   if (app.kind === 'mail' && label) {
@@ -194,7 +197,9 @@ export async function closeConnections(workspaceId: string, filter: { appId?: st
     // The transcripts of Ask's finished runs can hold what its searches found in that mailbox. They are only kept to
     // resume a run that is waiting, so a finished one's go now.
     await tx.query(`delete from run_checkpoint where workspace_id = $1 and run_id in (select id from run where workspace_id = $1 and status in ('completed', 'failed', 'cancelled'))`, [workspaceId]);
-    return { state: { ...loaded.state, threads, ws: { ...loaded.state.ws, events }, out: { ...loaded.state.out, messages }, conn: { ...loaded.state.conn, apps } }, result: out };
+    const next = { ...loaded.state, threads, ws: { ...loaded.state.ws, events }, out: { ...loaded.state.out, messages }, conn: { ...loaded.state.conn, apps } };
+    // [automations] Runs that started from this mail stop, and with no mailbox left New-email automations pause (automations/mailbox.ts).
+    return { state: await pauseWithoutMailbox(tx, loaded, next, [...gone]), result: out };
   });
   for (const c of closed) {
     enqueueSoon('connection.revoke', { connectedAccountId: c.account, triggers: c.triggers });

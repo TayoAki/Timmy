@@ -25,6 +25,8 @@ import { assetRefsIn, usablePictures } from '../files/assets';
 import { attachmentsFor } from '../files/attachments';
 import { LIVE_DECISION } from '../agent/read';
 import { gateAutomations } from '../automations/gate';
+import { afterAutomationDecision } from '../automations/cards';
+import { keepTimmyLines } from '../automations/doc-lines';
 import { prepareMailSend } from '../gateway/mail';
 import { eventProposal } from '../sync/calendar-write';
 import { CALENDAR_TOOLKITS, isSynced } from '../sync/calendars';
@@ -218,7 +220,8 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
     }
     const d = await decide(tx, loaded, state, actorOf(ctx), decision.effectId, decision.approve);
     const approved = d.effect.hold_until ? `Approved. It goes out in ${config.sendHoldSeconds} seconds unless you undo it.` : 'Approved.';
-    return { state: d.state, effects: [d.effect], toast: { text: decision.approve ? approved : 'Turned down. Nothing was sent.' } };
+    // [automations] Turning down an automation's reply also discards the draft it would have sent (automations/cards.ts).
+    return { state: afterAutomationDecision(d.state, d.effect), effects: [d.effect], toast: { text: decision.approve ? approved : 'Turned down. Nothing was sent.' } };
   }
   if (!ctx.rules.work) return { state, reject: 'Your role can’t make changes in this workspace.' };
   if (a.type === 'undo') return undo(tx, loaded, ctx, a.command);
@@ -240,6 +243,8 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
     const pictures = await usablePictures(tx, ctx.workspaceId, assetRefsIn((col, id) => (Object.hasOwn(state.ws, col) ? (state.ws as unknown as Record<string, Record<string, unknown>>)[col]?.[id] : undefined), a.ops));
     const bad = checkWsOps(state, a.ops, pictures);
     if (bad) return { state, reject: bad };
+    // [automations] A page saved from a copy made before Timmy added a line to it keeps that line (automations/doc-lines.ts).
+    a.ops = keepTimmyLines(state, a.ops);
   }
   // Rules are instructions Timmy follows for everyone (writing rules go into every drafting prompt), and the schedule
   // decides when it works. Only an owner or admin changes them.

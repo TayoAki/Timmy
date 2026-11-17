@@ -8,6 +8,10 @@
  * Steps follow the frozen version's arrows, in code. A run stops in one of three ways before its end:
  * a Wait (it is picked up again when the time comes), a step waiting for a person in Approvals (picked up
  * when they decide), or a step that failed (tried again three times, each after a longer pause, then the run fails).
+ *
+ * A run is work Timmy does for the workspace, so it counts against the workspace's limit on work at once, with
+ * Ask's and the morning run's jobs. A run that would go over it waits its turn as it is (queued, or due after a
+ * pause) and is started when a place is free: when another run stops, or by the once-a-minute pass.
  */
 import type { State } from '../../../src/state/store';
 import { KIND } from '../../../src/areas/automations/catalog';
@@ -37,13 +41,37 @@ interface Held {
   timeZone: string;
 }
 
+/** How many jobs the workspace is running right now (Ask's and the morning run's, and automation runs), and its limit. */
+async function busyness(tx: Tx, workspaceId: string, runId: string): Promise<{ busy: number; cap: number }> {
+  const { rows } = await tx.query(
+    `select (select count(*) from run where workspace_id = $1 and status = 'running' and lease_until > now())
+          + (select count(*) from automation_run where workspace_id = $1 and status = 'running' and lease_until > now() and id <> $2) as busy,
+            (select max_concurrent_runs from workspace where id = $1) as cap`,
+    [workspaceId, runId],
+  );
+  return { busy: Number(rows[0]?.busy ?? 0), cap: Number(rows[0]?.cap ?? 2) };
+}
+
 /**
  * Takes a run that is ready: newly queued, back from a pause whose time has come, or left behind by a
  * worker that died. One UPDATE decides, so only one caller can win. 'missing' means there is no such run
- * (yet): the transaction that queued it may not have finished.
+ * (yet): the transaction that queued it may not have finished. 'busy' means the workspace is already doing as
+ * much at once as it may: the run is left as it is, to be started when a place is free.
  */
-async function claim(workspaceId: string, runId: string): Promise<Held | 'missing' | null> {
-  return withWorkspace({ workspaceId }, async (tx) => {
+async function claim(workspaceId: string, runId: string): Promise<Held | 'missing' | 'busy' | null> {
+  // Under the workspace's lock, like Ask's own start, so two runs can't both take the last free place.
+  return withWorkspace({ workspaceId, lock: true }, async (tx) => {
+    const ready = await tx.query(
+      `select 1 from automation_run where id = $1 and workspace_id = $2 and (
+         (status = 'queued' and (wake_at is null or wake_at <= now())) or
+         (status = 'waiting' and waiting_effect_id is null and wake_at is not null and wake_at <= now()) or
+         (status = 'running' and lease_until < now()))`,
+      [runId, workspaceId],
+    );
+    if (ready.rows[0]) {
+      const { busy, cap } = await busyness(tx, workspaceId, runId);
+      if (busy >= cap) return 'busy';
+    }
     const { rows } = await tx.query(
       `with ready as (
          select id, status as was from automation_run
@@ -189,22 +217,48 @@ async function takeStep(workspaceId: string, held: Held, node: RunNode): Promise
 }
 
 /** Carries a run forward as far as it can go now. Safe to call for any run at any time: a run that isn't ready is left alone. */
-export async function runAutomation(workspaceId: string, runId: string): Promise<'ran' | 'missing' | 'not-ready'> {
+export async function runAutomation(workspaceId: string, runId: string): Promise<'ran' | 'missing' | 'not-ready' | 'busy'> {
   const held = await claim(workspaceId, runId);
-  if (held === 'missing') return 'missing';
+  if (held === 'missing' || held === 'busy') return held;
   if (!held) return 'not-ready';
+  try {
+    await carry(workspaceId, held);
+  } finally {
+    // This run has stopped for now, so a place is free: the runs that were waiting for one are started.
+    await startWaiting(workspaceId).catch((e) => log.warn('could not start the automation runs waiting their turn', { workspaceId, error: (e as Error).message }));
+  }
+  return 'ran';
+}
+
+/** The runs of a workspace that are ready but were left waiting for a free place, oldest first: each is given a job. */
+async function startWaiting(workspaceId: string): Promise<void> {
+  const ids = await withWorkspace({ workspaceId }, async (tx) => {
+    const { cap } = await busyness(tx, workspaceId, '');
+    const { rows } = await tx.query(
+      `select id from automation_run where workspace_id = $1 and (
+         (status = 'queued' and (wake_at is null or wake_at <= now())) or
+         (status = 'waiting' and waiting_effect_id is null and wake_at is not null and wake_at <= now()))
+       order by created_at, id limit $2`,
+      [workspaceId, cap],
+    );
+    return rows.map((r) => r.id as string);
+  });
+  for (const id of ids) enqueueSoon('automation.run', { workspaceId, runId: id }, { singletonKey: `arun:${id}` });
+}
+
+async function carry(workspaceId: string, held: Held): Promise<void> {
+  const runId = held.run.id;
   for (let i = 0; i <= MAX_STEPS; i++) {
     const node = nodeOf(held.version.graph, held.run.cursor);
     if (!node) {
       // The version has no such step. It can't happen to a version the gate froze, but a run must still end.
       await withWorkspace({ workspaceId }, (tx) => tx.query(`update automation_run set status = 'failed', error = 'The run lost its place in the steps.', finished_at = now(), lease_token = null, lease_until = null, updated_at = now() where id = $1 and status = 'running' and lease_token = $2`, [runId, held.run.lease_token]));
-      return 'ran';
+      return;
     }
     const next = await takeStep(workspaceId, held, node);
-    if (!next) return 'ran';
+    if (!next) return;
     held.run = next;
   }
-  return 'ran';
 }
 
 /**

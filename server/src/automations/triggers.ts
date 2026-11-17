@@ -127,7 +127,8 @@ export async function onMailStored(tx: Tx, state: State, workspaceId: string, co
 
 async function startRuns(tx: Tx, state: State, workspaceId: string, conn: ConnectionRow, received: MailMessage[]): Promise<State> {
   const lives = (
-    await tx.query(`select l.*, v.graph, v.name from automation_live l join automation_version v on v.id = l.version_id where l.workspace_id = $1 and l.enabled and l.trigger_kind = 'email'`, [workspaceId])
+    // A paused automation (no mailbox was connected) fires nothing until it is resumed.
+    await tx.query(`select l.*, v.graph, v.name from automation_live l join automation_version v on v.id = l.version_id where l.workspace_id = $1 and l.enabled and l.paused_reason is null and l.trigger_kind = 'email'`, [workspaceId])
   ).rows as Live[];
   if (!lives.length) return state;
 

@@ -11,6 +11,7 @@ import { enqueueSoon } from '../jobs/jobs';
 import { addSecret, log } from '../lib/log';
 import { sendMail } from '../providers/email';
 import { closeConnections } from '../sync/connect';
+import { switchOffWithoutOwner } from '../automations/roles';
 
 /**
  * What each role may do beyond Better Auth's own organization permissions.
@@ -142,6 +143,12 @@ function build(secret: string) {
           // A person who leaves takes their connected accounts with them; a deleted workspace stops reading altogether.
           afterRemoveMember: async ({ member, organization: org }) => {
             await closeConnections(org.id, { userId: member.userId }, 'system').catch((e) => log.error('could not close a removed member’s connections', { error: (e as Error).message }));
+            // [automations] An automation they switched on stops with them (automations/roles.ts).
+            await switchOffWithoutOwner(org.id).catch((e) => log.error('could not switch off a removed member’s automations', { error: (e as Error).message }));
+          },
+          // [automations] An owner or admin made something less can no longer keep their automations running (automations/roles.ts).
+          afterUpdateMemberRole: async ({ organization: org }) => {
+            await switchOffWithoutOwner(org.id).catch((e) => log.error('could not switch off automations after a role change', { error: (e as Error).message }));
           },
           beforeDeleteOrganization: async ({ organization: org }) => {
             await closeConnections(org.id, {}, 'system').catch((e) => log.error('could not close a deleted workspace’s connections', { error: (e as Error).message }));
