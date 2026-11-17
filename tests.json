@@ -200,9 +200,16 @@
    "status": "pass"
   },
   {
+   "id": "api-review-a",
+   "file": "server/test/review-a.test.ts",
+   "covers": "the closing safety review’s proofs, first half, each failing on the code it was written against and passing after the fix: “From contains” matches the sender’s address, not a display name a stranger chose; a Send step puts forward only the draft its own Draft step wrote; someone no longer an owner or admin can’t answer an automation’s “Ask me first”; a second visitor typing the same address can’t rewrite the first visitor’s answers on a lead; a stranger’s reply filed as spam doesn’t archive the thread it joined",
+   "tests": 5,
+   "status": "pass"
+  },
+  {
    "id": "api-chat",
    "file": "server/test/chat.test.ts",
-   "covers": "the website chat on a real workspace: the workspace comes only from the site key and the conversation only from a signed token (forged, expired, another conversation’s or another site’s token refused); an unknown key, a chat that is off and a workspace with sending switched off all answer the same; replies come from the chat’s own rules with no model call; every reply is an effect record approved by the rule set when an owner or admin switched the chat on, and nothing is shown without one (a database trigger refuses it); a reply is shown once; switching on needs an owner or admin and a website, and only they change settings while it is on; the frame may be embedded only by the named site; a visitor’s text is stored and shown as text; leads from chats never overwrite a lead from elsewhere; take over stops Timmy; limits per visitor, address, conversation and day; streams bounded; retention deletes old conversations; nothing across workspaces",
+   "covers": "the website chat on a real workspace: the workspace comes only from the site key and the conversation only from a signed token (forged, expired, another conversation’s or another site’s token refused); an unknown key, a chat that is off and a workspace with sending switched off all answer the same; replies come from the chat’s own rules with no model call; every reply is an effect record approved by the rule set when an owner or admin switched the chat on, and nothing is shown without one (a database trigger refuses it); a reply is shown once; switching on needs an owner or admin and a website, and only they change settings while it is on; the frame may be embedded only by the named site; a visitor’s text is stored and shown as text; leads from chats never overwrite a lead from elsewhere; take over stops Timmy; limits per visitor, address, conversation and day; streams bounded; retention deletes old conversations; nothing across workspaces; one address may send at most a set number of messages a day to one business’s chat",
    "tests": 43,
    "status": "pass"
   },
@@ -408,9 +415,9 @@
   },
   {
    "id": "staging-full",
-   "covers": "the live-mode browser suites (e2e/live/run-all.sh, 13 suites, 243 checks) against the staging server on Railway with stand-in providers",
+   "covers": "the live-mode browser suites (e2e/live/run-all.sh, 19 suites) against the staging server on Railway with stand-in providers",
    "status": "pass",
-   "result": "13 of 13 on build b401b3f (Nov 16, 2026), after staging’s app was pointed back at this branch with the owner’s OK."
+   "result": "Nov 17, 2026, on the code with six of the seven parallel builds merged: 18 of 19 suites pass (live-filing lost its connection once while staging redeployed and passed on the re-run). live-chat cannot pass from this cloud session: its network proxy adds the staging test token and drops the chat window’s own Authorization header on the live-update request. A direct request to staging streams the conversation correctly, and live-chat passes locally against the production build run as a staging server. Earlier: 13 of 13 on build b401b3f (Nov 16)."
   },
   {
    "id": "prod-smoke",
