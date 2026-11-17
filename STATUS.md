@@ -207,6 +207,25 @@ Writing those tests also showed that an action with a field of the wrong shape c
 
 **For you to confirm:** members and assistants file mail in the workspace's mailbox on their own say (and through Auto mode for the open thread), while a send from that mailbox waits for its owner. I think that is right, since filing reaches nobody and is an assistant's job, but it is your call.
 
+## Safety review that closes phase 1 (Nov 17, 2026)
+
+Two independent reviewers, each told to break the five safety properties and to prove every break with a test that fails on the code. Their tests stay in the suite (`server/test/review-a.test.ts`, `review-b.test.ts`).
+
+**First half: everything that can write outside Timmy or let a stranger in** (the Action gateway and its new kinds, automations, the website chat's public side, calendar changes, changes picked up from the mailbox). It found nothing that sends, files, writes a calendar or shows a visitor a message without an approved record or a rule a person set, nothing that runs twice, nothing across workspaces and no credential in a prompt. It proved five smaller breaks, all fixed:
+- An automation's "From contains" could be met by a stranger who put the trusted address in their display name. It now matches the sender's address only.
+- A Send step could put forward a draft someone else wrote while the run waited. It now puts forward only the draft its own Draft step wrote.
+- Someone lowered from admin to member could still answer an automation's "Ask me first". Only a current owner or admin can.
+- A second website visitor typing the same address replaced the first visitor's answers on the lead. Later answers only fill gaps. (`server/test/chat.test.ts` expected the old behaviour and was changed for this.)
+- A stranger's reply filed under spam could archive the thread it joined, in Timmy only. Spam alone no longer decides anything about a thread with older mail.
+
+Also closed from its list of suspicions: one network address can now send at most 300 messages a day to one business's chat, so it cannot use up the day's allowance and shut the chat for everyone else.
+
+Left as known, from its suspicions: an automation or the chat keeps running after the owner or admin who switched it on loses that role (nobody new can answer its questions, but it is not switched off); there is no bot check on the chat, so many addresses together can still reach a chat's daily cap; the 2,000 open chat streams per server are shared by every customer; reloading the app makes a mailbox look up to once a minute, against the ten minutes intended for ordinary use; whether Outlook keeps categories on mail sent within one company (which would move a thread) is unchecked; and confirming a calendar deletion whose outcome was unknown treats "no longer in the two-month window" as deleted.
+
+**Second half: who can read and change what, and what untrusted text can do** (row-level security on every new table and route, the generic state operations and the reducer on the server, page versions and the trash, the ontology and its kinds, Ask's tools and prompts, and the screens that show untrusted text). Running.
+
+**On staging, the chat's live updates can't be checked from this cloud session.** This session's network proxy holds the staging test token and adds it to every request to staging, and in doing so drops a request's own `Authorization` header, which is where the chat window sends its conversation token for live updates. So `live-chat` fails on staging from here at the point where it waits for a reply, while a direct request to staging streams the conversation correctly. Visitors' browsers don't go through this proxy. `live-chat` passes locally against the production build run as a staging server.
+
 ## Code review (Nov 16, 2026)
 
 Two more independent reviews, run the way the `code-review` skill from mattpocock/skills prescribes: one against coding standards (duplication, modules that do too much, code that decides by reading message text), and one against the brief and the PRD. What changed as a result:
