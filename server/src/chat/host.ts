@@ -18,10 +18,15 @@ import type { Env } from '../http/session';
 import { chatFrameRoutes, chatPublicRoutes } from './routes';
 import { NOT_A_MESSAGE } from './visitor';
 
-/** The host part of an address (name and port, the scheme's own port left out), lower case. Empty when it isn't one. */
+/**
+ * The host part of an address (name and port, the scheme's own port left out), lower case. Empty when it isn't
+ * one: a Host header holding anything a host name can't (a slash, an @, a space) matches no address.
+ */
 function hostOf(origin: string, raw: string): string {
+  const host = raw.trim().replace(/\.$/, '');
+  if (!/^[A-Za-z0-9.\-:[\]]{1,260}$/.test(host)) return '';
   try {
-    return new URL(`${new URL(origin).protocol}//${raw.trim().replace(/\.$/, '')}`).host.toLowerCase();
+    return new URL(`${new URL(origin).protocol}//${host}`).host.toLowerCase();
   } catch {
     return '';
   }

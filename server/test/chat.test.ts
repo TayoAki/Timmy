@@ -1276,7 +1276,7 @@ describe('the chat’s own address (CHAT_PUBLIC_URL)', () => {
     for (const same of ['CHAT.Timmy.test', 'chat.timmy.test:443', 'chat.timmy.test.']) {
       expect([same, (await onHost(same, '/chat.js')).status, (await onHost(same, '/api/health')).status]).toEqual([same, 200, 404]);
     }
-    for (const other of ['chat.timmy.test:8443', 'evil-chat.timmy.test', 'chat.timmy.test.evil.example']) {
+    for (const other of ['chat.timmy.test:8443', 'evil-chat.timmy.test', 'chat.timmy.test.evil.example', 'chat.timmy.test/x', 'x@chat.timmy.test']) {
       expect([other, (await onHost(other, '/chat.js')).status, (await onHost(other, '/api/health')).status]).toEqual([other, 404, 200]);
     }
     // Only people who may read the workspace are told.
