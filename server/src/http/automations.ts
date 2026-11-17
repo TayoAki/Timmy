@@ -1,11 +1,11 @@
 /**
- * The automation engine's two endpoints: a test run that does nothing, and the list of recent runs behind
- * the editor's Runs panel. Which workspace they act in comes from the session, never from the request,
+ * The automation engine's endpoints: a test run that does nothing (and the recent emails it can start from),
+ * and the list of recent runs behind the editor's Runs panel. Which workspace they act in comes from the session, never from the request,
  * and every read is scoped to it: an automation, run or email id from another workspace finds nothing.
  */
 import type { Hono } from 'hono';
 import { KIND } from '../../../src/areas/automations/catalog';
-import { dryRun } from '../automations/dryrun';
+import { dryRun, testEmails } from '../automations/dryrun';
 import type { RunRow, StepRow } from '../automations/rows';
 import { withWorkspace } from '../db/pool';
 import { readState } from '../state/mutate';
@@ -26,9 +26,16 @@ export function automationRoutes(app: Hono<Env>): void {
     if (!ctx.rules.work) return c.json({ error: 'Your role can’t test automations in this workspace.' }, 403);
     const id = c.req.param('id');
     if (!ID.test(id)) return c.json({ error: 'Not found' }, 404);
-    const body = ((await c.req.json().catch(() => null)) ?? {}) as { sample?: unknown; eventId?: unknown };
+    const body = ((await c.req.json().catch(() => null)) ?? {}) as { sample?: unknown; eventId?: unknown; graph?: unknown };
     const out = await dryRun(ctx.workspaceId, id, body);
     return c.json(out.body, out.status);
+  });
+
+  // The recent emails a test run can start from, for the editor's picker. Who sent each and its subject, nothing more.
+  app.get('/api/v1/automations/test-emails', requireWorkspace, async (c) => {
+    const ctx = ctxOf(c);
+    if (!ctx.rules.work) return c.json({ error: 'Your role can’t test automations in this workspace.' }, 403);
+    return c.json({ emails: await testEmails(ctx.workspaceId) });
   });
 
   // Recent runs, newest first, each with what its steps did and any error.

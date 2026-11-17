@@ -101,6 +101,10 @@ export const api = {
   audit: () => call<{ entries: { id: number; at: Date; actor: string; action: string; effect_id: string | null; detail: Record<string, unknown> }[] }>('GET', '/api/v1/audit?limit=100'),
   /** What an automation has done lately: its runs, newest first, each with its steps. */
   automationRuns: (id: string) => call<AutomationRuns>('GET', `/api/v1/automations/${encodeURIComponent(id)}/runs`),
+  /** A test run on the server, of the steps as drawn: what each would do with sample data or a recent email. Nothing is done. */
+  automationTest: (id: string, body: ({ sample: true } | { eventId: string }) & { graph: { nodes: unknown[]; edges: unknown[] } }) => call<AutomationTest>('POST', `/api/v1/automations/${encodeURIComponent(id)}/test`, body),
+  /** The recent emails a test run can start from, newest first. */
+  automationTestEmails: () => call<{ emails: TestEmail[] }>('GET', '/api/v1/automations/test-emails'),
   /** What Timmy offers to track and what it tracks (deals, properties…), for the review screen on People. */
   tracked: () => call<TrackedOverview>('GET', '/api/v1/tracked'),
   trackedThings: (id: string) => call<{ things: TrackedThing[] }>('GET', `/api/v1/tracked/${encodeURIComponent(id)}/things`),
@@ -126,4 +130,33 @@ export interface AutomationRun {
 export interface AutomationRuns {
   automation: { id: string; on: boolean; note: string | null; nextRunAt: Date | null };
   runs: AutomationRun[];
+}
+
+/** An email a test run can start from. */
+export interface TestEmail {
+  id: string;
+  from: string;
+  subject: string;
+  at: string;
+}
+
+/** What a test run on the server says each step would do. */
+export interface AutomationTest {
+  dryRun: true;
+  source: 'sample' | 'email';
+  fields: Record<string, string>;
+  steps: {
+    id: string;
+    kind: string;
+    label: string;
+    text: string;
+    /** Why this block can't run on a real workspace yet. */
+    notYet?: string;
+    /** What the step would put forward in Approvals. */
+    wouldAsk?: { kind: 'email.reply' | 'automation.ask'; title: string; to?: string[]; subject?: string; body?: string };
+  }[];
+  /** Steps the test never reached (the branch not taken). */
+  skipped: string[];
+  /** What would stop it being switched on. Empty when nothing would. */
+  problems: string[];
 }

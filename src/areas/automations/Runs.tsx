@@ -18,7 +18,7 @@ function standing(run: AutomationRun): string {
   return STATUS[run.status];
 }
 
-export function Runs({ id, on, note }: { id: string; on: boolean; note?: string }) {
+export function Runs({ id, on, note, paused }: { id: string; on: boolean; note?: string; paused?: string }) {
   const [data, setData] = useState<AutomationRuns | null>(null);
   const [problem, setProblem] = useState('');
 
@@ -47,7 +47,7 @@ export function Runs({ id, on, note }: { id: string; on: boolean; note?: string 
         </p>
       )}
       <p className="ae-hint">
-        {on ? 'This automation is on. Each time it runs, the run shows here.' : 'This automation is off, so nothing starts it. Test run shows what it would do.'}
+        {on && paused ? `This automation is on but paused, so nothing starts it. ${paused}` : on ? 'This automation is on. Each time it runs, the run shows here.' : 'This automation is off, so nothing starts it. Test run shows what it would do.'}
         {on && data?.automation.nextRunAt ? ` Next run: ${fmtStamp(data.automation.nextRunAt)}.` : ''}
       </p>
       {problem && <p className="ar-problem">{problem}</p>}

@@ -8,6 +8,7 @@
  */
 import type { State } from '../../../src/state/store';
 import type { PendingEffect } from '../../../src/live/types';
+import { automationCard } from '../automations/cards';
 import { config } from '../config';
 import { withWorkspace, type Tx } from '../db/pool';
 import { hashOf, newId } from '../lib/ids';
@@ -130,6 +131,8 @@ function pendingOf(e: EffectRow): PendingEffect {
     thread: e.preview.thread,
     conversation: e.preview.conversation,
     at: new Date(e.created_at),
+    // [automations] Who may decide what an automation put forward, and the draft card its reply stands in for.
+    ...automationCard(e),
   };
 }
 

@@ -9,7 +9,7 @@ import { NOW, PEOPLE } from '../../data/mock';
 import type { Block, DocBody, WFile, WS } from '../../data/ws-types';
 import { FILING_FOLDER } from '../../data/ws-mock';
 import { fmtDate } from '../../lib/format';
-import { listNumbers, numberLabel, textOf } from '../../lib/blocks';
+import { listNumbers, numberLabel, textOf, timmyLines } from '../../lib/blocks';
 import { useStore, ws } from '../../state/store';
 import { isoDay, patch, put, uid, type WsOptions } from '../../state/ws';
 import { FilePick } from './FilePick';
@@ -112,13 +112,15 @@ export function DocEditor({ file, body }: { file: WFile; body: DocBody }) {
   const [pick, setPick] = useState<null | { kind: 'sheet' | 'file'; after: number | null }>(null);
   const readOnly = !!file.trashed;
 
-  const save = (next: Block[], opts?: WsOptions) => dispatch(ws([patch('docs', body.id, { blocks: next }), patch('files', file.id, { updated: NOW })], opts));
+  /** `base`: the lines Timmy added that the copy of the page this save was made from had (see lib/blocks.ts). */
+  const save = (next: Block[], opts?: WsOptions, base?: string[]) =>
+    dispatch(ws([{ ...patch('docs', body.id, { blocks: next }), ...(base ? { base } : {}) }, patch('files', file.id, { updated: NOW })], opts));
 
   /** Change the blocks from outside the editor: save what's typed first. */
   const change = (f: (bs: Block[]) => Block[], opts?: WsOptions) => {
     handle.current.flush();
     const cur = (state.ws.docs[body.id] ?? body).blocks;
-    save(f(cur), opts);
+    save(f(cur), opts, timmyLines(cur));
   };
 
   const insertNode = (after: number | null, node: Record<string, unknown>) => {
@@ -241,7 +243,7 @@ export function DocEditor({ file, body }: { file: WFile; body: DocBody }) {
         blocks={blocks}
         readOnly={readOnly}
         handle={handle}
-        onSave={(next) => save(next)}
+        onSave={(next, base) => save(next, undefined, base)}
         toast={(text) => dispatch({ type: 'toast', text })}
         actions={{
           pickSheet: (after) => setPick({ kind: 'sheet', after }),

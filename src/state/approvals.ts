@@ -54,6 +54,17 @@ export interface Approval {
   openLabel?: string;
   /** What else approving this does, or a reason to look twice. */
   notes?: ApprovalNote[];
+  /**
+   * On a real workspace, set when only some people may decide this (what an automation put forward): owners and
+   * admins, and `person` when set. `who` says so in words. Everyone else sees who it waits for, not the buttons.
+   */
+  decidedBy?: { person?: string; who: string };
+}
+
+/** Whether the person signed in may decide this card. Anyone may, unless the card says who may (see `decidedBy`). */
+export function mayDecideCard(a: Pick<Approval, 'decidedBy' | 'kind'>, viewer: { user: { id: string }; can: { policy: boolean; approveSends: boolean } } | null | undefined): boolean {
+  if (!a.decidedBy || !viewer) return true;
+  return viewer.can.policy || (!!a.decidedBy.person && a.decidedBy.person === viewer.user.id && (a.kind !== 'email' || viewer.can.approveSends));
 }
 
 export interface ApprovalNote {
@@ -137,8 +148,10 @@ function buildApprovals(s: State): Approval[] {
   const ctx: UrgencyContext = { ws: s.ws, deals: s.deals, rules: s.rules };
   const list: Approval[] = [];
 
+  // An automation's reply waiting in Approvals is the thread's draft, so its card stands in for the draft's own.
+  const putForward = new Set(s.pending.filter((e) => e.replacesDraft && e.thread).map((e) => e.thread!));
   for (const t of s.threads) {
-    if (!t.draft || t.box === 'archived') continue;
+    if (!t.draft || t.box === 'archived' || putForward.has(t.id)) continue;
     const d = t.draft;
     list.push({
       key: `draft:${t.id}`,
@@ -163,6 +176,8 @@ function buildApprovals(s: State): Approval[] {
   for (const e of s.pending) {
     const holding = e.status === 'holding';
     const mine = e.waitingOn === 'you';
+    // The draft it stands in for may need a look first (a gap Timmy left, a figure that changed): those notes come with it.
+    const replaced = e.replacesDraft ? s.threads.find((t) => t.id === e.thread && t.draft?.body === e.preview.body) : undefined;
     list.push({
       key: `eff:${e.id}`,
       kind: e.kind === 'campaign' ? 'campaign' : e.kind,
@@ -173,6 +188,8 @@ function buildApprovals(s: State): Approval[] {
       urgency: fixed(holding ? 'soon' : 'urgent', holding ? 'Going out shortly' : 'Waiting for an OK'),
       email: e.preview.subject !== undefined || e.preview.body !== undefined ? { to: (e.preview.to ?? []).map((x) => `mail:${x}`), cc: e.preview.cc?.map((x) => `mail:${x}`), subject: e.preview.subject ?? '', body: e.preview.body ?? '', sources: [], ...(e.preview.attachments?.length ? { files: e.preview.attachments } : {}) } : undefined,
       options: holding ? [{ id: 'undo', label: 'Undo', danger: true }] : [{ id: 'approve', label: e.kind === 'email' ? 'Send' : e.kind === 'filing' ? 'File it' : 'Approve', primary: true }, { id: 'decline', label: e.kind === 'email' ? 'Don’t send' : e.kind === 'filing' ? 'Leave it' : 'Decline', danger: true }],
+      ...(replaced ? { notes: draftNotes(s, replaced) } : {}),
+      ...(e.decidedBy ? { decidedBy: { ...e.decidedBy, who: e.decidedBy.person ? `the person whose mailbox it leaves from${e.preview.from ? ` (${e.preview.from})` : ''}, or an owner or admin` : 'an owner or admin' } } : {}),
     });
   }
 

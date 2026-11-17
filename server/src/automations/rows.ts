@@ -33,6 +33,8 @@ export interface LiveRow {
   next_fire_at: Date | null;
   failures_in_a_row: number;
   off_reason: string | null;
+  /** Set while a New-email automation that is on has no mailbox to read (see mailbox.ts). */
+  paused_reason: string | null;
 }
 
 /** What started a run. Kept apart from the fields a template may use: nothing in here is ever filled into text. */
@@ -107,11 +109,13 @@ export const nameOf = (state: State, automationId: string, fallback: string) => 
  * Runs already in progress are left to finish; only new ones stop.
  */
 export async function switchOff(tx: Tx, state: State, workspace: { id: string; timezone: string }, automationId: string, why: string): Promise<State> {
-  await tx.query(`update automation_live set enabled = false, off_reason = $3, next_fire_at = null, updated_at = now() where workspace_id = $1 and automation_id = $2`, [workspace.id, automationId, why]);
+  await tx.query(`update automation_live set enabled = false, off_reason = $3, next_fire_at = null, paused_reason = null, updated_at = now() where workspace_id = $1 and automation_id = $2`, [workspace.id, automationId, why]);
   await audit(tx, workspace.id, { actor: 'system', action: 'automation.off', detail: { automation: automationId, reason: why } });
   const a = state.ws.automations[automationId];
   if (!a) return state;
   const note = `Timmy switched this off on ${stampLabel(new Date(), workspace.timezone)}. ${why}`.slice(0, NOTE_MAX);
-  const next: State = { ...state, ws: { ...state.ws, automations: { ...state.ws.automations, [automationId]: { ...a, on: false, note } } } };
+  // Off, it is no longer paused either.
+  const { paused: _paused, ...rest } = a;
+  const next: State = { ...state, ws: { ...state.ws, automations: { ...state.ws.automations, [automationId]: { ...rest, on: false, note } } } };
   return logged(next, 'automation', `Timmy switched the automation “${a.name}” off. ${why}`);
 }

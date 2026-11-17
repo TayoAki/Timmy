@@ -32,6 +32,7 @@ import { chatHostGate } from '../chat/host';
 import { chatEnablerChanged } from '../chat/enabler';
 import { agentRoutes } from './agent';
 import { automationRoutes } from './automations';
+import { switchOffWithoutOwner } from '../automations/roles';
 import { assetHeaders, fileRoutes, isFileUpload } from './files';
 import { membership, workspacesOf } from '../auth/members';
 import { ctxOf, requireRead, requireSession, requireWorkspace, sameOrigin, sessionOf, type Env } from './session';
@@ -125,6 +126,8 @@ export function buildApp(): Hono<Env> {
     const res = await auth().handler(c.req.raw);
     if (leaving && res.ok) await closeConnections(leaving.workspaceId, { userId: leaving.userId }, leaving.userId).catch((e) => log.error('could not close a leaving member’s connections', { error: (e as Error).message }));
     if (leaving && res.ok) await chatEnablerChanged(leaving.workspaceId, leaving.userId);
+    // [automations] So does any automation they switched on (automations/roles.ts).
+    if (leaving && res.ok) await switchOffWithoutOwner(leaving.workspaceId).catch((e) => log.error('could not switch off a leaving member’s automations', { error: (e as Error).message }));
     return res;
   });
 

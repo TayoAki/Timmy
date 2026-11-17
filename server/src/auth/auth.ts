@@ -12,6 +12,7 @@ import { addSecret, log } from '../lib/log';
 import { sendMail } from '../providers/email';
 import { closeConnections } from '../sync/connect';
 import { chatEnablerChanged } from '../chat/enabler';
+import { switchOffWithoutOwner } from '../automations/roles';
 
 /**
  * What each role may do beyond Better Auth's own organization permissions.
@@ -144,10 +145,14 @@ function build(secret: string) {
           afterRemoveMember: async ({ member, organization: org }) => {
             await closeConnections(org.id, { userId: member.userId }, 'system').catch((e) => log.error('could not close a removed member’s connections', { error: (e as Error).message }));
             await chatEnablerChanged(org.id, member.userId);
+            // [automations] An automation they switched on stops with them (automations/roles.ts).
+            await switchOffWithoutOwner(org.id).catch((e) => log.error('could not switch off a removed member’s automations', { error: (e as Error).message }));
           },
-          // The website chat runs only while whoever switched it on is still an owner or admin (chat/enabler.ts).
+          // The website chat and automations run only while whoever switched them on is still an owner or admin
+          // (chat/enabler.ts, automations/roles.ts).
           afterUpdateMemberRole: async ({ member, organization: org }) => {
             await chatEnablerChanged(org.id, member.userId);
+            await switchOffWithoutOwner(org.id).catch((e) => log.error('could not switch off automations after a role change', { error: (e as Error).message }));
           },
           beforeDeleteOrganization: async ({ organization: org }) => {
             await closeConnections(org.id, {}, 'system').catch((e) => log.error('could not close a deleted workspace’s connections', { error: (e as Error).message }));

@@ -446,7 +446,9 @@ describe('Send the email', () => {
     expect((await audit()).filter((a) => a.effect_id === e!.id).map((a) => a.action)).toEqual(['effect.proposed', 'effect.approved', 'effect.executing', 'effect.completed']);
   });
 
-  it('declining it cancels the run: nothing is sent, the later steps don’t happen, and the draft stays', async () => {
+  // Changed on purpose: the automation's card stands in for the draft's own in Approvals, so turning it down settles
+  // the draft too (it used to stay on the thread, and its own card came back).
+  it('declining it cancels the run: nothing is sent, the later steps don’t happen, and the draft is discarded with it', async () => {
     await live('a1', graph);
     await deliver('Quote for 40 seats?');
     const [e] = await effects();
@@ -463,7 +465,9 @@ describe('Send the email', () => {
     expect(await tasks()).toEqual([]);
     const s = await w.state();
     expect(s.pending).toEqual([]);
-    expect(s.threads.find((t) => t.subject === 'Quote for 40 seats?')!.draft).toBeDefined();
+    const thread = s.threads.find((t) => t.subject === 'Quote for 40 seats?')!;
+    expect(thread.draft).toBeUndefined();
+    expect(thread.history?.at(-1)?.text).toBe('The automation’s reply was turned down in Approvals, so Timmy’s draft was discarded');
     expect((await effects())[0]!.status).toBe('declined');
     // A person saying no is not a failure of the automation.
     expect((await liveRow('a1'))!.failures_in_a_row).toBe(0);

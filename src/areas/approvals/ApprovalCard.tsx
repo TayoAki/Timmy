@@ -6,7 +6,8 @@ import { ArrowRight, ChevronDown, ChevronUp, Hourglass, Info, Paperclip, Triangl
 import { useId, useState } from 'react';
 import { PEOPLE } from '../../data/mock';
 import { dueInfo } from '../../lib/format';
-import { APPROVAL_KINDS, type Approval, type ApprovalNote } from '../../state/approvals';
+import { APPROVAL_KINDS, mayDecideCard, type Approval, type ApprovalNote } from '../../state/approvals';
+import { useProfile } from '../../live/LiveApp';
 import { useStore } from '../../state/store';
 import { firstName, midSentence, personName } from '../../state/ws';
 import { FileChips } from '../../components/Attach';
@@ -17,14 +18,16 @@ const names = (ids: string[]) => ids.map((id) => personName(id)).join(', ');
 
 function useActions(a: Approval) {
   const { dispatch } = useStore();
+  // On a real workspace some cards are only for some people to decide; everyone else is told who it waits for.
+  const mine = mayDecideCard(a, useProfile()?.profile);
   const run = (option: string) => dispatch({ type: 'resolve', key: a.key, option, change: a.change });
   const open = () => (a.thread ? dispatch({ type: 'openThread', id: a.thread }) : a.route && dispatch({ type: 'navigate', route: a.route }));
-  return { run, open };
+  return { run, open, mine };
 }
 
 export function ApprovalCard({ a, inThread }: { a: Approval; inThread?: boolean }) {
   const { state } = useStore();
-  const { run, open } = useActions(a);
+  const { run, open, mine } = useActions(a);
   const [full, setFull] = useState(false);
   const titleId = useId();
   const meta = APPROVAL_KINDS[a.kind];
@@ -119,11 +122,15 @@ export function ApprovalCard({ a, inThread }: { a: Approval; inThread?: boolean 
               {a.openLabel ?? (a.kind === 'email' ? 'Edit' : 'Open email')}
             </button>
           )}
-          {[...a.options].reverse().map((o) => (
-            <button key={o.id} className={`btn btn-sm${o.primary ? ' btn-primary' : ''}${o.danger ? ' btn-quiet-danger' : ''}`} onClick={() => run(o.id)}>
-              {o.label}
-            </button>
-          ))}
+          {mine ? (
+            [...a.options].reverse().map((o) => (
+              <button key={o.id} className={`btn btn-sm${o.primary ? ' btn-primary' : ''}${o.danger ? ' btn-quiet-danger' : ''}`} onClick={() => run(o.id)}>
+                {o.label}
+              </button>
+            ))
+          ) : (
+            <span className="ap-waiting-for">Waiting for {a.decidedBy?.who} to decide</span>
+          )}
         </div>
       </div>
     </article>
@@ -148,7 +155,7 @@ export function ApprovalNotes({ notes }: { notes?: ApprovalNote[] }) {
 /** A one-line version for the daily brief. */
 export function ApprovalRow({ a }: { a: Approval }) {
   const { dispatch } = useStore();
-  const { run } = useActions(a);
+  const { run, mine } = useActions(a);
   const meta = APPROVAL_KINDS[a.kind];
   const primary = a.options.find((o) => o.primary) ?? a.options[0]!;
   return (
@@ -168,9 +175,11 @@ export function ApprovalRow({ a }: { a: Approval }) {
           Review
           <ArrowRight size={14} />
         </button>
-        <button className="btn btn-sm btn-primary" onClick={() => run(primary.id)}>
-          {primary.label}
-        </button>
+        {mine && (
+          <button className="btn btn-sm btn-primary" onClick={() => run(primary.id)}>
+            {primary.label}
+          </button>
+        )}
       </div>
     </li>
   );

@@ -24,6 +24,8 @@ import { EmojiPicker, anchorOf, type Anchor } from './Popover';
 import { createSlashBus, SlashCommand } from './slash';
 import { setSaveState } from './status';
 import { joinRoom, RemoteCursors } from './presence';
+import { timmyLines } from '../../../lib/blocks';
+import { insertTimmyLines, timmyAdditions } from './timmy-lines';
 
 const INDENT_PX = 26;
 const SAVE_MS = 850;
@@ -65,7 +67,8 @@ export function NotionEditor({
   docId: string;
   blocks: Block[];
   readOnly: boolean;
-  onSave: (blocks: Block[]) => void;
+  /** `base`: the lines Timmy added that the copy this save was made from had. One of them missing from the save was taken out on purpose. */
+  onSave: (blocks: Block[], base: string[]) => void;
   actions: EditorActions;
   /** Blocks that point somewhere (files, sheets, pages) get an "Open" item. */
   onOpenBlock: (type: string, attrs: Record<string, unknown>) => { label: string; run: () => void } | undefined;
@@ -156,8 +159,9 @@ export function NotionEditor({
     if (!editor || editor.isDestroyed) return;
     const next = fromDoc(editor.getJSON());
     if (!sameBlocks(next, lastSaved.current)) {
+      const base = timmyLines(lastSaved.current);
       lastSaved.current = next;
-      saveRef.current(next);
+      saveRef.current(next, base);
       publish.current(next);
     }
     setSaveState(docId, 'saved');
@@ -193,8 +197,16 @@ export function NotionEditor({
     // not a change from outside: replacing what is shown would throw away whatever was typed since the save went.
     const ownSave = sameBlocks(blocks, lastSaved.current);
     const cur = fromDoc(editor.getJSON());
+    const before = lastSaved.current;
     lastSaved.current = blocks;
     if (ownSave || sameBlocks(cur, blocks)) return;
+    // Only lines Timmy added (an automation's “Add to a doc”) while something typed here isn't saved yet: they go in
+    // beside it, and the typing stays to be saved with them.
+    const added = timer.current !== undefined ? timmyAdditions(before, blocks) : null;
+    if (added) {
+      insertTimmyLines(editor, added);
+      return;
+    }
     window.clearTimeout(timer.current);
     timer.current = undefined;
     const { from } = editor.state.selection;

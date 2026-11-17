@@ -1,7 +1,10 @@
 /**
- * A test run on the server: the saved drawing is walked with sample data, or with a real email that
- * arrived recently, and each step says what it would do. Nothing is done. No task is added, no draft is
- * written, no model is asked, nothing is put forward in Approvals, and no run is recorded.
+ * A test run on the server: the drawing is walked with sample data, or with a real email that arrived
+ * recently, and each step says what it would do. Nothing is done. No task is added, no draft is written,
+ * no model is asked, nothing is put forward in Approvals, and no run is recorded.
+ *
+ * The drawing is the saved one, or the steps and connections as they are on the canvas when the editor sends
+ * them (a test run comes before saving as often as after). Those are checked exactly like a save, and only walked.
  *
  * A step that would wait for a person shows what it would put forward, so the person can see who an
  * email would go to before the automation is ever switched on.
@@ -61,10 +64,26 @@ async function emailFields(workspaceId: string, eventId: string): Promise<Fields
   return mailFields({ from: row.meta.fromHeader || row.sender, subject: row.subject ?? '', text: row.snippet ?? '' });
 }
 
-export async function dryRun(workspaceId: string, automationId: string, body: { sample?: unknown; eventId?: unknown }): Promise<DryRunAnswer> {
+/** The emails a test run can start from: the newest ones received in this workspace's mailbox. */
+export async function testEmails(workspaceId: string, limit = 20): Promise<{ id: string; from: string; subject: string; at: Date }[]> {
+  return withWorkspace({ workspaceId }, async (tx) => {
+    const { rows } = await tx.query(
+      `select i.id, i.subject, i.sender, i.meta, i.occurred_at from item i join connection c on c.id = i.connection_id
+       where i.workspace_id = $1 and i.kind = 'message' and i.direction = 'in' and c.status = 'active' and i.sender is not null
+       order by i.occurred_at desc limit $2`,
+      [workspaceId, limit],
+    );
+    return (rows as { id: string; subject: string | null; sender: string; meta: { fromHeader?: string }; occurred_at: Date }[]).map((r) => ({ id: r.id, from: plain(r.meta?.fromHeader || r.sender, 200), subject: plain(r.subject ?? '', 300), at: r.occurred_at }));
+  });
+}
+
+export async function dryRun(workspaceId: string, automationId: string, body: { sample?: unknown; eventId?: unknown; graph?: unknown }): Promise<DryRunAnswer> {
   const loaded = await readState(workspaceId);
-  const a: Automation | undefined = loaded.state.ws.automations[automationId];
-  if (!a) return refuse(404, 'Not found');
+  const saved: Automation | undefined = loaded.state.ws.automations[automationId];
+  if (!saved) return refuse(404, 'Not found');
+  const drawn = body.graph as { nodes?: unknown; edges?: unknown } | undefined;
+  if (drawn !== undefined && (typeof drawn !== 'object' || drawn === null)) return refuse(400, 'The automation isn’t in a form Timmy can save.');
+  const a: Automation = drawn ? { ...saved, nodes: drawn.nodes as Automation['nodes'], edges: drawn.edges as Automation['edges'] } : saved;
   const broken = automationProblems(a, false);
   if (broken.length) return refuse(400, broken.join(' '));
   const g = graphOf(a);

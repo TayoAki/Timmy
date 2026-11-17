@@ -14,6 +14,7 @@ import type { Thread } from '../../../src/data/types';
 import type { Block, Task } from '../../../src/data/ws-types';
 import { KIND, evaluate } from '../../../src/areas/automations/catalog';
 import { draftHash } from '../../../src/live/hash';
+import { TIMMY_LINE } from '../../../src/lib/blocks';
 import { draftFor } from '../agent/draft';
 import type { Tx } from '../db/pool';
 import { propose, type EffectRow, type Proposal } from '../gateway/gateway';
@@ -22,6 +23,7 @@ import type { Loaded } from '../state/docs';
 import { readState } from '../state/mutate';
 import { MAX_BLOCKS } from '../state/ws-check';
 import { before, nextOf, nodeOf, type RunNode } from './graph';
+import { effectKey } from './keys';
 import { render, sentence } from './render';
 import { logged, nameOf, type RunRow, type StepRow, type VersionRow } from './rows';
 import { dueDate, sendFrom, stampLabel, waitUntil } from './when';
@@ -67,8 +69,7 @@ function threadOf(state: State, run: RunRow): Thread | undefined {
   return t.kind === 'email' ? state.threads.find((x) => x.ext?.threadKey === t.threadKey && x.ext?.connectionId === t.connectionId) : undefined;
 }
 
-/** The key that makes a step's effect record the same record however often the step is tried. */
-export const effectKey = (runId: string, nodeId: string) => `run:${runId}:node:${nodeId}`;
+export { effectKey };
 
 /**
  * Puts a record forward at the gateway for a person to decide. An automation has no say of its own:
@@ -142,7 +143,8 @@ const doc: Exec = async ({ run, node, version, now }) => {
     const body = state.ws.docs[id];
     if (!file || !body || file.trashed) throw new StepError(`The doc “${node.config.doc}” isn’t there any more. Pick another doc for “Add to a doc”.`, false);
     if (body.blocks.length >= MAX_BLOCKS) throw new StepError(`The doc “${file.name}” is full.`, false);
-    const blockId = `auto-${run.id}-${node.id}`;
+    // The id marks it as a line Timmy added, so a person's save from a copy of the page made before it keeps it (doc-lines.ts).
+    const blockId = `${TIMMY_LINE}${run.id}-${node.id}`;
     if (body.blocks.some((b) => b.id === blockId)) return done(`Added “${line}” to ${file.name}`);
     const block: Block = { id: blockId, type: 'p', text: line };
     const next = { ...state, ws: { ...state.ws, docs: { ...state.ws.docs, [id]: { ...body, blocks: [...body.blocks, block] } }, files: { ...state.ws.files, [id]: { ...file, updated: now } } } };
@@ -242,7 +244,8 @@ const send: Exec = async (env) => {
     const name = nameOf(state, run.automation_id, version.name);
     const put = await putForward(tx, loaded, env, {
       ...mail.proposal,
-      why: `The automation “${name}” wants to send the reply Timmy drafted. Nothing goes out unless you approve it here; decline it and the draft stays on the thread for you.`,
+      // This card stands in for the draft's own card (see cards.ts), so it says what turning it down does to the draft.
+      why: `The automation “${name}” wants to send the reply Timmy drafted. Nothing goes out unless you approve it here; turn it down and the draft is discarded too.`,
       // The person whose mailbox it leaves from may approve it, as may any owner or admin.
       onBehalfOf: mailboxOwner ?? version.created_by,
     });
