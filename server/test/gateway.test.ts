@@ -9,7 +9,8 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { draftHash } from '../../src/live/hash';
 import { executeEffect, propose, reconcileEffect, type EffectRow } from '../src/gateway/gateway';
 import { rulesFor } from '../src/auth/roles';
-import { fileStore, setFileStoreForTests, type MemoryStore } from '../src/files/store';
+import { fileStore, setFileStoreForTests } from '../src/files/store';
+import type { MemoryStore } from '../src/testing/file-store';
 import { mutate } from '../src/state/mutate';
 import { addMember, boot, connectGmail, fake, jobs, newWorkspace, releaseHolds, rows, samples, sysPool, uploadFile, withWorkspace, type Client } from './helpers';
 

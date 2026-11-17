@@ -6,7 +6,7 @@
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { EffectRow } from '../src/gateway/gateway';
-import type { FakeAttachment, FakeMessage } from '../src/providers/composio';
+import type { FakeAttachment, FakeMessage } from '../src/testing/composio';
 import { MAX_ASKED } from '../src/sync/attachment-names';
 import { backfillMail, reconcileMail } from '../src/sync/ingest';
 import { LABEL_NAMES } from '../src/sync/labels';

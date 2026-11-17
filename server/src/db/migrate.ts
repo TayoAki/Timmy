@@ -1,7 +1,8 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { appRolePassword, sysPool } from './pool';
+import pg from 'pg';
+import { appDatabaseUrl, appPasswordHeldApart, appRolePassword, sysPool } from './pool';
 
 function migrationsDir(): string {
   const here = dirname(fileURLToPath(import.meta.url));
@@ -36,12 +37,33 @@ export async function migrate(log: (line: string) => void = () => {}): Promise<s
       applied.push(file);
       log(`applied ${file}`);
     }
-    // The app role signs in with a password derived from the owner's (see pool.ts).
-    const { rows } = await c.query("select format('alter role timmy_app login password %L', $1::text) as sql", [appRolePassword()]);
-    await c.query(rows[0].sql);
+    if (appPasswordHeldApart()) {
+      // The owner set the app role's password and holds it apart; it is theirs to change, never overwritten here.
+      await assertAppRoleIsBound();
+    } else {
+      // The app role signs in with a password derived from the system connection's (see pool.ts).
+      const { rows } = await c.query("select format('alter role timmy_app login password %L', $1::text) as sql", [appRolePassword()]);
+      await c.query(rows[0].sql);
+    }
   } finally {
     await c.query('select pg_advisory_unlock(7411001)').catch(() => {});
     c.release();
   }
   return applied;
+}
+
+/**
+ * Refuses to start when the app connection held apart signs in as a role that row-level security does not bind
+ * (a superuser, or a role that bypasses it, such as the system role): every request would see every workspace.
+ */
+export async function assertAppRoleIsBound(): Promise<void> {
+  const c = new pg.Client({ connectionString: appDatabaseUrl(), application_name: 'timmy-app-check' });
+  await c.connect();
+  try {
+    const { rows } = await c.query('select rolsuper, rolbypassrls from pg_roles where rolname = current_user');
+    const role = rows[0] as { rolsuper: boolean; rolbypassrls: boolean } | undefined;
+    if (!role || role.rolsuper || role.rolbypassrls) throw new Error('TIMMY_APP_DATABASE_URL must sign in as timmy_app, a role row-level security applies to, not as the owner or a superuser.');
+  } finally {
+    await c.end().catch(() => {});
+  }
 }

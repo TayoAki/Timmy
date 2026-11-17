@@ -7,7 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { config } from '../src/config';
 import type { EffectRow } from '../src/gateway/gateway';
 import { executeEffect, reconcileEffect } from '../src/gateway/gateway';
-import type { FakeEvent } from '../src/providers/composio';
+import type { FakeEvent } from '../src/testing/composio';
 import { syncCalendar } from '../src/sync/calendar';
 import { storedEvent } from '../src/sync/calendar-change';
 import { when } from '../src/sync/calendar-write';

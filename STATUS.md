@@ -342,6 +342,7 @@ Next: the code debt listed below (the gateway's screen list moved out, routes sp
 
 ## Needs your attention
 
+- [ ] **Separately held database credentials** (recommended before outside users). The server supports them; switching is a Railway change only you can make. On staging first, then production: (1) make two random passwords (for example `openssl rand -hex 32`, twice); (2) on the `app` service add `TIMMY_APP_DATABASE_URL=postgresql://timmy_app:<app password>@<host>:<port>/<db>` and `TIMMY_SYSTEM_DATABASE_URL=postgresql://timmy_system:<system password>@<host>:<port>/<db>` (same host, port and database as today's `DATABASE_URL`), without deploying yet; (3) in psql as the database's superuser, run `alter role timmy_app with login password '<app password>';` and the script that creates `timmy_system` and makes it owner of Timmy's schemas (in `docs/ops/database-credentials.md`, with every step); (4) deploy and check the logs show "Timmy API listening" and `/api/health` answers; (5) remove `DATABASE_URL` from the `app` service only and redeploy, so the app no longer holds the superuser's password. Expect about a minute of errors between steps 3 and 4. Rollback: put `DATABASE_URL` back and delete the two variables.
 - [ ] **The website chat's own address** (recommended before customers put the chat on their sites). Pick an address; a separate domain such as `timmychat.com` isolates best, a subdomain such as `chat.yourdomain.com` also works. Then: (1) in Railway, open the `app` service (production) → Settings → Networking → Custom Domain and add it; (2) add the CNAME (and any TXT record) Railway shows at your DNS provider and wait until Railway shows it verified with a certificate; (3) set `CHAT_PUBLIC_URL=https://chat.yourdomain.com` (no path) on the same service. Check that `/chat.js` loads there, `/` answers 404 there, and the app's own `/chat.js` answers 404. Snippets already pasted with the app's address stop working and must be replaced. Optional: `TIMMY_CHAT_CHALLENGE_BITS` (bot-check difficulty, default 18).
 - [ ] **Virus scanning for uploads, if you want it.** The code is ready; it needs a ClamAV service the `app` service can reach (for example ClamAV's official Docker image as a second Railway service, about 1–1.5 GB of memory for its signatures, so it adds hosting cost). Then set `CLAMAV_HOST` and `CLAMAV_PORT` on `app`. Say the word and I will set it up on staging first; I won't add a paid service without your OK.
 - [ ] **Production sign-up is invite-only since the audit.** To create your own account on production, add your address to the `app` service's variables: `TIMMY_SIGNUP_ALLOW=you@example.com` (several addresses, or whole domains like `@example.com`, separated by commas). People you invite to a workspace can sign up without being on the list. `TIMMY_SIGNUP=open` opens it to everyone; I recommend leaving that until a mail provider is in place and sign-ups can verify their address. Staging stays open, which the test suites need.
@@ -381,10 +382,12 @@ What is still open in phase 1 (none of it lets anything be sent without approval
 - A Unibox reply to a lead also archives and files the thread, as every reply does.
 
 
-Known debt in the code (from the code-standards review; none of it is a safety gap):
-- The Action gateway also keeps the screens' list of waiting actions up to date and calls back into the command engine through registered hooks. Those are three jobs in one module; the screen projection should move out.
-- The API's routes are in one file apart from the agent and the test hooks. Settings, connections and audit should each get their own.
-- The stand-in providers (`FakeComposio`, `FakeModel`) and the in-process job runner live in the same modules as the real ones. They should move to a `testing/` folder.
-- Job payloads are untyped (`Record<string, unknown>`); a typed map of job name to payload would catch a misspelt field at compile time.
-- The app database role's password is derived from the owner role's inside the server process. Before outside users, the system role should have a separately held credential (the PRD says so).
+Known debt in the code: paid down on Nov 17, with no change in behaviour (856 of 856 API tests, all 21 browser suites, the production bundle starts):
+- The Action gateway's screen list moved to `server/src/gateway/screens.ts` and its hooks to a small typed registry, `hooks.ts`; the gateway now only proposes, decides, executes and settles effects.
+- The API's routes are split by area (`server/src/http/settings.ts`, `connections.ts`, `audit.ts`, `state.ts`); the 127 routes and their middleware are in the same order as before, checked route by route.
+- The stand-ins (Composio, the model, the job runner, the file store, the scanner) live in `server/src/testing/`, chosen exactly as before.
+- Job payloads are typed: a misspelt job name or field no longer compiles (all 46 jobs; no real bug was found).
+- The database roles can sign in with separately held credentials (see "Needs your attention" for the steps).
+
+Still to come, with the cloud computer in phase 3:
 - Per-turn tokens, the sandbox interface and the file bucket are not in code yet: the agent's tools run inside the server and never see a key. They arrive with the cloud computer in phase 3.

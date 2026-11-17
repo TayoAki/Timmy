@@ -30,6 +30,14 @@ export const config = {
   /** The origin people open in the browser. The API and the app share it, so sign-in cookies are first-party. */
   publicUrl: (env.PUBLIC_URL ?? (env.RAILWAY_PUBLIC_DOMAIN ? `https://${env.RAILWAY_PUBLIC_DOMAIN}` : `http://localhost:${env.PORT ?? 8787}`)).replace(/\/$/, ''),
   databaseUrl: env.DATABASE_URL ?? 'postgres://timmy_owner:timmy@localhost:5432/timmy_dev',
+  /**
+   * Database credentials held apart, each role with its own password (see db/pool.ts). Both are optional.
+   * TIMMY_SYSTEM_DATABASE_URL: the role that owns the schema, runs migrations, sign-in and the job queue; without
+   * it, DATABASE_URL. TIMMY_APP_DATABASE_URL: `timmy_app`, the role row-level security applies to; without it, its
+   * password is derived from the system connection's and set at every boot.
+   */
+  systemDatabaseUrl: env.TIMMY_SYSTEM_DATABASE_URL ?? '',
+  appDatabaseUrl: env.TIMMY_APP_DATABASE_URL ?? '',
   /** Where the built frontend lives; the API serves it. */
   webDist: env.WEB_DIST ?? '',
 
@@ -357,7 +365,8 @@ export const isLocal = () => /^https?:\/\/(localhost|127\.0\.0\.1)(:|$)/.test(co
 export function assertSafeConfig() {
   if (isProd() && (config.fakeProviders || flag('TIMMY_TEST_HOOKS'))) throw new Error('Fake providers and test hooks cannot be switched on in production.');
   if (config.testHooks && !isLocal() && config.testToken.length < 24) throw new Error('Test hooks on a deployed server need TIMMY_TEST_TOKEN (24 characters or more).');
-  if (isProd() && !new URL(config.databaseUrl).password) throw new Error('The production database URL must carry a password.');
+  if (isProd() && !new URL(config.systemDatabaseUrl || config.databaseUrl).password) throw new Error('The production database URL must carry a password.');
+  if (isProd() && config.appDatabaseUrl && !new URL(config.appDatabaseUrl).password) throw new Error('TIMMY_APP_DATABASE_URL must carry a password.');
   if (isProd() && config.files.store === 'standin') throw new Error('The stand-in file store cannot be used in production: files would be lost at the next restart.');
   // The chat's own address is a whole origin on another host than the app's, and on https wherever it is public.
   const chat = config.chat.publicUrl;

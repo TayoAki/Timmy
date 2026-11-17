@@ -3,7 +3,7 @@
  * A kind is read out of the mail only after a person accepts it; what is read is held to the thread's own
  * words; a kind Timmy notices in three threads is proposed; and none of it crosses a workspace's edge.
  *
- * The stand-in model reads lines like "Deal: company Acme Corp; value $40,000." (see providers/fake-things.ts).
+ * The stand-in model reads lines like "Deal: company Acme Corp; value $40,000." (see testing/model-things.ts).
  * It also always invents a value for every field the line left out and one thing, named after the subject,
  * whose sentence is nowhere in the thread, so each test here also checks that the server drops both.
  */

@@ -1,6 +1,7 @@
 import { config } from '../config';
 import { sysPool } from '../db/pool';
-import { dueEffects, executeEffect, expireStaleApprovals, onEffectApproved, onEffectSettled, reconcileEffect, staleExecuting } from '../gateway/gateway';
+import { dueEffects, executeEffect, expireStaleApprovals, reconcileEffect, staleExecuting } from '../gateway/gateway';
+import { onEffectApproved, onEffectSettled } from '../gateway/hooks';
 import { draftFor } from '../agent/draft';
 import { dueWorkspaces, morningRun } from '../agent/morning';
 import { needsReading, readThread } from '../agent/read';
@@ -81,7 +82,7 @@ export function registerJobs() {
 
   defineJob('mail.ingest', async (d) => {
     const workspaceId = String(d.workspaceId);
-    const fresh = await ingestThread(workspaceId, String(d.connectionId), String(d.threadKey), 'sync', d.seed as Record<string, unknown> | undefined);
+    const fresh = await ingestThread(workspaceId, String(d.connectionId), String(d.threadKey), 'sync', d.seed);
     if (fresh) learn(workspaceId);
     // Plain code went first. What it couldn't settle (mail from a person) gets one read by the model.
     if (fresh && modelReady()) {
@@ -127,15 +128,15 @@ export function registerJobs() {
 
   // Removing an account at the provider is retried until it works; the connection is already unused on our side.
   defineJob('connection.revoke', async (d) => {
-    await revokeAtProvider((d.connectedAccountId as string | null) ?? null, (d.triggers as string[] | undefined) ?? []);
+    await revokeAtProvider(d.connectedAccountId ?? null, d.triggers ?? []);
   });
 
   defineJob('draft.make', async (d) => {
     const workspaceId = String(d.workspaceId);
     const thread = (await readState(workspaceId)).state.threads.find((t) => t.id === String(d.threadId));
     if (!thread) return;
-    const decided = d.decided && typeof d.decided === 'object' ? (d.decided as { question: string; answer: string }) : undefined;
-    const out = await draftFor(workspaceId, thread, { note: d.note as string | undefined, userName: d.userName as string | undefined, ...(decided ? { decided } : {}) });
+    const decided = d.decided && typeof d.decided === 'object' ? d.decided : undefined;
+    const out = await draftFor(workspaceId, thread, { note: d.note, userName: d.userName, ...(decided ? { decided } : {}) });
     if (!out.ok) log.warn('no draft written', { workspaceId, reason: out.reason });
   });
 

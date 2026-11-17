@@ -12,7 +12,7 @@ import type { Lead } from '../../src/data/outbound-types';
 import { zeroBits } from '../src/chat/challenge';
 import { resetLimits } from '../src/chat/limits';
 import type { EffectRow } from '../src/gateway/gateway';
-import type { FakeMessage } from '../src/providers/composio';
+import type { FakeMessage } from '../src/testing/composio';
 import type { Draft } from '../../src/data/types';
 import { mutate } from '../src/state/mutate';
 import { checkMailbox } from '../src/sync/mailbox-check';

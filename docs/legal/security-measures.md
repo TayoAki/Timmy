@@ -81,7 +81,7 @@ These are known and planned; none is hidden behind a claim above.
 
 - **Backups** of the database volume are not switched on (a setting in Railway's dashboard).
 - **Export** of a workspace's data by its owner is not built.
-- **Staff access**: there is no staff console, and no record of staff access to the database. Access is whoever holds the Railway project. The application's database role derives its password from the owner role's inside the server; it should have a separately held credential.
+- **Staff access**: there is no staff console, and no record of staff access to the database. Access is whoever holds the Railway project. The application's database role can sign in with a separately held credential, and the server refuses to start if that credential could bypass row-level security; until the owner switches to it on Railway, its password is derived from the owner role's inside the server.
 - **Encryption at rest** is whatever Railway provides for volumes and buckets **[CONFIRM with Railway]**; Timmy adds no field-level encryption of its own.
 - **An incident response plan** and an on-call contact are not written.
 - **An independent penetration test** has not been done (`penetration-test-scope.md` is the brief for one). Internal reviews have: three safety reviews (the last, on Nov 17, by two independent reviewers who proved 24 breaks with tests, all fixed), a security audit and a code review, each with fixes and tests (see `STATUS.md`).

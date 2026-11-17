@@ -1,13 +1,16 @@
 /**
  * Background work. In production every job goes through pg-boss, which keeps
- * them in Postgres and retries them. Tests use the inline runner, which runs the
- * same handlers on demand so a test decides when time passes.
+ * them in Postgres and retries them. Tests use the inline runner (testing/jobs.ts),
+ * which runs the same handlers on demand so a test decides when time passes.
  */
 import { PgBoss } from 'pg-boss';
-import { config } from '../config';
+import { systemDatabaseUrl } from '../db/pool';
 import { log } from '../lib/log';
+import { InlineJobs } from '../testing/jobs';
+import type { JobName, JobPayloads } from './payloads';
 
-export type Handler = (data: Record<string, unknown>) => Promise<void>;
+/** Runs one job, given what it was queued with. */
+export type Handler<N extends JobName> = (data: JobPayloads[N]) => Promise<void>;
 
 export interface JobOptions {
   startAfter?: Date | number;
@@ -15,16 +18,23 @@ export interface JobOptions {
   singletonKey?: string;
 }
 
+/**
+ * A queue. Every job name and payload is checked against `JobPayloads`. The two queues below accept any name, so
+ * a test can drive them by a name it holds in a variable; the server only reaches them through this interface.
+ */
 export interface Jobs {
-  enqueue(name: string, data: Record<string, unknown>, opts?: JobOptions): Promise<void>;
+  enqueue<N extends JobName>(name: N, data: JobPayloads[N], opts?: JobOptions): Promise<void>;
   stop(): Promise<void>;
 }
 
-const handlers = new Map<string, Handler>();
+/** A handler as the queues hold it: the payload comes back from the queue under the name it was queued with. */
+type StoredHandler = (data: Record<string, unknown>) => Promise<void>;
+
+const handlers = new Map<string, StoredHandler>();
 const crons = new Map<string, string>();
 
-export function defineJob(name: string, handler: Handler, cron?: string) {
-  handlers.set(name, handler);
+export function defineJob<N extends JobName>(name: N, handler: Handler<N>, cron?: string) {
+  handlers.set(name, handler as StoredHandler);
   if (cron) crons.set(name, cron);
 }
 
@@ -49,34 +59,8 @@ export class BossJobs implements Jobs {
   }
 }
 
-/** Runs jobs in-process when asked. For tests and for local runs without a queue. */
-export class InlineJobs implements Jobs {
-  queue: { name: string; data: Record<string, unknown>; opts: JobOptions }[] = [];
-  async enqueue(name: string, data: Record<string, unknown>, opts: JobOptions = {}) {
-    if (opts.singletonKey && this.queue.some((j) => j.name === name && j.opts.singletonKey === opts.singletonKey)) return;
-    this.queue.push({ name, data, opts });
-  }
-  /** Runs everything queued (and whatever those jobs queue), whatever their start time. */
-  async drain(only?: string): Promise<number> {
-    let ran = 0;
-    // The limit only stops a job that keeps queueing itself for ever. It has to sit well above the longest honest
-    // queue: the nightly mail check alone queues one job for every connected mailbox there is.
-    for (let guard = 0; guard < 2000; guard++) {
-      const i = this.queue.findIndex((j) => !only || j.name === only);
-      if (i < 0) break;
-      const [job] = this.queue.splice(i, 1);
-      const h = handlers.get(job!.name);
-      if (h) await h(job!.data);
-      ran++;
-    }
-    return ran;
-  }
-  async stop() {
-    this.queue = [];
-  }
-}
-
-let jobs: Jobs = new InlineJobs();
+// Until the real queue is started (tests never start it), jobs wait in the inline runner.
+let jobs: Jobs = new InlineJobs((name) => handlers.get(name));
 export const getJobs = () => jobs;
 export const inlineJobs = () => (jobs instanceof InlineJobs ? jobs : null);
 export function setJobs(j: Jobs) {
@@ -84,12 +68,13 @@ export function setJobs(j: Jobs) {
 }
 
 /** Enqueue without making the caller wait or fail: a job that can't be queued is picked up by the sweep. */
-export function enqueueSoon(name: string, data: Record<string, unknown>, opts?: JobOptions) {
+export function enqueueSoon<N extends JobName>(name: N, data: JobPayloads[N], opts?: JobOptions) {
   void jobs.enqueue(name, data, opts).catch((e) => log.warn('could not queue job', { name, error: (e as Error).message }));
 }
 
 export async function startBoss(): Promise<Jobs> {
-  const boss = new PgBoss({ connectionString: config.databaseUrl, schema: 'pgboss', max: 4 });
+  // The queue's tables belong to the system role, like the rest of the schema.
+  const boss = new PgBoss({ connectionString: systemDatabaseUrl(), schema: 'pgboss', max: 4 });
   boss.on('error', (e) => log.error('job queue error', { error: (e as Error).message }));
   await boss.start();
   for (const [name, handler] of handlers) {

@@ -1,13 +1,14 @@
 /**
  * The stand-in OneDrive, and the parts of the stand-in Google Drive that the nightly check uses. Like the rest of
- * the fake provider (composio.ts), it answers the same tool slugs with the shapes the real toolkits return, so the
+ * the stand-in provider (composio.ts), it answers the same tool slugs with the shapes the real toolkits return, so the
  * sync, search and reading code runs unchanged in tests.
  *
  * It also builds real .docx, .xlsx and .pptx files from a file's `text` or `rows`, so what is downloaded is an
  * actual zip archive that the reader in sync/office-text.ts has to open the hard way.
  */
 import { crc32, deflateRawSync } from 'node:zlib';
-import type { FakeComposio, FakeFile, FakeMailbox, ToolResult } from './composio';
+import type { ToolResult } from '../providers/composio';
+import type { FakeComposio, FakeFile, FakeMailbox } from './composio';
 
 const ok = (data: Record<string, unknown>): ToolResult => ({ successful: true, data, error: null });
 const refuse = (error: string): ToolResult => ({ successful: false, data: {}, error });

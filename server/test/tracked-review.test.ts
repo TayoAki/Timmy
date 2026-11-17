@@ -9,7 +9,7 @@
  *     that share of the monthly limit is used up;
  *   - no cross-workspace reads or writes: another workspace can't merge, keep apart or bring back anything here.
  *
- * The stand-in model reads lines like "Deal: company Acme Corp; value $40,000." (see providers/fake-things.ts) and
+ * The stand-in model reads lines like "Deal: company Acme Corp; value $40,000." (see testing/model-things.ts) and
  * always invents a value for each field a line left out, and one thing whose sentence is in no thread.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
