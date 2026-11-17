@@ -92,7 +92,7 @@ Cost measurement: `server/scripts/measure-cost.ts` (the header says how to run i
 
 | Suite | Result |
 | --- | --- |
-| API unit and integration (`server/test`, 40 files) | 849 of 849 pass on the final code (Nov 17): all seven phase 1 builds, every safety-review fix and all five gap builds merged. |
+| API unit and integration (`server/test`, 41 files) | 856 of 856 pass on the final code (Nov 17): every phase 1 build, every safety-review fix, all five gap builds and the code debt paid down. |
 | Demo-mode Playwright (`e2e/`, 17 suites, 484 checks) | 17 of 17 pass on the final code in one clean run. The demo behaves as before: none of the live-only screens shows in it. |
 | Live-mode Playwright (`e2e/live/`, 21 suites, 647 checks) | 21 of 21 pass on the final code, against one local server. `live-verify` runs separately, on a server restarted with address confirmation required. |
 | Live-mode Playwright against **staging** (Railway) | On the final code (Nov 17): 20 of 21 suites pass. Two first failed on timing in the tests and pass on staging after the fix: `live-isolation` compared Alpha's threads while Alpha's own first model read was still landing (five traced runs showed Bravo's commands never touched Alpha; the check now waits until Alpha's threads hold still, and still compares all of them), and `live-types` looked once for a question the page removes a moment after a merge. `live-chat` can't pass from this cloud session (this session's proxy drops the chat window's own token header on staging; see the closing safety review section). `live-files` ran against the real Railway bucket. Production passes the outside checks (39). |
