@@ -159,7 +159,7 @@ run('live-outlook', async (browser) => {
   await page.click('button[aria-label="Connections"]');
   const driveCard = page.locator('li.conn-card', { has: page.getByText('Google Drive', { exact: true }) }).first();
   await driveCard.getByRole('button', { name: 'Disconnect' }).waitFor();
-  ok(/Connected · katherine@contoso\.test/.test(await driveCard.innerText()) && /Writes\s+Nothing/.test(await driveCard.innerText()), 'Drive shows as connected, and says Timmy writes nothing to it');
+  ok(/Connected · katherine@contoso\.test/.test(await driveCard.innerText()) && /Writes\s+Only a file you edit in Timmy and save/.test(await driveCard.innerText()), 'Drive shows as connected, and says Timmy writes only a file the person edits and saves');
   ok((await api(page, 'POST', '/api/test/fake', { op: 'file', file: { name: 'Friendship 7 launch plan' } })).body.ok, 'a new file in Drive is announced to Timmy');
   await page.keyboard.press('Control+i');
   await page.locator('.ai-input').waitFor();

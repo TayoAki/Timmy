@@ -36,6 +36,12 @@ export const KINDS = {
    * mode can't decide it.
    */
   'rule.save': { domain: 'rules', outbound: false, hold: false, autoEligible: false, label: 'Save a sorting rule' },
+  /**
+   * A file edited in Timmy's own editor, saved over the original in Google Drive. Only the person's own press of
+   * Save proposes it (Timmy never edits a file on its own), so the press is the approval; Drive keeps the earlier
+   * version in its version history.
+   */
+  'file.update': { domain: 'files', outbound: false, hold: false, autoEligible: false, label: 'Save a file to Drive' },
 } as const;
 
 export type EffectKind = keyof typeof KINDS;
@@ -105,6 +111,8 @@ export function approverFor(kind: EffectKind, actor: Actor, crm: CrmPolicy): { r
   if (k.domain === 'mail' && !k.outbound) return { route: 'user', self: actor.rules.work };
   // Rules are an owner's or admin's to set.
   if (k.domain === 'rules') return { route: 'user', self: actor.rules.policy };
+  // A file the person edited is theirs to save, if their role may make changes at all.
+  if (k.domain === 'files') return { route: 'user', self: actor.rules.work };
   if (actor.rules.approveSends) return { route: 'user', self: true };
   // A delegate works on the exec's behalf; the exec decides.
   if (actor.role.split(',').map((r) => r.trim()).includes('assistant')) return { route: 'exec', self: false };
@@ -123,6 +131,7 @@ export function mayDecide(route: Route, kind: EffectKind, actor: Actor, effect: 
   if (k.domain === 'decision') return admin;
   // A sorting rule changes how everyone's mail is filed: an owner or admin decides it.
   if (k.domain === 'rules') return admin;
+  if (k.domain === 'files') return actor.rules.work;
   // Filing that Timmy proposed can be decided by anyone who may work the inbox.
   if (k.domain === 'mail' && !k.outbound) return actor.rules.work;
   if (!actor.rules.approveSends) return false;

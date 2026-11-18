@@ -17,7 +17,7 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 | Action gateway, effect records, audit log, 30-second undo | Built. |
 | Composio: connect, mail backfill, new-mail webhook, nightly mail check, calendar sync, item store | Built and tested against the fake provider, for Gmail, Outlook, Google Calendar and Google Drive. Every other app shows as coming soon and the API refuses to connect it. The real key works (connect links were minted against the real API); no real account has been connected yet. |
 | Outlook mail (phase 1) | Built. Outlook connects through Composio like Gmail and is a workspace's mailbox in the same way (one mailbox per workspace, Gmail or Outlook). First read of the last 30 then 90 days, new mail and sent mail by event, the nightly check, sending and replying through the gateway with the undo window, and filing written back: Follow Up, Waiting and Read Through become Outlook categories with the same names, and Archived moves the messages to Outlook's Archive folder. HTML bodies are stored and shown as text. Outlook's calendar is read too (see “Calendars, completed”); OneDrive is not read yet, and the card says so. Tested against the fake provider and checked against Composio's real tool definitions; not yet run on a real mailbox. |
-| Google Drive (phase 1) | Built, read-only. Timmy keeps a list of files changed in the last 90 days and from then on (name, kind, owner, when it changed, link), kept current by Drive's events and a nightly pass, and Ask can search it (“find the file …”). Timmy does not open files and writes nothing to Drive. Tested against the fake provider and checked against Composio's real tool definitions; not yet run on a real Drive. |
+| Google Drive (phase 1) | Built. Timmy keeps a list of files changed in the last 90 days and from then on (name, kind, owner, when it changed, link), kept current by Drive's events and a nightly pass, and Ask can search it (“find the file …”). Since Nov 18 a file can be **edited in Timmy and saved back** (see “Editing Drive files in Timmy”); that is the only thing Timmy writes to Drive, and only on the person's Save. |
 | The new UI on real workspaces (page editor, trash, automations canvas, website chat settings, pipeline board, cold-email Drafts) | Merged from `claude/modest-meitner-59cqpr` and kept by the server: pages and their blocks, the trash, automations and chat settings are stored per workspace and checked before saving (known blocks only, links that are web or mail addresses, pictures that can't carry a script and stay small, automation graphs with one trigger and no loops, chat settings within limits). Switching an automation or the website chat **on** is refused with the reason until the engine behind it is merged (both are being built; see "In progress"). Cold-email drafts open in the person's mail app; Timmy never sends them. |
 | Decisions (phase 1) | Built. When an email asks the person to choose, reading the thread makes a card in Approvals: the question, two or three answers, and only figures whose sentence is really in the thread. Timmy never chooses. Picking an answer has Timmy draft the reply, which still waits for Send. Answering the thread yourself closes the card. The same question asked again makes no second card; the thread says what was decided and when. |
 | Ontology, first version (phase 1) | Built. A map of people, companies, meetings, files and promises in four tables with row-level security. Plain code builds it from who wrote, who was written to, who was invited and who owns a file; no model is involved, so it costs nothing and an email can't talk it into anything. The model's one contribution is promises ("I'll send the contract by Friday"), kept only when the sentence is really in a message from the person said to have made it. Everything points at the stored item it came from and is removed when that item goes. Used by the People screen (people from the mail appear under Suggestions with their company and how often they wrote; nothing typed by hand is overwritten) and by Ask (`lookup_person`, `list_commitments`). Not built yet: trade-specific types (deals, properties), proposing and certifying new types, matching by meaning (embeddings), showing conflicts. |
@@ -42,6 +42,31 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 | Cold email (phase 2, built early because the decision was made) | Built as decided: Timmy writes it and opens the compose window of the connected mail app (Gmail, or Outlook on the web); nothing cold goes through an API. The lead is marked contacted when sync sees the email in Sent, and replies show in the Unibox. |
 | Frontend live mode (`VITE_TIMMY_LIVE=1`) | Built: sign-in, onboarding, state from the API, Connect buttons, model picker, monthly limit, approvals for writes Timmy proposes. The demo is unchanged and still the default build. |
 | Railway | `app` (API + live app), `pgvector` and the bucket `timmy-files` exist in `production` and `staging`. Both `app` services have the OpenRouter and Composio keys. |
+
+## Editing Drive files in Timmy (Nov 18, 2026)
+
+A Drive file opens in Timmy's own editors (the Craft apps), and File › Save goes back to the Drive file.
+
+- **What opens.** A Google Doc, Sheet or Slides deck opens as the Word, Excel or PowerPoint file Google exports. A Word, Excel, PowerPoint or PDF file kept in Drive opens as it is. Up to 10 MB. OneDrive files open to read and download only; saving back to OneDrive isn't built.
+- **How it opens.** The file viewer has **Edit in Timmy**, which opens the editor full screen.
+- **What Save does.**
+  - The edited file is uploaded to the workspace's file store.
+  - The server checks that it is the person's own upload and the right kind of file, and that Drive's copy hasn't changed since it was opened.
+  - It is saved through the Action gateway as a new kind, `file.update`. The person's press of Save is the approval, and it is audited like a send.
+  - The executor checks the bytes against the approved hash and Drive's version once more, then calls Composio's `GOOGLEDRIVE_UPLOAD_UPDATE_FILE`.
+  - Drive keeps the earlier version in its version history.
+- **When someone else changed it.** If the file changed in Drive meanwhile, nothing is saved over their change. The editor asks: **Save mine over theirs**, or **Download mine instead**.
+- **Who can't save.**
+  - A file shared to view only opens but can't be saved back.
+  - A role that can't make changes can't save.
+  - The workspace's off switch stops saves too.
+- **The read-only guard is unchanged.** Drive stays a read-only app for every other caller. The one write tool is allowed only through `writeTool`, which only the gateway's executor uses.
+- **What may not carry over.** Comments, suggestions and smart chips made in Google's own editor may not survive a round trip through Word format; the editor says so for Google files.
+- **Not yet tried on a real Drive.** The two new Composio tools (`GOOGLEDRIVE_DOWNLOAD_FILE`, `GOOGLEDRIVE_UPLOAD_UPDATE_FILE`) pass the check against Composio's real definitions. Drive converts an uploaded .docx/.xlsx/.pptx into the Google file it replaces; that is Drive's documented behaviour, but it should be tried once on a real file.
+- **Tests.**
+  - `server/test/drive-edit.test.ts`: 12 tests.
+  - `e2e/live/live-drive-edit.cjs`: 16 checks, in a real browser with the real document editor.
+  - Two live suites changed to the new behaviour: `live-setup` checked that a Google Doc opened "read only" and now checks that it offers **Edit in Timmy**; `live-outlook` checked that the Drive card said "Writes Nothing" and now checks that it says "Only a file you edit in Timmy and save".
 
 ## The first real mailbox (Nov 18, 2026)
 

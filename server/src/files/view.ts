@@ -15,6 +15,7 @@ import { cleanEmail } from '../mail/original';
 import { exportedDocText, readListed, canRead, tooLarge } from '../sync/files';
 import type { ListedFile } from '../sync/file-kinds';
 import { callTool } from '../sync/tools';
+import { editingOf, type CraftApp } from './drive-write';
 
 export type FileView =
   | { kind: 'doc'; html: string }
@@ -30,6 +31,8 @@ export interface Viewed {
   app: string;
   link?: string;
   view: FileView;
+  /** Which of Timmy's editors opens it, and whether a save there goes back to the file (files/drive-edit.ts). */
+  edit?: { app: CraftApp; saves: boolean; native: boolean };
 }
 
 const APP_NAMES: Record<string, string> = { googledrive: 'Google Drive', one_drive: 'OneDrive' };
@@ -105,7 +108,7 @@ td p { margin: 0; }
 /* ───────────── Viewing one file ───────────── */
 
 /** The file by Timmy's own item id, on a connection of this workspace that is still active. */
-async function listed(workspaceId: string, itemId: string): Promise<(ListedFile & { link?: string }) | null> {
+export async function listed(workspaceId: string, itemId: string): Promise<(ListedFile & { link?: string }) | null> {
   const row = await withWorkspace({ workspaceId }, async (tx) =>
     (
       await tx.query(
@@ -133,13 +136,15 @@ async function listed(workspaceId: string, itemId: string): Promise<(ListedFile 
 export async function viewFile(workspaceId: string, itemId: string): Promise<Viewed | null> {
   const f = await listed(workspaceId, itemId);
   if (!f) return null;
+  const how = editingOf(f.toolkit, f.mime, f.name);
+  const edit = how ? { edit: { app: how.app, saves: how.saves, native: how.native } } : {};
   try {
-    return await view(workspaceId, f);
+    return { ...(await view(workspaceId, f)), ...edit };
   } catch (e) {
     log.warn('file could not be shown', { workspaceId, connectionId: f.connectionId, error: (e as Error).message });
     // The provider failed outright (not a polite refusal): the screen says so and offers the file's own app.
     const app = APP_NAMES[f.toolkit] ?? 'Files';
-    return { name: f.name, type: f.kind, app, ...(f.link ? { link: f.link } : {}), view: { kind: 'none', reason: `${app} didn’t hand over this file just now. Try again, or open it in ${app}.` } };
+    return { name: f.name, type: f.kind, app, ...(f.link ? { link: f.link } : {}), view: { kind: 'none', reason: `${app} didn’t hand over this file just now. Try again, or open it in ${app}.` }, ...edit };
   }
 }
 

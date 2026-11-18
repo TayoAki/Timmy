@@ -287,6 +287,15 @@ Mail code is written once against a small mailbox interface (list a page since a
 
 Drive and OneDrive are read-only: a list of files changed in the last 90 days and since, plus files shared with the person (Drive), kept current by events, a change feed (OneDrive) and a nightly check. As built (Nov 17, 2026), the text of Google Docs, Sheets and Slides and of Word, Excel and PowerPoint files changed in that window is read in a bounded pass (at most 40 files a pass, re-read only when a file changes, 24,000 characters each; a file the provider fails on outright three passes running is set aside with the reason until it changes, so it can't hold up the rest) into Postgres's full-text index, so Ask finds files by name or by words inside them, with a short passage as outside content. The text goes with the file and with the account. Office files are read by a small reader of our own with strict limits; downloads only over https from an allowed public host. Drive and OneDrive accounts can only call read-only tools. PDFs, and Office files kept in Google Drive, are listed but not read. OneDrive asks Microsoft for Files.Read, offline_access and User.Read only.
 
+**Editing a Drive file in Timmy (built Nov 18, 2026).** A Google Doc, Sheet or Slides deck opens in Timmy's own editor (the Craft apps) as the Office file Google exports; a Word, Excel, PowerPoint or PDF file kept in Drive opens as it is (up to 10 MB). File › Save goes back to the Drive file:
+- **The write.** It goes through the Action gateway as `file.update` (domain `files`, no hold, never Auto). The person's press of Save is the approval.
+- **Checks before it is sent.** The server checks:
+  - that the upload is the person's own and of the file's kind;
+  - that Drive's copy is unchanged since it was opened (its last-changed time; a change by someone else stops the save until the person chooses to save over it);
+  - in the executor, the approved hash and Drive's version once more.
+- **The call.** Composio's `GOOGLEDRIVE_UPLOAD_UPDATE_FILE`, through `writeTool`, the only path past the read-only guard, and only the gateway's executor takes it. Drive keeps the earlier version in its version history.
+- **OneDrive.** Opens to read and download; saving back to OneDrive is not built.
+
 **Composio only (owner's decision, Nov 16, 2026).** Every outside app, including CRMs and lead sources in phase 2, connects through Composio. An app Composio does not offer is skipped for now; that includes the enrichment provider that uses its own token.
 
 **The new screens (page editor, automations, website chat, pipeline board)** and how their backends are built are described in [ui-additions-backend.md](ui-additions-backend.md). As built (Nov 17, 2026):

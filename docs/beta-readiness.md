@@ -56,7 +56,7 @@ Updated Nov 18, 2026.
 - Sorting rules: in Rules & settings, by asking Timmy ("always archive mail from linkedin.com"), or by accepting one Timmy offers after they file the same sender's mail twice.
 - Drafts and replies. Nothing is sent until they press Send, with a 30-second undo.
 - Ask Timmy about their mail, files and people.
-- People › Map, and Drive files opened inside Timmy.
+- People › Map, and Drive files opened inside Timmy, and edited there: **Edit in Timmy** opens a Google Doc, Sheet or Slides deck (or a Word, Excel, PowerPoint or PDF file in Drive) in Timmy's editor, and Save goes back to the Drive file. Drive keeps the earlier version.
 - Their own Claude or ChatGPT connected to Timmy (Rules & settings › Approvals has the address).
 
 ## Known gaps to tell them about
@@ -77,7 +77,7 @@ Updated Nov 18, 2026.
 >
 > 1. Go to https://app-production-a7a7000d.up.railway.app and choose **Create an account** with this email address: [their email]. **Save your password**; password reset by email isn't switched on yet.
 > 2. Name your workspace. The setup walks you through connecting Gmail, your calendar and (if you like) Google Drive.
-> 3. Google's sign-in page will mention Composio, the service Timmy uses to talk to Google. It asks for wide access (including all of Drive and your contacts): those are its standard settings. Timmy only uses your mail, your calendar and the list of your files. If Google warns that the app isn't verified, that's expected during the beta.
+> 3. Google's sign-in page will mention Composio, the service Timmy uses to talk to Google. It asks for wide access (including all of Drive and your contacts): those are its standard settings. Timmy only uses your mail, your calendar and your files, and it changes a file in Drive only when you edit it in Timmy and press Save. If Google warns that the app isn't verified, that's expected during the beta.
 >
 > Good to know:
 > - **Nothing is ever sent without your click**, and every send can be undone for 30 seconds.

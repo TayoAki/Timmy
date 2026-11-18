@@ -3,6 +3,10 @@
  * the app's host: it sends the file once the app says it's ready, keeps what
  * the app saves (in this browser, next to the file in Drive), shows unsaved
  * changes, and routes a file the app hands off to the app that edits it.
+ *
+ * With a `source`, the file comes from somewhere else and a plain Save goes
+ * back there (a Google Drive file, src/live/DriveEditor.tsx). Save As and a
+ * hand-off then download a copy: nothing is added to this browser's Drive.
  */
 import { Download, Maximize2, Minimize2, RotateCcw, TriangleAlert } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -26,7 +30,16 @@ const START_TIMEOUT = 60_000;
 
 const stripExt = (name: string) => name.replace(/\.[a-z0-9]+$/i, '');
 
-export function CraftViewer({ file, app, note }: { file: WFile; app: CraftApp; note?: ReactNode }) {
+/** Where a file opened from outside comes from and where its plain Save goes. */
+export interface CraftSource {
+  load(): Promise<{ name: string; bytes: Uint8Array } | undefined>;
+  /** Keeps a plain Save. True once it is kept; false leaves the editor's changes marked unsaved. */
+  save(name: string, bytes: ArrayBuffer): Promise<boolean>;
+  /** What the bar says while there's nothing unsaved: "Saves go to this file in Google Drive." */
+  where: string;
+}
+
+export function CraftViewer({ file, app, note, source }: { file: WFile; app: CraftApp; note?: ReactNode; source?: CraftSource }) {
   const { state, dispatch } = useStore();
   const meta = CRAFT[app];
   const frame = useRef<HTMLIFrameElement>(null);
@@ -41,6 +54,10 @@ export function CraftViewer({ file, app, note }: { file: WFile; app: CraftApp; n
   fileRef.current = file;
   /** Where a plain Save goes: this file, or the copy a Save As made. */
   const target = useRef<{ id: string; name: string }>({ id: file.id, name: '' });
+  const sourceRef = useRef(source);
+  sourceRef.current = source;
+  /** A source's file as last opened or saved, for Download. */
+  const latest = useRef<{ name: string; bytes: Uint8Array } | undefined>(undefined);
   const src = `/craft/${app}/index.html?host=parent&author=${encodeURIComponent(author())}`;
 
   // Is the app installed on this server? (A dev server answers unknown paths with the SPA page.)
@@ -125,9 +142,18 @@ export function CraftViewer({ file, app, note }: { file: WFile; app: CraftApp; n
         window.clearTimeout(timer);
         post({ type: `${app}:host`, version: '1', handoff: true });
         setStatus('opening');
-        const data = await fileBytes(fileRef.current, wsRef.current);
+        const from = sourceRef.current;
+        let data: { name: string; bytes: Uint8Array } | undefined;
+        try {
+          data = from ? await from.load() : await fileBytes(fileRef.current, wsRef.current);
+        } catch (err) {
+          if (!alive) return;
+          setError((err as Error).message);
+          return setStatus('failed');
+        }
         if (!alive) return;
         if (!data) return setStatus('empty');
+        if (from) latest.current = { name: data.name, bytes: data.bytes.slice() };
         target.current.name = data.name;
         const buf = data.bytes.slice().buffer;
         post({ type: `${app}:open`, name: data.name, bytes: buf }, [buf]);
@@ -135,6 +161,21 @@ export function CraftViewer({ file, app, note }: { file: WFile; app: CraftApp; n
       } else if (kind === 'save' && m.bytes instanceof ArrayBuffer) {
         const name = String(m.name ?? target.current.name);
         const sameFile = !m.saveAs && name.toLowerCase() === target.current.name.toLowerCase();
+        const from = sourceRef.current;
+        if (from) {
+          // A plain Save goes back where the file came from; anything else is a copy, downloaded.
+          const bytes = new Uint8Array(m.bytes.slice(0));
+          if (!sameFile) {
+            download(name, bytes);
+            dispatch({ type: 'toast', text: `Downloaded “${name}”. The original is unchanged.` });
+            if (typeof m.id === 'string') post({ type: `${app}:saved`, id: m.id });
+            return;
+          }
+          const kept = await from.save(name, m.bytes);
+          if (kept) latest.current = { name, bytes };
+          if (kept && typeof m.id === 'string') post({ type: `${app}:saved`, id: m.id });
+          return;
+        }
         const result = await keep(name, m.bytes, !sameFile);
         if (m.saveAs && typeof result === 'string' && appForExt(extOf(name)) === app) target.current = { id: result, name };
         if (typeof m.id === 'string') post({ type: `${app}:saved`, id: m.id });
@@ -151,6 +192,10 @@ export function CraftViewer({ file, app, note }: { file: WFile; app: CraftApp; n
         const bytes = m.bytes instanceof ArrayBuffer ? m.bytes : m.file instanceof Blob ? await m.file.arrayBuffer() : undefined;
         const to = appForExt(extOf(name));
         if (!bytes || !to) return;
+        if (sourceRef.current) {
+          download(name, new Uint8Array(bytes));
+          return post({ type: `${app}:handoff-done`, name, app: to });
+        }
         const id = await keep(name, bytes, true);
         post({ type: `${app}:handoff-done`, name, app: to });
         if (typeof id === 'string') dispatch({ type: 'navigate', route: { view: 'file', id } });
@@ -181,7 +226,7 @@ export function CraftViewer({ file, app, note }: { file: WFile; app: CraftApp; n
   };
 
   const save = async () => {
-    const data = await fileBytes(fileRef.current, wsRef.current);
+    const data = sourceRef.current ? latest.current : await fileBytes(fileRef.current, wsRef.current);
     if (data) download(data.name, data.bytes);
   };
   const retry = () => {
@@ -199,7 +244,7 @@ export function CraftViewer({ file, app, note }: { file: WFile; app: CraftApp; n
           {meta.label}
         </span>
         <span className="craft-state" role="status">
-          {status === 'ready' && (dirty ? 'Unsaved changes. Use File › Save to keep them.' : 'Saves go to this file in Drive.')}
+          {status === 'ready' && (dirty ? 'Unsaved changes. Use File › Save to keep them.' : (source?.where ?? 'Saves go to this file in Drive.'))}
           {(status === 'loading' || status === 'opening' || status === 'checking') && `Opening the ${meta.noun}…`}
         </span>
         <div className="craft-actions">
@@ -235,7 +280,7 @@ export function CraftViewer({ file, app, note }: { file: WFile; app: CraftApp; n
                 onDownload={save}
               />
             ) : status === 'empty' ? (
-              <Problem title="There’s nothing to open yet" body="This file has no content in Drive." onRetry={retry} />
+              <Problem title="There’s nothing to open yet" body="This file has no content to open." onRetry={retry} />
             ) : (
               <div className="craft-loading">
                 <span className="craft-spinner" aria-hidden />

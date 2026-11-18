@@ -228,3 +228,60 @@
 .file-mode .kbd {
   margin-left: 2px;
 }
+
+/* A Drive file open in Timmy's editor, full screen (src/live/DriveEditor.tsx). */
+.drive-editor {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  padding: 0 12px 12px;
+  background: var(--bg, var(--surface));
+}
+
+.drive-editor .craft {
+  margin-top: 0;
+  height: auto;
+  min-height: 0;
+}
+
+.drive-editor-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  flex-wrap: wrap;
+}
+
+.drive-editor-name {
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.drive-editor-from {
+  color: var(--text-3);
+  font-size: 13px;
+  margin-right: auto;
+}
+
+.drive-editor-conflict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong, var(--line));
+  border-radius: var(--r-lg);
+  background: var(--surface-2, var(--surface));
+  font-size: 13px;
+}
+
+.drive-editor-conflict span {
+  flex: 1 1 260px;
+}

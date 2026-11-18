@@ -105,6 +105,17 @@ export function testRoutes(app: Hono<Env>): void {
       }
       return c.json({ ok: res.ok && listed === wanted });
     }
+    // A file in the stand-in Drive as it is now (`drive-file`), or changed there by someone else (`drive-change`).
+    if (body.op === 'drive-file' || body.op === 'drive-change') {
+      const drive = await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => (await tx.query(`select connected_account_id from connection where workspace_id = $1 and status = 'active' and app_id = 'gdrive' order by created_at limit 1`, [ctx.workspaceId])).rows[0]);
+      const file = drive && fake.accounts.get(drive.connected_account_id)?.files.find((f) => f.name === String(body.name));
+      if (!file) return c.json({ error: 'no such file' }, 404);
+      if (body.op === 'drive-change') {
+        file.text = String(body.text ?? file.text ?? '');
+        file.modifiedTime = new Date(Math.max(Date.now(), Date.parse(file.modifiedTime) + 1000)).toISOString();
+      }
+      return c.json({ text: file.text ?? null, rows: file.rows ?? null, uploads: file.uploads ?? 0, modifiedTime: file.modifiedTime });
+    }
     if (!conn) return c.json({ error: 'no connected mailbox' }, 409);
     if (body.op === 'deliver') {
       const d = fake.deliver(conn.connected_account_id, body.message as { from: string; subject: string; body: string });

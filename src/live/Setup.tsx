@@ -418,7 +418,7 @@ export function SetupDialog() {
           open={current === 'files'}
           onOpen={() => setShown('files')}
         >
-          <p className="setup-text">So Ask can find a document by what it says. Timmy keeps a list of your files and the words in recent documents, spreadsheets and slides. It changes nothing in them.</p>
+          <p className="setup-text">So Ask can find a document by what it says. Timmy keeps a list of your files and the words in recent documents, spreadsheets and slides. It changes a file only when you edit it in Timmy and press Save.</p>
           <div className="setup-choices">
             {(progress.mail === 'outlook' ? ['onedrive', 'gdrive'] : ['gdrive', 'onedrive']).map((id) => (
               <Choice key={id} app={id} line={id === 'gdrive' ? 'Docs, Sheets and Slides' : 'Word, Excel and PowerPoint'} onConnect={() => connect(id)} />

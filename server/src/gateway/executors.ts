@@ -1,5 +1,6 @@
 import { reconcileChatReply, sendChatReply } from '../chat/deliver';
 import { filesToSend } from '../files/attachments';
+import { updateDriveFile } from '../files/drive-write';
 import { changeEvent, isEventChange, reconcileChange } from '../sync/calendar-change';
 import { createEvent, reconcileEvent } from '../sync/calendar-write';
 import { mailboxFor, type FilePayload, type MailPayload } from '../sync/mailbox';
@@ -58,6 +59,8 @@ export const EXECUTORS: Partial<Record<EffectKind, Executor>> = {
   'calendar.delete': changeEvent,
   // Saving a sorting rule reaches nobody: it is written into the workspace, with the policy row behind it.
   'rule.save': saveRuleEffect,
+  // A file edited in Timmy, saved over the Drive original once its bytes and Drive's version check out.
+  'file.update': updateDriveFile,
 };
 
 /** Whether the mailbox already shows the filing an effect asked for. */

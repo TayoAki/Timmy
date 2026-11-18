@@ -42,7 +42,7 @@ export function ConnectedFiles() {
     <>
       <h1 className="page-title">{apps.length ? apps.join(' and ') : 'Drive and OneDrive'}</h1>
       <p className="page-sub">
-        The files Timmy keeps a list of: those changed in the last 90 days, and those most recently shared with you. Each opens in its own app; Timmy changes nothing in them. Ask can find one by name, or by what it says when its words are kept.
+        The files Timmy keeps a list of: those changed in the last 90 days, and those most recently shared with you. Open one to read it here, or edit it in Timmy: Save goes back to the file in Google Drive, which keeps the earlier version. Ask can find one by name, or by what it says when its words are kept.
       </p>
 
       {list && !apps.length ? (

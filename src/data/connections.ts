@@ -56,8 +56,8 @@ export const APPS: AppDef[] = [
     account: 'taylor@northpeak.example',
     live: {
       reads: 'The names, types and owners of your files, and the words in your recent Google Docs, Sheets and Slides, so Ask can find and read them',
-      writes: 'Nothing',
-      note: 'Timmy keeps a list of your files with links to them, and the words of Google Docs, Sheets and Slides changed in the last 90 days, so Ask can find a file by what it says. It changes nothing in Drive. Disconnecting deletes all of it from Timmy.',
+      writes: 'Only a file you edit in Timmy and save',
+      note: 'Timmy keeps a list of your files with links to them, and the words of Google Docs, Sheets and Slides changed in the last 90 days, so Ask can find a file by what it says. It changes a file in Drive only when you open it in Timmy’s editor and press Save, and Drive keeps the earlier version. Disconnecting deletes all of it from Timmy.',
     },
   },
   {

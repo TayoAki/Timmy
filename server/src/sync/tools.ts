@@ -32,8 +32,17 @@ export async function meter(workspaceId: string, op: string, phase: Phase, ok: b
  * anything reaches Composio, so no mistake elsewhere in the code can write to someone's files.
  */
 export const READ_ONLY_TOOLS: Record<string, ReadonlySet<string>> = {
-  googledrive: new Set(['GOOGLEDRIVE_GET_ABOUT', 'GOOGLEDRIVE_FIND_FILE', 'GOOGLEDRIVE_GET_FILE_METADATA', 'GOOGLEDRIVE_GET_DOCUMENT', 'GOOGLEDRIVE_EXPORT_GOOGLE_WORKSPACE_FILE', 'GOOGLEDRIVE_GET_SPREADSHEET_VALUES', 'GOOGLEDRIVE_GET_PRESENTATION']),
+  googledrive: new Set(['GOOGLEDRIVE_GET_ABOUT', 'GOOGLEDRIVE_FIND_FILE', 'GOOGLEDRIVE_GET_FILE_METADATA', 'GOOGLEDRIVE_GET_DOCUMENT', 'GOOGLEDRIVE_EXPORT_GOOGLE_WORKSPACE_FILE', 'GOOGLEDRIVE_DOWNLOAD_FILE', 'GOOGLEDRIVE_GET_SPREADSHEET_VALUES', 'GOOGLEDRIVE_GET_PRESENTATION']),
   one_drive: new Set(['ONE_DRIVE_LIST_DRIVES', 'ONE_DRIVE_LIST_ROOT_DRIVE_CHANGES', 'ONE_DRIVE_DOWNLOAD_FILE']),
+};
+
+/**
+ * The writes the Action gateway's executors may make on an app Timmy otherwise only reads, each one for one kind of
+ * approved effect: saving a file edited in Timmy over the Drive original (`file.update`). Only `writeTool` runs them,
+ * and only an executor calls that, so nothing but an approved, audited effect can write to someone's files.
+ */
+export const EFFECT_WRITE_TOOLS: Record<string, ReadonlySet<string>> = {
+  googledrive: new Set(['GOOGLEDRIVE_UPLOAD_UPDATE_FILE']),
 };
 
 /**
@@ -42,10 +51,20 @@ export const READ_ONLY_TOOLS: Record<string, ReadonlySet<string>> = {
  * workspace finds nothing.
  */
 export async function callTool(workspaceId: string, connectionId: string, slug: string, args: Record<string, unknown>, phase: Phase): Promise<ToolResult> {
+  return run(workspaceId, connectionId, slug, args, phase, false);
+}
+
+/** An executor's write on a read-only app: one of EFFECT_WRITE_TOOLS, and nothing else. */
+export async function writeTool(workspaceId: string, connectionId: string, slug: string, args: Record<string, unknown>): Promise<ToolResult> {
+  return run(workspaceId, connectionId, slug, args, 'send', true);
+}
+
+async function run(workspaceId: string, connectionId: string, slug: string, args: Record<string, unknown>, phase: Phase, write: boolean): Promise<ToolResult> {
   const conn = await connectionById(workspaceId, connectionId);
   if (!conn || conn.status !== 'active' || !conn.connected_account_id) return { successful: false, data: {}, error: 'This app is not connected.' };
   const readOnly = Object.hasOwn(READ_ONLY_TOOLS, conn.toolkit) ? READ_ONLY_TOOLS[conn.toolkit] : undefined;
-  if (readOnly && !readOnly.has(slug)) return { successful: false, data: {}, error: 'Timmy only reads this app; that tool is not one it uses.' };
+  const writes = write && Object.hasOwn(EFFECT_WRITE_TOOLS, conn.toolkit) ? EFFECT_WRITE_TOOLS[conn.toolkit] : undefined;
+  if (readOnly && !readOnly.has(slug) && !writes?.has(slug)) return { successful: false, data: {}, error: 'Timmy only reads this app; that tool is not one it uses.' };
   const started = Date.now();
   try {
     const res = await composio().execute(slug, args, { userId: conn.composio_user_id, connectedAccountId: conn.connected_account_id });

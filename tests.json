@@ -13,7 +13,8 @@
    "server/test/auto-sort.test.ts",
    "server/test/mail-rules.test.ts",
    "server/test/chat-rules.test.ts",
-   "server/test/mcp.test.ts"
+   "server/test/mcp.test.ts",
+   "server/test/drive-edit.test.ts"
   ],
   "no action runs twice": [
    "server/test/gateway.test.ts",
@@ -32,7 +33,8 @@
    "server/test/drive.test.ts",
    "server/test/ontology.test.ts",
    "server/test/pages.test.ts",
-   "server/test/mcp.test.ts"
+   "server/test/mcp.test.ts",
+   "server/test/drive-edit.test.ts"
   ],
   "no real credential inside a prompt, the sandbox or logs": [
    "server/test/unit.test.ts",
@@ -412,7 +414,8 @@
    "file": "e2e/live/live-outlook.cjs",
    "covers": "in the browser: the Outlook card says what Timmy really reads; connect Outlook; Gmail refused beside it; an Outlook email arrives and reads as plain words; accepting a suggestion puts the category on it in Outlook; a drafted reply is approved, held, and sent once from the Outlook mailbox in the same conversation; archiving moves it to Outlook's Archive; connect Drive, a new file is announced, Ask finds it by name; disconnecting Outlook removes its thread; the Outlook card says it reads mail and calendar; Outlook’s events show on Timmy’s calendar",
    "checks": 31,
-   "status": "pass"
+   "status": "pass",
+   "result": " Nov 18, 2026 (Drive editing): passes again after its Drive check was changed to the new behaviour (a Google Doc now offers Edit in Timmy; the Drive card says what Timmy may write)."
   },
   {
    "id": "live-pages",
@@ -530,7 +533,7 @@
    "file": "e2e/live/live-setup.cjs",
    "covers": "a new workspace's setup (opens by itself, five steps, connect Gmail from it and come back to the next step, sort junk automatically, Google Calendar, skip files, the morning run, done; a connect that did not finish; the brief's button and card; connecting from Connections shows a notice instead), no Watch the story on a real workspace, Triage newest first with the offer to sort junk, Accept all in batches of 100 with a confirmation saying what happens in Gmail, and the Drive files on the Files screen",
    "status": "pass",
-   "result": "Nov 18, 2026: 39 of 39, with opening a Drive file inside Timmy."
+   "result": "Nov 18, 2026: 39 of 39, with opening a Drive file inside Timmy. Nov 18, 2026 (Drive editing): passes again after its Drive check was changed to the new behaviour (a Google Doc now offers Edit in Timmy; the Drive card says what Timmy may write)."
   },
   {
    "id": "api-mail-reader",
@@ -612,6 +615,21 @@
    "covers": "the Feedback button on the rail: what goes with it, can't be sent empty, sent with the screen's name, closes with a thank-you",
    "status": "pass",
    "result": "Nov 18, 2026: 5 of 5."
+  },
+  {
+   "id": "api-drive-edit",
+   "file": "server/test/drive-edit.test.ts",
+   "covers": "a Google Doc, Sheet and deck open in Timmy's editors as the Word, Excel and PowerPoint files Google exports, and Office and PDF files kept in Drive as they are, with Drive's version; a file shared to view only opens but can't be saved; only a file on the workspace's list; Save replaces the Drive file's content through the gateway (file.update) with the person's press as the approval, audited, and a second save goes on from the new version; a change made in Drive meanwhile stops the save until the person saves over it on purpose; bytes of the wrong kind, someone else's upload, a role that can't make changes and the off switch are refused; a refusal leaves the file alone and a lost answer is never called a success; the read-only guard still refuses the write tool to anything but the executor; OneDrive opens to read only",
+   "tests": 12,
+   "status": "pass",
+   "result": "Nov 18, 2026: 12 of 12."
+  },
+  {
+   "id": "live-drive-edit",
+   "file": "e2e/live/live-drive-edit.cjs",
+   "covers": "the Drive card says Timmy writes only a file the person edits and saves; Edit in Timmy opens a Google Doc in the document editor, full screen, saying Save replaces the Drive file and Drive keeps the earlier version; the editor's Save changes the Doc in Drive and is recorded as an approved write; a second save works; a change made in Drive meanwhile stops the save with a question, and Save mine over theirs saves it; Close returns to the list",
+   "status": "pass",
+   "result": "Nov 18, 2026: 16 of 16."
   },
   {
    "id": "live-mcp",

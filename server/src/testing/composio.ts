@@ -10,7 +10,8 @@ import { htmlToText } from '../sync/message';
 import type { ComposioProvider, ProviderEvent, StagedFile, ToolResult } from '../providers/composio';
 import { DownloadRefused } from '../providers/composio-download';
 import { eventFrom, signWebhook, verifyWebhookSignature } from '../providers/composio-webhook';
-import { fakeFileTool } from './composio-files';
+import { NATIVE_EXPORTS, OFFICE_TYPES, bytesOf, fakeFileTool } from './composio-files';
+import { officeText } from '../sync/office-text';
 
 export interface FakeMessage {
   id: string;
@@ -63,6 +64,10 @@ export interface FakeFile {
   bytes?: Uint8Array;
   /** OneDrive: the size the drive reports, when it should differ from the bytes' own. */
   size?: number;
+  /** Drive: shared with the person to view only, so saving over it is refused. */
+  readOnly?: boolean;
+  /** Drive: how many times new content was saved over it. */
+  uploads?: number;
   /** OneDrive: the number of the change that last touched it, and whether that change deleted it. */
   seq?: number;
   deleted?: boolean;
@@ -289,7 +294,7 @@ export class FakeComposio implements ComposioProvider {
   addFile(connectedAccountId: string, f: Partial<FakeFile> & { name: string }): FakeFile {
     const box = this.accounts.get(connectedAccountId);
     if (!box) throw new Error('no such fake account');
-    const file: FakeFile = { id: f.id ?? newId('file'), name: f.name, mimeType: f.mimeType ?? 'application/vnd.google-apps.document', modifiedTime: f.modifiedTime ?? new Date().toISOString(), owner: f.owner ?? box.address, trashed: f.trashed, link: f.link, text: f.text, rows: f.rows, doc: f.doc, huge: f.huge, sharedAt: f.sharedAt, bytes: f.bytes, size: f.size, seq: ++this.fileSeq };
+    const file: FakeFile = { id: f.id ?? newId('file'), name: f.name, mimeType: f.mimeType ?? 'application/vnd.google-apps.document', modifiedTime: f.modifiedTime ?? new Date().toISOString(), owner: f.owner ?? box.address, trashed: f.trashed, link: f.link, text: f.text, rows: f.rows, doc: f.doc, huge: f.huge, sharedAt: f.sharedAt, bytes: f.bytes, size: f.size, readOnly: f.readOnly, seq: ++this.fileSeq };
     box.files = [...box.files.filter((x) => x.id !== file.id), file];
     return file;
   }
@@ -848,11 +853,54 @@ export class FakeComposio implements ComposioProvider {
       }
       case 'GOOGLEDRIVE_EXPORT_GOOGLE_WORKSPACE_FILE': {
         // Google's export, as Composio hands it back: a link to the exported file in Composio's own store. Plain
-        // text comes as Google writes it, with a byte-order mark and Windows line ends.
+        // text comes as Google writes it, with a byte-order mark and Windows line ends; a Doc, Sheet or deck also
+        // exports as the Office file of its kind.
         const f = box.files.find((x) => x.id === args.fileId && !x.trashed);
+        const office = f && NATIVE_EXPORTS[f.mimeType];
+        if (f && office && args.mimeType === OFFICE_TYPES[office]) {
+          const bytes = f.bytes ?? bytesOf({ ...f, mimeType: OFFICE_TYPES[office] });
+          return ok({ file: { name: `${f.name}.${office}`, mimetype: OFFICE_TYPES[office], s3url: this.stash(who.connectedAccountId, bytes) }, file_id: f.id, export_mime_type: args.mimeType, size_bytes: bytes.length });
+        }
         if (!f || f.mimeType !== 'application/vnd.google-apps.document' || args.mimeType !== 'text/plain') return { successful: false, data: {}, error: 'Export not supported for this file' };
         const bytes = new TextEncoder().encode(`\uFEFF${(f.text ?? '').replace(/\n/g, '\r\n')}`);
         return ok({ file: { name: `${f.name}.txt`, mimetype: 'text/plain', s3url: this.stash(who.connectedAccountId, bytes) }, file_id: f.id, export_mime_type: 'text/plain', size_bytes: bytes.length, display_url: `https://docs.google.com/document/d/${f.id}/edit`, link_label: 'View Document in Google Docs' });
+      }
+      case 'GOOGLEDRIVE_DOWNLOAD_FILE': {
+        // A file kept in Drive as it is (Word, Excel, PowerPoint, PDF): its own bytes, from Composio's store.
+        if (typeof args.fileId !== 'string') return refuse('Invalid request data provided - fileId: Field required');
+        const f = box.files.find((x) => x.id === args.fileId && !x.trashed);
+        if (!f) return refuse(`404 Client Error: Not Found. File not found: ${args.fileId}.`);
+        if (f.mimeType.startsWith('application/vnd.google-apps.')) return refuse('Only files with binary content can be downloaded. Use Export with Docs Editors files.');
+        return ok({ id: f.id, name: f.name, mimeType: f.mimeType, downloaded_file_content: { name: f.name, mimetype: f.mimeType, s3url: this.stash(who.connectedAccountId, bytesOf(f)) } });
+      }
+      case 'GOOGLEDRIVE_UPLOAD_UPDATE_FILE': {
+        // New content for an existing file. A Doc, Sheet or deck takes the Office file of its kind and converts it,
+        // as Drive does; any other file keeps the bytes as they are. Either way the file has changed: a new time.
+        if (typeof args.fileId !== 'string') return refuse('Invalid request data provided - fileId: Field required');
+        const got = this.filesOf(slug, 'googledrive', args.file_to_upload, true);
+        if ('error' in got) return refuse(got.error);
+        const ref = args.file_to_upload as { s3key: string; mimetype: string };
+        const f = box.files.find((x) => x.id === args.fileId && !x.trashed);
+        if (!f) return refuse(`404 Client Error: Not Found. File not found: ${args.fileId}.`);
+        if (f.readOnly) return refuse('403 Client Error: The user does not have sufficient permissions for this file.');
+        const bytes = this.staged.get(ref.s3key)!.bytes;
+        const office = NATIVE_EXPORTS[f.mimeType];
+        if (office && ref.mimetype !== OFFICE_TYPES[office]) return refuse(`400 Client Error: The file can’t be converted to ${f.mimeType}.`);
+        f.bytes = bytes;
+        const kind = office ?? (Object.keys(OFFICE_TYPES) as (keyof typeof OFFICE_TYPES)[]).find((k) => OFFICE_TYPES[k] === f.mimeType);
+        if (kind) {
+          const text = officeText(bytes, kind, 200_000);
+          if (kind === 'xlsx') f.rows = text.split('\n').map((line) => line.split('\t'));
+          else if (kind === 'pptx') f.text = text.split(/\n\n(?=Slide \d+\n)/).map((x) => x.replace(/^Slide \d+\n?/, '')).join('\n\n');
+          else f.text = text;
+        }
+        f.modifiedTime = new Date(Math.max(Date.now(), new Date(f.modifiedTime).getTime() + 1000)).toISOString();
+        f.uploads = (f.uploads ?? 0) + 1;
+        if (fail === 'sent-then-timeout') {
+          this.failNext.delete(slug);
+          throw new Error('ETIMEDOUT after the file was updated (fake)');
+        }
+        return ok({ id: f.id, name: f.name, mimeType: f.mimeType, modifiedTime: f.modifiedTime });
       }
       case 'GOOGLEDRIVE_GET_SPREADSHEET_VALUES': {
         const f = box.files.find((x) => x.id === args.spreadsheet_id && !x.trashed);

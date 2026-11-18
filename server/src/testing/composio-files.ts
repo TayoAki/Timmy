@@ -118,6 +118,13 @@ export function pptxOf(text: string): Uint8Array {
   return zipOf(parts);
 }
 
+/** Google's own files, and the Office file each exports as. */
+export const NATIVE_EXPORTS: Record<string, 'docx' | 'xlsx' | 'pptx'> = {
+  'application/vnd.google-apps.document': 'docx',
+  'application/vnd.google-apps.spreadsheet': 'xlsx',
+  'application/vnd.google-apps.presentation': 'pptx',
+};
+
 export const OFFICE_TYPES = {
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -253,7 +260,7 @@ export function fakeFileTool(host: FakeFilesHost, connectedAccountId: string, bo
       const f = box.files.find((x) => x.id === args.fileId);
       // Drive's own answer for a file deleted for good, or one the person can no longer see.
       if (!f) return refuse(`404 Client Error: Not Found. File not found: ${args.fileId}.`);
-      return ok({ id: f.id, name: f.name, mimeType: f.mimeType, trashed: !!f.trashed });
+      return ok({ id: f.id, name: f.name, mimeType: f.mimeType, trashed: !!f.trashed, modifiedTime: f.modifiedTime, version: String(Date.parse(f.modifiedTime)), capabilities: { canEdit: !f.readOnly } });
     }
     default:
       return null;

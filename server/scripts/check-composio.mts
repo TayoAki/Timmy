@@ -64,8 +64,11 @@ const TOOLS: Record<string, Record<string, string[]>> = {
     GOOGLEDRIVE_EXPORT_GOOGLE_WORKSPACE_FILE: ['fileId', 'mimeType'],
     GOOGLEDRIVE_GET_SPREADSHEET_VALUES: ['spreadsheet_id', 'range'],
     GOOGLEDRIVE_GET_PRESENTATION: ['presentation_id', 'fields'],
-    // The nightly look for files thrown away or gone without an announcement.
+    // The nightly look for files thrown away or gone without an announcement; a file's version when it is edited in Timmy.
     GOOGLEDRIVE_GET_FILE_METADATA: ['fileId', 'fields'],
+    // Editing in Timmy (files/drive-edit.ts): an Office or PDF file kept in Drive, and saving an edit over the original.
+    GOOGLEDRIVE_DOWNLOAD_FILE: ['fileId'],
+    GOOGLEDRIVE_UPLOAD_UPDATE_FILE: ['fileId', 'file_to_upload', 'uploadType'],
   },
   // OneDrive is only read: whose drive it is, its list of changes, and a file's bytes to read a Word, Excel or PowerPoint file.
   one_drive: {
@@ -110,6 +113,8 @@ const TYPES: Record<string, Record<string, string>> = {
   ONE_DRIVE_LIST_DRIVES: { select: 'string' },
   ONE_DRIVE_DOWNLOAD_FILE: { item_id: 'string', file_name: 'string', drive_id: 'string' },
   GOOGLEDRIVE_GET_FILE_METADATA: { fileId: 'string', fields: 'string' },
+  // The edited file goes as one file reference, not a list.
+  GOOGLEDRIVE_UPLOAD_UPDATE_FILE: { fileId: 'string', file_to_upload: 'object', uploadType: 'string' },
 };
 
 interface Listed {

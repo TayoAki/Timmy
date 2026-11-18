@@ -161,7 +161,7 @@ run('live-setup', async (browser) => {
   const viewer = p2.getByRole('dialog', { name: 'Trajectory calculations' });
   await viewer.waitFor();
   await viewer.frameLocator('iframe.mail-frame').getByText('Orbit insertion at 14:02.').waitFor();
-  ok(/Google Doc · Google Drive · read only/.test(await viewer.innerText()), 'clicking a file opens it inside Timmy, read only');
+  ok(/Google Doc · Google Drive/.test(await viewer.innerText()) && (await viewer.getByRole('button', { name: 'Edit in Timmy' }).count()) === 1, 'clicking a file opens it inside Timmy, with Edit in Timmy to change it');
   ok((await viewer.getByRole('link', { name: 'Open in Google Drive' }).getAttribute('target')) === '_blank', 'with Open in Google Drive beside it');
   await viewer.getByRole('button', { name: 'Close', exact: true }).first().click();
   await p2.getByLabel('Find a file by name').fill('nothing like it');

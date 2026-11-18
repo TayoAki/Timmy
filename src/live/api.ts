@@ -99,7 +99,15 @@ export const api = {
     call<{ html?: string; text?: string; blocked: number; unavailable?: boolean }>('GET', `/api/v1/mail/original?thread=${encodeURIComponent(thread)}&message=${encodeURIComponent(message)}${images ? '&images=1' : ''}`),
   /** One connected file shown inside Timmy: a Google Doc as HTML, a sheet as rows, slides or plain words. */
   viewFile: (itemId: string) =>
-    call<{ name: string; type: string; app: string; link?: string; view: { kind: 'doc'; html: string } | { kind: 'sheet'; rows: string[][]; more: boolean } | { kind: 'slides'; slides: string[] } | { kind: 'text'; text: string } | { kind: 'none'; reason: string } }>(
+    call<{
+      name: string;
+      type: string;
+      app: string;
+      link?: string;
+      view: { kind: 'doc'; html: string } | { kind: 'sheet'; rows: string[][]; more: boolean } | { kind: 'slides'; slides: string[] } | { kind: 'text'; text: string } | { kind: 'none'; reason: string };
+      /** Which of Timmy's editors opens it, and whether its Save goes back to the file. */
+      edit?: { app: 'wordcraft' | 'gridcraft' | 'deckcraft' | 'pdfcraft'; saves: boolean; native: boolean };
+    }>(
       'GET',
       `/api/v1/connected-files/${encodeURIComponent(itemId)}/view`,
     ),

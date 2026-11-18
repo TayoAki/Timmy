@@ -19,7 +19,7 @@ function pendingOf(e: EffectRow): PendingEffect {
   return {
     id: e.id,
     // A rule waiting to be saved is a yes-or-no that reaches nobody, like an automation's question.
-    kind: e.kind === 'mail.modify' ? 'filing' : domain === 'mail' || domain === 'chat' ? 'email' : domain === 'rules' ? 'decision' : domain,
+    kind: e.kind === 'mail.modify' ? 'filing' : domain === 'mail' || domain === 'chat' ? 'email' : domain === 'rules' || domain === 'files' ? 'decision' : domain,
     title: e.preview.title ?? KINDS[e.kind].label,
     why: e.preview.why ?? '',
     preview: { from: e.preview.from, to: e.preview.to, cc: e.preview.cc, subject: e.preview.subject, body: e.preview.body, lines: e.preview.lines, ...(e.preview.attachments?.length ? { attachments: e.preview.attachments } : {}) },
@@ -50,6 +50,8 @@ export function afterEffect(loaded: Loaded, state0: State, e: EffectRow, outcome
   if (e.kind === 'automation.ask') return state0;
   // A sorting rule is saved by its executor, in the same transaction as the policy row behind it (sync/mail-rules.ts).
   if (e.kind === 'rule.save') return state0;
+  // A file saved back to Drive shows in Timmy when the file list next hears from Drive.
+  if (e.kind === 'file.update') return state0;
   // Filing that Timmy proposed (from the chat) moves the thread on the screens once the mailbox has it.
   // A move the person made themselves is already on the screens; it is what proposed the filing.
   if (e.kind === 'mail.modify') {
