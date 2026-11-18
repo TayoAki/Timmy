@@ -43,6 +43,47 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 | Frontend live mode (`VITE_TIMMY_LIVE=1`) | Built: sign-in, onboarding, state from the API, Connect buttons, model picker, monthly limit, approvals for writes Timmy proposes. The demo is unchanged and still the default build. |
 | Railway | `app` (API + live app), `pgvector` and the bucket `timmy-files` exist in `production` and `staging`. Both `app` services have the OpenRouter and Composio keys. |
 
+## Sorting made smarter (Nov 18, 2026)
+
+**The complaint:** "it's classifying everything as Read Through". The first sort by plain code decided too much on its own:
+- any email with an "unsubscribe" line went to Read Through with certainty (Slack and Notion digests, GitHub notices, cold pitches, a client writing through HubSpot);
+- "invoice" or "order #" in a subject archived a person's question as a receipt;
+- DocuSign signing requests, Google Docs @mentions and GitHub review requests were filed as notices;
+- new meeting invitations were archived like "Accepted:" replies.
+
+The AI read was right on everything it saw; it just saw too little.
+
+**The fix (`server/src/sync/sorting.ts`).** Plain code is now sure only of what is plainly junk or a newsletter, and leaves anything that might need the person to the AI read:
+- a person asking something;
+- a tool asking them to sign, review, approve or answer a mention or assignment;
+- a new invitation;
+- a person writing through a sending tool;
+- an Updates-tab email from an address that isn't a system.
+
+Selling is archived, tool digests and notices are archived, and newsletters go to Read Through even when Gmail filed them under Promotions.
+
+**Measured** with a new evaluation (`server/scripts/eval-sorting.mts`) on made-up emails, with the real model (Claude Opus 5.5), no real mail, and a made-up user name:
+
+| | Before | After |
+| --- | --- | --- |
+| The 37 emails the fix was written against | 25 right (68%) | 37 right (100%) |
+| 24 fresh emails written after the fix, never tuned on | 18 right (75%) | 23 right (96%) |
+| Emails needing the person that ended up in Follow Up | 12 of 22 | 22 of 22 |
+
+- **The one miss** on the fresh set: a Google Drive "shared with you" notice is archived; it was labelled Read Through.
+- **Cost:** the AI now reads about 70% more emails (19 instead of 11, and 14 instead of 8, on the two sets). A read costs about $0.011, so a mailbox that used to have 30 emails a day read now has about 50, roughly +$0.22 a day.
+
+**Mail already sorted the old way** is sorted again once per workspace when the server starts (`mail.resort`, `SORTING_VERSION` 2):
+- suggestions in Triage are redone;
+- threads the old rule filed by itself that may need the person come back to Triage, and digests it sent to Read Through are archived;
+- the AI reads the newest 60 of those from the last 14 days;
+- anything a person placed is left alone;
+- inside Timmy only: nothing is written to Gmail.
+
+**Tests.** `auto-sort.test` has 5 new tests, including one that runs every evaluation email through plain code and requires it never to be sure and wrong. The full API run is 985 of 985.
+
+One test changed with the behaviour: `project-detect` expected "Northwind invoice question" to stay in no project. It did only because the word "invoice" had it archived unread. Now Timmy reads it and puts it in the Northwind project it is about; the test checks that, and that Timmy's read (not the people) placed it.
+
 ## Timmy powered by CopilotKit (Nov 18, 2026)
 
 Phases 1 and 2 of `docs/copilotkit-plan.md` are built. "What was built" at the end of that plan has the detail.

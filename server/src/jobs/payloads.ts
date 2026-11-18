@@ -26,6 +26,8 @@ export interface JobPayloads {
   // `gap` and `idle` are seconds (see sync/mailbox-check.ts).
   'mail.changes': { workspaceId: string; gap?: number; idle?: number };
   'mail.read': { workspaceId: string; threadId: string };
+  // Sorting a workspace's mail again once the plain-code rules have changed (sync/sorting.ts, SORTING_VERSION).
+  'mail.resort': { workspaceId: string };
   // `decided` is the answer a person picked on a decision card; `note` is what they asked for in their own words.
   'draft.make': { workspaceId: string; threadId: string; note?: string; userName?: string; decided?: { question: string; answer: string } };
 

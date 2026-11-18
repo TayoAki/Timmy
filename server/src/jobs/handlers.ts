@@ -1,11 +1,12 @@
 import { config } from '../config';
-import { sysPool } from '../db/pool';
+import { sysPool, withWorkspace } from '../db/pool';
 import { dueEffects, executeEffect, expireStaleApprovals, reconcileEffect, staleExecuting } from '../gateway/gateway';
 import { onEffectApproved, onEffectSettled } from '../gateway/hooks';
 import { draftFor } from '../agent/draft';
 import { dueWorkspaces, morningRun } from '../agent/morning';
 import { needsReading, readThread } from '../agent/read';
 import { linkFilesToProjects } from '../projects/file-links';
+import { resortForNewRules, resortedAlready } from '../sync/sorting';
 import { runScan } from '../projects/scan';
 import { deliverMail, undeliveredMail } from '../providers/email';
 import { modelReady } from '../providers/model';
@@ -122,6 +123,16 @@ export function registerJobs() {
   defineJob('mail.changes', async (d) => {
     const workspaceId = String(d.workspaceId);
     await checkWorkspaceMailboxes(workspaceId, { minGapSeconds: Number(d.gap ?? 0), idleSeconds: Number(d.idle ?? 0) }).catch((e) => log.warn('the look at the mailbox for changes failed', { workspaceId, error: (e as Error).message }));
+  });
+
+  // Once after the sorting rules change: mail sorted by the old ones is sorted again, and what may need the person is
+  // read by the model, newest first (a bounded number).
+  defineJob('mail.resort', async (d) => {
+    const workspaceId = String(d.workspaceId);
+    if (await withWorkspace({ workspaceId }, (tx) => resortedAlready(tx, workspaceId))) return;
+    const r = await resortForNewRules(workspaceId);
+    log.info('mail sorted again by the new rules', { workspaceId, resuggested: r.resuggested, backToTriage: r.backToTriage, archived: r.archived, toRead: r.toRead.length });
+    if (modelReady()) for (const id of r.toRead) enqueueSoon('mail.read', { workspaceId, threadId: id }, { singletonKey: `read:${workspaceId}:${id}` });
   });
 
   defineJob('mail.read', async (d) => {

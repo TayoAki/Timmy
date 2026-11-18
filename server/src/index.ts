@@ -8,6 +8,7 @@ import { buildApp } from './http/app';
 import { registerJobs } from './jobs/handlers';
 import { enqueueSoon, startBoss, type Jobs } from './jobs/jobs';
 import { textPassesAtStart } from './sync/file-text';
+import { SORTING_VERSION } from './sync/sorting';
 import { addSecret, log } from './lib/log';
 import { composio, composioReady } from './providers/composio';
 import { startHub, stopHub } from './state/hub';
@@ -34,6 +35,12 @@ async function main() {
   }
 
   // Files whose words weren't read (a new reader, a pass cut short by a restart) are read now, not tonight.
+  // Mail sorted by older plain-code rules is sorted again, once per workspace (sync/sorting.ts, SORTING_VERSION).
+  if (jobs)
+    await sysPool
+      .query(`select distinct c.workspace_id from connection c where c.status = 'active' and c.toolkit in ('gmail', 'outlook') and not exists (select 1 from audit_log a where a.workspace_id = c.workspace_id and a.action = 'sorting.resorted' and (a.detail->>'version')::int >= $1)`, [SORTING_VERSION])
+      .then(({ rows }) => rows.forEach((r) => enqueueSoon('mail.resort', { workspaceId: r.workspace_id as string }, { singletonKey: `resort:${r.workspace_id as string}` })))
+      .catch((e) => log.warn('could not queue sorting again', { error: (e as Error).message }));
   if (jobs) await textPassesAtStart((c) => enqueueSoon('files.text', { workspaceId: c.workspace_id, connectionId: c.id }, { singletonKey: `ftext:${c.id}` })).catch((e) => log.warn('could not queue the file text passes', { error: (e as Error).message }));
 
   const app = buildApp();

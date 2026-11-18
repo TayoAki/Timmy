@@ -4,6 +4,7 @@
  * rule also files what was already waiting; in the mailbox it files only mail that arrived after it was switched on,
  * and each of those writes is an effect the rule approves.
  */
+import { CASES } from '../scripts/sorting-eval/cases';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { EffectRow } from '../src/gateway/gateway';
 import { suggest, sortsItself } from '../src/sync/sorting';
@@ -57,6 +58,40 @@ describe('the first sort', () => {
 
   it('leaves mail a person wrote for the model and the person', () => {
     expect(suggest({ sender: 'dana@acme.test', subject: 'Contract', text: 'Can you look?', labels: ['INBOX'] })).toMatchObject({ provisional: true, confidence: 'low' });
+  });
+
+  it('is never sure and wrong on the sorting evaluation’s emails (scripts/sorting-eval): what it is unsure of goes to the model', () => {
+    for (const c of CASES) {
+      const s = suggest({ sender: c.sender, subject: c.subject, text: c.text, labels: c.labels });
+      if (!s.provisional) expect({ id: c.id, box: s.box }).toEqual({ id: c.id, box: c.expect });
+    }
+    // Everything that needs the person is left for the model, never decided by plain code.
+    for (const c of CASES.filter((x) => x.expect === 'follow-up')) expect({ id: c.id, provisional: suggest(c).provisional }).toEqual({ id: c.id, provisional: true });
+  });
+
+  it('leaves for the model what may ask something of the person, even from a tool or a mailing list', () => {
+    const left = (m: { sender: string; subject: string; text: string; labels?: string[] }) => suggest({ labels: [], ...m }).provisional;
+    // A new invitation asks for an answer; a reply to one doesn't.
+    expect(left({ sender: 'lee@northpeak.test', subject: 'Invitation: Beta review @ Thu', text: 'Going? Yes - Maybe - No' })).toBe(true);
+    expect(suggest({ sender: 'lee@northpeak.test', subject: 'Accepted: Beta review @ Thu', text: '', labels: [] })).toMatchObject({ box: 'archived', confidence: 'high' });
+    // A tool asking the person to sign, review or answer a mention.
+    expect(left({ sender: 'dse@docusign.net', subject: 'Please DocuSign: MSA', text: 'Dana sent you a document to review and sign.' })).toBe(true);
+    expect(left({ sender: 'notifications@github.test', subject: '[repo] PR #4', text: '@sam requested your review on PR #4. Unsubscribe' })).toBe(true);
+    // A question about an invoice from the people who sent it is not a receipt.
+    expect(left({ sender: 'billing.team@printhaus.test', subject: 'PO number for invoice 4471', text: 'Could you reply with the PO?' })).toBe(true);
+    // A person writing through a sending tool (an unsubscribe line at the foot): a client or a pitch, only reading tells.
+    expect(left({ sender: 'kim.ortega@lumen.test', subject: 'Re: Proposal', text: 'Can you confirm the start date?\n\nUnsubscribe' })).toBe(true);
+  });
+
+  it('is sure of digests and notices from tools, of selling, and of newsletters, wherever Gmail puts them', () => {
+    expect(suggest({ sender: 'notification@slack.test', subject: 'You have 5 unread messages', text: 'Catch up. Unsubscribe', labels: [] })).toMatchObject({ box: 'archived', confidence: 'high' });
+    expect(suggest({ sender: 'drive-shares-dm-noreply@google.test', subject: 'Shared with you', text: 'Open', labels: [] })).toMatchObject({ box: 'archived', confidence: 'high' });
+    expect(suggest({ sender: 'news@shop.test', subject: 'Weekly deals', text: 'Big savings. Unsubscribe', labels: [] })).toMatchObject({ box: 'archived', confidence: 'high' });
+    // A newsletter that Gmail filed under Promotions is still a newsletter.
+    expect(suggest({ sender: 'crew@morningbrew.test', subject: 'Ad spend rebounds', text: 'Good morning. View in browser. Unsubscribe', labels: ['INBOX', 'CATEGORY_PROMOTIONS'] })).toMatchObject({ box: 'read-through', confidence: 'high' });
+    expect(suggest({ sender: 'lenny@substack.com', subject: 'Your first 100 calls', text: 'Read in app. Unsubscribe', labels: [] })).toMatchObject({ box: 'read-through', confidence: 'high' });
+    // A bulk mailing it can't place is a guess, never filed by the rule.
+    expect(suggest({ sender: 'events@vendor.test', subject: 'November', text: 'Things happened. Unsubscribe', labels: [] })).toMatchObject({ confidence: 'medium' });
   });
 
   it('the rule only takes plain code’s sure calls on junk and newsletters, never the model’s and never a person’s mail', () => {
@@ -252,5 +287,64 @@ describe('running what was approved', () => {
     ).rejects.toThrow('changed my mind');
     expect(queued()).toBe(0);
     expect(await rows(`select 1 from effect where idempotency_key = 'probe:rollback'`)).toHaveLength(0);
+  });
+});
+
+describe('sorting again after the rules improved (Nov 18)', () => {
+  const OLD_RULE = 'Timmy filed this under Read Through on its own, as the rule to sort mail automatically says. A newsletter or bulk mailing. Read it when you have time.';
+  /** Puts a thread where the old first sort left it. */
+  const asBefore = async (id: string, patch: Record<string, unknown>) => {
+    const { mutate } = await import('../src/state/mutate');
+    await mutate(w.workspaceId, 'test', async (_tx, loaded) => ({ state: { ...loaded.state, threads: loaded.state.threads.map((x) => (x.id === id ? { ...x, ...patch } : x)) }, result: null }));
+  };
+  const resort = async () => {
+    await jobs().enqueue('mail.resort', { workspaceId: w.workspaceId });
+    await jobs().drain();
+  };
+
+  it('brings back what may need the person, archives digests, keeps real newsletters, and leaves what a person placed', async () => {
+    const digest = await deliver({ from: 'Slack <notification@slack.test>', subject: 'You have 5 unread messages', body: 'Catch up on #sales. Unsubscribe' });
+    const client = await deliver({ from: 'Kim Ortega <kim.ortega@lumen.test>', subject: 'Proposal timing', body: 'Can you confirm the start date?\n\nUnsubscribe' });
+    const letter = await deliver({ from: 'Lenny <lenny@substack.com>', subject: 'Your first 100 calls', body: 'Read in app. Unsubscribe' });
+    const mine = await deliver({ from: 'Pat <pat@club.test>', subject: 'Club news', body: 'Can you come Saturday? Unsubscribe' });
+    const invoice = await deliver({ from: 'PrintHaus <billing.team@printhaus.test>', subject: 'PO number for invoice 4471', body: 'Could you reply with the PO?' });
+    const filed = { box: 'read-through', suggestion: undefined, history: [{ at: new Date(), text: OLD_RULE }] };
+    for (const t of [digest, client, letter]) await asBefore(t.id, filed);
+    // One the person put in Read Through themselves.
+    await asBefore(mine.id, { box: 'read-through', suggestion: undefined, history: [{ at: new Date(), text: 'You moved it under Read Through' }] });
+    // One the old first sort called a receipt, still waiting in Triage.
+    await asBefore(invoice.id, { suggestion: { box: 'archived', confidence: 'high', reason: 'A receipt or order notice. Nothing to answer.' } });
+    model().reset();
+    const calls = writes().length;
+
+    await resort();
+    const s = await w.state();
+    const at = (id: string) => s.threads.find((t) => t.id === id)!;
+    expect(at(client.id).box).toBe('inbox');
+    expect(at(client.id).history?.some((h) => /put this back in Triage: its sorting rules improved/.test(h.text))).toBe(true);
+    expect(at(digest.id).box).toBe('archived');
+    expect(at(letter.id).box).toBe('read-through');
+    expect(at(mine.id).box).toBe('read-through');
+    expect(at(invoice.id).box).toBe('inbox');
+    // The two that may need the person were read by the model.
+    const read = model().requests.filter((r) => r.route === 'read').map((r) => r.messages.at(-1)!.content);
+    expect(read).toHaveLength(2);
+    expect(read.some((c) => c.includes('Proposal timing')) && read.some((c) => c.includes('PO number for invoice 4471'))).toBe(true);
+    expect(at(invoice.id).suggestion?.provisional).toBeFalsy();
+    expect(s.activity[0]!.text).toMatch(/Timmy sorted your mail again with better rules: 1 back to Triage because they may need you, 1 digests and notices archived, 1 suggestions in Triage redone\. Nothing changed in your mailbox\./);
+    // Inside Timmy only.
+    expect(writes().length).toBe(calls);
+  });
+
+  it('runs once per workspace', async () => {
+    const client = await deliver({ from: 'Kim Ortega <kim.ortega@lumen.test>', subject: 'Proposal timing', body: 'Can you confirm the start date?\n\nUnsubscribe' });
+    await asBefore(client.id, { box: 'read-through', suggestion: undefined, history: [{ at: new Date(), text: OLD_RULE }] });
+    await resort();
+    expect((await w.state()).threads.find((t) => t.id === client.id)!.box).toBe('inbox');
+    // Put back where it was: a second run changes nothing.
+    await asBefore(client.id, { box: 'read-through', history: [{ at: new Date(), text: OLD_RULE }] });
+    await resort();
+    expect((await w.state()).threads.find((t) => t.id === client.id)!.box).toBe('read-through');
+    expect(await rows(`select 1 from audit_log where workspace_id = $1 and action = 'sorting.resorted'`, [w.workspaceId])).toHaveLength(1);
   });
 });

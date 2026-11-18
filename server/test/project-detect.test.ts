@@ -210,7 +210,12 @@ describe('new mail after that', () => {
     const project = (subject: string) => state.threads.find((t) => t.subject === subject)!.project;
     const acmeProject = Object.values(state.ws.projects).find((p) => p.name === 'Acme work')!.id;
     expect(project('New page copy')).toBe(acmeProject);
-    expect(project('Northwind invoice question')).toBeUndefined();
+    // Two projects claim its people (Lee at Northwind, Dana at Acme), so the people alone place it nowhere. Timmy's read
+    // of the thread then puts it where it is plainly about: Northwind. (Before Nov 18 the word "invoice" in the subject
+    // had it archived as a receipt, unread; that rule now leaves a person's question to the read.)
+    const northwind = state.threads.find((t) => t.subject === 'Northwind invoice question')!;
+    expect(northwind.project).toBe(Object.values(state.ws.projects).find((p) => p.name === 'Northwind work')!.id);
+    expect(northwind.history?.some((h) => h.text === 'Timmy put it in the project “Northwind work”')).toBe(true);
     expect(project('Hello there')).toBeUndefined();
   });
 });

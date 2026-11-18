@@ -527,9 +527,10 @@
   {
    "id": "api-auto-sort",
    "file": "server/test/auto-sort.test.ts",
-   "covers": "sorting mail automatically: plain code's first sort (Promotions and Social tabs and system senders archived and sure; addresses a small business's person might use only guessed), the rule off files nothing, only an owner or admin switches it on and it is a policy row naming them, switching it on files the junk already waiting inside Timmy only (no mailbox write) and re-sorts it with today's rules, new junk is filed in Timmy and in Gmail through an effect the rule approves, mail a person wrote is never filed, mail older than the rule is filed in Timmy only, one filing per thread however often it is seen, the kill switch stops the mailbox write but not the sort, switching off stops it, and a filing without the rule's mark still waits for a person",
+   "covers": "sorting mail automatically: plain code's first sort (Promotions and Social tabs and system senders archived and sure; addresses a small business's person might use only guessed), the rule off files nothing, only an owner or admin switches it on and it is a policy row naming them, switching it on files the junk already waiting inside Timmy only (no mailbox write) and re-sorts it with today's rules, new junk is filed in Timmy and in Gmail through an effect the rule approves, mail a person wrote is never filed, mail older than the rule is filed in Timmy only, one filing per thread however often it is seen, the kill switch stops the mailbox write but not the sort, switching off stops it, and a filing without the rule's mark still waits for a person; since Nov 18: plain code is never sure and wrong on the sorting evaluation's emails, leaves for the model what may ask something of the person (invitations, tools asking to sign or review, a question about an invoice, a person writing through a sending tool), is sure of tool digests, selling and newsletters wherever Gmail puts them; mail sorted by the old rules is sorted again once (back to Triage what may need the person, digests archived, real newsletters and what a person placed left alone, the newest read by the model, nothing written to Gmail)",
    "status": "pass",
-   "result": "Nov 18, 2026: 18 of 18."
+   "result": "Nov 18, 2026: 23 of 23 (5 new). Full API run: 985 of 985.",
+   "tests": null
   },
   {
    "id": "live-setup",
@@ -649,6 +650,13 @@
    "tests": 7,
    "status": "pass",
    "result": "Nov 18, 2026: 7 of 7. Full API run: 980 of 980 (54 files)."
+  },
+  {
+   "id": "eval-sorting",
+   "file": "server/scripts/eval-sorting.mts",
+   "covers": "how well mail is sorted, end to end with the real model: 37 made-up emails the sorting fix was written against, and 24 written after it and never tuned on (--holdout); each email's expected box, plain code's call, the model's call, and totals per box",
+   "status": "pass",
+   "result": "Nov 18, 2026, Claude Opus 5.5: 37 of 37 (was 25 of 37 before the fix); held-out 23 of 24 (was 18 of 24). Model cost $0.22 and $0.16 per run."
   },
   {
    "id": "live-intelligence",
