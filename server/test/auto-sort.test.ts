@@ -124,6 +124,23 @@ describe('switching the rule on', () => {
     expect((await w.state()).threads.find((x) => x.id === t.id)!.box).toBe('archived');
   });
 
+  it('a large inbox is sorted in several writes, each a modest change, with one line on the activity log', async () => {
+    for (let i = 0; i < 5; i++) await promo(`Sale number ${i}`);
+    await person('A person in the middle');
+    const { setAutoSort, sortWhatIsWaiting } = await import('../src/sync/sorting');
+    const { withWorkspace } = await import('../src/db/pool');
+    await withWorkspace({ workspaceId: w.workspaceId }, (tx) => setAutoSort(tx, w.workspaceId, w.userId, true));
+    const before = (await rows<{ n: number }>(`select count(*)::int as n from state_change where workspace_id = $1`, [w.workspaceId]))[0]!.n;
+    expect(await sortWhatIsWaiting(w.workspaceId, 2)).toEqual({ archived: 5 });
+    const writes = (await rows<{ n: number }>(`select count(*)::int as n from state_change where workspace_id = $1`, [w.workspaceId]))[0]!.n - before;
+    // Three writes of two threads each, then the activity line.
+    expect(writes).toBe(4);
+    const s = await w.state();
+    expect(s.threads.filter((t) => /^Sale number/.test(t.subject)).every((t) => t.box === 'archived')).toBe(true);
+    expect(s.threads.find((t) => t.subject === 'A person in the middle')!.box).toBe('inbox');
+    expect(s.activity.filter((a) => /sorted \d+ emails? on its own/.test(a.text))).toHaveLength(1);
+  });
+
   it('switching it on twice changes nothing the second time', async () => {
     await switchSorting(true);
     await switchSorting(true);

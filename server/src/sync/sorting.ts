@@ -19,7 +19,7 @@ import type { Tx } from '../db/pool';
 import { newId } from '../lib/ids';
 import { audit, propose } from '../gateway/gateway';
 import type { Loaded } from '../state/docs';
-import { mutate } from '../state/mutate';
+import { mutate, readState } from '../state/mutate';
 import { BOX_WORDS, filingProposal } from './labels';
 
 /* ───────────── The first sort, by plain code ───────────── */
@@ -180,32 +180,48 @@ export function sortedWords(moved: Sorted['moved']): string {
  * each received, so what plain code knows now applies to them too) and the ones it is sure of are filed, inside Timmy
  * only. Threads the model read, and threads a person put back in the inbox, keep what they have.
  */
-export async function sortWhatIsWaiting(workspaceId: string): Promise<Sorted['moved']> {
-  return mutate(workspaceId, 'sort', async (tx, loaded) => {
-    const waiting = loaded.state.threads.filter((t) => t.box === 'inbox' && byPlainCode(t.suggestion) && t.ext?.threadKey && t.ext.connectionId);
-    if (!waiting.length) return { result: {} };
-    const { rows } = await tx.query(
-      `select distinct on (i.connection_id, i.thread_key) i.connection_id, i.thread_key, i.sender, i.subject, i.labels, b.text
-       from item i left join item_body b on b.item_id = i.id
-       where i.workspace_id = $1 and i.kind = 'message' and coalesce(i.direction, 'in') <> 'out' and i.thread_key = any($2::text[])
-       order by i.connection_id, i.thread_key, i.occurred_at desc`,
-      [workspaceId, [...new Set(waiting.map((t) => t.ext!.threadKey!))]],
-    );
-    const newest = new Map(rows.map((r) => [`${r.connection_id as string}:${r.thread_key as string}`, r]));
-    const again = new Map<string, Thread>();
-    for (const t of waiting) {
-      const r = newest.get(`${t.ext!.connectionId}:${t.ext!.threadKey}`);
-      if (!r) continue;
-      const s = suggest({ sender: r.sender as string, subject: (r.subject as string) ?? '', text: (r.text as string | null) ?? '', labels: (r.labels as string[]) ?? [] });
-      // A thread waiting for the model keeps waiting for it; only a sure answer replaces its guess.
-      if (t.suggestion?.provisional && s.provisional) continue;
-      again.set(t.id, { ...t, suggestion: s });
-    }
-    const resorted: State = { ...loaded.state, threads: loaded.state.threads.map((t) => again.get(t.id) ?? t) };
-    const sorted = await autoSort(tx, loaded, resorted, { mailbox: false });
-    const n = Object.values(sorted.moved).reduce((a, b) => a + (b ?? 0), 0);
-    if (!n) return { state: again.size ? resorted : undefined, result: {} };
-    const text = `Timmy sorted ${n} email${n === 1 ? '' : 's'} on its own: ${sortedWords(sorted.moved)}. They stay as they were in the mailbox; mail that arrives from now on is filed there too.`;
-    return { state: { ...sorted.state, activity: [{ id: newId('act'), at: new Date(), kind: 'triage' as const, text }, ...sorted.state.activity] }, result: sorted.moved };
-  });
+/** How many threads one write looks at: a sweep of a large inbox is several writes, each a modest change on screen. */
+const SWEEP_CHUNK = 150;
+
+const waitingForPlainCode = (t: Thread) => t.box === 'inbox' && byPlainCode(t.suggestion) && !!t.ext?.threadKey && !!t.ext.connectionId;
+const sameSuggestion = (a: Thread['suggestion'], b: Thread['suggestion']) => a?.box === b?.box && a?.confidence === b?.confidence && a?.reason === b?.reason;
+
+export async function sortWhatIsWaiting(workspaceId: string, chunk = SWEEP_CHUNK): Promise<Sorted['moved']> {
+  const ids = (await readState(workspaceId)).state.threads.filter(waitingForPlainCode).map((t) => t.id);
+  const total: Sorted['moved'] = {};
+  for (let i = 0; i < ids.length; i += chunk) {
+    const part = new Set(ids.slice(i, i + chunk));
+    const moved = await mutate(workspaceId, 'sort', async (tx, loaded) => {
+      const waiting = loaded.state.threads.filter((t) => part.has(t.id) && waitingForPlainCode(t));
+      if (!waiting.length) return { result: {} as Sorted['moved'] };
+      const { rows } = await tx.query(
+        `select distinct on (i.connection_id, i.thread_key) i.connection_id, i.thread_key, i.sender, i.subject, i.labels, b.text
+         from item i left join item_body b on b.item_id = i.id
+         where i.workspace_id = $1 and i.kind = 'message' and coalesce(i.direction, 'in') <> 'out' and i.thread_key = any($2::text[])
+         order by i.connection_id, i.thread_key, i.occurred_at desc`,
+        [workspaceId, [...new Set(waiting.map((t) => t.ext!.threadKey!))]],
+      );
+      const newest = new Map(rows.map((r) => [`${r.connection_id as string}:${r.thread_key as string}`, r]));
+      const again = new Map<string, Thread>();
+      for (const t of waiting) {
+        const r = newest.get(`${t.ext!.connectionId}:${t.ext!.threadKey}`);
+        if (!r) continue;
+        const s = suggest({ sender: r.sender as string, subject: (r.subject as string) ?? '', text: (r.text as string | null) ?? '', labels: (r.labels as string[]) ?? [] });
+        // A thread waiting for the model keeps waiting for it; only a sure answer replaces its guess. One whose
+        // suggestion is unchanged is left as it is, so nothing is rewritten for nothing.
+        if ((t.suggestion?.provisional && s.provisional) || sameSuggestion(t.suggestion, s)) continue;
+        again.set(t.id, { ...t, suggestion: s });
+      }
+      const resorted: State = again.size ? { ...loaded.state, threads: loaded.state.threads.map((t) => again.get(t.id) ?? t) } : loaded.state;
+      const sorted = await autoSort(tx, loaded, resorted, { ids: part, mailbox: false });
+      return { state: sorted.state === loaded.state ? undefined : sorted.state, result: sorted.moved };
+    });
+    for (const [box, n] of Object.entries(moved) as [Box, number][]) total[box] = (total[box] ?? 0) + n;
+  }
+  const n = Object.values(total).reduce((a, b) => a + (b ?? 0), 0);
+  if (n) {
+    const text = `Timmy sorted ${n} email${n === 1 ? '' : 's'} on its own: ${sortedWords(total)}. They stay as they were in the mailbox; mail that arrives from now on is filed there too.`;
+    await mutate(workspaceId, 'sort', async (_tx, loaded) => ({ state: { ...loaded.state, activity: [{ id: newId('act'), at: new Date(), kind: 'triage' as const, text }, ...loaded.state.activity] }, result: null }));
+  }
+  return total;
 }
