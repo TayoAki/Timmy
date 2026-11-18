@@ -28,6 +28,7 @@ import { TaskDialog } from '../areas/tasks/TaskDialog';
 import { AutoTextarea, Field, Modal } from '../components/kit';
 import type { Box, Draft, MailFile, Thread } from '../data/types';
 import { AttachButton, FileChips } from '../components/Attach';
+import { EmailBody } from '../components/EmailBody';
 import { fmtDay, fmtStamp } from '../lib/format';
 import { acmeSeatPrice, counterpart, labelOf, useStore, ws, type ThreadTab } from '../state/store';
 import { Avatar, Kbd, ThreadChips, TimmyMark } from '../components/common';
@@ -174,6 +175,10 @@ function Summary({ t }: { t: Thread }) {
 
 function Conversation({ t, replying, focusReply, onReplyDone }: { t: Thread; replying: boolean; focusReply: boolean; onReplyDone: () => void }) {
   const { state } = useStore();
+  // Who someone is, in full: their name, and the address the mail really came from or went to.
+  const myAddress = state.conn.apps.gmail?.account ?? state.conn.apps.outlook?.account ?? PEOPLE.me?.email ?? '';
+  const addressOf = (id: string) => (id === 'me' ? myAddress : PEOPLE[id]?.email || (id.startsWith('mail:') ? id.slice(5) : ''));
+  const nameOf = (id: string) => (id === 'me' ? 'me' : PEOPLE[id]?.name || addressOf(id) || id);
   // The whole thread is shown; earlier messages can be folded away.
   const [collapsed, setCollapsed] = useState<string[]>([]);
   const lastId = t.messages[t.messages.length - 1]!.id;
@@ -184,7 +189,7 @@ function Conversation({ t, replying, focusReply, onReplyDone }: { t: Thread; rep
       <div className="messages">
         {t.messages.map((m) => {
           const open = m.id === lastId || !collapsed.includes(m.id);
-          const p = PEOPLE[m.from]!;
+          const fromMe = m.from === 'me';
           return (
             <article key={m.id} className={`msg${open ? '' : ' collapsed'}`}>
               <button
@@ -196,20 +201,20 @@ function Conversation({ t, replying, focusReply, onReplyDone }: { t: Thread; rep
               >
                 <Avatar id={m.from} size={32} />
                 <div className="msg-who">
-                  <span className="row-from">{m.from === 'me' ? 'You' : p.name}</span>
-                  <span className="row-company">
-                    {open
-                      ? `to ${m.to.map((x) => (x === 'me' ? 'you' : PEOPLE[x]!.name.split(' ')[0])).join(', ')}${m.cc?.length ? `, cc ${m.cc.map((x) => PEOPLE[x]!.name.split(' ')[0]).join(', ')}` : ''}`
-                      : m.body.join(' ').replace(/\n/g, ' ').slice(0, 90)}
+                  <span className="msg-from-line">
+                    <span className="row-from">{fromMe ? 'You' : nameOf(m.from)}</span>
+                    {addressOf(m.from) && <span className="msg-addr">&lt;{addressOf(m.from)}&gt;</span>}
                   </span>
+                  {!open && <span className="row-company">{m.body.join(' ').replace(/\n/g, ' ').slice(0, 90)}</span>}
                 </div>
-                <span className="row-time">{fmtStamp(m.at)}</span>
+                <span className="row-time" title={fmtFull(m.at)}>
+                  {fmtStamp(m.at)}
+                </span>
               </button>
               {open && (
                 <div className="msg-body">
-                  {m.body.map((para, i) => (
-                    <p key={i}>{para}</p>
-                  ))}
+                  <MessageDetails t={t} m={m} nameOf={nameOf} addressOf={addressOf} />
+                  <EmailBody t={t} m={m} />
                   {m.attachments && (
                     <div className="chips" style={{ marginTop: 12 }}>
                       {m.attachments.map((id) => (
@@ -235,6 +240,48 @@ function Conversation({ t, replying, focusReply, onReplyDone }: { t: Thread; rep
     </>
   );
 }
+
+/** "to me, Sam ▾" under the sender, and Gmail's details when it is opened: every address, the date and the subject. */
+function MessageDetails({ t, m, nameOf, addressOf }: { t: Thread; m: Thread['messages'][number]; nameOf: (id: string) => string; addressOf: (id: string) => string }) {
+  const [open, setOpen] = useState(false);
+  const short = (id: string) => (id === 'me' ? 'me' : nameOf(id).split(' ')[0]);
+  const full = (id: string) => {
+    const address = addressOf(id);
+    const name = id === 'me' ? 'me' : nameOf(id);
+    return address && name !== address ? `${name} <${address}>` : name;
+  };
+  const to = m.to.map(short).join(', ');
+  return (
+    <div className="msg-meta">
+      <button type="button" className="msg-to" aria-expanded={open} onClick={() => setOpen((x) => !x)} title="Show details">
+        to {to || 'undisclosed recipients'}
+        {m.cc?.length ? `, cc ${m.cc.map(short).join(', ')}` : ''}
+        <ChevronDown size={13} aria-hidden className={open ? 'msg-to-open' : undefined} />
+      </button>
+      {open && (
+        <dl className="msg-details">
+          <dt>from</dt>
+          <dd>{full(m.from)}</dd>
+          <dt>to</dt>
+          <dd>{m.to.map(full).join(', ') || 'undisclosed recipients'}</dd>
+          {m.cc?.length ? (
+            <>
+              <dt>cc</dt>
+              <dd>{m.cc.map(full).join(', ')}</dd>
+            </>
+          ) : null}
+          <dt>date</dt>
+          <dd>{fmtFull(m.at)}</dd>
+          <dt>subject</dt>
+          <dd>{t.subject}</dd>
+        </dl>
+      )}
+    </div>
+  );
+}
+
+/** "Tuesday, November 17, 2026 at 3:12 PM" */
+const fmtFull = (d: Date) => new Date(d).toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 /* ───────────── Actions that connect mail to tasks, calendar and projects ───────────── */
 

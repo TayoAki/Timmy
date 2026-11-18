@@ -1,6 +1,6 @@
 # What Timmy holds and how it is protected
 
-Draft, Nov 16, 2026. This is Annex 2 of the data processing agreement, and the page to answer a customer's security questions from. It describes the system **as built**; the last section lists what is not in place yet. Each claim here is checked by an automated test unless it says otherwise (`tests.json` lists them).
+Draft, Nov 16, 2026; updated Nov 18, 2026. This is Annex 2 of the data processing agreement, and the page to answer a customer's security questions from. It describes the system **as built**; the last section lists what is not in place yet. Each claim here is checked by an automated test unless it says otherwise (`tests.json` lists them).
 
 ## Where data is
 
@@ -34,7 +34,7 @@ Draft, Nov 16, 2026. This is Annex 2 of the data processing agreement, and the p
 
 - Email, files, pages and web content given to the model are wrapped and labelled as information from outside, never as instructions. The model's output is treated as untrusted: a figure, a promise or a "decision" it reports is kept only if the sentence it cites is really in the source.
 - The step that decides whether an action may run without asking (Auto mode, off by default) sees only the user's own words, never the content of mail.
-- Text from mail is shown as text. HTML email is converted to plain words before it is stored.
+- HTML email is converted to plain words before it is stored; the stored words are what search, the model and the lists use. When a person opens an email, its original HTML is fetched from the mailbox at that moment, cleaned against a fixed list of formatting tags and attributes (scripts, forms, frames, plugins, event handlers and links other than web, mail and phone are removed), and shown in a sandboxed frame that runs no scripts. Pictures and backgrounds from other sites are loaded only when the person asks, because loading one tells the sender the email was opened. The HTML is not stored; a copy is kept in the server's memory for up to ten minutes, and is not served once the mailbox is disconnected.
 
 ## The website chat (visitors with no account)
 

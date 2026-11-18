@@ -17,6 +17,8 @@ const TOOLS: Record<string, Record<string, string[]>> = {
     GMAIL_GET_PROFILE: [],
     GMAIL_FETCH_EMAILS: ['query', 'max_results', 'include_payload', 'page_token', 'verbose', 'include_spam_trash'],
     GMAIL_FETCH_MESSAGE_BY_THREAD_ID: ['thread_id'],
+    // Reading one email as its sender laid it out (mail/original.ts).
+    GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID: ['message_id', 'format'],
     GMAIL_SEND_EMAIL: ['recipient_email', 'extra_recipients', 'cc', 'subject', 'body', 'is_html', 'include_signature', 'attachment'],
     GMAIL_REPLY_TO_THREAD: ['thread_id', 'message_body', 'recipient_email', 'extra_recipients', 'cc', 'is_html', 'include_signature', 'attachment'],
     GMAIL_LIST_LABELS: [],
@@ -34,6 +36,7 @@ const TOOLS: Record<string, Record<string, string[]>> = {
     OUTLOOK_GET_PROFILE: [],
     OUTLOOK_GET_MAIL_FOLDER: ['mail_folder_id', 'select'],
     OUTLOOK_LIST_MESSAGES: ['folder', 'select', 'orderby', 'received_date_time_ge', 'top', 'page_token', 'filter'],
+    OUTLOOK_GET_MESSAGE: ['message_id', 'select'],
     OUTLOOK_CREATE_DRAFT: ['subject', 'body', 'is_html', 'to_recipients', 'cc_recipients'],
     OUTLOOK_CREATE_DRAFT_REPLY: ['message_id'],
     // Files are added to the draft one at a time (a reply draft can't be made with files on it), and the draft is listed before it is sent.

@@ -85,6 +85,9 @@ export const api = {
   command: (id: string, action: Action) => call<CommandResult>('POST', '/api/v1/commands', { id, action: clearsAsNull(action) }, { outliveThePage: true, repeatable: true }),
   connect: (app: string) => call<{ redirectUrl: string }>('POST', `/api/v1/connections/${app}/connect`, {}),
   disconnect: (app: string) => call('POST', `/api/v1/connections/${app}/disconnect`, {}),
+  /** One email as its sender laid it out: cleaned HTML, or the plain text when it has no HTML. */
+  mailOriginal: (thread: string, message: string, images = false) =>
+    call<{ html?: string; text?: string; blocked: number }>('GET', `/api/v1/mail/original?thread=${encodeURIComponent(thread)}&message=${encodeURIComponent(message)}${images ? '&images=1' : ''}`),
   /** The files Timmy lists from a connected Google Drive or OneDrive, newest first. */
   connectedFiles: (q = '') =>
     call<{ apps: string[]; total: number; files: { id: string; name: string; kind: string; app: string; owner?: string; changed: string; link?: string; readable: boolean }[] }>('GET', `/api/v1/connected-files${q ? `?q=${encodeURIComponent(q)}` : ''}`),

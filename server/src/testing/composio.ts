@@ -257,7 +257,7 @@ export class FakeComposio implements ComposioProvider {
   deliver(connectedAccountId: string, m: Partial<FakeMessage> & { from: string; subject: string; body: string }) {
     const box = this.accounts.get(connectedAccountId);
     if (!box) throw new Error('no such fake account');
-    const msg: FakeMessage = { id: m.id ?? newId('m'), threadId: m.threadId ?? newId('t'), from: m.from, to: m.to ?? [box.address], cc: m.cc, subject: m.subject, body: m.body, at: m.at ?? new Date(), labels: m.labels ?? ['INBOX', 'UNREAD'], ...(m.categories ? { categories: [...m.categories] } : {}), ...(m.attachments ? { attachments: m.attachments.map((a) => ({ ...a })) } : {}) };
+    const msg: FakeMessage = { id: m.id ?? newId('m'), threadId: m.threadId ?? newId('t'), from: m.from, to: m.to ?? [box.address], cc: m.cc, subject: m.subject, body: m.body, at: m.at ?? new Date(), labels: m.labels ?? ['INBOX', 'UNREAD'], ...(m.html ? { html: m.html } : {}), ...(m.categories ? { categories: [...m.categories] } : {}), ...(m.attachments ? { attachments: m.attachments.map((a) => ({ ...a })) } : {}) };
     box.messages.push(msg);
     const outlook = box.toolkit === 'outlook';
     const slug = outlook ? 'OUTLOOK_MESSAGE_TRIGGER' : 'GMAIL_NEW_GMAIL_MESSAGE';
@@ -304,6 +304,12 @@ export class FakeComposio implements ComposioProvider {
       preview: { body: m.body.slice(0, 160), subject: m.subject },
       attachmentList: (m.attachments ?? []).map((a, i) => ({ attachmentId: `att-${m.id}-${i}`, filename: a.name, mimeType: a.mimetype })),
     };
+  }
+
+  /** A Gmail message's parts, as the API returns them with format=full. */
+  private mime(m: FakeMessage) {
+    const part = (type: string, text: string) => ({ mimeType: type, headers: [{ name: 'Content-Type', value: `${type}; charset="UTF-8"` }], body: { size: Buffer.byteLength(text), data: Buffer.from(text, 'utf8').toString('base64url') } });
+    return m.html ? { mimeType: 'multipart/alternative', headers: [], body: { size: 0 }, parts: [part('text/plain', m.body), part('text/html', m.html)] } : part('text/plain', m.body);
   }
 
   /** The id of the folder a mailbox files archived mail in: the well-known Archive, or one named Archive that was made later. */
@@ -440,7 +446,8 @@ export class FakeComposio implements ComposioProvider {
       }
       case 'GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID': {
         const m = box.messages.find((x) => x.id === args.message_id);
-        return m ? ok(this.wire(m)) : { successful: false, data: {}, error: 'Message not found' };
+        // Asked for in full, it carries the MIME parts the way Gmail's API does: base64url bodies, an HTML alternative when there is one.
+        return m ? ok({ ...this.wire(m), ...(args.format === 'full' ? { payload: this.mime(m) } : {}) }) : { successful: false, data: {}, error: 'Message not found' };
       }
       case 'GMAIL_SEND_EMAIL':
       case 'GMAIL_REPLY_TO_THREAD': {
@@ -592,6 +599,10 @@ export class FakeComposio implements ComposioProvider {
         if (i < 0) return refuse('The specified object was not found in the store. (ErrorItemNotFound)');
         box.messages.splice(i, 1);
         return ok({});
+      }
+      case 'OUTLOOK_GET_MESSAGE': {
+        const m = box.messages.find((x) => x.id === args.message_id);
+        return m ? ok(this.graph(m, box)) : { successful: false, data: {}, error: 'ErrorItemNotFound: The specified object was not found in the store.' };
       }
       case 'OUTLOOK_LIST_MESSAGES': {
         const filter = String(args.filter ?? '');
