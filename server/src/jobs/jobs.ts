@@ -38,6 +38,10 @@ export function defineJob<N extends JobName>(name: N, handler: Handler<N>, cron?
   if (cron) crons.set(name, cron);
 }
 
+/** Where a job's place in the queue is written in its data. */
+const SEQ = '__seq';
+let queued = 0;
+
 export class BossJobs implements Jobs {
   constructor(
     private boss: PgBoss,
@@ -52,7 +56,9 @@ export class BossJobs implements Jobs {
       const waiting = await this.boss.getDb().executeSql(`select 1 from ${this.schema}.job where name = $1 and singleton_key = $2 and state in ('created', 'retry') limit 1`, [name, opts.singletonKey]);
       if (waiting.rows.length) return;
     }
-    await this.boss.send(name, data, { ...(opts.startAfter !== undefined ? { startAfter: opts.startAfter } : {}), ...(opts.singletonKey ? { singletonKey: opts.singletonKey } : {}) });
+    // Numbered as queued: the queue's creation times come back to the millisecond, and jobs queued within one
+    // millisecond would otherwise run in any order (see batchHandler).
+    await this.boss.send(name, { ...data, [SEQ]: ++queued }, { ...(opts.startAfter !== undefined ? { startAfter: opts.startAfter } : {}), ...(opts.singletonKey ? { singletonKey: opts.singletonKey } : {}) });
   }
   async stop() {
     await this.boss.stop({ graceful: true, timeout: 10_000 });
@@ -89,9 +95,11 @@ export const workOptions = (name: string) => ({ pollingIntervalSeconds: name ===
  */
 export const batchHandler = (name: string, handler: (data: Record<string, unknown>) => Promise<unknown>) => async (batch: { data?: unknown; createdOn?: Date | string }[]) => {
   let failed: unknown = null;
-  // The queue hands batches over in order, but not the jobs inside one.
+  // The queue hands batches over in order, but not the jobs inside one: they are put back in the order they were
+  // queued, by creation time and then by the number each was given when queued.
   const at = (j: { createdOn?: Date | string }) => (j.createdOn ? new Date(j.createdOn).getTime() : 0);
-  for (const job of [...batch].sort((a, b) => at(a) - at(b))) {
+  const seq = (j: { data?: unknown }) => Number((j.data as Record<string, unknown> | undefined)?.[SEQ] ?? 0);
+  for (const job of [...batch].sort((a, b) => at(a) - at(b) || seq(a) - seq(b))) {
     try {
       await handler((job.data ?? {}) as Record<string, unknown>);
     } catch (e) {

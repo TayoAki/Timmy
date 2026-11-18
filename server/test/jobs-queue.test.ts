@@ -59,6 +59,7 @@ describe('working through a burst', () => {
     expect(ran).toHaveLength(100);
     // One at a time, with the one-second pause between fetches, this took more than a minute and a half.
     expect(Date.now() - started).toBeLessThan(20_000);
+    if (ran.join(",") !== [...ran].sort((a, b) => a - b).join(",")) console.log("ORDER", ran.join(","));
     expect(ran).toEqual([...ran].sort((a, b) => a - b));
   });
 
@@ -71,6 +72,16 @@ describe('working through a burst', () => {
     for (let i = 0; i < 5; i++) await jobs.enqueue('mail.ingest', { i });
     for (let i = 0; i < 200 && ran.length < 4; i++) await new Promise((r) => setTimeout(r, 50));
     expect(ran.sort()).toEqual([0, 1, 3, 4]);
+  });
+});
+
+describe('a batch’s order', () => {
+  it('jobs queued within the same millisecond still run in the order they were queued', async () => {
+    const at = new Date('2026-11-18T02:00:00.123Z');
+    const ran: number[] = [];
+    const batch = [3, 1, 4, 2].map((n) => ({ createdOn: at, data: { n, __seq: n } }));
+    await batchHandler('effect.execute', async (d) => void ran.push(Number(d.n)))(batch);
+    expect(ran).toEqual([1, 2, 3, 4]);
   });
 });
 
