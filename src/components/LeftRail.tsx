@@ -1,6 +1,7 @@
 import { isLive } from '../live/clock';
 import { PEOPLE } from '../data/mock';
-import { Bell, CalendarDays, FileText, FolderKanban, HardDrive, House, Library, ListChecks, Megaphone, Plug, Rocket, Search, Settings, Stamp, Users } from 'lucide-react';
+import { Bell, CalendarDays, FileText, FolderKanban, HardDrive, House, Library, ListChecks, Megaphone, MessageSquareText, Plug, Rocket, Search, Settings, Stamp, Users } from 'lucide-react';
+import { FeedbackButton } from '../live/Feedback';
 import { useOutboundCounts } from '../areas/outbound';
 import { scopedApprovals } from '../state/scope';
 import type { ReactNode } from 'react';
@@ -71,6 +72,10 @@ export function LeftRail() {
         </button>
       ))}
       <div className="rail-spacer" />
+      <FeedbackButton className="rail-btn">
+        <MessageSquareText size={20} />
+        <span className="rail-tip">Send feedback</span>
+      </FeedbackButton>
       <button
         className="rail-btn"
         aria-label="Rules & settings"

@@ -12,7 +12,7 @@
  * because item_body rows cascade with their item.
  */
 import { config } from '../config';
-import { withWorkspace } from '../db/pool';
+import { sysPool, withWorkspace } from '../db/pool';
 import { log } from '../lib/log';
 import { MAX_FILE_TEXT, type ListedFile } from './file-kinds';
 import { DRIVE_READABLE, canRead, readListed } from './files';
@@ -42,10 +42,22 @@ const VERSION = `(extract(epoch from i.occurred_at) * 1000)::bigint::text`;
 export const TEXT_FAILURES_BEFORE_SETTING_ASIDE = 3;
 
 /**
- * Which reader set a file aside. When the reader learns to read more (2: a Google Doc too long to come back whole is
- * read as exported plain text), a file an older one set aside gets its passes again, without waiting for it to change.
+ * Which reader set a file aside. When the reader learns to read more, a file an older one set aside gets its passes
+ * again, without waiting for it to change. 2: a Google Doc too long to come back whole is read as exported plain
+ * text. 3: that export is fetched from Composio's file store, which the first try refused.
  */
-export const TEXT_READER = '2';
+export const TEXT_READER = '3';
+
+/**
+ * At start-up, each connected Drive and OneDrive gets a text pass, so whatever a new reader can now read (and
+ * whatever a pass left when the server stopped) is read now rather than at the nightly pass. A pass with nothing to
+ * do is one query.
+ */
+export async function textPassesAtStart(enqueue: (connection: { id: string; workspace_id: string }) => void): Promise<number> {
+  const { rows } = await sysPool.query(`select id, workspace_id from connection where status = 'active' and toolkit = any($1::text[])`, [['googledrive', 'one_drive']]);
+  for (const r of rows) enqueue(r as { id: string; workspace_id: string });
+  return rows.length;
+}
 
 export async function indexFileTexts(workspaceId: string, connectionId: string, opts: { max?: number } = {}): Promise<TextPass> {
   const out: TextPass = { read: 0, skipped: 0, more: false, tried: 0 };

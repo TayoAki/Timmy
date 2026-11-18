@@ -17,7 +17,7 @@ export interface OutgoingMail {
   to: string;
   subject: string;
   body: string;
-  kind: 'magic-link' | 'invite' | 'reset' | 'verify';
+  kind: 'magic-link' | 'invite' | 'reset' | 'verify' | 'feedback';
 }
 
 /** Whether Timmy can deliver its own mail: a key for the provider, and an address on a domain it may send from. */

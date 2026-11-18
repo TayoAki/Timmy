@@ -55,6 +55,8 @@ export const config = {
   mail: {
     resendApiKey: env.RESEND_API_KEY ?? '',
     from: env.TIMMY_MAIL_FROM ?? '',
+    /** Where feedback sent from inside Timmy is emailed (once mail is on). Unset: it is kept and logged only. */
+    feedbackTo: env.TIMMY_FEEDBACK_TO ?? '',
     resendBaseUrl: (env.RESEND_BASE_URL ?? 'https://api.resend.com').replace(/\/$/, ''),
     deliver: env.TIMMY_MAIL_DELIVER !== undefined ? flag('TIMMY_MAIL_DELIVER') : !flag('TIMMY_FAKE_PROVIDERS'),
   },
@@ -137,11 +139,16 @@ export const config = {
       ...(JSON.parse(env.COMPOSIO_TOOLKIT_VERSIONS || '{}') as Record<string, string>),
     } as Record<string, string>,
     /**
-     * Where a file a tool hands back (OneDrive's download) may be fetched from: Composio's own store and the cloud
-     * stores behind it. Anything else is refused before a request is made, and so is a host whose address is a
-     * private one. Comma-separated host names; a leading dot means "any host ending in this".
+     * Where a file a tool hands back (OneDrive's download, Google's export of a long Doc) may be fetched from:
+     * Composio's own store and the cloud stores behind it. Anything else is refused before a request is made, and
+     * so is a host whose address is a private one. Comma-separated host names; a leading dot means "any host ending
+     * in this". Composio keeps tool files in its own Cloudflare R2 account (seen Nov 18, 2026, from the address it
+     * hands out for an upload): only that account's buckets are allowed, not R2 as a whole, which anyone can rent.
      */
-    fileHosts: (env.COMPOSIO_FILE_HOSTS ?? 'storage.composio.dev,.amazonaws.com,.blob.core.windows.net').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean),
+    fileHosts: (env.COMPOSIO_FILE_HOSTS ?? 'storage.composio.dev,.4d4f16c61d89ec64e760039c4ec50717.r2.cloudflarestorage.com,.amazonaws.com,.blob.core.windows.net')
+      .split(',')
+      .map((x) => x.trim().toLowerCase())
+      .filter(Boolean),
   },
 
   /**

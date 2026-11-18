@@ -40,6 +40,7 @@ import { testRoutes } from './test-hooks';
 import { pageRoutes } from '../pages/routes';
 import { trackedRoutes } from './tracked';
 import { mcpRoutes } from './mcp';
+import { feedbackRoutes } from './feedback';
 
 export function buildApp(): Hono<Env> {
   const app = new Hono<Env>();
@@ -166,6 +167,8 @@ export function buildApp(): Hono<Env> {
   // A page's version history, and how long the trash keeps a page.
   pageRoutes(app);
   trackedRoutes(app);
+  // Feedback sent from inside Timmy, to the people who run it (http/feedback.ts).
+  feedbackRoutes(app);
 
   if (config.testHooks) testRoutes(app);
 

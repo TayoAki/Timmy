@@ -588,3 +588,12 @@ describe('a Doc an older reader set aside, that this one can’t read either', (
     expect((await indexFileTexts(w.workspaceId, drive.connectionId, { max: 10 })).tried).toBe(0);
   });
 });
+
+describe('when the server starts', () => {
+  it('each connected Drive gets a text pass, so what a new reader can read is read now', async () => {
+    const { textPassesAtStart } = await import('../src/sync/file-text');
+    const queued: string[] = [];
+    await textPassesAtStart((c) => queued.push(c.id));
+    expect(queued).toContain(drive.connectionId);
+  });
+});

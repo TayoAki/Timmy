@@ -4,7 +4,7 @@
  * other section, search, focus and theme in a sheet). Nothing overlaps, and
  * every tap target is at least 44 px.
  */
-import { CalendarDays, Focus, House, LayoutGrid, Moon, Search, Settings, Stamp, Sun, X } from 'lucide-react';
+import { CalendarDays, Focus, House, LayoutGrid, MessageSquareText, Moon, Search, Settings, Stamp, Sun, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { assistant } from '../agent/conversations';
@@ -15,6 +15,7 @@ import { openThreads, useUrgency } from '../state/urgency';
 import { TimmyMark } from './common';
 import { leadAlerts } from '../state/leads';
 import { useSections } from './LeftRail';
+import { FeedbackButton } from '../live/Feedback';
 
 export function PhoneTabs() {
   const { state, dispatch } = useStore();
@@ -119,6 +120,9 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
           <button className="sheet-chip" onClick={() => go(() => dispatch({ type: 'navigate', route: { view: 'rules', tab: 'triage' } }))}>
             <Settings size={17} /> Settings
           </button>
+          <FeedbackButton className="sheet-chip">
+            <MessageSquareText size={17} /> Feedback
+          </FeedbackButton>
         </div>
       </div>
     </div>,

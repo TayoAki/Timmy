@@ -599,6 +599,21 @@
    "result": "Nov 18, 2026: 7 of 7."
   },
   {
+   "id": "api-feedback",
+   "file": "server/test/feedback.test.ts",
+   "covers": "feedback from inside Timmy: kept with who sent it, their workspace and the screen's name, and logged; only the screen's name goes with it; emailed to the address set for it; needs a sign-in and a few words, up to 5,000 characters and 30 a day; the app's own database role can't read it",
+   "tests": 5,
+   "status": "pass",
+   "result": "Nov 18, 2026: 5 of 5."
+  },
+  {
+   "id": "live-feedback",
+   "file": "e2e/live/live-feedback.cjs",
+   "covers": "the Feedback button on the rail: what goes with it, can't be sent empty, sent with the screen's name, closes with a thank-you",
+   "status": "pass",
+   "result": "Nov 18, 2026: 5 of 5."
+  },
+  {
    "id": "live-mcp",
    "file": "e2e/live/live-mcp.cjs",
    "covers": "connecting an AI app in the browser: the 401 that says where to sign in, the app registering itself, sign-in naming the app, the one workspace chosen by itself, the consent page saying what the app may and may not do, the code back to the app, the token, the tools and the person's own mail through them, Settings listing the app and the address to paste, and Disconnect stopping it at once",

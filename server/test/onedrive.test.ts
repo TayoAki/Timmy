@@ -441,6 +441,10 @@ describe('fetching a downloaded file from Composio’s store', () => {
     expect(allowedHost('bucket.s3.us-east-1.amazonaws.com', config.composio.fileHosts)).toBe(true);
     expect(allowedHost('amazonaws.com.evil.test', config.composio.fileHosts)).toBe(false);
     expect(allowedHost('evilamazonaws.com', config.composio.fileHosts)).toBe(false);
+    // Composio's own Cloudflare R2 account (where it keeps tool files, such as a long Google Doc's export), and no other.
+    expect(allowedHost('temp.4d4f16c61d89ec64e760039c4ec50717.r2.cloudflarestorage.com', config.composio.fileHosts)).toBe(true);
+    expect(allowedHost('somebucket.0000000000000000000000000000beef.r2.cloudflarestorage.com', config.composio.fileHosts)).toBe(false);
+    expect(allowedHost('r2.cloudflarestorage.com', config.composio.fileHosts)).toBe(false);
     expect(['127.0.0.1', '10.1.2.3', '172.20.0.1', '192.168.1.1', '169.254.169.254', '100.64.0.1', '::1', 'fd00::1', 'fe80::1', '::ffff:10.0.0.1'].every(isPrivateAddress)).toBe(true);
     expect(['8.8.8.8', '52.216.0.1', '2600:1f18::1'].some(isPrivateAddress)).toBe(false);
     const refuse = (url: string, hosts = config.composio.fileHosts) => expect(fetchFileBytes(url, 1000, hosts)).rejects.toThrow();

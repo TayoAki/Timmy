@@ -5,7 +5,8 @@ import { migrate } from './db/migrate';
 import { closePools, sysPool } from './db/pool';
 import { buildApp } from './http/app';
 import { registerJobs } from './jobs/handlers';
-import { startBoss, type Jobs } from './jobs/jobs';
+import { enqueueSoon, startBoss, type Jobs } from './jobs/jobs';
+import { textPassesAtStart } from './sync/file-text';
 import { addSecret, log } from './lib/log';
 import { composio, composioReady } from './providers/composio';
 import { startHub, stopHub } from './state/hub';
@@ -30,6 +31,9 @@ async function main() {
       log.warn('could not register the Composio webhook', { error: (e as Error).message });
     }
   }
+
+  // Files whose words weren't read (a new reader, a pass cut short by a restart) are read now, not tonight.
+  if (jobs) await textPassesAtStart((c) => enqueueSoon('files.text', { workspaceId: c.workspace_id, connectionId: c.id }, { singletonKey: `ftext:${c.id}` })).catch((e) => log.warn('could not queue the file text passes', { error: (e as Error).message }));
 
   const app = buildApp();
   const server = serve({ fetch: app.fetch, port: config.port, hostname: '0.0.0.0' });

@@ -23,9 +23,9 @@ Updated Nov 18, 2026.
 | # | What | Why | Who | Time |
 | --- | --- | --- | --- | --- |
 | 5 | **Turn on Timmy's own email (Resend).** Add `RESEND_API_KEY` and `TIMMY_MAIL_FROM` (e.g. `Timmy <timmy@yourdomain.com>`, domain verified in Resend) to `app`. | Without it there are no password resets, no email sign-in links and no invitation emails. A tester who forgets their password is locked out until I step in. | You add the variables; I send one test email, to an address you name | 15 min |
-| 6 | **Make long Google Docs searchable** | Long Docs are now exported as text, but Composio hands the file back from a store that isn't on Timmy's list of allowed download sites. The next Drive pass logs which store it is, and then I allow exactly that one. | Me | 10 min, after the next pass |
+| 6 | ✅ **Done Nov 18: long Google Docs searchable** | Long Docs are now exported as text, but Composio hands the file back from a store that isn't on Timmy's list of allowed download sites. The next Drive pass logs which store it is, and then I allow exactly that one. | Me | 10 min, after the next pass |
 | 7 | **A "Delete workspace" / "Delete account" button** | The server supports it, but no screen offers it. A tester who wants out can disconnect Gmail (which deletes the mail Timmy kept) but can't delete their workspace themselves. | Me. Until it's built, I delete on request. | Half a day |
-| 8 | **A way to send feedback** | There's no feedback link in the app. | Me: a "Send feedback" link to your address (30 min). Or agree a channel (text, email) and skip it. | 30 min |
+| 8 | ✅ **Done Nov 18: a Feedback button** (left rail and phone menu). Read it in Railway's logs (search "beta feedback"); set `TIMMY_FEEDBACK_TO` to have it emailed once Resend is on. | There's no feedback link in the app. | Me: a "Send feedback" link to your address (30 min). Or agree a channel (text, email) and skip it. | 30 min |
 | 9 | **Watch for errors** | No alerting is set up; errors only show in Railway's logs. | Me: I check production logs daily during the beta. Real alerting (e.g. Sentry) comes before strangers. | Daily |
 | 10 | **Rotate the keys pasted in chat**: two Composio keys, one OpenRouter key, one Supadata key | They aren't in the repo or the logs, but they were pasted in a chat. | You (make new ones, put them in Railway, delete the old ones) | 15 min |
 | 11 | **Decide on AI cost per email read** | Reads use Claude Opus 5.5: about $0.008 per email a person wrote (junk is sorted without AI). A tester getting 100 such emails a day costs about $0.80 a day. Each workspace is capped at $50 a month; when it hits the cap, Timmy stops reading until the cap is raised. | Your call: keep it, or I compare Haiku 5.5 on the same emails, show you the numbers, and you decide | None now |
@@ -62,7 +62,7 @@ Updated Nov 18, 2026.
 ## Known gaps to tell them about
 
 - No password reset by email yet (#5).
-- Long Google Docs aren't searchable by their contents yet (#6). PDFs and Office files kept in Drive are listed but not read.
+- PDFs and Office files kept in Drive are listed but not read.
 - No delete button for the workspace or account yet (#7); ask you instead.
 - Gmail's permission screen asks for more than Timmy uses (#15), and may show a warning about an unverified app (#14).
 - Outlook hasn't been tried with a real account (#18).
@@ -82,7 +82,7 @@ Updated Nov 18, 2026.
 > Good to know:
 > - **Nothing is ever sent without your click**, and every send can be undone for 30 seconds.
 > - Junk is only filed away automatically if you switch on "Sort junk automatically". Even then, existing mail in Gmail is left alone; only new mail is filed there.
-> - It's a beta: some things are rough. Long Google Docs aren't searchable yet, and PDFs in Drive aren't read.
+> - It's a beta: some things are rough (PDFs in Drive aren't read yet, for one). The **Send feedback** button on the left sends anything odd straight to me.
 > - Disconnecting Gmail (Connections) deletes the mail Timmy kept. If you want your whole workspace deleted, tell me.
 >
 > Please send anything odd, confusing or broken to [your email or number], with a screenshot if you can.
