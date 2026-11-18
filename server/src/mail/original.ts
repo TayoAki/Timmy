@@ -11,6 +11,7 @@
  * person asks for them, because loading one tells the sender the email was opened.
  */
 import sanitizeHtml from 'sanitize-html';
+import { log } from '../lib/log';
 import { callTool, type ConnectionRow } from '../sync/tools';
 import { htmlToText } from '../sync/message';
 
@@ -149,7 +150,10 @@ export function cleanEmail(html: string, images: boolean): { html: string; block
 /** One email's original, cleaned. Plain-text email comes back as text, for the screen to lay out and link. */
 export async function readOriginal(workspaceId: string, conn: ConnectionRow, messageId: string, images: boolean): Promise<Original | null> {
   // A provider that fails outright is the same as one that refuses: the screen shows what Timmy stored.
-  const got = await fetchOriginal(workspaceId, conn, messageId).catch(() => null);
+  const got = await fetchOriginal(workspaceId, conn, messageId).catch((e: Error) => {
+    log.warn('email original could not be fetched', { workspaceId, connectionId: conn.id, error: e.message });
+    return null;
+  });
   if (!got) return null;
   if (got.html !== undefined) {
     const { html, blocked } = cleanEmail(got.html.slice(0, 2_000_000), images);

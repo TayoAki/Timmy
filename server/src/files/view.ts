@@ -10,6 +10,7 @@
  * Only a file on the workspace's own list, on a connection still active, is ever asked for.
  */
 import { withWorkspace } from '../db/pool';
+import { log } from '../lib/log';
 import { cleanEmail } from '../mail/original';
 import { readListed, canRead } from '../sync/files';
 import type { ListedFile } from '../sync/file-kinds';
@@ -134,7 +135,8 @@ export async function viewFile(workspaceId: string, itemId: string): Promise<Vie
   if (!f) return null;
   try {
     return await view(workspaceId, f);
-  } catch {
+  } catch (e) {
+    log.warn('file could not be shown', { workspaceId, connectionId: f.connectionId, error: (e as Error).message });
     // The provider failed outright (not a polite refusal): the screen says so and offers the file's own app.
     const app = APP_NAMES[f.toolkit] ?? 'Files';
     return { name: f.name, type: f.kind, app, ...(f.link ? { link: f.link } : {}), view: { kind: 'none', reason: `${app} didn’t hand over this file just now. Try again, or open it in ${app}.` } };
