@@ -30,6 +30,7 @@ Draft, Nov 16, 2026; updated Nov 18, 2026. This is Annex 2 of the data processin
 - Work nobody is watching (the morning run, reading new mail) may prepare drafts and suggestions; it cannot send.
 - A fixed list of things is never done whatever the instruction or rule: Timmy never moves money, signs documents, deletes accounts or changes security settings.
 - Roles: owner, admin, member, assistant, revops and client, each with a fixed set of things it may do. A member's send from a mailbox someone else connected waits for that person.
+- Other AI apps (Claude, ChatGPT, Claude Code) can use Timmy over MCP at `/mcp`, only with an OAuth 2.1 token from Timmy: the person signs in to Timmy, picks one workspace and allows the app on a page that says what it may do. Tokens are signed, expire after an hour, are bound to the MCP endpoint (audience) and name the person and the workspace; PKCE is required and only the authorization-code and refresh grants exist. On every request the person's consent for that app and that workspace, and their membership and role there, are read again, so disconnecting an app or removing a member stops it at once. A connected app works under the same rules as Ask: it can read and keep drafts, to-dos and projects; anything that would send, file mail or save a sorting rule waits for the person's OK in Timmy. It never sees a password or a connected account's key.
 
 ## How content from outside is handled
 

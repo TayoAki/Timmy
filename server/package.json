@@ -16,8 +16,12 @@
     "migrate": "tsx src/db/migrate-cli.ts"
   },
   "dependencies": {
+    "@better-auth/cimd": "1.7.25",
+    "@better-auth/mcp": "1.7.25",
+    "@better-auth/oauth-provider": "1.7.25",
     "@composio/core": "^0.29.0",
     "@hono/node-server": "^2.1.8",
+    "@modelcontextprotocol/server": "2.4.0",
     "better-auth": "^1.7.25",
     "hono": "^4.13.18",
     "pg": "^8.23.1",

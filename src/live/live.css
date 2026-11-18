@@ -1206,3 +1206,78 @@ button.cf-name:hover {
     height: 60vh;
   }
 }
+
+/* ── Connecting another AI app (live/Connect.tsx) ── */
+
+.connect-card {
+  max-width: 460px;
+}
+
+.connect-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.connect-choice {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 12px 14px;
+  text-align: left;
+}
+
+.connect-list {
+  margin: 8px 0 12px;
+  padding-left: 20px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.connect-apps {
+  margin-top: 14px;
+}
+
+.connect-url {
+  display: flex;
+  gap: 8px;
+}
+
+.connect-url .input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+}
+
+.connect-steps {
+  margin: 10px 0 0;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+
+.connect-steps code {
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.connect-app-list {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.connect-app-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 13.5px;
+}

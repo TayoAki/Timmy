@@ -39,6 +39,7 @@ import { actionRoutes, stateRoutes } from './state';
 import { testRoutes } from './test-hooks';
 import { pageRoutes } from '../pages/routes';
 import { trackedRoutes } from './tracked';
+import { mcpRoutes } from './mcp';
 
 export function buildApp(): Hono<Env> {
   const app = new Hono<Env>();
@@ -84,12 +85,23 @@ export function buildApp(): Hono<Env> {
   // Webhooks are signed by their sender; they carry no session and skip the same-origin check (http/connections.ts).
   connectionEventRoutes(app);
 
-  app.use('/api/*', sameOrigin);
+  // Apps connected over MCP (http/mcp.ts) register themselves, trade a code for a token and refresh it from their
+  // own servers or from a browser on another origin. These endpoints take no cookie, only what the app sends, so
+  // they are open to any origin (never with credentials) and skip the same-origin check. Everything else keeps it,
+  // including the consent a person gives, which rides on their session.
+  const OAUTH_PUBLIC = new Set(['/api/auth/oauth2/token', '/api/auth/oauth2/register', '/api/auth/oauth2/revoke', '/api/auth/oauth2/introspect', '/api/auth/jwks']);
+  const oauthCors = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'authorization, content-type, dpop', 'access-control-max-age': '600' };
+  app.options('/api/auth/*', (c) => (OAUTH_PUBLIC.has(c.req.path) ? new Response(null, { status: 204, headers: oauthCors }) : c.body(null, 404)));
+  app.use('/api/*', (c, next) => (OAUTH_PUBLIC.has(c.req.path) ? next() : sameOrigin(c, next)));
   app.all('/api/auth/*', async (c) => {
     // Leaving a workspace has no hook of its own in the auth library, so it is noticed here: whoever leaves
     // takes their connected accounts with them, the same as when they are removed.
     const leaving = c.req.method === 'POST' && c.req.path === '/api/auth/organization/leave' ? await leaver(c.req.raw.clone()) : null;
-    const res = await auth().handler(c.req.raw);
+    let res = await auth().handler(c.req.raw);
+    if (OAUTH_PUBLIC.has(c.req.path)) {
+      res = new Response(res.body, res);
+      for (const [k, v] of Object.entries(oauthCors)) res.headers.set(k, v);
+    }
     if (leaving && res.ok) await closeConnections(leaving.workspaceId, { userId: leaving.userId }, leaving.userId).catch((e) => log.error('could not close a leaving member’s connections', { error: (e as Error).message }));
     if (leaving && res.ok) await chatEnablerChanged(leaving.workspaceId, leaving.userId);
     // [automations] So does any automation they switched on (automations/roles.ts).
@@ -158,6 +170,20 @@ export function buildApp(): Hono<Env> {
   if (config.testHooks) testRoutes(app);
 
   app.all('/api/*', (c) => c.json({ error: 'Not found' }, 404));
+
+  /* ───────────── Timmy for other AI apps (MCP) ───────────── */
+
+  // How an MCP client finds where to sign the person in: the protected resource's metadata (RFC 9728) and the
+  // authorization server's (RFC 8414), both answered by the auth library. Public, read-only, any origin.
+  app.on(['GET', 'HEAD'], '/.well-known/*', async (c) => {
+    const res = await auth().handler(c.req.raw);
+    const out = new Response(res.body, res);
+    out.headers.set('access-control-allow-origin', '*');
+    return out;
+  });
+  app.options('/.well-known/*', () => new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, OPTIONS', 'access-control-allow-headers': 'mcp-protocol-version' } }));
+  app.use('/mcp', bodyLimit({ maxSize: 1024 * 1024, onError: tooLarge }));
+  mcpRoutes(app);
 
   /* ───────────── The app itself ───────────── */
 

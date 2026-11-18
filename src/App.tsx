@@ -31,6 +31,7 @@ import { Film } from './film/Film';
 import { ThemeProvider } from './state/theme';
 import { LIVE } from './live/config';
 import { LiveApp } from './live/LiveApp';
+import { ConnectFlow, isConnectPath } from './live/Connect';
 import { ChatNotice } from './areas/outbound/ChatNotice';
 import { AppearanceView } from './views/AppearanceView';
 import { MailboxView } from './views/MailboxView';
@@ -48,7 +49,10 @@ const FILM = !INTRO && !OUTRO && PARAMS.has('film');
 export default function App() {
   return (
     <ThemeProvider>
-      {LIVE ? (
+      {LIVE && isConnectPath() ? (
+        // Another AI app (Claude, ChatGPT) asking to use Timmy: sign in, pick a workspace, say yes (live/Connect.tsx).
+        <ConnectFlow />
+      ) : LIVE ? (
         <LiveApp>
           <Shell />
         </LiveApp>

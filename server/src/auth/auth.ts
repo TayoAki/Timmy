@@ -2,7 +2,10 @@ import { randomBytes } from 'node:crypto';
 import { betterAuth } from 'better-auth';
 import { APIError } from 'better-auth/api';
 import { getMigrations } from 'better-auth/db/migration';
-import { magicLink, organization } from 'better-auth/plugins';
+import { jwt, magicLink, organization } from 'better-auth/plugins';
+import { cimd } from '@better-auth/cimd';
+import { fetchClientMetadataResource } from '@better-auth/cimd/node';
+import { mcp } from '@better-auth/mcp';
 import { createAccessControl } from 'better-auth/plugins/access';
 import { adminAc, defaultStatements, memberAc, ownerAc } from 'better-auth/plugins/organization/access';
 import { config } from '../config';
@@ -58,6 +61,9 @@ export async function maySignUp(email: string): Promise<boolean> {
   return rows.length > 0;
 }
 
+/** Where Timmy's MCP server answers: the resource its access tokens are bound to. */
+export const mcpResource = () => `${config.publicUrl.replace(/\/$/, '')}/mcp`;
+
 /** The signing secret comes from the environment, or is generated once and kept in the database. */
 async function authSecret(): Promise<string> {
   if (config.authSecret) return config.authSecret;
@@ -75,6 +81,9 @@ function build(secret: string) {
     secret,
     database: authPool,
     trustedOrigins: [config.publicUrl],
+    // The JWT plugin's own token route would sign session tokens with the key that signs access tokens for apps
+    // connected to Timmy (below); it is not used.
+    disabledPaths: ['/token'],
     emailAndPassword: {
       enabled: true,
       minPasswordLength: 8,
@@ -112,6 +121,40 @@ function build(secret: string) {
       },
     },
     plugins: [
+      // Timmy as an MCP server (http/mcp.ts): Claude, ChatGPT and other MCP clients connect with OAuth 2.1. The person
+      // signs in to Timmy, picks the workspace the app may use, and says yes; the app gets a token bound to the MCP
+      // endpoint, for that person and that workspace. What they may do there is read from the membership table on
+      // every request, so a removed member's connected apps stop at once.
+      jwt({ disableSettingJwtHeader: true }),
+      mcp({
+        resource: mcpResource(),
+        loginPage: '/connect',
+        consentPage: '/connect/consent',
+        // Clients that can't publish a metadata document register themselves (RFC 7591), as most MCP clients still do.
+        allowDynamicClientRegistration: true,
+        allowUnauthenticatedClientRegistration: true,
+        // Every token stands for a person: an app on its own (client credentials) gets nothing.
+        grantTypes: ['authorization_code', 'refresh_token'],
+        // MCP clients are public (no secret, PKCE always). Desktop ones (Claude Code, Claude Desktop) come back on
+        // http://localhost, which only a native client may; a web one comes back on https, which a native client may too.
+        clientRegistrationDefaultApplicationType: 'native',
+        // The sign-in page names the app asking, before the person has signed in; only to whoever holds the
+        // request Timmy signed, and only the app's public name.
+        allowPublicClientPrelogin: true,
+        postLogin: {
+          page: '/connect/workspace',
+          // Every connection is to one workspace, chosen on that page (it moves on by itself when there is only one).
+          shouldRedirect: ({ isContinuation }) => !isContinuation,
+          consentReferenceId: ({ session }) => {
+            const ws = (session as { activeOrganizationId?: string | null }).activeOrganizationId;
+            if (!ws) throw new APIError('BAD_REQUEST', { message: 'Choose the workspace the app may use first.' });
+            return ws;
+          },
+        },
+        // The workspace rides in the token, so each request knows where it acts; the role is looked up per request.
+        customAccessTokenClaims: ({ referenceId }) => (referenceId ? { workspace: referenceId } : {}),
+      }),
+      cimd({ fetchClientMetadataResource, metadataProfile: 'mcp-2026-07-28' }),
       magicLink({
         expiresIn: 600,
         sendMagicLink: async ({ email, url }) => {

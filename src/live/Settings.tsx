@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useStore } from '../state/store';
 import { api } from './api';
 import { useProfile } from './LiveApp';
+import { ConnectedApps } from './ConnectedApps';
 
 /**
  * Workspace settings that only exist on a real workspace: the model that powers
@@ -159,6 +160,7 @@ export function LiveSettings() {
           {!canChange && ' An owner or admin can change this.'}
         </span>
       </label>
+      <ConnectedApps />
       <div className="live-account">
         <span className="muted">
           Signed in as {profile.user.name} ({profile.user.email}) · {profile.workspace.name} · {profile.workspace.role}
