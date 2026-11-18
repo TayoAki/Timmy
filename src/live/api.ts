@@ -92,6 +92,8 @@ export const api = {
     call<{ created: { id: string; name: string; threads: number; files: number; meetings: number }[] }>('POST', `/api/v1/projects/detect/${encodeURIComponent(scanId)}/apply`, { choices }),
   projectLinks: (projectId: string) =>
     call<{ files: { id: string; name: string; kind: string; changed: string; link?: string }[]; meetings: { id: string; title: string; at: string }[] }>('GET', `/api/v1/projects/${encodeURIComponent(projectId)}/links`),
+  /** People › Map: who and what the workspace knows of, and how they connect (server/src/ontology/map.ts). */
+  peopleMap: () => call<WorkspaceMap>('GET', '/api/v1/map'),
   /** One email as its sender laid it out: cleaned HTML, or the plain text when it has no HTML. */
   mailOriginal: (thread: string, message: string, images = false) =>
     call<{ html?: string; text?: string; blocked: number; unavailable?: boolean }>('GET', `/api/v1/mail/original?thread=${encodeURIComponent(thread)}&message=${encodeURIComponent(message)}${images ? '&images=1' : ''}`),
@@ -211,4 +213,23 @@ export interface ProjectScan {
   error?: string;
   proposals: DetectedProject[];
   looked: { threads?: number; junk?: number; meetings?: number; files?: number };
+}
+
+/** People › Map. */
+export type MapNodeType = 'person' | 'company' | 'project' | 'file' | 'meeting' | 'promise';
+export interface MapNode {
+  id: string;
+  type: MapNodeType;
+  label: string;
+  sub?: string;
+  weight: number;
+  ref?: string;
+  company?: string;
+  who?: 'them' | 'me';
+  due?: string;
+}
+export interface WorkspaceMap {
+  nodes: MapNode[];
+  edges: { source: string; target: string; kind: 'works_at' | 'in_project' | 'linked' | 'attended' | 'owns' | 'promised' }[];
+  totals: { people: number; companies: number; projects: number; files: number; meetings: number; promises: number };
 }

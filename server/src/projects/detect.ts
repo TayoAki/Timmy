@@ -95,12 +95,15 @@ export async function detectProjects(workspaceId: string): Promise<{ proposals: 
     events: (
       await tx.query(`select id, subject, occurred_at, recipients from item where workspace_id = $1 and kind = 'event' and occurred_at >= $2 and occurred_at < now() + interval '60 days'`, [workspaceId, since])
     ).rows as { id: string; subject: string; occurred_at: Date; recipients: { to: string[] } }[],
-    files: (await tx.query(`select i.id, i.subject, i.sender, i.meta->>'link' as link from item i join connection c on c.id = i.connection_id where i.workspace_id = $1 and i.kind = 'file' and c.status = 'active'`, [workspaceId])).rows as {
-      id: string;
-      subject: string;
-      sender: string;
-      link: string | null;
-    }[],
+    // With the start of what each file says, where Timmy keeps it (Docs, Sheets, Slides and Office files changed lately).
+    files: (
+      await tx.query(
+        `select i.id, i.subject, i.sender, i.meta->>'link' as link, lower(left(b.text, 20000)) as text
+         from item i join connection c on c.id = i.connection_id left join item_body b on b.item_id = i.id
+         where i.workspace_id = $1 and i.kind = 'file' and c.status = 'active'`,
+        [workspaceId],
+      )
+    ).rows as { id: string; subject: string; sender: string; link: string | null; text: string | null }[],
     mine: new Set(
       [
         (workspace.owner_email ?? '').toLowerCase(),
@@ -233,9 +236,12 @@ export async function detectProjects(workspaceId: string): Promise<{ proposals: 
     if (best && best.meetings.length < 20) best.meetings.push({ itemId: e.id, title: e.subject || 'Meeting', at: new Date(e.occurred_at).toISOString() });
   }
 
-  // Files go with the group whose company owns them, or whose name or most telling subject word they carry.
+  // Files go with the group whose company owns them, whose name or most telling subject word they carry in their
+  // name, or, failing that, whose company and words they talk about.
+  const wordIn = (text: string, word: string) => new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(text);
   for (const f of files) {
     const name = (f.subject ?? '').toLowerCase();
+    const said = f.text ?? '';
     const ownerDomain = companyDomain(String(f.sender ?? '').toLowerCase());
     let best: Proposal | null = null;
     let bestScore = 0;
@@ -246,6 +252,11 @@ export async function detectProjects(workspaceId: string): Promise<{ proposals: 
       if (orgWord && orgWord.length >= 4 && name.includes(orgWord)) score += 2;
       const telling = [...new Set(c.subjects.flatMap(subjectWords))].filter((w) => w.length >= 5 && (df.get(w) ?? 0) <= 5);
       if (telling.some((w) => name.includes(w))) score += 1;
+      if (said) {
+        // What the file says counts for less than its name or owner, and needs more than one passing word.
+        const mentions = (orgWord && orgWord.length >= 4 && wordIn(said, orgWord) ? 2 : 0) + Math.min(2, telling.filter((w) => wordIn(said, w)).length);
+        if (mentions >= 2) score += 1;
+      }
       if (score > bestScore) [best, bestScore] = [c, score];
     }
     if (best && best.files.length < 30) best.files.push({ itemId: f.id, name: f.subject, ...(f.link ? { link: f.link } : {}) });

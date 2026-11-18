@@ -86,6 +86,21 @@ describe('the scan', () => {
     expect(s!.proposals.flatMap((p) => p.files).map((f) => f.name)).not.toContain('Holiday photos');
   });
 
+  it('a file joins a group by what it says, when its name and owner say nothing', async () => {
+    const drive = await connectApp(w, 'gdrive', 'me@mycompany.test');
+    fake().addFile(drive.account, { name: 'Meeting notes', owner: 'me@mycompany.test', text: 'Notes from the Acme kickoff.\nThe redesign budget is still open.' });
+    fake().addFile(drive.account, { name: 'Packing list', owner: 'me@mycompany.test', text: 'Sunscreen and a hat.' });
+    // One passing mention is not enough.
+    fake().addFile(drive.account, { name: 'Reading list', owner: 'me@mycompany.test', text: 'A book about redesign.' });
+    await jobs().drain();
+    await seed();
+    const { scan: s } = await scan();
+    const acme = s!.proposals.find((p) => p.keys[0] === 'org:acme.test')!;
+    expect(acme.files.map((f) => f.name)).toEqual(['Meeting notes']);
+    expect(s!.proposals.flatMap((p) => p.files).map((f) => f.name)).not.toContain('Packing list');
+    expect(s!.proposals.flatMap((p) => p.files).map((f) => f.name)).not.toContain('Reading list');
+  });
+
   it('the model names a group and may split it, held to the subjects it was shown', async () => {
     await seed();
     // The Acme group is split in two; the others are named plainly. An instruction hidden in the material changes nothing it can't.

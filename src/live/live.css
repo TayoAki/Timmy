@@ -929,3 +929,280 @@ button.cf-name:hover {
   font-size: 14px;
   line-height: 1.6;
 }
+
+/* People › Map (PeopleMap.tsx) */
+.pm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pm-note {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+.pm-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.pm-search {
+  position: relative;
+  flex: 0 1 300px;
+  min-width: 200px;
+}
+.pm-search svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-3);
+  pointer-events: none;
+}
+.pm-search .input {
+  width: 100%;
+  padding-left: 30px;
+}
+.pm-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pm-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+.pm-kind[aria-pressed='true'] {
+  border-color: var(--pm-c, var(--accent-line));
+  color: var(--text);
+}
+.pm-kind-count {
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.pm-body {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+}
+.pm-canvas {
+  height: calc(100dvh - 250px);
+  min-height: 460px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--panel);
+  overflow: hidden;
+}
+/* Each kind's colour, for its dot, its filter and its panel. */
+.pm-project,
+.pm-kind-project {
+  --pm-c: var(--accent);
+}
+.pm-company,
+.pm-kind-company {
+  --pm-c: var(--c-amber);
+}
+.pm-person,
+.pm-kind-person {
+  --pm-c: var(--c-teal);
+}
+.pm-file,
+.pm-kind-file {
+  --pm-c: var(--c-sky);
+}
+.pm-meeting,
+.pm-kind-meeting {
+  --pm-c: var(--c-violet);
+}
+.pm-promise,
+.pm-kind-promise {
+  --pm-c: var(--c-pink);
+}
+.pm-canvas .react-flow__node.pm-node {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  cursor: pointer;
+}
+.pm-dot-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.pm-dot {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 2px solid var(--pm-c);
+  background: color-mix(in srgb, var(--pm-c) 16%, var(--surface));
+  color: var(--pm-c);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.pm-project .pm-dot {
+  background: var(--pm-c);
+  color: var(--on-accent);
+}
+.pm-label {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font: 500 11.5px/1.2 var(--font);
+  text-shadow: 0 0 3px var(--panel), 0 0 3px var(--panel);
+  pointer-events: none;
+}
+.pm-project .pm-label,
+.pm-company .pm-label {
+  font-size: 12.5px;
+  font-weight: 650;
+}
+.pm-handle {
+  top: 50% !important;
+  left: 50% !important;
+  width: 1px !important;
+  height: 1px !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  transform: translate(-50%, -50%) !important;
+}
+.pm-selected .pm-dot {
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--pm-c) 28%, transparent), var(--shadow-md);
+  transform: scale(1.08);
+}
+.pm-match .pm-dot {
+  box-shadow: 0 0 0 4px var(--warn-soft), 0 0 0 6px var(--warn);
+}
+.pm-canvas .react-flow__node.pm-dim {
+  opacity: 0.18;
+}
+.pm-canvas .react-flow__edge path {
+  stroke: var(--line-strong);
+  stroke-width: 1.2;
+}
+.pm-canvas .react-flow__edge.pm-edge-in_project path {
+  stroke: color-mix(in srgb, var(--accent) 45%, var(--line-strong));
+  stroke-width: 1.6;
+}
+.pm-canvas .react-flow__edge.pm-edge-promised path {
+  stroke-dasharray: 4 3;
+}
+.pm-canvas .react-flow__edge.pm-dim {
+  opacity: 0.12;
+}
+.pm-details {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 300px;
+  max-height: calc(100dvh - 250px);
+  min-height: 0;
+  padding: 14px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.pm-details-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.pm-details-head > div {
+  flex: 1;
+  min-width: 0;
+}
+.pm-details-head h2 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.pm-details-head p {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+.pm-details-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid var(--pm-c);
+  color: var(--pm-c);
+}
+.pm-details-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pm-details section h3 {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 4px;
+  font-size: 11.5px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+}
+.pm-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pm-list button {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 5px 6px;
+  margin: 0 -6px;
+  border-radius: var(--r-sm);
+  text-align: left;
+  font-size: 13px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.pm-list button:hover {
+  background: var(--hover);
+}
+.pm-list button span {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+@media (max-width: 900px) {
+  .pm-body {
+    grid-template-columns: 1fr;
+  }
+  .pm-details {
+    width: auto;
+    max-height: none;
+  }
+  .pm-canvas {
+    height: 60vh;
+  }
+}

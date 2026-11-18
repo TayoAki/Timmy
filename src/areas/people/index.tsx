@@ -20,7 +20,7 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode, Suspense, lazy } from 'react';
 import { TaskDialog } from '../tasks/TaskDialog';
 import { Avatar, DueChip, tint } from '../../components/common';
 import { DocIcon } from '../../components/DocBits';
@@ -57,6 +57,9 @@ import {
   tracked,
   upcomingWith,
 } from './lib';
+
+// The map carries the graph library: it loads when the Map tab is opened.
+const PeopleMap = lazy(() => import('../../live/PeopleMap'));
 
 type PeopleTab = 'priority' | 'due' | 'tracked' | 'suggestions';
 const PEOPLE_TABS: PeopleTab[] = ['priority', 'due', 'tracked', 'suggestions'];
@@ -121,9 +124,18 @@ export function PeopleView() {
     { id: 'tracked', label: 'All tracked', count: all.length },
     { id: 'suggestions', label: 'Suggestions', count: sugg.length },
     // A real workspace has one more: the kinds of thing Timmy tracks from the mail. The demo never shows it.
-    ...(isLive() ? [{ id: 'tracks', label: 'What Timmy tracks' }] : []),
+    ...(isLive() ? [{ id: 'tracks', label: 'What Timmy tracks' }, { id: 'map', label: 'Map' }] : []),
   ];
   const onTab = (id: string) => dispatch({ type: 'navigate', route: { view: 'people', tab: id } });
+  if (isLive() && raw === 'map') {
+    return (
+      <Frame tabs={tabs} active="map" onTab={onTab} scrollKey="map" wide>
+        <Suspense fallback={null}>
+          <PeopleMap />
+        </Suspense>
+      </Frame>
+    );
+  }
   if (isLive() && raw === 'tracks') {
     return (
       <Frame tabs={tabs} active="tracks" onTab={onTab} scrollKey="tracks" wide>

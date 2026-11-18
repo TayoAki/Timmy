@@ -546,7 +546,7 @@
    "file": "server/test/project-detect.test.ts",
    "covers": "detecting projects: threads grouped by outside company or personal address and colleagues by a shared rare subject word, junk and one-offs left out, files joined by owner domain and name, nothing written anywhere; the model's names and splits held to the subjects it was shown (out-of-range numbers, unknown kinds, long text and extra parts dropped); only a role that may work starts a scan, one at a time, another workspace sees and applies nothing; keeping, renaming, merging and dropping make projects like the New project dialog with their threads, files and keys, applying twice refused, findings cleared once applied; a merge into something dropped and an unknown choice refused; new mail filed into the one project that claims its people and not when two do; findings deleted on disconnect",
    "status": "pass",
-   "result": "Nov 18, 2026: 8 of 8."
+   "result": "Nov 18, 2026: 9 of 9, with matching a file by what it says."
   },
   {
    "id": "live-projects",
@@ -561,6 +561,20 @@
    "covers": "a connected file shown inside Timmy: a Google Doc's structure turned into headings, bold, links, lists and tables with every word escaped, then cleaned like an email (no script, no javascript: link) and not stored; a sheet as rows, slides one by one, a PDF says it can't be shown yet; only a file on this workspace's list, from an account still connected",
    "status": "pass",
    "result": "Nov 18, 2026: 4 of 4."
+  },
+  {
+   "id": "api-people-map",
+   "file": "server/test/people-map.test.ts",
+   "covers": "the map: people by name at their companies, a kept project tied to its company and its file, an open promise on the person who made it, every edge between two nodes on the map, totals, the mailbox's owner left out; only the caller's own workspace, and not for a role that can't read it",
+   "status": "pass",
+   "result": "Nov 18, 2026: 2 of 2."
+  },
+  {
+   "id": "live-map",
+   "file": "e2e/live/live-map.cjs",
+   "covers": "People \u203a Map: the kept project, companies, people by name and the project's file with lines between them; clicking a company shows its people and latest threads; focusing shows only what connects; search finds and opens a person; a thread opens from the map; hiding people leaves the rest",
+   "status": "pass",
+   "result": "Nov 18, 2026: 13 of 13."
   }
  ]
 }

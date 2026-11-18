@@ -58,7 +58,8 @@ export function MailboxView({ box, tab }: { box: Box | ProjectId; tab: string })
 
   const [from, setFrom] = useState('');
   const [onlyDrafts, setOnlyDrafts] = useState(false);
-  const [sort, setSort] = useState<Sort>(box === 'inbox' ? 'oldest' : box === 'follow-up' || box === 'waiting' || isProject ? 'urgency' : 'newest');
+  // Newest first everywhere, like a mail app; most urgent and oldest are a choice away.
+  const [sort, setSort] = useState<Sort>('newest');
   const { rank } = useUrgency();
 
   const senders = useMemo(() => [...new Set(base.map(counterpart))], [base]);
