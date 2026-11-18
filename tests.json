@@ -593,7 +593,7 @@
    "file": "e2e/live/live-rules.cjs",
    "covers": "putting an email in a project from the email (with a new project made on the spot), with P, and from a Triage row; taking it out again; “always” for the sender saves a rule and moves the sender's other mail; new mail lands in the project; two moves of a sender's mail offer a rule in Triage, saved with one click; Rules › Triage previews what a rule matches, saves it, files new mail, says why a bad rule can't be saved, deletes a rule; a rule told to Ask is shown in words and saved with Save rule",
    "status": "pass",
-   "result": "Nov 18, 2026: see STATUS.md."
+   "result": "Nov 18, 2026: 25 of 25."
   },
   {
    "id": "live-map",
