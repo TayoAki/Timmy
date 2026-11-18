@@ -191,6 +191,8 @@ export function registerJobs() {
 
   defineJob('files.text', async (d) => {
     const p = await indexFileTexts(String(d.workspaceId), String(d.connectionId));
+    // What a pass did, when it did anything: how many files it read, how many it couldn't, and whether more wait.
+    if (p.tried) log.info('file text pass', { workspaceId: d.workspaceId, connectionId: d.connectionId, read: p.read, skipped: p.skipped, more: p.more });
     if (p.more) enqueueSoon('files.text', { workspaceId: d.workspaceId, connectionId: d.connectionId }, { startAfter: 120, singletonKey: `ftext:${String(d.connectionId)}` });
   });
 
