@@ -5,7 +5,7 @@ import { approverFor, mayDecide, neverAllowed, reachesSomeoneElse, ruleCovers, t
 import { rulesFor } from '../src/auth/roles';
 import { redact } from '../src/lib/log';
 import { normalize, paragraphs, parseSender } from '../src/sync/ingest';
-import { signWebhook, verifyWebhookSignature } from '../src/providers/composio';
+import { signWebhook, verifyWebhookSignature, withCause } from '../src/providers/composio';
 import { config } from '../src/config';
 import { buildRequestBody } from '../src/providers/model';
 import { canonical, hashOf } from '../src/lib/ids';
@@ -234,5 +234,21 @@ describe('permissions asked for at sign-in', () => {
     }
     expect(managedAuthConfig('gmail')).toEqual({ name: 'timmy-gmail' });
     expect(managedAuthConfig('googledrive')).toEqual({ name: 'timmy-googledrive' });
+  });
+});
+
+describe('why a Composio call failed', () => {
+  it('the reason the SDK keeps aside is added to the message, once', () => {
+    const api = Object.assign(new Error('403 The caller does not have permission'), { status: 403 });
+    const e = withCause(new Error('Error executing the tool GOOGLEDRIVE_GET_DOCUMENT', { cause: api })) as Error;
+    expect(e.message).toBe('Error executing the tool GOOGLEDRIVE_GET_DOCUMENT: 403 The caller does not have permission');
+    expect(e.cause).toBeInstanceOf(Error);
+    // A timeout has no status; a cause with no message, or none at all, leaves the error as it was.
+    expect((withCause(new Error('Error executing the tool X', { cause: new Error('Request timed out.') })) as Error).message).toBe('Error executing the tool X: Request timed out.');
+    const plain = new Error('ETIMEDOUT');
+    expect(withCause(plain)).toBe(plain);
+    expect(withCause('not an error')).toBe('not an error');
+    // A long reason is cut short.
+    expect((withCause(new Error('E', { cause: new Error('x'.repeat(1000)) })) as Error).message.length).toBeLessThan(310);
   });
 });

@@ -93,7 +93,8 @@ export async function indexFileTexts(workspaceId: string, connectionId: string, 
         out.more = true;
         break;
       }
-      got = { reason: `${f.toolkit === 'one_drive' ? 'OneDrive' : 'Drive'} would not hand over this file’s contents (${error.slice(0, 120)}).` };
+      got = { reason: `${f.toolkit === 'one_drive' ? 'OneDrive' : 'Drive'} would not hand over this file’s contents.` };
+      log.warn('file text set aside', { workspaceId, connectionId, failures });
     }
     const text = 'text' in got ? got.text.replace(/\u0000/g, '').slice(0, MAX_FILE_TEXT) : '';
     const kept = await withWorkspace({ workspaceId }, async (tx) => {

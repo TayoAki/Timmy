@@ -25,6 +25,20 @@ export interface ProviderEvent {
 }
 
 /**
+ * The SDK reports a failed call as "Error executing the tool X" and keeps why (Composio's HTTP status and message, or
+ * a timeout) in `cause`. The reason is added to the message, so a log line says what went wrong. It carries no
+ * credential: the SDK's error holds the response's status and body, not the request's headers.
+ */
+export function withCause(e: unknown): unknown {
+  if (!(e instanceof Error) || !(e.cause instanceof Error)) return e;
+  const cause = e.cause as Error & { status?: number };
+  const status = cause.status && !cause.message.startsWith(String(cause.status)) ? `${cause.status} ` : '';
+  const why = `${status}${cause.message}`.replace(/\s+/g, ' ').trim().slice(0, 300);
+  if (!why || e.message.includes(why)) return e;
+  return new Error(`${e.message}: ${why}`, { cause: e });
+}
+
+/**
  * A file handed to Composio for one tool call. A tool's file argument (an email's `attachment`) takes this
  * reference, never the bytes: the file is first put in Composio's own store, under a key made for that tool.
  */
@@ -121,8 +135,12 @@ class RealComposio implements ComposioProvider {
   }
 
   async execute(slug: string, args: Record<string, unknown>, who: { userId: string; connectedAccountId: string }): Promise<ToolResult> {
-    const res = await this.client.tools.execute(slug, { userId: who.userId, connectedAccountId: who.connectedAccountId, arguments: args });
-    return { successful: !!res.successful, data: (res.data ?? {}) as Record<string, unknown>, error: res.error ?? null };
+    try {
+      const res = await this.client.tools.execute(slug, { userId: who.userId, connectedAccountId: who.connectedAccountId, arguments: args });
+      return { successful: !!res.successful, data: (res.data ?? {}) as Record<string, unknown>, error: res.error ?? null };
+    } catch (e) {
+      throw withCause(e);
+    }
   }
 
   async stageFile(input: { toolSlug: string; toolkit: string; name: string; type: string; bytes: Uint8Array }): Promise<StagedFile> {
