@@ -13,7 +13,7 @@ Updated Nov 18, 2026.
 
 | # | What | Why | Who | Time |
 | --- | --- | --- | --- | --- |
-| 1 | ✅ **Done Nov 18: the tester's email is on the sign-up allowlist** (`TIMMY_SIGNUP_ALLOW` on production `app`, next to the owner's) | Sign-up is invite-only. Without this they can't create an account. | Me | Done |
+| 1 | ✅ **Done Nov 18: two testers are on the sign-up allowlist** (`TIMMY_SIGNUP_ALLOW` on production `app`, next to the owner's) | Sign-up is invite-only. Without this they can't create an account. | Me | Done |
 | 2 | **Turn on backups for the database volume.** In Railway, open the `pgvector` volume, then Backups. | With no backups, a database failure loses everything they make only in Timmy: rules, to-dos, projects, pages, decisions. Their email stays safe in Gmail. | You (I can't do this from here) | 2 min |
 | 3 | **Brief the tester** (draft below) | No password resets yet; Google's permission screen; nothing sends without their click; the known gaps | You | 5 min |
 | 4 | **Get their OK on where their data goes** (draft below) | There is no privacy policy yet. Their mail passes through Composio (the connection to Google) and OpenRouter (the AI), and the database is on Railway. | You | 2 min |
