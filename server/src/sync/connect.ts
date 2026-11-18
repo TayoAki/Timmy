@@ -199,6 +199,8 @@ export async function closeConnections(workspaceId: string, filter: { appId?: st
     // The transcripts of Ask's finished runs can hold what its searches found in that mailbox. They are only kept to
     // resume a run that is waiting, so a finished one's go now.
     await tx.query(`delete from run_checkpoint where workspace_id = $1 and run_id in (select id from run where workspace_id = $1 and status in ('completed', 'failed', 'cancelled'))`, [workspaceId]);
+    // A project scan's findings quote subjects, names and addresses from the mail and files it read: they go too.
+    await tx.query(`delete from project_scan where workspace_id = $1`, [workspaceId]);
     const next = { ...loaded.state, threads, ws: { ...loaded.state.ws, events }, out: { ...loaded.state.out, messages }, conn: { ...loaded.state.conn, apps } };
     // [automations] Runs that started from this mail stop, and with no mailbox left New-email automations pause (automations/mailbox.ts).
     return { state: await pauseWithoutMailbox(tx, loaded, next, [...gone]), result: out };

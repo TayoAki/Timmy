@@ -10,6 +10,7 @@ Draft, Nov 16, 2026; updated Nov 18, 2026. This is Annex 2 of the data processin
 | A workspace's state: threads as shown on screen, tasks, pages, contacts, rules, settings | Postgres on Railway | One row per piece of state, each carrying its workspace. |
 | Synced mail, calendar events and files (the "item store") | Postgres on Railway | The last 90 days of mail, then new mail as it arrives. For files in Google Drive and OneDrive: the name, type, owner and dates, and, so that files can be found by what they say, the text of Google Docs, Sheets and Slides and of Word, Excel and PowerPoint files changed in the last 90 days (at most 24,000 characters each). The text goes when the file is trashed or deleted and when the account is disconnected. |
 | What Timmy learned: people, companies, promises, decisions, each pointing at the email it came from | Postgres on Railway | Removed when the email it rests on is removed. |
+| Projects Timmy found ("Detect projects") | Postgres on Railway | A scan's findings (thread subjects, the names and addresses of the people involved, file and meeting titles) are kept only until the person has chosen what to keep, and are deleted when any account is disconnected. A kept project remembers which files and meetings belong to it (removed with the item) and which company domains or addresses its new mail comes from. |
 | Runs of the assistant, proposed and completed actions ("effect records"), model usage, the audit log | Postgres on Railway | The audit log cannot be changed or deleted by the application; it goes only when its workspace is purged. |
 | Access tokens for connected Google and Microsoft accounts | **Composio**, not Timmy | Timmy's database holds only an identifier for each connection. Timmy's servers never see a token. |
 | Prompts and answers | Not stored by the model provider (zero-data-retention routing) | Timmy stores the conversation in the workspace's state so the user can see it. |
@@ -46,7 +47,7 @@ Draft, Nov 16, 2026; updated Nov 18, 2026. This is Annex 2 of the data processin
 
 ## When an account is disconnected
 
-Its mail and calendar events leave the screens and Ask at once. In the same step they are removed from the record of changes that open tabs catch up from, from the command history that Undo reads, and from copies made elsewhere (a lead's reply in the outbound inbox); finished runs' transcripts are cleared. Undo never puts back mail from a mailbox that is no longer connected. The stored copy is then deleted by a job.
+Its mail and calendar events leave the screens and Ask at once, and any project scan's findings are deleted. In the same step they are removed from the record of changes that open tabs catch up from, from the command history that Undo reads, and from copies made elsewhere (a lead's reply in the outbound inbox); finished runs' transcripts are cleared. Undo never puts back mail from a mailbox that is no longer connected. The stored copy is then deleted by a job.
 
 ## Secrets
 

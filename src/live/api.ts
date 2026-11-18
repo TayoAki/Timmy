@@ -85,6 +85,13 @@ export const api = {
   command: (id: string, action: Action) => call<CommandResult>('POST', '/api/v1/commands', { id, action: clearsAsNull(action) }, { outliveThePage: true, repeatable: true }),
   connect: (app: string) => call<{ redirectUrl: string }>('POST', `/api/v1/connections/${app}/connect`, {}),
   disconnect: (app: string) => call('POST', `/api/v1/connections/${app}/disconnect`, {}),
+  /** Detecting projects: start a scan, read the latest, keep what was found, and a project's linked files and meetings. */
+  detectProjects: () => call<ProjectScan>('POST', '/api/v1/projects/detect', {}),
+  projectScan: () => call<{ scan: ProjectScan | null }>('GET', '/api/v1/projects/detect'),
+  keepProjects: (scanId: string, choices: { id: string; keep: boolean; name?: string; into?: string }[]) =>
+    call<{ created: { id: string; name: string; threads: number; files: number; meetings: number }[] }>('POST', `/api/v1/projects/detect/${encodeURIComponent(scanId)}/apply`, { choices }),
+  projectLinks: (projectId: string) =>
+    call<{ files: { id: string; name: string; kind: string; changed: string; link?: string }[]; meetings: { id: string; title: string; at: string }[] }>('GET', `/api/v1/projects/${encodeURIComponent(projectId)}/links`),
   /** One email as its sender laid it out: cleaned HTML, or the plain text when it has no HTML. */
   mailOriginal: (thread: string, message: string, images = false) =>
     call<{ html?: string; text?: string; blocked: number }>('GET', `/api/v1/mail/original?thread=${encodeURIComponent(thread)}&message=${encodeURIComponent(message)}${images ? '&images=1' : ''}`),
@@ -172,4 +179,30 @@ export interface AutomationTest {
   skipped: string[];
   /** What would stop it being switched on. Empty when nothing would. */
   problems: string[];
+}
+
+/** What a project scan found (server/src/projects/detect.ts). */
+export interface DetectedProject {
+  id: string;
+  name: string;
+  kind: 'client' | 'deal' | 'hiring' | 'vendor' | 'internal' | 'personal' | 'other';
+  summary: string;
+  keys: string[];
+  organization?: { domain: string; name: string };
+  people: { email: string; name: string; messages: number }[];
+  threads: string[];
+  subjects: string[];
+  files: { itemId: string; name: string; link?: string }[];
+  meetings: { itemId: string; title: string; at: string }[];
+  last: string;
+}
+
+export interface ProjectScan {
+  id: string;
+  status: 'running' | 'ready' | 'failed' | 'applied';
+  startedAt: string;
+  finishedAt?: string;
+  error?: string;
+  proposals: DetectedProject[];
+  looked: { threads?: number; junk?: number; meetings?: number; files?: number };
 }

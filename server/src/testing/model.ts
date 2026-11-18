@@ -91,6 +91,14 @@ export class FakeModel implements ModelProvider {
       };
     }
     if (req.route === 'draft') return { content: JSON.stringify({ body: 'Thanks for your message. I will come back to you on this shortly.\n\nBest' }) };
+    // Naming a group a project scan found: one project, called after its company (or "Team" among colleagues).
+    if (req.route === 'detect') {
+      const text = req.messages[req.messages.length - 1]!.content;
+      const company = /"company":"([^"]+)"/.exec(text)?.[1];
+      const count = (text.match(/"\d+\. /g) ?? []).length;
+      const name = company ? `${company} work` : 'Team work';
+      return { content: JSON.stringify({ projects: [{ name, kind: company ? 'client' : 'internal', summary: `Work${company ? ` with ${company}` : ' with colleagues'}.`, threads: Array.from({ length: count }, (_, i) => i + 1) }] }) };
+    }
     const last = req.messages[req.messages.length - 1]!;
     const has = (name: string) => req.tools?.some((t) => t.name === name);
     if (last.role === 'tool') {

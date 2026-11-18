@@ -30,6 +30,7 @@ import { connectionEventRoutes, connectionRoutes } from './connections';
 import { assetHeaders, fileRoutes, isFileUpload } from './files';
 import { connectedFileRoutes } from './connected-files';
 import { mailRoutes } from './mail';
+import { projectRoutes } from './projects';
 import { workspacesOf } from '../auth/members';
 import { ctxOf, requireSession, requireWorkspace, sameOrigin, sessionOf, type Env } from './session';
 import { settingsRoutes } from './settings';
@@ -144,6 +145,7 @@ export function buildApp(): Hono<Env> {
   fileRoutes(app);
   connectedFileRoutes(app);
   mailRoutes(app);
+  projectRoutes(app);
   chatRoutes(app);
   // [automations] The test run and the list of runs (http/automations.ts).
   automationRoutes(app);

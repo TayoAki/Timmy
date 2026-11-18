@@ -5,6 +5,7 @@ import { onEffectApproved, onEffectSettled } from '../gateway/hooks';
 import { draftFor } from '../agent/draft';
 import { dueWorkspaces, morningRun } from '../agent/morning';
 import { needsReading, readThread } from '../agent/read';
+import { runScan } from '../projects/scan';
 import { deliverMail, undeliveredMail } from '../providers/email';
 import { modelReady } from '../providers/model';
 import { readState } from '../state/mutate';
@@ -183,6 +184,11 @@ export function registerJobs() {
   });
 
   // What files say, so Ask can search it: a bounded number per pass; what is left waits a little and goes on.
+  // A scan for projects, started from the Projects screen. Its result waits in project_scan for the person to review.
+  defineJob('projects.detect', async (d) => {
+    await runScan(String(d.workspaceId), String(d.scanId));
+  });
+
   defineJob('files.text', async (d) => {
     const p = await indexFileTexts(String(d.workspaceId), String(d.connectionId));
     if (p.more) enqueueSoon('files.text', { workspaceId: d.workspaceId, connectionId: d.connectionId }, { startAfter: 120, singletonKey: `ftext:${String(d.connectionId)}` });

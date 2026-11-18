@@ -47,6 +47,9 @@ export interface JobPayloads {
   'files.sync': { workspaceId: string; connectionId: string };
   'files.text': { workspaceId: string; connectionId: string };
   'files.check': { workspaceId: string; connectionId: string };
+
+  // Detecting projects (projects/detect.ts): one scan of a workspace, asked for by a person.
+  'projects.detect': { workspaceId: string; scanId: string };
   'files.remove': { workspaceId: string; connectionId: string; fileId: string };
   'files.sync.all': Scheduled;
 

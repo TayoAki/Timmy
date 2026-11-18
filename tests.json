@@ -540,6 +540,20 @@
    "covers": "the sender's full address, the recipients in short and every address in the details, an HTML email shown in a sandboxed frame with working links that open in a new tab, no script, form or javascript: link, the app untouched by the email's script, pictures hidden until Show pictures, plain-text links and email addresses clickable, the quoted history folded behind \u2022\u2022\u2022",
    "status": "pass",
    "result": "Nov 18, 2026: 16 of 16."
+  },
+  {
+   "id": "api-project-detect",
+   "file": "server/test/project-detect.test.ts",
+   "covers": "detecting projects: threads grouped by outside company or personal address and colleagues by a shared rare subject word, junk and one-offs left out, files joined by owner domain and name, nothing written anywhere; the model's names and splits held to the subjects it was shown (out-of-range numbers, unknown kinds, long text and extra parts dropped); only a role that may work starts a scan, one at a time, another workspace sees and applies nothing; keeping, renaming, merging and dropping make projects like the New project dialog with their threads, files and keys, applying twice refused, findings cleared once applied; a merge into something dropped and an unknown choice refused; new mail filed into the one project that claims its people and not when two do; findings deleted on disconnect",
+   "status": "pass",
+   "result": "Nov 18, 2026: 8 of 8."
+  },
+  {
+   "id": "live-projects",
+   "file": "e2e/live/live-projects.cjs",
+   "covers": "Projects \u203a Detect projects end to end: the scan finds the two clients and the colleagues' offsite and leaves the sale out, the map shows projects, companies and the client's file, rename, merge and drop, Create says what was made, the project's Mail and Files tabs show its threads and Drive file, and new mail from the client goes into the project by itself",
+   "status": "pass",
+   "result": "Nov 18, 2026: 13 of 13."
   }
  ]
 }

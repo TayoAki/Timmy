@@ -20,9 +20,35 @@ import {
   Target,
   UserPlus,
   WandSparkles,
+  Radar,
+  FileText,
+  CalendarDays,
 } from 'lucide-react';
 import { UploadButton } from '../viewers/Upload';
-import { useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
+import { isLive } from '../../live/clock';
+import { api } from '../../live/api';
+import { useProfile } from '../../live/LiveApp';
+
+// Detect projects carries the map, which needs the graph library: it loads when it is opened.
+const DetectProjects = lazy(() => import('../../live/DetectProjects'));
+
+/** The files and meetings Timmy linked to a project on a real workspace. Null in the demo and until they arrive. */
+function useProjectLinks(projectId: string) {
+  const [links, setLinks] = useState<Awaited<ReturnType<typeof api.projectLinks>> | null>(null);
+  useEffect(() => {
+    if (!isLive()) return;
+    let gone = false;
+    void api
+      .projectLinks(projectId)
+      .then((r) => !gone && setLinks(r))
+      .catch(() => {});
+    return () => {
+      gone = true;
+    };
+  }, [projectId]);
+  return links;
+}
 import { NewDocDialog } from '../docs/NewDocDialog';
 import { TaskDialog } from '../tasks/TaskDialog';
 import { ContactDialog } from '../people/ContactDialog';
@@ -111,6 +137,8 @@ export function ProjectsView() {
   const archived = archivedProjects(state.ws);
   const rows = tab === 'active' ? active : archived;
   const [newOpen, setNewOpen] = useState(false);
+  const [detecting, setDetecting] = useState(false);
+  const live = useProfile();
 
   return (
     <Frame
@@ -132,11 +160,25 @@ export function ProjectsView() {
               : 'Finished projects stay searchable in [99] Archived. Restore one to move its folder back to [02] Work.'}
           </p>
         </div>
-        <button className="btn btn-primary" onClick={() => setNewOpen(true)}>
-          <Plus size={15} />
-          New project
-        </button>
+        <div className="pj-title-actions">
+          {/* On a real workspace, Timmy can find the projects in the mail, meetings and files already connected. */}
+          {isLive() && live?.profile.can.work && (
+            <button className="btn" onClick={() => setDetecting(true)}>
+              <Radar size={15} />
+              Detect projects
+            </button>
+          )}
+          <button className="btn btn-primary" onClick={() => setNewOpen(true)}>
+            <Plus size={15} />
+            New project
+          </button>
+        </div>
       </div>
+      {detecting && (
+        <Suspense fallback={null}>
+          <DetectProjects onClose={() => setDetecting(false)} />
+        </Suspense>
+      )}
 
       {tab === 'active' && <HomeActions />}
 
@@ -826,6 +868,7 @@ function MailTab({ ctx }: { ctx: TabCtx }) {
 function FilesTab({ ctx }: { ctx: TabCtx }) {
   const { state, dispatch } = useStore();
   const { p } = ctx;
+  const linked = useProjectLinks(p.id);
   const files = projectFiles(state.ws, p);
   const folder = state.ws.folders[p.folder];
   return (
@@ -862,6 +905,37 @@ function FilesTab({ ctx }: { ctx: TabCtx }) {
         </ul>
       ) : (
         <EmptyState icon={FolderOpen} title="The folder is empty" body="Files you save to the project folder show up here." />
+      )}
+      {linked && (linked.files.length > 0 || linked.meetings.length > 0) && (
+        <>
+          <SectionHead title="From your connected apps" sub="Files and meetings Timmy linked to this project when it found it" />
+          <ul className="pj-box">
+            {linked.files.map((f) => (
+              <li key={f.id}>
+                <a className="pj-line pj-file-row" href={f.link} target="_blank" rel="noopener noreferrer">
+                  <FileText size={18} aria-hidden />
+                  <span className="pj-line-text">
+                    <span className="pj-line-title">{f.name}</span>
+                    <span className="pj-line-sub">{f.kind}</span>
+                  </span>
+                  <span className="pj-file-date">{fmtListDate(new Date(f.changed))}</span>
+                </a>
+              </li>
+            ))}
+            {linked.meetings.map((m) => (
+              <li key={m.id}>
+                <div className="pj-line pj-file-row">
+                  <CalendarDays size={18} aria-hidden />
+                  <span className="pj-line-text">
+                    <span className="pj-line-title">{m.title}</span>
+                    <span className="pj-line-sub">Meeting</span>
+                  </span>
+                  <span className="pj-file-date">{fmtListDate(new Date(m.at))}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </section>
   );
