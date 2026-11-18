@@ -382,6 +382,11 @@ As built (Nov 16, 2026), every route is under `/api` on the same origin as the a
 - `POST /api/v1/commands` takes the same `{ type, ...payload }` the reducer takes today, with an id. It returns the resulting patches, and conflicts resolve in the server's favour. The same id from the same person always gets the same answer.
 - `GET /api/v1/state` returns the workspace's state in slices, and `GET /api/v1/stream` is a single SSE connection per tab that carries the patches after it.
 - `POST /api/v1/agent/runs` streams AG-UI events: text, tool calls, widgets, done. The chat UI already speaks it.
+- **CopilotKit (built Nov 18, 2026).** The live chat goes through CopilotKit's runtime at `/api/copilotkit` (`server/src/http/copilotkit.ts`).
+  - **The agent.** Its one agent is the same Ask run, in process, as the signed-in person. The browser uses CopilotKit's client (`@copilotkit/core`).
+  - **Saved conversations.** With `CPK_INTELLIGENCE_API_KEY` set, conversations are kept in CopilotKit Intelligence, per person and workspace, so they follow the person between devices. Memory and learned skills are off.
+  - **Telemetry.** CopilotKit's usage telemetry is off.
+  - **Plan.** `docs/copilotkit-plan.md` has the plan and what was built.
 - `POST /api/v1/actions/{id}/approve` and `/decline` record who decided. Delegate and RevOps routing set who is allowed to call them. The Approvals screen makes the same decision through a command.
 - `GET` and `PATCH /api/v1/settings` (the model, the monthly spend limit and the number of runs at once, each within a ceiling the server sets; the kill switch), `POST /api/v1/connections/{app}/connect` and `/disconnect`, `GET /api/v1/audit`, `GET /api/v1/usage`.
 - Added Nov 16 and 17, 2026: `GET /api/v1/automations/test-emails`, `GET /api/v1/chat/conversations` (older conversations, paged) and `GET /api/v1/chat/loader`; `POST /api/v1/pages/{id}/summarize`; `GET /api/v1/pages/{id}/versions`, `GET .../versions/{n}`, `POST .../versions/{n}/restore` and `GET /api/v1/pages/trash`; `POST /api/v1/automations/{id}/test` (dry run) and `GET /api/v1/automations/{id}/runs`; `GET /api/v1/tracked`, `GET /api/v1/tracked/{id}/things`, `POST /api/v1/tracked/proposals/{key}/accept` and `/dismiss`, `PATCH` and `DELETE /api/v1/tracked/{id}`; `GET /api/v1/chat/conversations/{id}/messages`.

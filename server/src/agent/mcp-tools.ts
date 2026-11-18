@@ -1,12 +1,13 @@
 /**
- * Tools Timmy offers only to apps connected over MCP (http/mcp.ts), next to Ask's own (agent/tools.ts). Ask lives
- * inside Timmy, where the person can see their inbox, projects and to-dos; a connected app can't, so it gets a way to
- * see what is waiting, list projects and to-dos, and keep them.
+ * Tools for seeing what is waiting and keeping projects and to-dos, offered to Ask (agent/tools.ts) and to apps
+ * connected over MCP (http/mcp.ts). A connected app can't see Timmy's screens, and in Ask they let a person organize
+ * by asking.
  *
  * What they change is changed through the same command the app sends (state/engine.ts), so every check the app's
  * own buttons pass through applies here too: the role, the project being open, the shape of a to-do. None of them
  * writes to a mailbox, a calendar or anyone else.
  */
+import { createHash } from 'node:crypto';
 import type { Thread } from '../../../src/data/types';
 import type { Task } from '../../../src/data/ws-types';
 import { readState } from '../state/mutate';
@@ -33,7 +34,10 @@ function projectNamed(projects: Record<string, { id: string; num: string; name: 
 }
 
 /** A command as the person, from a connected app. The same command id is never reused: each call is its own. */
-const command = (t: Parameters<AgentTool['run']>[1], action: Parameters<typeof runCommand>[1]['action']) => runCommand(t.ctx, { id: `mcp:${t.runId}:${t.callId}`.slice(0, 80), action });
+const command = (t: Parameters<AgentTool['run']>[1], action: Parameters<typeof runCommand>[1]['action']) => runCommand(t.ctx, { id: `tool:${createHash('sha256').update(`${t.runId}:${t.callId}`).digest('hex').slice(0, 40)}`, action });
+
+/** Only in a conversation the person is having (Ask, or an app they connected), never on Timmy's own. */
+const unattended = (t: Parameters<AgentTool['run']>[1]) => (t.attended ? null : { result: 'This can only be done in a conversation with the user. Nothing changed.' });
 
 const whatsWaiting: AgentTool = {
   kind: 'read',
@@ -131,6 +135,8 @@ const addTask: AgentTool = {
     },
   },
   async run(args, t) {
+    const refused = unattended(t);
+    if (refused) return refused;
     const title = str(args.title, 160);
     if (title.length < 2) return { result: 'A to-do needs a title. Nothing was added.' };
     const { state } = await readState(t.ctx.workspaceId);
@@ -138,7 +144,7 @@ const addTask: AgentTool = {
     if (typeof args.project === 'string' && args.project.trim() && !project) return { result: `There is no open project called “${str(args.project, 80)}”. Nothing was added.` };
     const thread = typeof args.thread === 'string' ? state.threads.find((x) => x.id === args.thread) : undefined;
     const due = typeof args.due === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(args.due) ? new Date(`${args.due}T17:00:00`) : undefined;
-    const task: Task = { id: `tsk-mcp-${t.runId}`.slice(0, 60), title, status: 'todo', priority: 'normal', created: new Date(), ...(due ? { due } : {}), ...((project?.id ?? thread?.project) ? { project: project?.id ?? thread?.project } : {}), ...(thread ? { thread: thread.id } : {}) };
+    const task: Task = { id: `tsk-${createHash('sha256').update(`${t.runId}:${t.callId}`).digest('hex').slice(0, 16)}`, title, status: 'todo', priority: 'normal', created: new Date(), ...(due ? { due } : {}), ...((project?.id ?? thread?.project) ? { project: project?.id ?? thread?.project } : {}), ...(thread ? { thread: thread.id } : {}) };
     const r = await command(t, { type: 'ws', ops: [{ op: 'put', col: 'tasks', item: task }] });
     return { result: r.ok ? `Added to the user’s to-dos: “${title}”${due ? `, due ${args.due}` : ''}${project ? `, in ${project.name}` : ''}.` : `Nothing was added: ${r.error}` };
   },
@@ -153,6 +159,8 @@ const completeTask: AgentTool = {
     parameters: { type: 'object', properties: { id: { type: 'string' }, done: { type: 'boolean' } }, required: ['id'] },
   },
   async run(args, t) {
+    const refused = unattended(t);
+    if (refused) return refused;
     const id = str(args.id, 120);
     const { state } = await readState(t.ctx.workspaceId);
     const task = state.ws.tasks[id];
@@ -172,6 +180,8 @@ const putInProject: AgentTool = {
     parameters: { type: 'object', properties: { thread: { type: 'string' }, project: { type: ['string', 'null'], description: 'A project’s name, or null to take it out' } }, required: ['thread', 'project'] },
   },
   async run(args, t) {
+    const refused = unattended(t);
+    if (refused) return refused;
     const id = str(args.thread, 200);
     const { state } = await readState(t.ctx.workspaceId);
     const thread = state.threads.find((x) => x.id === id);
@@ -183,4 +193,8 @@ const putInProject: AgentTool = {
   },
 };
 
-export const MCP_TOOLS: AgentTool[] = [whatsWaiting, listProjects, listTasks, addTask, completeTask, putInProject];
+/**
+ * Seeing and keeping projects and to-dos. Ask has them too (agent/tools.ts), so a person can organize by asking:
+ * "put Dana's emails in the Acme project", "add a to-do to send the deck by Friday".
+ */
+export const ORGANIZE_TOOLS: AgentTool[] = [whatsWaiting, listProjects, listTasks, addTask, completeTask, putInProject];

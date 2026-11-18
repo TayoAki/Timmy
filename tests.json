@@ -35,7 +35,8 @@
    "server/test/ontology.test.ts",
    "server/test/pages.test.ts",
    "server/test/mcp.test.ts",
-   "server/test/drive-edit.test.ts"
+   "server/test/drive-edit.test.ts",
+   "server/test/copilotkit.test.ts"
   ],
   "no real credential inside a prompt, the sandbox or logs": [
    "server/test/unit.test.ts",
@@ -357,7 +358,8 @@
    "file": "e2e/live/live-ask.cjs",
    "covers": "Ask over mail; a send proposed in chat needs the Send button; chat history is kept per person and removed at sign-out",
    "status": "pass",
-   "tests": 13
+   "tests": 13,
+   "result": "Nov 18, 2026: 14 of 14, through CopilotKit's runtime (new check: the question goes to /api/copilotkit/agent/timmy/run), also with Intelligence on."
   },
   {
    "id": "live-model",
@@ -639,6 +641,21 @@
    "tests": 13,
    "status": "pass",
    "result": "Nov 18, 2026: 13 of 13."
+  },
+  {
+   "id": "api-copilotkit",
+   "file": "server/test/copilotkit.test.ts",
+   "covers": "CopilotKit's runtime at /api/copilotkit needs a sign-in; it offers one agent, Timmy, in SSE mode without Intelligence; a run is Timmy's own Ask run as the person, in their workspace, with Timmy's tools, recorded as a run, streamed as AG-UI events; a conversation belongs to the person who started it (another's request is answered not found; the owner carries on); a request from another site is refused; Ask puts an email in a project and adds a to-do for it through CopilotKit, writing nothing to the mailbox; two to-dos in one turn are two to-dos",
+   "tests": 7,
+   "status": "pass",
+   "result": "Nov 18, 2026: 7 of 7. Full API run: 980 of 980 (54 files)."
+  },
+  {
+   "id": "live-intelligence",
+   "file": "e2e/live/live-intelligence.cjs",
+   "covers": "with CopilotKit Intelligence on: Timmy answers through it; in another browser the same person's conversation is listed, opens with what was said and can be continued; deleting it deletes it in Intelligence; another person's list has none of it. Without Intelligence it checks nothing",
+   "status": "flaky",
+   "result": "Nov 18, 2026, against CopilotKit's real cloud with test data: 7 of 7 in 2 of 4 runs. In the other two the conversation was listed but never opened in the second browser: CopilotKit's cloud recorded no events for that run (thread never updated) although the answer had reached the first browser. Not a Timmy failure as far as could be traced; raised in STATUS. Without the key (the normal suite run) it passes, checking nothing."
   },
   {
    "id": "live-mcp",

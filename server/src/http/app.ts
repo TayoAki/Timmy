@@ -23,6 +23,7 @@ import { chatFrameRoutes, chatRoutes } from '../chat/routes';
 import { chatHostGate } from '../chat/host';
 import { chatEnablerChanged } from '../chat/enabler';
 import { agentRoutes } from './agent';
+import { copilotKitRoutes } from './copilotkit';
 import { auditRoutes } from './audit';
 import { automationRoutes } from './automations';
 import { switchOffWithoutOwner } from '../automations/roles';
@@ -156,6 +157,8 @@ export function buildApp(): Hono<Env> {
   auditRoutes(app);
 
   agentRoutes(app);
+  // The same Ask, through CopilotKit's runtime (http/copilotkit.ts).
+  copilotKitRoutes(app);
   fileRoutes(app);
   connectedFileRoutes(app);
   mailRoutes(app);

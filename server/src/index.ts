@@ -1,3 +1,4 @@
+import './lib/no-telemetry';
 import { serve } from '@hono/node-server';
 import { initAuth } from './auth/auth';
 import { assertSafeConfig, config } from './config';

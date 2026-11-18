@@ -1,6 +1,6 @@
 # Timmy powered by CopilotKit, and what to take from OpenBot
 
-Plan, Nov 18, 2026. Nothing here is built yet.
+Plan, Nov 18, 2026. **Phases 1 and 2 are built (Nov 18); see "What was built" at the end.**
 
 **Sources reviewed:**
 - the CopilotKit repository's docs (`showcase/shell-docs`, about 270 pages);
@@ -116,3 +116,26 @@ It needs CopilotKit Intelligence: free on a laptop, a trial licence to evaluate 
 2. Your answer on **decision 1** (what Intelligence stores). Then rotate the key and add the new one to `app` in Railway, staging first.
 3. If you want Slack: a Slack workspace I can install the app in.
 4. Optional: ask CopilotKit about plan limits and what a seat means for a small beta.
+
+## What was built (Nov 18, 2026)
+
+**Phase 1: the runtime and the chat.**
+- **Server.** CopilotKit's runtime (`@copilotkit/runtime` 1.89.0, v2, Hono) is mounted at `/api/copilotkit` (`server/src/http/copilotkit.ts`), behind the same sign-in and same-origin check as the rest of the API.
+  - Its one agent, `timmy`, is Timmy's own Ask run (`runAsk` in `server/src/http/agent.ts`), in process, as the person who asked: same tools, budget cap, gateway and audit.
+  - Each conversation belongs to the person (and workspace) that started it. Another person's request for it is answered "not found".
+- **Browser.** The chat's look is unchanged. A live workspace's chat talks to the runtime with CopilotKit's own client (`@copilotkit/core`, loaded on the first question; the demo never downloads it), which handles both modes.
+- **Approvals** stay Timmy's own cards in the chat (Send / File it / Save rule), with the same decide endpoint. They were not moved to `useInterrupt`, so the chat suites run unchanged.
+- **New for organizing.** Ask now has whats_waiting, list_projects, list_tasks, add_task, complete_task and put_in_project (they were MCP-only), allowed only in a conversation the person is having.
+- **Off by default.** The runtime's usage telemetry is switched off (`COPILOTKIT_TELEMETRY_DISABLED`, `DO_NOT_TRACK`), as are Scarf's install analytics.
+
+**Phase 2: Intelligence.**
+- **How it switches on.** With `CPK_INTELLIGENCE_API_KEY` on `app`, the runtime runs in Intelligence mode: conversations are kept in CopilotKit's cloud, named after the first question.
+- **On another device.** The chat lists the person's saved conversations and opens one by replaying it from CopilotKit's realtime channel, falling back to the saved messages. Deleting a conversation in the chat deletes it there.
+- **Ids.** Conversation ids are mapped to the UUIDs Intelligence requires.
+- **Off.** Memory and learned skills are left off, as planned.
+- **Tested** against the real CopilotKit cloud with your key, on test data only:
+  - conversations are created, named and answered;
+  - deleting works;
+  - another person never sees them.
+- **One problem, in CopilotKit's cloud.** Opening a conversation from another browser worked in 2 of 4 runs. In the other two, CopilotKit's cloud recorded nothing for the run (the thread was never updated, 0 events), although the answer reached the browser. Timmy still keeps every conversation in the browser it was had in, so nothing is lost there. Worth raising with CopilotKit.
+- **Not built:** Slack and Teams (phase 3), and the OpenBot pieces (phase 4).

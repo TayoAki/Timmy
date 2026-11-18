@@ -52,6 +52,13 @@ export const config = {
    * `from` must be an address on a domain verified in Resend, e.g. "Timmy <timmy@mail.example.com>".
    * With the stand-in providers on, nothing is delivered: messages stay in the outbox table, where tests read them.
    */
+  /**
+   * CopilotKit (http/copilotkit.ts). With an Intelligence project key, Ask's conversations are kept in CopilotKit's
+   * cloud; without one they stay in this process. The key is server-only: it never reaches the browser.
+   */
+  copilotkit: {
+    intelligenceKey: env.CPK_INTELLIGENCE_API_KEY ?? '',
+  },
   mail: {
     resendApiKey: env.RESEND_API_KEY ?? '',
     from: env.TIMMY_MAIL_FROM ?? '',

@@ -27,7 +27,7 @@ Updated Nov 18, 2026.
 | 7 | **A "Delete workspace" / "Delete account" button** | The server supports it, but no screen offers it. A tester who wants out can disconnect Gmail (which deletes the mail Timmy kept) but can't delete their workspace themselves. | Me. Until it's built, I delete on request. | Half a day |
 | 8 | ✅ **Done Nov 18: a Feedback button** (left rail and phone menu) | Read it in Railway's logs (search "beta feedback"); set `TIMMY_FEEDBACK_TO` on `app` to have it emailed once Resend is on. | Me | Done |
 | 9 | **Watch for errors** | No alerting is set up; errors only show in Railway's logs. | Me: I check production logs daily during the beta. Real alerting (e.g. Sentry) comes before strangers. | Daily |
-| 10 | **Rotate the keys pasted in chat**: two Composio keys, one OpenRouter key, one Supadata key | They aren't in the repo or the logs, but they were pasted in a chat. | You (make new ones, put them in Railway, delete the old ones) | 15 min |
+| 10 | **Rotate the keys pasted in chat**: two Composio keys, one OpenRouter key, one Supadata key, and the CopilotKit Intelligence key (put the new one in Railway as `CPK_INTELLIGENCE_API_KEY` on `app`, staging first) | They aren't in the repo or the logs, but they were pasted in a chat. | You (make new ones, put them in Railway, delete the old ones) | 15 min |
 | 11 | **Decide on AI cost per email read** | Reads use Claude Opus 5.5: about $0.008 per email a person wrote (junk is sorted without AI). A tester getting 100 such emails a day costs about $0.80 a day. Each workspace is capped at $50 a month; when it hits the cap, Timmy stops reading until the cap is raised. | Your call: keep it, or I compare Haiku 5.5 on the same emails, show you the numbers, and you decide | None now |
 
 ## Before strangers (not needed for one trusted tester)
@@ -58,6 +58,7 @@ Updated Nov 18, 2026.
 - Ask Timmy about their mail, files and people.
 - People › Map, and Drive files opened inside Timmy, and edited there: **Edit in Timmy** opens a Google Doc, Sheet or Slides deck (or a Word, Excel, PowerPoint or PDF file in Drive) in Timmy's editor, and Save goes back to the Drive file. Drive keeps the earlier version.
 - Their own Claude or ChatGPT connected to Timmy (Rules & settings › Approvals has the address).
+- Organizing by asking: "put Dana's emails in the Acme project", "add a to-do to send the deck by Friday", "what's on my plate?". Ask runs through CopilotKit.
 
 ## Known gaps to tell them about
 
@@ -91,4 +92,4 @@ Updated Nov 18, 2026.
 
 ## Draft: their OK on data (send with the message, or ask in person)
 
-> Timmy is in beta and doesn't have a published privacy policy yet. So you know: when you connect Gmail, Calendar or Drive, Timmy reads them through Composio (the connection to Google) and keeps a copy of your recent mail, and the names and text of your recent Google Docs, Sheets and Slides (so you can search them), in its database on Railway (US). To sort emails and write drafts, Timmy sends the text of emails people wrote to you to an AI model (Anthropic's Claude) through OpenRouter. Nothing is sold or shared with anyone else. You can disconnect any account at any time, which deletes what Timmy kept from it, and ask me to delete your workspace entirely. Reply "OK" if you're happy to test on those terms.
+> Timmy is in beta and doesn't have a published privacy policy yet. So you know: when you connect Gmail, Calendar or Drive, Timmy reads them through Composio (the connection to Google) and keeps a copy of your recent mail, and the names and text of your recent Google Docs, Sheets and Slides (so you can search them), in its database on Railway (US). To sort emails and write drafts, Timmy sends the text of emails people wrote to you to an AI model (Anthropic's Claude) through OpenRouter. Your conversations with Timmy's assistant (Ask) are kept by CopilotKit, the service that runs the chat, so you can pick one up on another device; they include what Timmy read to answer you. Deleting a conversation in the chat deletes it there too. Nothing is sold or shared with anyone else. You can disconnect any account at any time, which deletes what Timmy kept from it, and ask me to delete your workspace entirely. Reply "OK" if you're happy to test on those terms.

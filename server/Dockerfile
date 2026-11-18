@@ -1,5 +1,7 @@
 # Timmy's API, which also serves the app built in live mode. Build context: the repository root.
 FROM node:22-slim AS build
+# No install-time analytics from dependencies (Scarf, which CopilotKit's packages include).
+ENV SCARF_ANALYTICS=false
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -15,6 +17,8 @@ RUN cd server && node build.mjs && npm prune --omit=dev
 
 FROM node:22-slim
 ENV NODE_ENV=production
+# CopilotKit's runtime sends no usage telemetry (see src/lib/no-telemetry.ts).
+ENV COPILOTKIT_TELEMETRY_DISABLED=true DO_NOT_TRACK=1
 WORKDIR /app/server
 COPY --from=build /app/server/node_modules node_modules
 COPY --from=build /app/server/dist dist

@@ -1,4 +1,4 @@
-// Live mode: Ask Timmy over real (test) mail, and a send proposed in chat that needs the Send button.
+// Live mode: Ask Timmy over real (test) mail, through CopilotKit's runtime, and a send proposed in chat that needs the Send button.
 const { ok, open, signUp, api, connectGmail, deliver, sentMail, run } = require('./lib.cjs');
 
 run('live-ask', async (browser) => {
@@ -24,9 +24,13 @@ run('live-ask', async (browser) => {
     await page.waitForTimeout(300);
   };
 
+  // Ask goes through CopilotKit's runtime on Timmy's own server (server/src/http/copilotkit.ts).
+  const runs = [];
+  page.on('request', (r) => r.method() === 'POST' && /\/api\/(copilotkit|v1\/agent)\//.test(r.url()) && runs.push(new URL(r.url()).pathname));
   await page.keyboard.press('Control+i');
   await page.locator('.ai-shell').waitFor();
   await ask('find the email about trajectory');
+  ok(runs.length > 0 && runs.every((p) => p === '/api/copilotkit/agent/timmy/run'), `the question went to Timmy through CopilotKit (${runs.join(', ')})`);
   const answer = await page.locator('.ai-msg.timmy').last().innerText();
   ok(/Trajectory numbers/.test(answer), `Ask answered from the synced mail (“${answer.replace(/\s+/g, ' ').slice(0, 80)}”)`);
   ok((await page.locator('.ai-error').count()) === 0, 'no error in the chat');

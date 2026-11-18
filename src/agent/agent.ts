@@ -11,7 +11,7 @@
  */
 import { LIVE } from '../live/config';
 import { AbstractAgent, HttpAgent, type AgentConfig } from '@ag-ui/client';
-import { EventType, type BaseEvent, type RunAgentInput } from '@ag-ui/core';
+import { EventType, type BaseEvent, type Message, type RunAgentInput } from '@ag-ui/core';
 import { Observable } from 'rxjs';
 import type { Action, Route, State } from '../state/store';
 import { plan } from './plan';
@@ -87,11 +87,81 @@ export class LocalTimmyAgent extends AbstractAgent {
   }
 }
 
-/** The agent for one conversation: a server agent when configured, otherwise the local one. */
+/** Where Timmy's API serves Ask through CopilotKit's runtime (server/src/http/copilotkit.ts). */
+export const COPILOTKIT_URL = '/api/copilotkit';
+
+/**
+ * Timmy through CopilotKit, on a real workspace. CopilotKit's client (@copilotkit/core) is loaded when the first
+ * question is asked, so the demo never downloads it. It asks the runtime how conversations are kept: in the server's
+ * memory, or in CopilotKit Intelligence, where a run's events come back over CopilotKit's realtime connection. Either
+ * way this agent hands back the same AG-UI events the chat already draws.
+ */
+export class CopilotKitTimmyAgent extends AbstractAgent {
+  private inner?: Promise<AbstractAgent>;
+
+  constructor(config?: AgentConfig) {
+    super({ agentId: 'timmy', description: 'Timmy, the inbox and workspace assistant', ...config });
+  }
+
+  private load(): Promise<AbstractAgent> {
+    this.inner ??= import('@copilotkit/core').then(
+      ({ ProxiedCopilotRuntimeAgent }) => new ProxiedCopilotRuntimeAgent({ runtimeUrl: COPILOTKIT_URL, agentId: 'timmy', credentials: 'same-origin', threadId: this.threadId }) as unknown as AbstractAgent,
+    );
+    return this.inner;
+  }
+
+  run(input: RunAgentInput): Observable<BaseEvent> {
+    return new Observable<BaseEvent>((sub) => {
+      let inner: { unsubscribe(): void } | undefined;
+      let gone = false;
+      Promise.all([this.load(), threadUuid(input.threadId)])
+        .then(([agent, threadId]) => {
+          if (gone) return;
+          agent.threadId = threadId;
+          // The runtime's agent takes the run as it is: the messages, the widgets, the screen, the route.
+          inner = (agent as unknown as { run(i: RunAgentInput): Observable<BaseEvent> }).run({ ...input, threadId }).subscribe(sub);
+        })
+        .catch((e) => sub.error(e));
+      return () => {
+        gone = true;
+        inner?.unsubscribe();
+      };
+    });
+  }
+}
+
+/**
+ * A conversation saved in CopilotKit Intelligence, read back the way CopilotKit reconnects one: the runtime hands the
+ * browser a pass to the conversation's realtime channel, and what was said is replayed from there.
+ */
+export async function replaySaved(threadId: string): Promise<Message[]> {
+  const { ProxiedCopilotRuntimeAgent } = await import('@copilotkit/core');
+  const agent = new ProxiedCopilotRuntimeAgent({ runtimeUrl: COPILOTKIT_URL, agentId: 'timmy', credentials: 'same-origin', threadId }) as unknown as AbstractAgent;
+  await agent.connectAgent();
+  return [...agent.messages];
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * CopilotKit Intelligence names a conversation by a UUID. A conversation's own id ("chat-…") is turned into one the
+ * same way every time, so the same conversation always reaches the same thread.
+ */
+export async function threadUuid(id: string): Promise<string> {
+  if (UUID.test(id)) return id.toLowerCase();
+  const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`timmy-thread:${id}`))).slice(0, 16);
+  hash[6] = (hash[6]! & 0x0f) | 0x50; // version 5 style: derived from a name
+  hash[8] = (hash[8]! & 0x3f) | 0x80;
+  const hex = [...hash].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/** The agent for one conversation: Timmy through CopilotKit on a real workspace, a configured server, or the local one. */
 export function createAgent(config: AgentConfig): AbstractAgent {
   // On a real workspace the chat talks to Timmy's own API, on the same origin, so the sign-in cookie goes with it.
-  const url = LIVE ? '/api/v1/agent/runs' : (import.meta.env.VITE_TIMMY_AGENT_URL as string | undefined);
+  if (LIVE) return new CopilotKitTimmyAgent(config);
+  const url = import.meta.env.VITE_TIMMY_AGENT_URL as string | undefined;
   return url ? new HttpAgent({ url, ...config }) : new LocalTimmyAgent(config);
 }
 
-export const AGENT_KIND = LIVE || import.meta.env.VITE_TIMMY_AGENT_URL ? 'server' : 'local';
+export const AGENT_KIND: 'copilotkit' | 'server' | 'local' = LIVE ? 'copilotkit' : import.meta.env.VITE_TIMMY_AGENT_URL ? 'server' : 'local';

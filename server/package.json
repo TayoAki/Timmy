@@ -16,16 +16,20 @@
     "migrate": "tsx src/db/migrate-cli.ts"
   },
   "dependencies": {
+    "@ag-ui/client": "1.0.5",
+    "@ag-ui/core": "1.0.5",
     "@better-auth/cimd": "1.7.25",
     "@better-auth/mcp": "1.7.25",
     "@better-auth/oauth-provider": "1.7.25",
     "@composio/core": "^0.29.0",
+    "@copilotkit/runtime": "1.89.0",
     "@hono/node-server": "^2.1.8",
     "@modelcontextprotocol/server": "2.4.0",
     "better-auth": "^1.7.25",
     "hono": "^4.13.18",
     "pg": "^8.23.1",
     "pg-boss": "^12.38.2",
+    "rxjs": "7.8.1",
     "sanitize-html": "2.18.1",
     "zod": "^4.6.7"
   },
@@ -37,5 +41,13 @@
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"
+  },
+  "overrides": {
+    "@browserbasehq/stagehand": {
+      "openai": "^7.39.0"
+    }
+  },
+  "scarfSettings": {
+    "enabled": false
   }
 }

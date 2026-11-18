@@ -43,6 +43,24 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 | Frontend live mode (`VITE_TIMMY_LIVE=1`) | Built: sign-in, onboarding, state from the API, Connect buttons, model picker, monthly limit, approvals for writes Timmy proposes. The demo is unchanged and still the default build. |
 | Railway | `app` (API + live app), `pgvector` and the bucket `timmy-files` exist in `production` and `staging`. Both `app` services have the OpenRouter and Composio keys. |
 
+## Timmy powered by CopilotKit (Nov 18, 2026)
+
+Phases 1 and 2 of `docs/copilotkit-plan.md` are built. "What was built" at the end of that plan has the detail.
+
+- **Ask runs through CopilotKit's runtime** (`/api/copilotkit`, `server/src/http/copilotkit.ts`), with Timmy's own agent in process: the same person, tools, budget, approvals and audit. The browser talks to it with CopilotKit's client, and the chat looks the same.
+- **Ask can organize by being asked:** what's waiting; projects and to-dos; put an email in a project; add or check off a to-do. Only in a conversation the person is having.
+- **CopilotKit Intelligence** is used when `CPK_INTELLIGENCE_API_KEY` is set on `app`:
+  - conversations are kept in CopilotKit's cloud and listed on any device;
+  - deleting one in the chat deletes it there.
+- **What staging and production run until then:** without the key, conversations stay in the server's memory and in the browser.
+- **CopilotKit's telemetry** and its packages' install analytics are off.
+- **Tests:**
+  - `server/test/copilotkit.test.ts`: 7 tests;
+  - `live-ask` checks that the chat goes through CopilotKit (14 checks);
+  - `live-intelligence` (7 checks) runs against the real cloud when the key is set and checks nothing otherwise.
+- **Full runs after this:** API 980 of 980 (54 files).
+- **Known problem, in CopilotKit's cloud:** opening a conversation on another device worked in 2 of 4 runs. In the other two, the cloud recorded nothing for the run (0 events) although the answer reached the browser. The conversation is still in the browser it was had in.
+
 ## The new onboarding (Nov 18, 2026)
 
 The setup a new workspace opens on now has seven steps, the first four being the core:
@@ -454,6 +472,8 @@ Next: the code debt listed below (the gateway's screen list moved out, routes sp
 
 
 ## Needs your attention
+
+- **CopilotKit Intelligence key.** Rotate the `cpk-` key you pasted in chat (CopilotKit dashboard), then add the new one to `app` in Railway as `CPK_INTELLIGENCE_API_KEY`, staging first. Until then Ask runs through CopilotKit's runtime without saving conversations in its cloud.
 
 - [ ] **Separately held database credentials** (recommended before outside users). The server supports them; switching is a Railway change only you can make. On staging first, then production: (1) make two random passwords (for example `openssl rand -hex 32`, twice); (2) on the `app` service add `TIMMY_APP_DATABASE_URL=postgresql://timmy_app:<app password>@<host>:<port>/<db>` and `TIMMY_SYSTEM_DATABASE_URL=postgresql://timmy_system:<system password>@<host>:<port>/<db>` (same host, port and database as today's `DATABASE_URL`), without deploying yet; (3) in psql as the database's superuser, run `alter role timmy_app with login password '<app password>';` and the script that creates `timmy_system` and makes it owner of Timmy's schemas (in `docs/ops/database-credentials.md`, with every step); (4) deploy and check the logs show "Timmy API listening" and `/api/health` answers; (5) remove `DATABASE_URL` from the `app` service only and redeploy, so the app no longer holds the superuser's password. Expect about a minute of errors between steps 3 and 4. Rollback: put `DATABASE_URL` back and delete the two variables.
 - [ ] **The website chat's own address** (recommended before customers put the chat on their sites). Pick an address; a separate domain such as `timmychat.com` isolates best, a subdomain such as `chat.yourdomain.com` also works. Then: (1) in Railway, open the `app` service (production) → Settings → Networking → Custom Domain and add it; (2) add the CNAME (and any TXT record) Railway shows at your DNS provider and wait until Railway shows it verified with a certificate; (3) set `CHAT_PUBLIC_URL=https://chat.yourdomain.com` (no path) on the same service. Check that `/chat.js` loads there, `/` answers 404 there, and the app's own `/chat.js` answers 404. Snippets already pasted with the app's address stop working and must be replaced. Optional: `TIMMY_CHAT_CHALLENGE_BITS` (bot-check difficulty, default 18).

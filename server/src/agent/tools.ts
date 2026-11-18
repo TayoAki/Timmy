@@ -18,6 +18,7 @@ import { readPage, searchPages } from './pages';
 import { BOX_WORDS, filingProposal, isBox } from '../sync/labels';
 import { checkMailRule, describeMailRule, filesAway, ruleMatches } from '../../../src/state/mail-rules';
 import { LostLease } from './errors';
+import { ORGANIZE_TOOLS } from './mcp-tools';
 import { untrusted } from './prompts';
 import { findThingsTool } from './things-tool';
 // Finding and reading the person's files (Google Drive and OneDrive) live in their own module.
@@ -416,5 +417,5 @@ const saveRule: AgentTool = {
   },
 };
 
-export const TOOLS: AgentTool[] = [searchMail, readThread, listInbox, searchFiles, readFile, searchPagesTool, readPageTool, lookupPerson, listCommitments, findThingsTool, draftReply, sendEmail, sendReply, fileThread, saveRule];
+export const TOOLS: AgentTool[] = [searchMail, readThread, listInbox, searchFiles, readFile, searchPagesTool, readPageTool, lookupPerson, listCommitments, findThingsTool, draftReply, sendEmail, sendReply, fileThread, saveRule, ...ORGANIZE_TOOLS];
 export const TOOL_BY_NAME: Record<string, AgentTool> = Object.fromEntries(TOOLS.map((t) => [t.def.name, t]));

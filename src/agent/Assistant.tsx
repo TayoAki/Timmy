@@ -13,7 +13,7 @@ import { useStore } from '../state/store';
 import { TimmyMark, Kbd } from '../components/common';
 import { MicButton } from '../components/Dictation';
 import { AGENT_KIND, bridge } from './agent';
-import { assistant, useAssistant, type Conversation } from './conversations';
+import { assistant, savedConversations, useAssistant, type Conversation } from './conversations';
 import { parseArgs, WidgetFor } from './widgets';
 import '../styles/assistant.css';
 
@@ -70,6 +70,10 @@ const SOURCES = ['Gmail', 'Calendar', 'Drive', 'CRM'];
 export function Assistant() {
   const { state, dispatch } = useStore();
   const a = useAssistant();
+  // Conversations saved in CopilotKit Intelligence (another device's) join the list when the chat opens.
+  useEffect(() => {
+    if (a.open) void savedConversations();
+  }, [a.open]);
   const [text, setText] = useState('');
   const [useScreen, setUseScreen] = useState(true);
   const [history, setHistory] = useState(false);
@@ -273,7 +277,7 @@ export function Assistant() {
                 </button>
               </div>
             ))}
-            {a.convos.length === 0 && <p className="ai-side-empty">Your conversations with Timmy are kept here, in this browser.</p>}
+            {a.convos.length === 0 && <p className="ai-side-empty">Your conversations with Timmy are kept here.</p>}
           </div>
           <div className="ai-side-foot">
             <span className="side-title">Connected</span>
@@ -283,7 +287,7 @@ export function Assistant() {
                 {s}
               </span>
             ))}
-            <span className="ai-agent-kind">{AGENT_KIND === 'server' ? 'Timmy agent on the server (AG-UI)' : 'Timmy agent in this browser (AG-UI)'}</span>
+            <span className="ai-agent-kind">{AGENT_KIND === 'copilotkit' ? 'Timmy agent on the server, through CopilotKit (AG-UI)' : AGENT_KIND === 'server' ? 'Timmy agent on the server (AG-UI)' : 'Timmy agent in this browser (AG-UI)'}</span>
           </div>
         </aside>
 
@@ -355,6 +359,11 @@ function Messages({ convo, running }: { convo: Conversation; running: { steps: {
   const pending = running && !msgs.slice(lastUser + 1).some((m) => m.role === 'assistant');
   return (
     <>
+      {convo.remote && !msgs.length && (
+        <p className="ai-loading" role="status">
+          <LoaderCircle size={14} className="ai-spin" aria-hidden /> Loading this conversation from where it is saved. One just had elsewhere can take a minute or two to arrive.
+        </p>
+      )}
       {msgs.map((m, i) =>
         m.role === 'user' ? (
           <div key={m.id} className="ai-msg me">

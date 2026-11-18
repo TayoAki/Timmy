@@ -1036,3 +1036,13 @@
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
+
+/* A conversation saved in CopilotKit Intelligence, while its messages are read. */
+.ai-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  font-size: 13px;
+  color: var(--text-3);
+}

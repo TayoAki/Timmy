@@ -14,6 +14,7 @@ import { log } from '../lib/log';
 import { modelReady, type ChatMessage, type ToolCall, type ToolDef } from '../providers/model';
 import { safeChatAction } from '../../../src/live/chat-actions';
 import { untrusted } from '../agent/prompts';
+import type { Ctx } from '../state/engine';
 import { ctxOf, requireWorkspace, type Env } from './session';
 
 interface AgUiMessage {
@@ -24,7 +25,7 @@ interface AgUiMessage {
   toolCallId?: string;
 }
 
-interface RunAgentInput {
+export interface RunAgentInput {
   threadId?: string;
   runId?: string;
   messages?: AgUiMessage[];
@@ -146,83 +147,90 @@ function approvalWidget(e: EffectRow) {
   };
 }
 
+/**
+ * One Ask run, as AG-UI events: RUN_STARTED, steps, text as it is written, tool calls for the widgets the browser
+ * draws, a prepared action with the buttons that decide it, then RUN_FINISHED or RUN_ERROR. The same run serves the
+ * chat endpoint below and CopilotKit's runtime (http/copilotkit.ts); `emit` is where each event goes.
+ */
+export async function runAsk(ctx: Ctx, input: RunAgentInput, emit: (event: Record<string, unknown>) => Promise<unknown> | void): Promise<void> {
+  const threadId = String(input.threadId ?? newId('chat'));
+  const runId = String(input.runId ?? newId('agui'));
+  await emit({ type: 'RUN_STARTED', threadId, runId });
+  try {
+    if (!ctx.rules.read) throw new Error('Your role can’t use Ask in this workspace.');
+    if (!modelReady()) throw new Error('Timmy’s model isn’t configured on this server yet.');
+    const messages = history(Array.isArray(input.messages) ? input.messages : []);
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== 'user') throw new Error('Ask a question first.');
+    // What changes per request rides with the question, so the cached prefix stays the same.
+    // The judge is given the person's own words only, so they are taken before anything is added to the message.
+    const userWords = messages.filter((m) => m.role === 'user').map((m) => m.content);
+    // What is open on screen includes text other people wrote (an email's subject), so it travels as marked data.
+    const screen = (Array.isArray(input.context) ? input.context : []).map((x) => `${x.description}: ${x.value}`).join('\n').slice(0, 600);
+    const open = input.forwardedProps?.route ? `Open in the app: ${JSON.stringify(input.forwardedProps.route).slice(0, 300)}` : '';
+    const onScreen = screen || open ? `\n${untrusted('screen', [screen, open].filter(Boolean).join('\n'))}` : '';
+    last.content = `<context>\nNow: ${new Date().toISOString()}\nUser: ${ctx.user.name.replace(/[<>]/g, '')}\n</context>${onScreen}\n\n${last.content}`;
+    const displayTools = displayToolsOf(input.tools);
+
+    const ids = new Map<number, string>();
+    const started = new Set<number>();
+    const queue: Promise<unknown>[] = [];
+    const push = (event: Record<string, unknown>) => queue.push(Promise.resolve(emit(event)));
+    const waiting: EffectRow[] = [];
+
+    const result = await startRun(
+      ctx,
+      { kind: 'ask', attended: true, threadId, system: ASK_SYSTEM, messages, userWords, displayTools, effort: 'low', openThreadId: openThreadOf(input.forwardedProps?.route) },
+      {
+        step: (name, done) => push({ type: done ? 'STEP_FINISHED' : 'STEP_STARTED', stepName: name }),
+        text: (turn, delta) => {
+          if (!delta) return;
+          if (!ids.has(turn)) ids.set(turn, newId('msg'));
+          if (!started.has(turn)) {
+            started.add(turn);
+            push({ type: 'TEXT_MESSAGE_START', messageId: ids.get(turn), role: 'assistant' });
+          }
+          push({ type: 'TEXT_MESSAGE_CONTENT', messageId: ids.get(turn), delta });
+        },
+        turn: (turn, _text, display) => {
+          const messageId = ids.get(turn);
+          if (started.has(turn)) push({ type: 'TEXT_MESSAGE_END', messageId });
+          for (const call of display.map(sanitizeDisplayCall)) {
+            push({ type: 'TOOL_CALL_START', toolCallId: call.id, toolCallName: call.name, ...(started.has(turn) ? { parentMessageId: messageId } : {}) });
+            push({ type: 'TOOL_CALL_ARGS', toolCallId: call.id, delta: call.arguments || '{}' });
+            push({ type: 'TOOL_CALL_END', toolCallId: call.id });
+          }
+        },
+        waiting: (e) => waiting.push(e),
+      },
+    );
+    await Promise.all(queue);
+
+    // A prepared send is shown exactly as it will go out, with the buttons that decide it.
+    for (const e of waiting) {
+      const messageId = newId('msg');
+      await emit({ type: 'TEXT_MESSAGE_START', messageId, role: 'assistant' });
+      await emit({ type: 'TEXT_MESSAGE_CONTENT', messageId, delta: waitingLine(e) });
+      await emit({ type: 'TEXT_MESSAGE_END', messageId });
+      const callId = newId('call');
+      await emit({ type: 'TOOL_CALL_START', toolCallId: callId, toolCallName: 'show_answer', parentMessageId: messageId });
+      await emit({ type: 'TOOL_CALL_ARGS', toolCallId: callId, delta: JSON.stringify(approvalWidget(e)) });
+      await emit({ type: 'TOOL_CALL_END', toolCallId: callId });
+    }
+    if (result.status === 'failed') throw new Error(result.error ?? 'Timmy couldn’t finish that.');
+    await emit({ type: 'RUN_FINISHED', threadId, runId });
+  } catch (e) {
+    log.warn('chat run failed', { error: (e as Error).message });
+    await emit({ type: 'RUN_ERROR', message: (e as Error).message });
+  }
+}
+
 export function agentRoutes(app: Hono<Env>) {
   app.post('/api/v1/agent/runs', requireWorkspace, async (c) => {
     const ctx = ctxOf(c);
     const input = (await c.req.json().catch(() => ({}))) as RunAgentInput;
-    const threadId = String(input.threadId ?? newId('chat'));
-    const runId = String(input.runId ?? newId('agui'));
-
     return streamSSE(c, async (stream) => {
-      const emit = (event: Record<string, unknown>) => stream.writeSSE({ data: JSON.stringify(event) });
-      await emit({ type: 'RUN_STARTED', threadId, runId });
-      try {
-        if (!ctx.rules.read) throw new Error('Your role can’t use Ask in this workspace.');
-        if (!modelReady()) throw new Error('Timmy’s model isn’t configured on this server yet.');
-        const messages = history(Array.isArray(input.messages) ? input.messages : []);
-        const last = messages[messages.length - 1];
-        if (!last || last.role !== 'user') throw new Error('Ask a question first.');
-        // What changes per request rides with the question, so the cached prefix stays the same.
-        // The judge is given the person's own words only, so they are taken before anything is added to the message.
-        const userWords = messages.filter((m) => m.role === 'user').map((m) => m.content);
-        // What is open on screen includes text other people wrote (an email's subject), so it travels as marked data.
-        const screen = (input.context ?? []).map((x) => `${x.description}: ${x.value}`).join('\n').slice(0, 600);
-        const open = input.forwardedProps?.route ? `Open in the app: ${JSON.stringify(input.forwardedProps.route).slice(0, 300)}` : '';
-        const onScreen = screen || open ? `\n${untrusted('screen', [screen, open].filter(Boolean).join('\n'))}` : '';
-        last.content = `<context>\nNow: ${new Date().toISOString()}\nUser: ${ctx.user.name.replace(/[<>]/g, '')}\n</context>${onScreen}\n\n${last.content}`;
-        const displayTools = displayToolsOf(input.tools);
-
-        const ids = new Map<number, string>();
-        const started = new Set<number>();
-        const queue: Promise<unknown>[] = [];
-        const push = (event: Record<string, unknown>) => queue.push(emit(event));
-        const waiting: EffectRow[] = [];
-
-        const result = await startRun(
-          ctx,
-          { kind: 'ask', attended: true, threadId, system: ASK_SYSTEM, messages, userWords, displayTools, effort: 'low', openThreadId: openThreadOf(input.forwardedProps?.route) },
-          {
-            step: (name, done) => push({ type: done ? 'STEP_FINISHED' : 'STEP_STARTED', stepName: name }),
-            text: (turn, delta) => {
-              if (!delta) return;
-              if (!ids.has(turn)) ids.set(turn, newId('msg'));
-              if (!started.has(turn)) {
-                started.add(turn);
-                push({ type: 'TEXT_MESSAGE_START', messageId: ids.get(turn), role: 'assistant' });
-              }
-              push({ type: 'TEXT_MESSAGE_CONTENT', messageId: ids.get(turn), delta });
-            },
-            turn: (turn, _text, display) => {
-              const messageId = ids.get(turn);
-              if (started.has(turn)) push({ type: 'TEXT_MESSAGE_END', messageId });
-              for (const call of display.map(sanitizeDisplayCall)) {
-                push({ type: 'TOOL_CALL_START', toolCallId: call.id, toolCallName: call.name, ...(started.has(turn) ? { parentMessageId: messageId } : {}) });
-                push({ type: 'TOOL_CALL_ARGS', toolCallId: call.id, delta: call.arguments || '{}' });
-                push({ type: 'TOOL_CALL_END', toolCallId: call.id });
-              }
-            },
-            waiting: (e) => waiting.push(e),
-          },
-        );
-        await Promise.all(queue);
-
-        // A prepared send is shown exactly as it will go out, with the buttons that decide it.
-        for (const e of waiting) {
-          const messageId = newId('msg');
-          await emit({ type: 'TEXT_MESSAGE_START', messageId, role: 'assistant' });
-          await emit({ type: 'TEXT_MESSAGE_CONTENT', messageId, delta: waitingLine(e) });
-          await emit({ type: 'TEXT_MESSAGE_END', messageId });
-          const callId = newId('call');
-          await emit({ type: 'TOOL_CALL_START', toolCallId: callId, toolCallName: 'show_answer', parentMessageId: messageId });
-          await emit({ type: 'TOOL_CALL_ARGS', toolCallId: callId, delta: JSON.stringify(approvalWidget(e)) });
-          await emit({ type: 'TOOL_CALL_END', toolCallId: callId });
-        }
-        if (result.status === 'failed') throw new Error(result.error ?? 'Timmy couldn’t finish that.');
-        await emit({ type: 'RUN_FINISHED', threadId, runId });
-      } catch (e) {
-        log.warn('chat run failed', { error: (e as Error).message });
-        await emit({ type: 'RUN_ERROR', message: (e as Error).message });
-      }
+      await runAsk(ctx, input, (event) => stream.writeSSE({ data: JSON.stringify(event) }));
     });
   });
 }
