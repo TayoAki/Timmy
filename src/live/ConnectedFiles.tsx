@@ -13,7 +13,7 @@ import { FileViewer } from './FileViewer';
 type Listed = Awaited<ReturnType<typeof api.connectedFiles>>;
 
 export function ConnectedFiles() {
-  const { dispatch } = useStore();
+  const { state, dispatch } = useStore();
   const [q, setQ] = useState('');
   const [list, setList] = useState<Listed | null>(null);
   const [error, setError] = useState('');
@@ -88,6 +88,17 @@ export function ConnectedFiles() {
                     {f.owner ? ` · ${f.owner}` : ''}
                   </span>
                 </span>
+                {f.project && state.ws.projects[f.project] && (
+                  <button
+                    type="button"
+                    className="cf-project"
+                    title="Timmy put it in this project"
+                    onClick={() => dispatch({ type: 'navigate', route: { view: 'project', id: f.project!, tab: 'files' } })}
+                    style={{ ['--tint' as string]: state.ws.projects[f.project]!.color }}
+                  >
+                    {state.ws.projects[f.project]!.name}
+                  </button>
+                )}
                 {f.readable && (
                   <span className="cf-readable" title="Timmy keeps its words, so Ask can find it by what it says">
                     <Sparkles size={12} aria-hidden /> Searchable

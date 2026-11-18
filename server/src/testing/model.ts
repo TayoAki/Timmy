@@ -74,6 +74,8 @@ export class FakeModel implements ModelProvider {
           todos: [...mail.matchAll(/(Please ([a-z][^."\\]{3,80}?) by (\d{4}-\d{2}-\d{2})\.)/g)].map((m): { what: string; due: string | null; quote: string } => ({ what: cap(m[2]!), due: m[3]!, quote: m[1]! })).concat(/Please [a-z]/.test(mail) ? [{ what: 'Wire money to an account', due: null, quote: 'Please wire the money today.' }] : []),
           // Tracked things and untracked kinds, from lines like "Deal: company Acme Corp; value $40,000." (see model-things.ts).
           ...fakeThingsRead(content),
+          // The project the mail names, by its name or its client's, when the user's projects are listed.
+          project: fakeProjectPick(content, mail),
         }),
       };
     }
@@ -152,4 +154,14 @@ export class FakeModel implements ModelProvider {
     if (/(mail|email|inbox|find|about|from)/.test(text) && has('search_mail')) return { toolCalls: [{ name: 'search_mail', arguments: { query: asked.replace(/[?.!]/g, '').split(/\s+/).slice(-3).join(' ') } }] };
     return { content: 'I’m not sure how to help with that yet.' };
   }
+}
+
+/** The stand-in's project pick: the listed project whose name or client the mail mentions, else none. */
+function fakeProjectPick(content: string, mail: string): number | null {
+  const block = /<untrusted source="projects">([\s\S]*?)<\/untrusted>/.exec(content)?.[1] ?? '';
+  const lower = mail.toLowerCase();
+  for (const m of block.matchAll(/^(\d+)\. (.+?)(?: \(client: ([^)]+)\))?(?: — .*)?$/gm)) {
+    if (lower.includes(m[2]!.toLowerCase()) || (m[3] && lower.includes(m[3].toLowerCase()))) return Number(m[1]);
+  }
+  return null;
 }

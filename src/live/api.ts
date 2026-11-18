@@ -113,7 +113,7 @@ export const api = {
     ),
   /** The files Timmy lists from a connected Google Drive or OneDrive, newest first. */
   connectedFiles: (q = '') =>
-    call<{ apps: string[]; total: number; files: { id: string; name: string; kind: string; app: string; owner?: string; changed: string; link?: string; readable: boolean }[] }>('GET', `/api/v1/connected-files${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+    call<{ apps: string[]; total: number; files: { id: string; name: string; kind: string; app: string; owner?: string; changed: string; link?: string; readable: boolean; project?: string }[] }>('GET', `/api/v1/connected-files${q ? `?q=${encodeURIComponent(q)}` : ''}`),
   settings: () =>
     call<{ model: string; models: LiveProfile['models']; approvalMode: 'ask' | 'auto'; killSwitch: boolean; timezone: string; monthlySpendCapUsd: number; maxConcurrentRuns: number; limits: { monthlySpendCapUsd: number; maxConcurrentRuns: number }; autoSort: { on: boolean; since?: string } }>('GET', '/api/v1/settings'),
   saveSettings: (patch: { model?: string; approvalMode?: 'ask' | 'auto'; killSwitch?: boolean; monthlySpendCapUsd?: number; timezone?: string; autoSort?: boolean }) =>

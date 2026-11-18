@@ -5,6 +5,7 @@ import { onEffectApproved, onEffectSettled } from '../gateway/hooks';
 import { draftFor } from '../agent/draft';
 import { dueWorkspaces, morningRun } from '../agent/morning';
 import { needsReading, readThread } from '../agent/read';
+import { linkFilesToProjects } from '../projects/file-links';
 import { runScan } from '../projects/scan';
 import { deliverMail, undeliveredMail } from '../providers/email';
 import { modelReady } from '../providers/model';
@@ -179,6 +180,8 @@ export function registerJobs() {
     const p = await syncFileList(String(d.workspaceId), String(d.connectionId));
     log.info('files pass', { workspaceId: d.workspaceId, ...p });
     if (p.files) learn(String(d.workspaceId));
+    // New and changed files go into the project they plainly belong to (projects/file-links.ts).
+    if (p.files) await linkFilesToProjects(String(d.workspaceId)).catch((e) => log.warn('could not link files to projects', { workspaceId: d.workspaceId, error: (e as Error).message }));
     if (!p.done) enqueueSoon('files.sync', d);
     else enqueueSoon('files.text', { workspaceId: d.workspaceId, connectionId: d.connectionId }, { singletonKey: `ftext:${String(d.connectionId)}` });
   });
@@ -193,6 +196,8 @@ export function registerJobs() {
     const p = await indexFileTexts(String(d.workspaceId), String(d.connectionId));
     // What a pass did, when it did anything: how many files it read, how many it couldn't, and whether more wait.
     if (p.tried) log.info('file text pass', { workspaceId: d.workspaceId, connectionId: d.connectionId, read: p.read, skipped: p.skipped, more: p.more });
+    // What a file says can place one its name and owner couldn't.
+    if (p.read) await linkFilesToProjects(String(d.workspaceId)).catch((e) => log.warn('could not link files to projects', { workspaceId: d.workspaceId, error: (e as Error).message }));
     if (p.more) enqueueSoon('files.text', { workspaceId: d.workspaceId, connectionId: d.connectionId }, { startAfter: 120, singletonKey: `ftext:${String(d.connectionId)}` });
   });
 

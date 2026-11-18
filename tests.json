@@ -14,7 +14,8 @@
    "server/test/mail-rules.test.ts",
    "server/test/chat-rules.test.ts",
    "server/test/mcp.test.ts",
-   "server/test/drive-edit.test.ts"
+   "server/test/drive-edit.test.ts",
+   "server/test/auto-organize.test.ts"
   ],
   "no action runs twice": [
    "server/test/gateway.test.ts",
@@ -630,6 +631,14 @@
    "covers": "the Drive card says Timmy writes only a file the person edits and saves; Edit in Timmy opens a Google Doc in the document editor, full screen, saying Save replaces the Drive file and Drive keeps the earlier version; the editor's Save changes the Doc in Drive and is recorded as an approved write; a second save works; a change made in Drive meanwhile stops the save with a question, and Save mine over theirs saves it; Close returns to the list",
    "status": "pass",
    "result": "Nov 18, 2026: 16 of 16."
+  },
+  {
+   "id": "api-auto-organize",
+   "file": "server/test/auto-organize.test.ts",
+   "covers": "Timmy's read puts a new thread plainly about a project into it, with a history line, and its to-do goes there too; the projects are offered as outside content, numbered, with client and goal; a thread about none stays out; a workspace with no projects is asked nothing; a pick that isn't a listed open project is ignored; a thread the project's own people placed is never moved or asked about; a Drive file goes into the one project its name, client, own word or owner points to, and what it says counts for less; a tie or an already-linked file is left alone; it happens on its own after Drive's files are listed and writes nothing to Drive",
+   "tests": 10,
+   "status": "pass",
+   "result": "Nov 18, 2026: 10 of 10. Full API run after it: 970 of 970 (53 files)."
   },
   {
    "id": "live-mcp",

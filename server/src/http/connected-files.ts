@@ -68,7 +68,8 @@ export function connectedFileRoutes(app: Hono<Env>): void {
       const params = [ctx.workspaceId, ...words.map((w) => `%${w}%`)];
       const { rows } = await tx.query(
         `select i.id, i.subject, i.snippet, i.sender, i.occurred_at, i.meta->>'link' as link, i.meta->>'ownerName' as owner_name, c.toolkit,
-                exists (select 1 from item_body b where b.item_id = i.id) as readable, count(*) over () as total
+                exists (select 1 from item_body b where b.item_id = i.id) as readable, count(*) over () as total,
+                (select l.project_id from project_link l where l.workspace_id = i.workspace_id and l.item_id = i.id order by l.project_id limit 1) as project
          from item i join connection c on c.id = i.connection_id
          where i.workspace_id = $1 and i.kind = 'file' and c.status = 'active' ${filter}
          order by i.occurred_at desc limit ${LIMIT}`,
@@ -89,6 +90,8 @@ export function connectedFileRoutes(app: Hono<Env>): void {
         link: typeof r.link === 'string' && SAFE_LINK.test(r.link) ? r.link : undefined,
         // Its words are kept, so Ask can find it by what it says.
         readable: !!r.readable,
+        // The project it belongs to (projects/file-links.ts, or a project scan), by the project's id.
+        project: (r.project as string | null) ?? undefined,
       })),
     });
   });

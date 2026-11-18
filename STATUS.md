@@ -43,6 +43,20 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 | Frontend live mode (`VITE_TIMMY_LIVE=1`) | Built: sign-in, onboarding, state from the API, Connect buttons, model picker, monthly limit, approvals for writes Timmy proposes. The demo is unchanged and still the default build. |
 | Railway | `app` (API + live app), `pgvector` and the bucket `timmy-files` exist in `production` and `staging`. Both `app` services have the OpenRouter and Composio keys. |
 
+## Mail and files organized into projects on their own (Nov 18, 2026)
+
+- **New mail.** Plain code still goes first: a thread from a project's own people or company goes into that project.
+  - When it doesn't, Timmy's read of the thread (the one model call each new thread already gets) is shown the open projects (up to 30, with client and goal, as outside content).
+  - The read names the project the thread is plainly about, or none.
+  - The thread goes in with a line in its history ("Timmy put it in the project …"), and the to-dos Timmy takes from it go into that project too.
+  - A thread already in a project, or placed while the model was reading, is never moved. A number that isn't a listed open project is ignored.
+  - No extra model call: the projects add a few hundred tokens to the read only when the workspace has projects and the thread is in none.
+- **New files.** After each Drive or OneDrive listing, and after each pass that reads files' words, plain code links each file that is in no project to the one project it plainly belongs to.
+  - The signs: its owner is someone whose mail the project claims; its name carries the project's name, client or a word only that project's name has; less so, its words name the project.
+  - A tie or a single weak sign leaves it alone. Nothing is written to the Drive.
+  - The file list shows each file's project, and the chip opens the project's Files tab.
+- **Tests.** `server/test/auto-organize.test.ts`: 10 tests. The full API run after it: 970 of 970.
+
 ## Editing Drive files in Timmy (Nov 18, 2026)
 
 A Drive file opens in Timmy's own editors (the Craft apps), and File › Save goes back to the Drive file.
