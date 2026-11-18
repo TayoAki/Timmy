@@ -60,6 +60,8 @@ const TOOLS: Record<string, Record<string, string[]>> = {
     GOOGLEDRIVE_GET_ABOUT: ['fields'],
     GOOGLEDRIVE_FIND_FILE: ['q', 'fields', 'orderBy', 'pageSize', 'pageToken'],
     GOOGLEDRIVE_GET_DOCUMENT: ['document_id'],
+    // A Google Doc too long to come back whole, as plain text (files.ts).
+    GOOGLEDRIVE_EXPORT_GOOGLE_WORKSPACE_FILE: ['fileId', 'mimeType'],
     GOOGLEDRIVE_GET_SPREADSHEET_VALUES: ['spreadsheet_id', 'range'],
     GOOGLEDRIVE_GET_PRESENTATION: ['presentation_id', 'fields'],
     // The nightly look for files thrown away or gone without an announcement.

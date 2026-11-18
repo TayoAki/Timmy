@@ -32,7 +32,7 @@ export async function meter(workspaceId: string, op: string, phase: Phase, ok: b
  * anything reaches Composio, so no mistake elsewhere in the code can write to someone's files.
  */
 export const READ_ONLY_TOOLS: Record<string, ReadonlySet<string>> = {
-  googledrive: new Set(['GOOGLEDRIVE_GET_ABOUT', 'GOOGLEDRIVE_FIND_FILE', 'GOOGLEDRIVE_GET_FILE_METADATA', 'GOOGLEDRIVE_GET_DOCUMENT', 'GOOGLEDRIVE_GET_SPREADSHEET_VALUES', 'GOOGLEDRIVE_GET_PRESENTATION']),
+  googledrive: new Set(['GOOGLEDRIVE_GET_ABOUT', 'GOOGLEDRIVE_FIND_FILE', 'GOOGLEDRIVE_GET_FILE_METADATA', 'GOOGLEDRIVE_GET_DOCUMENT', 'GOOGLEDRIVE_EXPORT_GOOGLE_WORKSPACE_FILE', 'GOOGLEDRIVE_GET_SPREADSHEET_VALUES', 'GOOGLEDRIVE_GET_PRESENTATION']),
   one_drive: new Set(['ONE_DRIVE_LIST_DRIVES', 'ONE_DRIVE_LIST_ROOT_DRIVE_CHANGES', 'ONE_DRIVE_DOWNLOAD_FILE']),
 };
 

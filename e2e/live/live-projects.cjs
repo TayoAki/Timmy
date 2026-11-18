@@ -34,7 +34,8 @@ run('live-projects', async (browser) => {
   await page.getByRole('button', { name: 'Detect projects' }).click();
   const dialog = page.getByRole('dialog', { name: 'Detect projects' });
   await dialog.waitFor();
-  ok(/Nothing changes in your mailbox or your Drive/.test(await dialog.innerText()), 'it says up front that nothing changes in the mailbox or Drive');
+  // The dialog's contents load on their own, just after the dialog itself appears; the words have to be there once they have.
+  ok(!!(await dialog.getByText(/Nothing changes in your mailbox or your Drive/).first().waitFor({ timeout: 15000 }).then(() => true).catch(() => false)), 'it says up front that nothing changes in the mailbox or Drive');
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/projects-intro.png` });
   await dialog.getByRole('button', { name: 'Scan my mail' }).click();
 

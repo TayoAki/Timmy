@@ -100,3 +100,12 @@ describe('when Drive fails outright', () => {
   });
 });
 
+describe('a Google Doc too long to come back whole', () => {
+  it('is shown as its words, as Google exports them', async () => {
+    const id = await add({ name: 'Long handbook', text: 'Chapter one.\nEverything about onboarding.', huge: true });
+    const r = await view(w, id);
+    expect(r.status).toBe(200);
+    expect(r.body.view).toEqual({ kind: 'text', text: 'Chapter one.\nEverything about onboarding.' });
+  });
+});
+

@@ -55,6 +55,8 @@ export interface FakeFile {
   rows?: (string | number)[][];
   /** A Google Doc's own structure (body.content), when a test needs formatting; else built from `text`. */
   doc?: unknown[];
+  /** A Google Doc too long for Composio to hand back whole: reading its structure fails with a 413, as it does for real. */
+  huge?: boolean;
   /** When it was shared with the person (Drive's sharedWithMeTime), for a file someone else owns. */
   sharedAt?: string;
   /** OneDrive: the file's own bytes, when a test needs exact ones (a damaged file); else built from `text` or `rows`. */
@@ -287,7 +289,7 @@ export class FakeComposio implements ComposioProvider {
   addFile(connectedAccountId: string, f: Partial<FakeFile> & { name: string }): FakeFile {
     const box = this.accounts.get(connectedAccountId);
     if (!box) throw new Error('no such fake account');
-    const file: FakeFile = { id: f.id ?? newId('file'), name: f.name, mimeType: f.mimeType ?? 'application/vnd.google-apps.document', modifiedTime: f.modifiedTime ?? new Date().toISOString(), owner: f.owner ?? box.address, trashed: f.trashed, link: f.link, text: f.text, rows: f.rows, doc: f.doc, sharedAt: f.sharedAt, bytes: f.bytes, size: f.size, seq: ++this.fileSeq };
+    const file: FakeFile = { id: f.id ?? newId('file'), name: f.name, mimeType: f.mimeType ?? 'application/vnd.google-apps.document', modifiedTime: f.modifiedTime ?? new Date().toISOString(), owner: f.owner ?? box.address, trashed: f.trashed, link: f.link, text: f.text, rows: f.rows, doc: f.doc, huge: f.huge, sharedAt: f.sharedAt, bytes: f.bytes, size: f.size, seq: ++this.fileSeq };
     box.files = [...box.files.filter((x) => x.id !== file.id), file];
     return file;
   }
@@ -838,9 +840,19 @@ export class FakeComposio implements ComposioProvider {
       case 'GOOGLEDRIVE_GET_DOCUMENT': {
         const f = box.files.find((x) => x.id === args.document_id && !x.trashed);
         if (!f || f.mimeType !== 'application/vnd.google-apps.document') return { successful: false, data: {}, error: 'Requested entity was not found' };
+        // What the real SDK throws when Composio answers 413 for a document's whole structure.
+        if (f.huge) throw new Error('Error executing the tool GOOGLEDRIVE_GET_DOCUMENT: 413 The tool response payload is too large. Please reduce the amount of data requested.');
         // Google's own structure: paragraphs made of text runs, each ending in a line break.
         // A test can give the document's own structure (headings, styles, links, lists, tables) in `doc`.
         return ok({ documentId: f.id, title: f.name, body: { content: f.doc ?? (f.text ?? '').split('\n').map((line) => ({ paragraph: { elements: [{ textRun: { content: `${line}\n` } }] } })) } });
+      }
+      case 'GOOGLEDRIVE_EXPORT_GOOGLE_WORKSPACE_FILE': {
+        // Google's export, as Composio hands it back: a link to the exported file in Composio's own store. Plain
+        // text comes as Google writes it, with a byte-order mark and Windows line ends.
+        const f = box.files.find((x) => x.id === args.fileId && !x.trashed);
+        if (!f || f.mimeType !== 'application/vnd.google-apps.document' || args.mimeType !== 'text/plain') return { successful: false, data: {}, error: 'Export not supported for this file' };
+        const bytes = new TextEncoder().encode(`\uFEFF${(f.text ?? '').replace(/\n/g, '\r\n')}`);
+        return ok({ file: { name: `${f.name}.txt`, mimetype: 'text/plain', s3url: this.stash(who.connectedAccountId, bytes) }, file_id: f.id, export_mime_type: 'text/plain', size_bytes: bytes.length, display_url: `https://docs.google.com/document/d/${f.id}/edit`, link_label: 'View Document in Google Docs' });
       }
       case 'GOOGLEDRIVE_GET_SPREADSHEET_VALUES': {
         const f = box.files.find((x) => x.id === args.spreadsheet_id && !x.trashed);

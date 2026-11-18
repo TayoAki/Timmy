@@ -534,3 +534,38 @@ describe('a file the provider won’t hand over', () => {
     expect((await rows<{ text: string }>(`select b.text from item_body b join item i on i.id = b.item_id where i.workspace_id = $1 and i.subject = 'Shy doc'`, [w.workspaceId]))[0]!.text).toContain('Read on the second try.');
   });
 });
+
+describe('a Google Doc too long to come back whole', () => {
+  const bodies = () => rows<{ subject: string; text: string; note: string | null }>(`select i.subject, b.text, b.note from item_body b join item i on i.id = b.item_id where i.workspace_id = $1 order by i.subject`, [w.workspaceId]);
+
+  it('is read as Google’s plain-text export, fetched from Composio’s store, and found by its words', async () => {
+    add('Long handbook', { mimeType: 'application/vnd.google-apps.document', modifiedTime: ago(1), text: 'Chapter one.\nThe onboarding checklist lives here.', huge: true });
+    await syncFiles(w.workspaceId, drive.connectionId);
+    const pass = await indexFileTexts(w.workspaceId, drive.connectionId, { max: 10 });
+    expect(pass).toMatchObject({ read: 1, skipped: 0, more: false });
+    const [b] = await bodies();
+    expect(b).toMatchObject({ subject: 'Long handbook', note: null });
+    // The export's byte-order mark and Windows line ends are gone.
+    expect(b!.text).toBe('Chapter one.\nThe onboarding checklist lives here.');
+    const slugs = fake().calls.filter((c) => c.connectedAccountId === drive.account).map((c) => c.slug);
+    expect(slugs).toEqual(expect.arrayContaining(['GOOGLEDRIVE_GET_DOCUMENT', 'GOOGLEDRIVE_EXPORT_GOOGLE_WORKSPACE_FILE']));
+    expect(fake().calls.some((c) => c.slug === 'FILES_DOWNLOAD')).toBe(true);
+  });
+
+  it('a Doc an older reader set aside is read again by this one, without waiting for it to change', async () => {
+    add('Set aside before', { mimeType: 'application/vnd.google-apps.document', modifiedTime: ago(1), text: 'Readable at last.', huge: true });
+    await syncFiles(w.workspaceId, drive.connectionId);
+    // As production left it: failed three times under the first reader, and kept with no words and the reason.
+    await sysPool.query(
+      `update item set meta = meta || jsonb_build_object('textFailures', 3, 'textFailedVersion', (extract(epoch from occurred_at) * 1000)::bigint::text) where workspace_id = $1 and subject = 'Set aside before'`,
+      [w.workspaceId],
+    );
+    await sysPool.query(
+      `insert into item_body (item_id, workspace_id, text, version, note) select id, workspace_id, '', (extract(epoch from occurred_at) * 1000)::bigint::text, 'Drive would not hand over this file’s contents.' from item where workspace_id = $1 and subject = 'Set aside before'`,
+      [w.workspaceId],
+    );
+    expect((await indexFileTexts(w.workspaceId, drive.connectionId, { max: 10 })).read).toBe(1);
+    expect((await bodies())[0]).toMatchObject({ text: 'Readable at last.', note: null });
+    expect((await indexFileTexts(w.workspaceId, drive.connectionId, { max: 10 })).tried).toBe(0);
+  });
+});

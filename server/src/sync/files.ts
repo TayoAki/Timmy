@@ -15,7 +15,8 @@ import { newId } from '../lib/ids';
 import { log } from '../lib/log';
 import { MAX_FILE_TEXT, fileKind, type FileText, type FilesSync, type ListedFile, type Read } from './file-kinds';
 import { canReadOneDrive, readOneDriveText } from './onedrive';
-import { callTool, connectionById, type Phase } from './tools';
+import { callTool, connectionById, meter, type Phase } from './tools';
+import { composio } from '../providers/composio';
 
 // Kept here as well, where the Drive code and its tests have always found them.
 export { MAX_FILE_TEXT, fileKind, type FileText, type FilesSync };
@@ -284,11 +285,46 @@ interface SlidesPage {
   pageElements?: { shape?: { text?: { textElements?: { textRun?: { content?: string } }[] } } }[];
 }
 
+/**
+ * Whether a call failed because its answer was too big for Composio to hand back. A long Google Doc's full structure
+ * is: Composio answers 413 ("the tool response payload is too large") and the SDK throws.
+ */
+export const tooLarge = (e: unknown): boolean => /\b413\b|PayloadTooLarge|payload is too large/i.test(e instanceof Error ? e.message : String(e ?? ''));
+
+/**
+ * A Google Doc's words as Google exports them, as plain text: far smaller than the document's structure, so a long
+ * document that can't come back whole still can this way. Composio hands back a link to its own file store, fetched
+ * with the same checks and size ceiling as a OneDrive file. Null when Drive or the store won't hand it over.
+ */
+export async function exportedDocText(workspaceId: string, connectionId: string, fileId: string, phase: Phase): Promise<string | null> {
+  const res = await callTool(workspaceId, connectionId, 'GOOGLEDRIVE_EXPORT_GOOGLE_WORKSPACE_FILE', { fileId, mimeType: 'text/plain' }, phase);
+  const url = res.successful ? (payload(res.data).file as { s3url?: unknown } | undefined)?.s3url : undefined;
+  if (typeof url !== 'string') return null;
+  const started = Date.now();
+  try {
+    const bytes = await composio().download(url, config.fileText.maxBytes);
+    await meter(workspaceId, 'file.download', phase, true, Date.now() - started);
+    return new TextDecoder('utf-8').decode(bytes).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').replace(/\u0000/g, '').replace(/\n{3,}/g, '\n\n').trim();
+  } catch (e) {
+    await meter(workspaceId, 'file.download', phase, false, Date.now() - started);
+    log.warn('exported document could not be fetched', { workspaceId, connectionId, error: (e as Error).message });
+    return null;
+  }
+}
+
 /** The Google kinds Timmy reads, each through its own Google tool. `phase` says who asked: Ask (agent) or the index (sync). */
 const READERS: Record<string, (workspaceId: string, connectionId: string, fileId: string, phase: Phase) => Promise<string | null>> = {
   'application/vnd.google-apps.document': async (ws, conn, id, phase) => {
-    const res = await callTool(ws, conn, 'GOOGLEDRIVE_GET_DOCUMENT', { document_id: id }, phase);
-    return res.successful ? docText((payload(res.data).body as { content?: DocsElement[] } | undefined)?.content) : null;
+    let res;
+    try {
+      res = await callTool(ws, conn, 'GOOGLEDRIVE_GET_DOCUMENT', { document_id: id }, phase);
+    } catch (e) {
+      // Too long to come back whole: its words, exported as plain text, are all the index and Ask need.
+      if (tooLarge(e)) return exportedDocText(ws, conn, id, phase);
+      throw e;
+    }
+    if (res.successful) return docText((payload(res.data).body as { content?: DocsElement[] } | undefined)?.content);
+    return tooLarge(res.error) ? exportedDocText(ws, conn, id, phase) : null;
   },
   'application/vnd.google-apps.spreadsheet': async (ws, conn, id, phase) => {
     // The first sheet's top-left corner: enough to see what the sheet is, without pulling a whole workbook.

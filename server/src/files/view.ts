@@ -12,7 +12,7 @@
 import { withWorkspace } from '../db/pool';
 import { log } from '../lib/log';
 import { cleanEmail } from '../mail/original';
-import { readListed, canRead } from '../sync/files';
+import { exportedDocText, readListed, canRead, tooLarge } from '../sync/files';
 import type { ListedFile } from '../sync/file-kinds';
 import { callTool } from '../sync/tools';
 
@@ -149,7 +149,19 @@ async function view(workspaceId: string, f: ListedFile & { link?: string }): Pro
   if (!canRead(f.toolkit, f.mime, f.name)) return cannot(`Timmy can’t show a ${f.kind.toLowerCase()} yet. Open it in ${base.app}.`);
 
   if (f.toolkit === 'googledrive' && f.mime === 'application/vnd.google-apps.document') {
-    const res = await callTool(workspaceId, f.connectionId, 'GOOGLEDRIVE_GET_DOCUMENT', { document_id: f.id }, 'agent');
+    // A document too long to come back whole is shown as its words, as Google exports them.
+    const asText = async (): Promise<Viewed> => {
+      const text = await exportedDocText(workspaceId, f.connectionId, f.id, 'agent');
+      return text === null ? cannot(`${base.app} didn’t hand over this file just now. Try again, or open it in ${base.app}.`) : { ...base, view: { kind: 'text', text: text.slice(0, 200_000) } };
+    };
+    let res;
+    try {
+      res = await callTool(workspaceId, f.connectionId, 'GOOGLEDRIVE_GET_DOCUMENT', { document_id: f.id }, 'agent');
+    } catch (e) {
+      if (tooLarge(e)) return asText();
+      throw e;
+    }
+    if (!res.successful && tooLarge(res.error)) return asText();
     if (!res.successful) return cannot(`${base.app} didn’t hand over this file just now. Try again, or open it in ${base.app}.`);
     const content = (payload(res.data).body as { content?: DocsElement[] } | undefined)?.content;
     // Built here from plain values and escaped as it is built, then cleaned like an email all the same.

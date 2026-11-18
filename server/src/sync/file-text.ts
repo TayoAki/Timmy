@@ -41,6 +41,12 @@ const VERSION = `(extract(epoch from i.occurred_at) * 1000)::bigint::text`;
 /** How many passes in a row a file may fail before it is set aside until it changes. */
 export const TEXT_FAILURES_BEFORE_SETTING_ASIDE = 3;
 
+/**
+ * Which reader set a file aside. When the reader learns to read more (2: a Google Doc too long to come back whole is
+ * read as exported plain text), a file an older one set aside gets its passes again, without waiting for it to change.
+ */
+export const TEXT_READER = '2';
+
 export async function indexFileTexts(workspaceId: string, connectionId: string, opts: { max?: number } = {}): Promise<TextPass> {
   const out: TextPass = { read: 0, skipped: 0, more: false, tried: 0 };
   const conn = await connectionById(workspaceId, connectionId);
@@ -57,9 +63,10 @@ export async function indexFileTexts(workspaceId: string, connectionId: string, 
            and i.occurred_at > now() - make_interval(days => $3)
            and (i.meta->>'mimeType' = any($4::text[]) or ($6 and lower(i.subject) ~ '\\.(docx|xlsx|pptx)$'))
            and coalesce(case when i.meta->>'size' ~ '^[0-9]{1,15}$' then (i.meta->>'size')::bigint end, 0) <= $5
-           and (b.item_id is null or b.version is distinct from ${VERSION})
+           and (b.item_id is null or b.version is distinct from ${VERSION}
+                or (b.text = '' and i.meta ? 'textFailures' and coalesce(i.meta->>'textReader', '1') <> $8))
          order by i.occurred_at desc limit $7`,
-        [workspaceId, connectionId, config.driveBackfillDays, readable, config.fileText.maxBytes, conn.toolkit === 'one_drive', max + 1],
+        [workspaceId, connectionId, config.driveBackfillDays, readable, config.fileText.maxBytes, conn.toolkit === 'one_drive', max + 1, TEXT_READER],
       )
     ).rows,
   );
@@ -81,10 +88,10 @@ export async function indexFileTexts(workspaceId: string, connectionId: string, 
         Number(
           (
             await tx.query(
-              `update item set meta = meta || jsonb_build_object('textFailedVersion', $3::text, 'textFailures',
-                 case when meta->>'textFailedVersion' = $3::text then coalesce((meta->>'textFailures')::int, 0) + 1 else 1 end)
+              `update item set meta = meta || jsonb_build_object('textFailedVersion', $3::text, 'textReader', $4::text, 'textFailures',
+                 case when meta->>'textFailedVersion' = $3::text and coalesce(meta->>'textReader', '1') = $4::text then coalesce((meta->>'textFailures')::int, 0) + 1 else 1 end)
                where id = $1 and workspace_id = $2 returning (meta->>'textFailures')::int as n`,
-              [row.id, workspaceId, row.version],
+              [row.id, workspaceId, row.version, TEXT_READER],
             )
           ).rows[0]?.n ?? 0,
         ),
