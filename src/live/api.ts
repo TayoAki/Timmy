@@ -95,6 +95,12 @@ export const api = {
   /** One email as its sender laid it out: cleaned HTML, or the plain text when it has no HTML. */
   mailOriginal: (thread: string, message: string, images = false) =>
     call<{ html?: string; text?: string; blocked: number; unavailable?: boolean }>('GET', `/api/v1/mail/original?thread=${encodeURIComponent(thread)}&message=${encodeURIComponent(message)}${images ? '&images=1' : ''}`),
+  /** One connected file shown inside Timmy: a Google Doc as HTML, a sheet as rows, slides or plain words. */
+  viewFile: (itemId: string) =>
+    call<{ name: string; type: string; app: string; link?: string; view: { kind: 'doc'; html: string } | { kind: 'sheet'; rows: string[][]; more: boolean } | { kind: 'slides'; slides: string[] } | { kind: 'text'; text: string } | { kind: 'none'; reason: string } }>(
+      'GET',
+      `/api/v1/connected-files/${encodeURIComponent(itemId)}/view`,
+    ),
   /** The files Timmy lists from a connected Google Drive or OneDrive, newest first. */
   connectedFiles: (q = '') =>
     call<{ apps: string[]; total: number; files: { id: string; name: string; kind: string; app: string; owner?: string; changed: string; link?: string; readable: boolean }[] }>('GET', `/api/v1/connected-files${q ? `?q=${encodeURIComponent(q)}` : ''}`),

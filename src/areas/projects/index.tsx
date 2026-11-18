@@ -29,6 +29,7 @@ import { Suspense, lazy, useEffect, useState } from 'react';
 import { isLive } from '../../live/clock';
 import { api } from '../../live/api';
 import { useProfile } from '../../live/LiveApp';
+import { FileViewer } from '../../live/FileViewer';
 
 // Detect projects carries the map, which needs the graph library: it loads when it is opened.
 const DetectProjects = lazy(() => import('../../live/DetectProjects'));
@@ -869,6 +870,7 @@ function FilesTab({ ctx }: { ctx: TabCtx }) {
   const { state, dispatch } = useStore();
   const { p } = ctx;
   const linked = useProjectLinks(p.id);
+  const [viewing, setViewing] = useState<{ id: string; name: string } | null>(null);
   const files = projectFiles(state.ws, p);
   const folder = state.ws.folders[p.folder];
   return (
@@ -912,14 +914,14 @@ function FilesTab({ ctx }: { ctx: TabCtx }) {
           <ul className="pj-box">
             {linked.files.map((f) => (
               <li key={f.id}>
-                <a className="pj-line pj-file-row" href={f.link} target="_blank" rel="noopener noreferrer">
+                <button type="button" className="pj-line pj-file-row" onClick={() => setViewing({ id: f.id, name: f.name })}>
                   <FileText size={18} aria-hidden />
                   <span className="pj-line-text">
                     <span className="pj-line-title">{f.name}</span>
                     <span className="pj-line-sub">{f.kind}</span>
                   </span>
                   <span className="pj-file-date">{fmtListDate(new Date(f.changed))}</span>
-                </a>
+                </button>
               </li>
             ))}
             {linked.meetings.map((m) => (
@@ -937,6 +939,7 @@ function FilesTab({ ctx }: { ctx: TabCtx }) {
           </ul>
         </>
       )}
+      {viewing && <FileViewer itemId={viewing.id} name={viewing.name} onClose={() => setViewing(null)} />}
     </section>
   );
 }

@@ -53,6 +53,8 @@ export interface FakeFile {
   /** What the file says: a doc's text (blank lines split paragraphs), a sheet's rows, or a deck's slides. */
   text?: string;
   rows?: (string | number)[][];
+  /** A Google Doc's own structure (body.content), when a test needs formatting; else built from `text`. */
+  doc?: unknown[];
   /** When it was shared with the person (Drive's sharedWithMeTime), for a file someone else owns. */
   sharedAt?: string;
   /** OneDrive: the file's own bytes, when a test needs exact ones (a damaged file); else built from `text` or `rows`. */
@@ -285,7 +287,7 @@ export class FakeComposio implements ComposioProvider {
   addFile(connectedAccountId: string, f: Partial<FakeFile> & { name: string }): FakeFile {
     const box = this.accounts.get(connectedAccountId);
     if (!box) throw new Error('no such fake account');
-    const file: FakeFile = { id: f.id ?? newId('file'), name: f.name, mimeType: f.mimeType ?? 'application/vnd.google-apps.document', modifiedTime: f.modifiedTime ?? new Date().toISOString(), owner: f.owner ?? box.address, trashed: f.trashed, link: f.link, text: f.text, rows: f.rows, sharedAt: f.sharedAt, bytes: f.bytes, size: f.size, seq: ++this.fileSeq };
+    const file: FakeFile = { id: f.id ?? newId('file'), name: f.name, mimeType: f.mimeType ?? 'application/vnd.google-apps.document', modifiedTime: f.modifiedTime ?? new Date().toISOString(), owner: f.owner ?? box.address, trashed: f.trashed, link: f.link, text: f.text, rows: f.rows, doc: f.doc, sharedAt: f.sharedAt, bytes: f.bytes, size: f.size, seq: ++this.fileSeq };
     box.files = [...box.files.filter((x) => x.id !== file.id), file];
     return file;
   }
@@ -837,7 +839,8 @@ export class FakeComposio implements ComposioProvider {
         const f = box.files.find((x) => x.id === args.document_id && !x.trashed);
         if (!f || f.mimeType !== 'application/vnd.google-apps.document') return { successful: false, data: {}, error: 'Requested entity was not found' };
         // Google's own structure: paragraphs made of text runs, each ending in a line break.
-        return ok({ documentId: f.id, title: f.name, body: { content: (f.text ?? '').split('\n').map((line) => ({ paragraph: { elements: [{ textRun: { content: `${line}\n` } }] } })) } });
+        // A test can give the document's own structure (headings, styles, links, lists, tables) in `doc`.
+        return ok({ documentId: f.id, title: f.name, body: { content: f.doc ?? (f.text ?? '').split('\n').map((line) => ({ paragraph: { elements: [{ textRun: { content: `${line}\n` } }] } })) } });
       }
       case 'GOOGLEDRIVE_GET_SPREADSHEET_VALUES': {
         const f = box.files.find((x) => x.id === args.spreadsheet_id && !x.trashed);

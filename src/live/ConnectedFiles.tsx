@@ -8,6 +8,7 @@ import { ExternalLink, FileText, Search, Sparkles } from 'lucide-react';
 import { fmtShortWhen } from '../lib/format';
 import { useStore } from '../state/store';
 import { api } from './api';
+import { FileViewer } from './FileViewer';
 
 type Listed = Awaited<ReturnType<typeof api.connectedFiles>>;
 
@@ -16,6 +17,7 @@ export function ConnectedFiles() {
   const [q, setQ] = useState('');
   const [list, setList] = useState<Listed | null>(null);
   const [error, setError] = useState('');
+  const [open, setOpen] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
     let gone = false;
@@ -77,14 +79,10 @@ export function ConnectedFiles() {
               <li key={f.id} className="cf-row">
                 <FileText size={16} className="cf-icon" aria-hidden />
                 <span className="cf-main">
-                  {f.link ? (
-                    <a className="cf-name" href={f.link} target="_blank" rel="noopener noreferrer">
-                      {f.name}
-                      <ExternalLink size={12} aria-hidden />
-                    </a>
-                  ) : (
-                    <span className="cf-name">{f.name}</span>
-                  )}
+                  {/* Opens inside Timmy; the arrow beside it opens the file in its own app. */}
+                  <button type="button" className="cf-name" onClick={() => setOpen({ id: f.id, name: f.name })}>
+                    {f.name}
+                  </button>
                   <span className="cf-meta">
                     {f.kind} · {f.app}
                     {f.owner ? ` · ${f.owner}` : ''}
@@ -96,11 +94,17 @@ export function ConnectedFiles() {
                   </span>
                 )}
                 <span className="cf-when">{fmtShortWhen(new Date(f.changed))}</span>
+                {f.link && (
+                  <a className="icon-btn sm cf-out" href={f.link} target="_blank" rel="noopener noreferrer" aria-label={`Open ${f.name} in ${f.app}`} title={`Open in ${f.app}`}>
+                    <ExternalLink size={14} />
+                  </a>
+                )}
               </li>
             ))}
           </ul>
         </>
       )}
+      {open && <FileViewer itemId={open.id} name={open.name} onClose={() => setOpen(null)} />}
     </>
   );
 }

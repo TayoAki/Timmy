@@ -829,3 +829,103 @@ a.cf-name:hover {
     height: 360px;
   }
 }
+
+/* Files › Drive & OneDrive: a file's name opens it inside Timmy (FileViewer.tsx) */
+button.cf-name {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+button.cf-name:hover {
+  color: var(--accent-text);
+  text-decoration: underline;
+}
+.cf-out {
+  flex: none;
+  color: var(--text-3);
+}
+.fv-note {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.fv-doc {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+}
+.fv-sheet-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 64vh;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+.fv-sheet {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.fv-sheet th,
+.fv-sheet td {
+  padding: 5px 9px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+.fv-sheet thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-2);
+  font-weight: 600;
+}
+.fv-sheet tbody th {
+  position: sticky;
+  left: 0;
+  background: var(--surface-2);
+  color: var(--text-3);
+  font-weight: 500;
+}
+.fv-sheet tbody tr:hover td {
+  background: var(--hover);
+}
+.fv-slides {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fv-slide {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+.fv-slide-num {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.fv-text {
+  max-height: 64vh;
+  overflow: auto;
+  font-size: 14px;
+  line-height: 1.6;
+}

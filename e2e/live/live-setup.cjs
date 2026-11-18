@@ -148,7 +148,7 @@ run('live-setup', async (browser) => {
 
   // Files: what a connected Drive holds is listed, and found by name.
   await connectApp(p2, 'Google Drive', 'katherine@nasa.test');
-  const added = await api(p2, 'POST', '/api/test/fake', { op: 'file', file: { name: 'Trajectory calculations', mimeType: 'application/vnd.google-apps.document' } });
+  const added = await api(p2, 'POST', '/api/test/fake', { op: 'file', file: { name: 'Trajectory calculations', mimeType: 'application/vnd.google-apps.document', text: 'Orbit insertion at 14:02.\nBurn for 312 seconds.' } });
   ok(added.body.ok, 'a file is put in the stand-in Drive');
   // On a real workspace, Drive opens on the files from the connected Google Drive or OneDrive.
   await p2.click('button[aria-label="Drive"]');
@@ -156,6 +156,14 @@ run('live-setup', async (browser) => {
   ok((await p2.getByRole('tab', { name: 'Drive & OneDrive' }).getAttribute('aria-selected')) === 'true', 'Drive opens on the connected files');
   await p2.getByText('Trajectory calculations').waitFor();
   ok(/Google Doc · Google Drive/.test(await p2.locator('.cf-row').first().innerText()), 'the Files screen lists the Drive’s files with their kind and app');
+  // A file opens inside Timmy, read only, with the way to its own app beside it.
+  await p2.getByRole('button', { name: 'Trajectory calculations' }).click();
+  const viewer = p2.getByRole('dialog', { name: 'Trajectory calculations' });
+  await viewer.waitFor();
+  await viewer.frameLocator('iframe.mail-frame').getByText('Orbit insertion at 14:02.').waitFor();
+  ok(/Google Doc · Google Drive · read only/.test(await viewer.innerText()), 'clicking a file opens it inside Timmy, read only');
+  ok((await viewer.getByRole('link', { name: 'Open in Google Drive' }).getAttribute('target')) === '_blank', 'with Open in Google Drive beside it');
+  await viewer.getByRole('button', { name: 'Close', exact: true }).first().click();
   await p2.getByLabel('Find a file by name').fill('nothing like it');
   await p2.getByText('No file names match.').waitFor();
   ok(true, 'and finds them by name');

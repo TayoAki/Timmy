@@ -2,12 +2,14 @@
  * The files Timmy keeps a list of from a connected Google Drive or OneDrive, for the Files screen.
  *
  *   GET /api/v1/connected-files?q=words   newest first, at most 200; `q` narrows to names containing the words
+ *   GET /api/v1/connected-files/:id/view  one of them, shown inside Timmy (files/view.ts)
  *
  * Only files from accounts still connected are listed. Names, owners and links were written by whoever made or
  * shared the file: the screen shows them as text, and a link is only ever one of Google's or Microsoft's own.
  */
 import type { Hono } from 'hono';
 import { withWorkspace } from '../db/pool';
+import { viewFile } from '../files/view';
 import { ctxOf, requireRead, requireWorkspace, type Env } from './session';
 
 const APP_NAMES: Record<string, string> = { googledrive: 'Google Drive', one_drive: 'OneDrive' };
@@ -15,6 +17,14 @@ const SAFE_LINK = /^https:\/\/((docs|drive|sheets|slides|forms)\.google\.com|[\w
 const LIMIT = 200;
 
 export function connectedFileRoutes(app: Hono<Env>): void {
+  // One file, shown inside Timmy (files/view.ts): read through its connection when opened, not stored.
+  app.get('/api/v1/connected-files/:id/view', requireWorkspace, requireRead, async (c) => {
+    const viewed = await viewFile(ctxOf(c).workspaceId, c.req.param('id'));
+    if (!viewed) return c.json({ error: 'That file isn’t on this workspace’s list.' }, 404);
+    c.header('Cache-Control', 'private, no-store');
+    return c.json(viewed);
+  });
+
   app.get('/api/v1/connected-files', requireWorkspace, requireRead, async (c) => {
     const ctx = ctxOf(c);
     const words = String(c.req.query('q') ?? '')

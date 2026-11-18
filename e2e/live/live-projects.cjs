@@ -65,7 +65,11 @@ run('live-projects', async (browser) => {
   ok(!mailTab.includes('Offsite'), 'and not the dropped offsite');
   await page.getByRole('tab', { name: /Files/ }).click();
   await page.getByText('From your connected apps').waitFor();
-  ok((await page.locator('a.pj-line', { hasText: 'Acme redesign brief' }).count()) === 1, 'its Files tab lists the Drive file linked to it');
+  ok((await page.locator('.pj-line', { hasText: 'Acme redesign brief' }).count()) === 1, 'its Files tab lists the Drive file linked to it');
+  await page.locator('.pj-line', { hasText: 'Acme redesign brief' }).click();
+  await page.getByRole('dialog', { name: 'Acme redesign brief' }).waitFor();
+  ok(true, 'and opens it inside Timmy');
+  await page.keyboard.press('Escape');
 
   // New mail from Acme goes into the project by itself.
   await api(page, 'POST', '/api/test/fake', { op: 'deliver', message: { from: 'Morgan Lee <morgan@acme.test>', subject: 'New page copy', body: 'Draft attached.' } });

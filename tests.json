@@ -525,7 +525,7 @@
    "file": "e2e/live/live-setup.cjs",
    "covers": "a new workspace's setup (opens by itself, five steps, connect Gmail from it and come back to the next step, sort junk automatically, Google Calendar, skip files, the morning run, done; a connect that did not finish; the brief's button and card; connecting from Connections shows a notice instead), no Watch the story on a real workspace, Triage newest first with the offer to sort junk, Accept all in batches of 100 with a confirmation saying what happens in Gmail, and the Drive files on the Files screen",
    "status": "pass",
-   "result": "Nov 18, 2026: 37 of 37; the whole live run is 22 of 22."
+   "result": "Nov 18, 2026: 39 of 39, with opening a Drive file inside Timmy."
   },
   {
    "id": "api-mail-reader",
@@ -553,7 +553,14 @@
    "file": "e2e/live/live-projects.cjs",
    "covers": "Projects \u203a Detect projects end to end: the scan finds the two clients and the colleagues' offsite and leaves the sale out, the map shows projects, companies and the client's file, rename, merge and drop, Create says what was made, the project's Mail and Files tabs show its threads and Drive file, and new mail from the client goes into the project by itself",
    "status": "pass",
-   "result": "Nov 18, 2026: 13 of 13."
+   "result": "Nov 18, 2026: 14 of 14, with opening a linked file inside Timmy."
+  },
+  {
+   "id": "api-file-view",
+   "file": "server/test/file-view.test.ts",
+   "covers": "a connected file shown inside Timmy: a Google Doc's structure turned into headings, bold, links, lists and tables with every word escaped, then cleaned like an email (no script, no javascript: link) and not stored; a sheet as rows, slides one by one, a PDF says it can't be shown yet; only a file on this workspace's list, from an account still connected",
+   "status": "pass",
+   "result": "Nov 18, 2026: 4 of 4."
   }
  ]
 }
