@@ -260,6 +260,21 @@ async function runTools(ctx: Ctx, run: Driving, cp: Checkpoint, calls: ToolCall[
 
 /** What the model is told about a write once it has been decided. */
 function effectAnswer(e: EffectRow): string | null {
+  if (e.kind === 'rule.save') {
+    switch (e.status) {
+      case 'completed':
+        return 'The user saved the rule. Timmy sorts mail by it from now on; it is listed in Rules › Triage.';
+      case 'declined':
+      case 'cancelled':
+        return 'The user chose not to save this rule. Do not propose it again unless they ask.';
+      case 'failed':
+        return `The rule could not be saved: ${e.error ?? 'unknown error'}.`;
+      case 'uncertain':
+        return 'Timmy could not confirm the rule was saved. Tell the user to check Rules › Triage.';
+      default:
+        return null;
+    }
+  }
   if (e.kind === 'mail.modify') {
     switch (e.status) {
       case 'completed':

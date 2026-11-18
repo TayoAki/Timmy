@@ -141,6 +141,12 @@ export class FakeModel implements ModelProvider {
     const lookFor = /^find (?:the |my )?(?:file|doc|document) (?:called |named |about )?(.+?)[?.!]*$/i.exec(asked);
     if (lookFor && has('search_files')) return { toolCalls: [{ name: 'search_files', arguments: { query: lookFor[1] } }] };
     if (file && has('file_thread')) return { toolCalls: [{ name: 'file_thread', arguments: { id: file[2], box: file[1]!.toLowerCase() === 'archive' ? 'archived' : 'follow-up' } }] };
+    // Sorting rules said in plain words: "always archive mail from linkedin.com", "never archive mail from dana@acme.com",
+    // "put mail from acme.com in the Acme website project".
+    const always = /^always (archive|show me) (?:mail|email|emails) from (\S+?)[.!]*$/i.exec(asked) ?? /^never (archive) (?:mail|email|emails) from (\S+?)[.!]*$/i.exec(asked);
+    if (always && has('save_rule')) return { toolCalls: [{ name: 'save_rule', arguments: { from: [always[2]], box: /^never/i.test(asked) || /show me/i.test(always[1]!) ? 'follow-up' : 'archived' } }] };
+    const into = /^put (?:mail|email|emails) from (\S+) in the (.+?) project[.!]*$/i.exec(asked);
+    if (into && has('save_rule')) return { toolCalls: [{ name: 'save_rule', arguments: { from: [into[1]], project: into[2] } }] };
     if (send && has('send_email')) return { toolCalls: [{ name: 'send_email', arguments: { to: [send[1]], subject: 'A note from Timmy', body: send[2] } }] };
     if (/urgent/.test(text) && has('show_urgent')) return { content: 'Here is what needs you first.', toolCalls: [{ name: 'show_urgent', arguments: { limit: 5 } }] };
     if (/(mail|email|inbox|find|about|from)/.test(text) && has('search_mail')) return { toolCalls: [{ name: 'search_mail', arguments: { query: asked.replace(/[?.!]/g, '').split(/\s+/).slice(-3).join(' ') } }] };

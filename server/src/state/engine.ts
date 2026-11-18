@@ -32,6 +32,8 @@ import { prepareMailSend } from '../gateway/mail';
 import { eventProposal } from '../sync/calendar-write';
 import { CALENDAR_TOOLKITS, isSynced } from '../sync/calendars';
 import { filingProposal, isBox } from '../sync/labels';
+import { settleRules } from '../sync/mail-rules';
+import { checkMailRule } from '../../../src/state/mail-rules';
 import { draftHash } from '../../../src/live/hash';
 import type { Actor } from '../gateway/policy';
 import { config } from '../config';
@@ -124,7 +126,7 @@ const OUT_NOT_LIVE: Record<string, string> = {
 const CONN_POLICY_OPS = new Set(['crm', 'delegate', 'enrichPolicy']);
 
 /** Actions that change how Timmy behaves for the whole workspace. */
-const POLICY_ONLY = new Set(['addRule', 'toggleRule', 'setSchedule']);
+const POLICY_ONLY = new Set(['addRule', 'toggleRule', 'removeRule', 'setSchedule']);
 
 /* ───────────── Commands ───────────── */
 
@@ -153,6 +155,12 @@ export async function runCommand(ctx: Ctx, cmd: { id: string; action: Action }):
         const moves = movedThreads(loaded.state, handled.state).length;
         if (moves > config.maxFilingsPerCommand) handled = { state: loaded.state, reject: `That would file ${moves} threads at once. Timmy files up to ${config.maxFilingsPerCommand} at a time; do it in smaller batches.` };
         else handled = { ...handled, state: await fileMoves(tx, loaded, ctx, cmd.id, handled.state) };
+      }
+      // Sorting rules are checked as they were left, whichever command changed them, and a rule that files mail away
+      // gets (or loses) the policy row that lets it file in the mailbox (sync/mail-rules.ts).
+      if (!handled.reject) {
+        const bad = await settleRules(tx, loaded, ctx.user.id, handled.state);
+        if (bad) handled = { state: loaded.state, reject: bad };
       }
       if (!handled.reject) handled = await addEvents(tx, loaded, ctx, cmd.id, handled);
       // A synced event the command changed or removed is written to its calendar too (see event-changes.ts).
@@ -214,6 +222,20 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
   // "Already approved" is the server's to know, never a screen's to say: the reducer skips a CRM or delegate hold
   // for an action that carries it, so whatever a client sends there is dropped.
   if ('approved' in a) delete (a as { approved?: unknown }).approved;
+  if (a.type === 'setProject') {
+    if (typeof a.id !== 'string' || (a.project !== null && typeof a.project !== 'string')) return { state, reject: 'That isn’t a project.' };
+    if (a.project !== null && state.ws.projects[a.project]?.status !== 'active') return { state, reject: 'That project isn’t open any more.' };
+  }
+  if (a.type === 'addRule') {
+    if (typeof a.text !== 'string' || a.text.length > 300) return { state, reject: 'A rule is at most 300 characters.' };
+    if (a.mail !== undefined) {
+      // Only what the check returns is kept: a rule is stored in one form, whatever the caller sent.
+      const checked = checkMailRule(a.mail, state.ws.projects);
+      if ('problem' in checked) return { state, reject: checked.problem };
+      a.mail = checked.rule;
+      a.group = 'triage';
+    }
+  }
   if (a.type === 'move') {
     // A thread can only be put in one of the five places. Who moved it is the server's to say, never the caller's:
     // "Timmy filed this" is written only when Timmy did.

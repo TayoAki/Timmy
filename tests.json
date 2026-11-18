@@ -10,7 +10,9 @@
    "server/test/calendar-write.test.ts",
    "server/test/outlook.test.ts",
    "server/test/ontology.test.ts",
-   "server/test/auto-sort.test.ts"
+   "server/test/auto-sort.test.ts",
+   "server/test/mail-rules.test.ts",
+   "server/test/chat-rules.test.ts"
   ],
   "no action runs twice": [
    "server/test/gateway.test.ts",
@@ -19,7 +21,8 @@
    "server/test/calendar-write.test.ts",
    "server/test/outlook.test.ts",
    "server/test/mail.test.ts",
-   "server/test/auto-sort.test.ts"
+   "server/test/auto-sort.test.ts",
+   "server/test/mail-rules.test.ts"
   ],
   "no cross-workspace reads": [
    "server/test/isolation.test.ts",
@@ -537,7 +540,7 @@
   {
    "id": "live-reader",
    "file": "e2e/live/live-reader.cjs",
-   "covers": "the sender's full address, the recipients in short and every address in the details, an HTML email shown in a sandboxed frame with working links that open in a new tab, no script, form or javascript: link, the app untouched by the email's script, pictures hidden until Show pictures, plain-text links and email addresses clickable, the quoted history folded behind \u2022\u2022\u2022",
+   "covers": "the sender's full address, the recipients in short and every address in the details, an HTML email shown in a sandboxed frame with working links that open in a new tab, no script, form or javascript: link, the app untouched by the email's script, pictures hidden until Show pictures, plain-text links and email addresses clickable, the quoted history folded behind •••",
    "status": "pass",
    "result": "Nov 18, 2026: 16 of 16."
   },
@@ -551,7 +554,7 @@
   {
    "id": "live-projects",
    "file": "e2e/live/live-projects.cjs",
-   "covers": "Projects \u203a Detect projects end to end: the scan finds the two clients and the colleagues' offsite and leaves the sale out, the map shows projects, companies and the client's file, rename, merge and drop, Create says what was made, the project's Mail and Files tabs show its threads and Drive file, and new mail from the client goes into the project by itself",
+   "covers": "Projects › Detect projects end to end: the scan finds the two clients and the colleagues' offsite and leaves the sale out, the map shows projects, companies and the client's file, rename, merge and drop, Create says what was made, the project's Mail and Files tabs show its threads and Drive file, and new mail from the client goes into the project by itself",
    "status": "pass",
    "result": "Nov 18, 2026: 14 of 14, with opening a linked file inside Timmy."
   },
@@ -570,9 +573,32 @@
    "result": "Nov 18, 2026: 2 of 2."
   },
   {
+   "id": "api-mail-rules",
+   "file": "server/test/mail-rules.test.ts",
+   "covers": "sorting rules a person writes and putting an email in a project: a rule kept in one checked form (domains and addresses tidied, anything else refused or dropped); whole-word, domain-and-subdomain and newest-received matching; only owners and admins save, switch or delete one, and a rule that files mail away is backed by a policy row naming them that follows it on and off; mail already waiting gets the rule as a sure suggestion and nothing is written to the mailbox; new mail is filed in Timmy and the mailbox, mail older than the rule inside Timmy only; “always show it to me” beats the automatic sort and Timmy’s read; an archiving rule spares the model read; a project rule takes new mail and its to-dos and leaves mail already in a project; setProject moves a thread and its to-dos, writes nothing to the mailbox, refuses a closed project and a read-only role; the person’s own written triage rules go with each read, outside the mail, the starter rules don’t; offers learned from two moves of a sender’s mail, by domain or by address, never again once declined, not for Timmy’s filing or Waiting",
+   "tests": 13,
+   "status": "pass",
+   "result": "Nov 18, 2026: 13 of 13."
+  },
+  {
+   "id": "api-chat-rules",
+   "file": "server/test/chat-rules.test.ts",
+   "covers": "a rule said in Ask: proposed as a rule.save effect with the rule in words and what it matches, nothing saved until an owner or admin presses Save, then saved with its policy row and applied; Not now saves nothing and the run is told; projects named as the person said them, an unknown one refused; the chat card's Save rule and Not now; a member is told to ask an owner or admin; a member can't press Save; a routine never writes a rule; Auto mode can't decide one",
+   "tests": 7,
+   "status": "pass",
+   "result": "Nov 18, 2026: 7 of 7."
+  },
+  {
+   "id": "live-rules",
+   "file": "e2e/live/live-rules.cjs",
+   "covers": "putting an email in a project from the email (with a new project made on the spot), with P, and from a Triage row; taking it out again; “always” for the sender saves a rule and moves the sender's other mail; new mail lands in the project; two moves of a sender's mail offer a rule in Triage, saved with one click; Rules › Triage previews what a rule matches, saves it, files new mail, says why a bad rule can't be saved, deletes a rule; a rule told to Ask is shown in words and saved with Save rule",
+   "status": "pass",
+   "result": "Nov 18, 2026: see STATUS.md."
+  },
+  {
    "id": "live-map",
    "file": "e2e/live/live-map.cjs",
-   "covers": "People \u203a Map: the kept project, companies, people by name and the project's file with lines between them; clicking a company shows its people and latest threads; focusing shows only what connects; search finds and opens a person; a thread opens from the map; hiding people leaves the rest",
+   "covers": "People › Map: the kept project, companies, people by name and the project's file with lines between them; clicking a company shows its people and latest threads; focusing shows only what connects; search finds and opens a person; a thread opens from the map; hiding people leaves the rest",
    "status": "pass",
    "result": "Nov 18, 2026: 13 of 13."
   },

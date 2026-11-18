@@ -19,6 +19,7 @@ import { mailboxFor } from './mailbox';
 import { followMailbox, lookedAtFrom } from './mailbox-changes';
 import { autoSort, suggest } from './sorting';
 import { sortIntoProjects } from '../projects/apply';
+import { applyMailRules } from './mail-rules';
 import { paragraphs, parseSender, type MailMessage } from './message';
 import { connectionById, type ConnectionRow, type Phase } from './tools';
 
@@ -216,6 +217,8 @@ async function storeMessages(tx: Tx, loaded: Loaded, state: State, workspaceId: 
   next = await onMailStored(tx, noteLeadMail(next, fresh), workspaceId, conn, fresh);
   // With the rule to sort mail automatically on, what plain code is sure of is filed now instead of waiting in Triage.
   const touched = new Set(next.threads.filter((t) => t.ext?.connectionId === conn.id && keys.includes(t.ext.threadKey ?? '')).map((t) => t.id));
+  // The person's own sorting rules come first: what they said outranks what plain code guesses.
+  if (touched.size) next = await applyMailRules(tx, loaded, next, touched, { mailbox: true });
   if (touched.size) next = (await autoSort(tx, loaded, next, { ids: touched, mailbox: true })).state;
   // Mail from the people or company of a project Timmy found (and the person kept) goes into that project.
   if (touched.size) next = await sortIntoProjects(tx, workspaceId, next, touched, new Set([conn.account_label, loaded.workspace.owner_email].filter((a): a is string => !!a).map((a) => a.toLowerCase())));

@@ -30,6 +30,12 @@ export const KINDS = {
    * and the same audit log as every other approval. The automation's run carries on, or stops, on the answer.
    */
   'automation.ask': { domain: 'decision', outbound: false, hold: false, autoEligible: false, label: 'An automation asks first' },
+  /**
+   * A sorting rule Timmy wrote down from what the person said in the chat. It reaches nobody, but it changes how mail
+   * is filed from then on, so it is never saved without an owner's or admin's click on the rule as written, and Auto
+   * mode can't decide it.
+   */
+  'rule.save': { domain: 'rules', outbound: false, hold: false, autoEligible: false, label: 'Save a sorting rule' },
 } as const;
 
 export type EffectKind = keyof typeof KINDS;
@@ -97,6 +103,8 @@ export function approverFor(kind: EffectKind, actor: Actor, crm: CrmPolicy): { r
   }
   // Filing mail (labels, archive) reaches nobody else. Anyone who may work the inbox may file it on their own say.
   if (k.domain === 'mail' && !k.outbound) return { route: 'user', self: actor.rules.work };
+  // Rules are an owner's or admin's to set.
+  if (k.domain === 'rules') return { route: 'user', self: actor.rules.policy };
   if (actor.rules.approveSends) return { route: 'user', self: true };
   // A delegate works on the exec's behalf; the exec decides.
   if (actor.role.split(',').map((r) => r.trim()).includes('assistant')) return { route: 'exec', self: false };
@@ -113,6 +121,8 @@ export function mayDecide(route: Route, kind: EffectKind, actor: Actor, effect: 
   // An automation's question is answered by an owner or admin. Only they can switch an automation on, so the person
   // who did is one too, unless their role has been lowered since: then they have no more say over it than any member.
   if (k.domain === 'decision') return admin;
+  // A sorting rule changes how everyone's mail is filed: an owner or admin decides it.
+  if (k.domain === 'rules') return admin;
   // Filing that Timmy proposed can be decided by anyone who may work the inbox.
   if (k.domain === 'mail' && !k.outbound) return actor.rules.work;
   if (!actor.rules.approveSends) return false;

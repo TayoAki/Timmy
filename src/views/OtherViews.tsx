@@ -1,3 +1,4 @@
+import { SortingRules } from './SortingRules';
 import { isLive } from '../live/clock';
 import { LiveSettings } from '../live/Settings';
 import {
@@ -149,7 +150,8 @@ export function RulesView({ tab }: { tab: RuleGroup }) {
   const { state, dispatch } = useStore();
   const [text, setText] = useState('');
   const group = RULE_GROUPS.find((g) => g.id === tab)!;
-  const rules = state.rules.filter((r) => r.group === tab);
+  // Sorting rules (the ones plain code applies to mail) have their own section on the Triage tab.
+  const rules = state.rules.filter((r) => r.group === tab && !r.mail);
 
   return (
     <Frame
@@ -178,6 +180,8 @@ export function RulesView({ tab }: { tab: RuleGroup }) {
           ))}
         </div>
       )}
+
+      {tab === 'triage' && <SortingRules />}
 
       {tab === 'schedule' && <ScheduleCard />}
 

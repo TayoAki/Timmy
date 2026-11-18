@@ -103,6 +103,8 @@ export interface Suggestion {
   extra?: string;
   /** On a real workspace: only plain code has looked at the thread so far, and Timmy's own read is still to come. */
   provisional?: boolean;
+  /** The sorting rule this suggestion comes from. Timmy's own read keeps the rule's place for the thread. */
+  rule?: string;
 }
 
 export interface Thread {
@@ -209,6 +211,30 @@ export interface Rule {
   hits: number;
   /** Always on; shown with a lock. */
   locked?: boolean;
+  /**
+   * A sorting rule plain code applies to mail (src/state/mail-rules.ts). A rule without one is written guidance:
+   * writing rules go into drafting, triage rules into Timmy's read of each email.
+   */
+  mail?: MailRule;
+}
+
+/** What a sorting rule does with mail it matches. "follow-up" means: show it to me, never file it away. */
+export type MailRuleBox = 'archived' | 'read-through' | 'follow-up';
+
+export interface MailRule {
+  /** Every condition given must hold; within one, any entry may. */
+  when: {
+    /** Addresses ("dana@acme.com") or whole domains ("@acme.com", subdomains included). */
+    from?: string[];
+    /** Words or phrases in the subject. */
+    subject?: string[];
+    /** Words or phrases anywhere in the newest email: its subject or its text. */
+    words?: string[];
+  };
+  then: {
+    box?: MailRuleBox;
+    project?: ProjectId;
+  };
 }
 
 export interface Label {

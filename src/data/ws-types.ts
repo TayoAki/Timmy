@@ -385,6 +385,10 @@ export interface LearnedRule {
   text: string;
   evidence: string;
   group: 'triage' | 'writing' | 'files' | 'schedule';
+  /** A sorting rule Timmy proposes from how the person filed mail themselves; accepting it saves this as is. */
+  mail?: import('./types').MailRule;
+  /** For a sorting rule: what declining it remembers, so it isn't proposed again ("learn:@medium.com:archived"). */
+  dismissKey?: string;
 }
 
 export interface WS {

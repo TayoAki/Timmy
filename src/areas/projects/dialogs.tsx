@@ -26,7 +26,11 @@ import { Group } from './ui';
 /* ───────────── New project ───────────── */
 
 /** Creates [02] Work › [nn] Name, the project and its running-notes doc in one step. */
-export function NewProjectDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+/**
+ * Makes a project. With `onCreated`, the caller is told the new project's id and the screen stays where it is (an
+ * email being put in a new project); without it, the new project opens.
+ */
+export function NewProjectDialog({ open, onClose, initialName, onCreated }: { open: boolean; onClose: () => void; initialName?: string; onCreated?: (id: string) => void }) {
   const { state, dispatch } = useStore();
   const [name, setName] = useState('');
   const [num, setNum] = useState('');
@@ -37,7 +41,7 @@ export function NewProjectDialog({ open, onClose }: { open: boolean; onClose: ()
 
   useEffect(() => {
     if (!open) return;
-    setName('');
+    setName(initialName ?? '');
     setNum(nextProjectNum(state.ws));
     setClient('');
     setGoal('');
@@ -87,7 +91,8 @@ export function NewProjectDialog({ open, onClose }: { open: boolean; onClose: ()
       ),
     );
     onClose();
-    dispatch({ type: 'navigate', route: { view: 'project', id, tab: 'overview' } });
+    if (onCreated) onCreated(id);
+    else dispatch({ type: 'navigate', route: { view: 'project', id, tab: 'overview' } });
   };
 
   return (

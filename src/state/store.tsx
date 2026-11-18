@@ -1,9 +1,10 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, type Dispatch, type ReactNode } from 'react';
-import { ACTIVITY, BOXES, DEALS, NOW, PROJECTS, RULES, THREADS } from '../data/mock';
-import type { Activity, Box, Deal, Label, MailFile, ProjectId, Rule, RuleGroup, Thread } from '../data/types';
+import { ACTIVITY, BOXES, DEALS, NOW, PEOPLE, PROJECTS, RULES, THREADS } from '../data/mock';
+import type { Activity, Box, Deal, Label, MailFile, MailRule, ProjectId, Rule, RuleGroup, Thread } from '../data/types';
+import { describeMailRule, RULE_BOXES, senderKey, sweepRule } from './mail-rules';
 import { DECISIONS, type Decision } from '../data/decisions';
 import { WS_SEED } from '../data/ws-mock';
-import type { WS } from '../data/ws-types';
+import type { LearnedRule, WS } from '../data/ws-types';
 import { fmtDate, fmtDay, fmtTime, money } from '../lib/format';
 import type { ApprovalKind, ApprovalRecord } from './approvals';
 import { draftFor } from './drafting';
@@ -192,7 +193,11 @@ export type Action =
   /** Change a deal's stage or value (from Ask Timmy, after you press Update). */
   | { type: 'editDeal'; id: string; stage?: string; value?: number; approved?: boolean }
   | { type: 'toggleRule'; id: string }
-  | { type: 'addRule'; group: RuleGroup; text: string }
+  /** A rule in plain words; with `mail`, a sorting rule plain code applies (src/state/mail-rules.ts). */
+  | { type: 'addRule'; group: RuleGroup; text: string; mail?: MailRule }
+  | { type: 'removeRule'; id: string }
+  /** Puts a thread in a project, or takes it out (null). Its to-dos go with it. */
+  | { type: 'setProject'; id: string; project: ProjectId | null }
   | { type: 'dismiss'; key: string }
   | { type: 'setHighlight'; text: string }
   | { type: 'toggleHighlight' }
@@ -407,6 +412,39 @@ const crmWaiting = (s: State, t: Thread): string | null => {
   return `Moving ${deal.company} to Closed won`;
 };
 
+/** How many times the person has to file a sender's mail the same way before Timmy offers a rule for it. */
+export const LEARN_AFTER = 2;
+
+/**
+ * A sorting rule to offer after the person moved `t` out of Triage to `box` themselves: when they have now filed
+ * mail from the same company (or person) there at least LEARN_AFTER times, no rule covers that sender yet, and they
+ * haven't turned the same offer down before. Counted from the activity log, which records each move a person makes.
+ */
+const learnedFromMoves = (s: State, t: Thread, box: Box): LearnedRule | null => {
+  if (!(RULE_BOXES as string[]).includes(box)) return null;
+  const key = senderKey(t, PEOPLE.me?.email ?? '');
+  if (!key) return null;
+  const dismissKey = `learn:${key}:${box}`;
+  const id = `learned-mail-${key.replace(/[^a-z0-9]+/gi, '-')}-${box}`;
+  if (s.ws.learned[id] || s.dismissed.includes(dismissKey)) return null;
+  if (s.rules.some((r) => r.enabled && r.mail?.when.from?.includes(key) && !r.mail.when.subject && !r.mail.when.words && r.mail.then.box)) return null;
+  const byId = new Map(s.threads.map((x) => [x.id, x]));
+  const ending = ` to ${boxTag(box)}`;
+  const times = new Set(
+    s.activity
+      .filter((e) => e.kind === 'move' && !!e.threadId && e.text.startsWith('You moved') && e.text.endsWith(ending))
+      .map((e) => e.threadId!)
+      .filter((id) => {
+        const x = byId.get(id);
+        return !!x && senderKey(x, PEOPLE.me?.email ?? '') === key;
+      }),
+  ).size;
+  if (times < LEARN_AFTER) return null;
+  const mail: MailRule = { when: { from: [key] }, then: { box: box as MailRule['then']['box'] } };
+  const who = key.startsWith('@') ? `anyone at ${key.slice(1)}` : key;
+  return { id, group: 'triage', text: describeMailRule(mail, s.ws.projects), evidence: `You moved ${times} emails from ${who} ${box === 'archived' ? 'to the archive' : `to ${boxTag(box)}`} yourself.`, mail, dismissKey };
+};
+
 /** Applies a box change, keeping the data each box needs consistent. */
 const moveThread = (t: Thread, box: Box): Thread => {
   const next: Thread = { ...t, box, unread: false, suggestion: undefined };
@@ -449,12 +487,15 @@ export function reducer(s: State, a: Action): State {
       const t = s.threads.find((x) => x.id === a.id);
       if (!t || t.box === a.box) return s;
       const tag = boxTag(a.box);
-      return {
+      const moved: State = {
         ...s,
         threads: patch(s.threads, a.id, (x) => moveThread(x, a.box)),
         activity: logged(s, a.by === 'timmy' ? `Timmy filed “${t.subject}” under ${tag}, as asked in the chat` : `You moved “${t.subject}” to ${tag}`, 'move', t.id),
         toasts: a.quiet ? s.toasts : withToast(s, `Moved to ${tag}`, snap(s)),
       };
+      // Mail the person sorts out of Triage the same way twice, from the same sender: Timmy offers it as a rule.
+      const learned = a.by === 'timmy' || t.box !== 'inbox' ? null : learnedFromMoves(moved, t, a.box);
+      return learned ? { ...moved, ws: { ...moved.ws, learned: { ...moved.ws.learned, [learned.id]: learned } } } : moved;
     }
 
     case 'acceptSuggestion': {
@@ -731,15 +772,67 @@ export function reducer(s: State, a: Action): State {
       );
     }
 
-    case 'toggleRule':
-      return { ...s, rules: s.rules.map((r) => (r.id === a.id ? { ...r, enabled: !r.enabled } : r)) };
+    case 'toggleRule': {
+      const rules = s.rules.map((r) => (r.id === a.id ? { ...r, enabled: !r.enabled } : r));
+      const rule = rules.find((r) => r.id === a.id);
+      // A sorting rule switched back on sorts what is waiting again, the same as a new one.
+      if (!rule?.mail || !rule.enabled) return { ...s, rules };
+      const swept = sweepRule(s.threads, s.ws.tasks, rule, rules);
+      return { ...s, rules, threads: swept.threads, ws: swept.tasks === s.ws.tasks ? s.ws : { ...s.ws, tasks: swept.tasks } };
+    }
 
-    case 'addRule':
+    case 'addRule': {
+      if (!a.mail) {
+        return {
+          ...s,
+          rules: [...s.rules, { id: `rule-${Date.now()}`, group: a.group, text: a.text, enabled: true, hits: 0 }],
+          toasts: withToast(s, 'Rule added. Timmy applies it from the next triage run.'),
+        };
+      }
+      const rule: Rule = { id: `rule-${Date.now().toString(36)}${liveSuffix()}`, group: 'triage', text: a.text.trim() || describeMailRule(a.mail, s.ws.projects), enabled: true, hits: 0, mail: a.mail };
+      const rules = [...s.rules, rule];
+      const swept = sweepRule(s.threads, s.ws.tasks, rule, rules);
+      const project = a.mail.then.project ? s.ws.projects[a.mail.then.project] : undefined;
+      const done = [
+        swept.suggested ? `${swept.suggested} waiting in Triage now ${swept.suggested === 1 ? 'has' : 'have'} it as Timmy’s suggestion` : '',
+        swept.placed && project ? `${swept.placed} ${swept.placed === 1 ? 'email' : 'emails'} put in ${project.name}` : '',
+      ].filter(Boolean);
+      const ahead = a.mail.then.box === 'archived' || a.mail.then.box === 'read-through' ? ' New mail it matches is filed as it arrives, in your mailbox too.' : '';
       return {
         ...s,
-        rules: [...s.rules, { id: `rule-${Date.now()}`, group: a.group, text: a.text, enabled: true, hits: 0 }],
-        toasts: withToast(s, 'Rule added. Timmy applies it from the next triage run.'),
+        rules,
+        threads: swept.threads,
+        ws: swept.tasks === s.ws.tasks ? s.ws : { ...s.ws, tasks: swept.tasks },
+        activity: logged(s, `Added a sorting rule: ${rule.text}`, 'triage'),
+        toasts: withToast(s, `Rule saved.${done.length ? ` ${done.join('; ')}.` : ''}${ahead}`, snap(s)),
       };
+    }
+
+    case 'removeRule': {
+      const rule = s.rules.find((r) => r.id === a.id);
+      if (!rule || rule.locked) return s;
+      return { ...s, rules: s.rules.filter((r) => r.id !== a.id), toasts: withToast(s, 'Rule deleted.', snap(s)) };
+    }
+
+    case 'setProject': {
+      const t = s.threads.find((x) => x.id === a.id);
+      if (!t) return s;
+      const project = a.project ? s.ws.projects[a.project] : undefined;
+      if (a.project && !project) return s;
+      if ((t.project ?? null) === (a.project ?? null)) return s;
+      const before = t.project ? s.ws.projects[t.project] : undefined;
+      // The thread's to-dos follow it, unless the person put one somewhere else themselves.
+      const tasks = Object.values(s.ws.tasks).filter((x) => x.thread === t.id && (x.project ?? null) === (t.project ?? null));
+      const ws = tasks.length ? { ...s.ws, tasks: { ...s.ws.tasks, ...Object.fromEntries(tasks.map((x) => [x.id, { ...x, project: a.project ?? undefined }])) } } : s.ws;
+      const text = project ? `Put “${t.subject}” in ${project.name}` : `Took “${t.subject}” out of ${before?.name ?? 'its project'}`;
+      return {
+        ...s,
+        ws,
+        threads: patch(s.threads, a.id, (x) => ({ ...x, project: a.project ?? undefined, history: [...(x.history ?? []), { at: stamp(), text: project ? `You put this in ${project.name}` : `You took this out of ${before?.name ?? 'its project'}` }] })),
+        activity: logged(s, text, 'move', t.id),
+        toasts: withToast(s, project ? `In ${project.name}` : `Out of ${before?.name ?? 'the project'}`, snap(s)),
+      };
+    }
 
     case 'dismiss':
       return { ...s, dismissed: [...s.dismissed, a.key] };

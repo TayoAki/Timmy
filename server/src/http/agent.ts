@@ -98,6 +98,7 @@ function openThreadOf(route: unknown): string | undefined {
 /** The line that introduces a prepared action in the chat: what it is and what happens next. */
 function waitingLine(e: EffectRow): string {
   const mine = e.approver_route === 'user';
+  if (e.kind === 'rule.save') return 'Here is the rule as I understood it. Nothing changes until you save it.';
   if (e.kind === 'mail.modify') {
     if (e.status !== 'intended') return e.approved_via === 'auto' ? 'You let Timmy decide routine filing, so it is filing this now.' : 'A rule you set covers this, so Timmy is filing it now.';
     return mine ? 'Here is the filing, ready for your OK. Nothing moves until you say so.' : 'This needs someone else’s OK. It is waiting in Approvals.';
@@ -108,6 +109,18 @@ function waitingLine(e: EffectRow): string {
 
 function approvalWidget(e: EffectRow) {
   const p = e.preview;
+  if (e.kind === 'rule.save') {
+    return {
+      preview: (p.lines ?? []).join('\n'),
+      choices:
+        e.status === 'intended'
+          ? [
+              { id: 'save', label: 'Save rule', primary: true, actions: [{ type: 'effect', id: e.id, approve: true }], after: 'Saved. Timmy sorts by it from now on; it is in Rules › Triage.' },
+              { id: 'no', label: 'Not now', cancel: true, actions: [{ type: 'effect', id: e.id, approve: false }], after: 'Okay. Nothing was saved.' },
+            ]
+          : [],
+    };
+  }
   if (e.kind === 'mail.modify') {
     const undecided = e.status === 'intended' && e.approver_route === 'user';
     return {

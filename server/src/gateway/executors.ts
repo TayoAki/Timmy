@@ -4,6 +4,7 @@ import { changeEvent, isEventChange, reconcileChange } from '../sync/calendar-ch
 import { createEvent, reconcileEvent } from '../sync/calendar-write';
 import { mailboxFor, type FilePayload, type MailPayload } from '../sync/mailbox';
 import { connectionById } from '../sync/tools';
+import { ruleSaved, saveRuleEffect } from '../sync/mail-rules';
 import type { EffectRow, Outcome } from './gateway';
 import type { EffectKind } from './policy';
 
@@ -55,6 +56,8 @@ export const EXECUTORS: Partial<Record<EffectKind, Executor>> = {
   'automation.ask': async () => ({ status: 'completed', result: { answered: 'yes' } }),
   'calendar.update': changeEvent,
   'calendar.delete': changeEvent,
+  // Saving a sorting rule reaches nobody: it is written into the workspace, with the policy row behind it.
+  'rule.save': saveRuleEffect,
 };
 
 /** Whether the mailbox already shows the filing an effect asked for. */
@@ -78,6 +81,7 @@ export async function reconcile(e: EffectRow): Promise<Outcome> {
   if (e.kind === 'chat.reply') return reconcileChatReply(e);
   if (isEventChange(e.kind)) return reconcileChange(e);
   const unknown: Outcome = { status: 'uncertain', error: e.error ?? 'unknown' };
+  if (e.kind === 'rule.save') return (await ruleSaved(e)) ? { status: 'completed', result: { rule: `rule-${e.id}`, reconciled: true } } : unknown;
   if (e.kind !== 'email.send' && e.kind !== 'email.reply') return unknown;
   const p = e.payload as unknown as MailPayload;
   const started = e.executing_at ? new Date(e.executing_at) : new Date(e.created_at);

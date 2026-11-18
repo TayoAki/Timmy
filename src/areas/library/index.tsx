@@ -29,6 +29,7 @@ import type { RuleGroup } from '../../data/types';
 import type { LearnedRule, Prompt, Routine } from '../../data/ws-types';
 import { fmtDay, plural } from '../../lib/format';
 import { ws, useStore, type Route } from '../../state/store';
+import { acceptLearned, declineLearned } from '../../state/learned';
 import { patch, put, remove, uid } from '../../state/ws';
 import { RpSection } from '../files/pickers';
 import { PromptDialog, RoutineDialog } from './dialogs';
@@ -384,15 +385,13 @@ function Routines() {
 
 const groupName = (g: RuleGroup) => RULE_GROUPS.find((x) => x.id === g)?.name ?? g;
 
+
 function Learned() {
   const { state, dispatch } = useStore();
   const rules = Object.values(state.ws.learned);
 
-  const accept = (r: LearnedRule) => {
-    dispatch({ type: 'addRule', group: r.group, text: r.text });
-    dispatch(ws([remove('learned', r.id)]));
-  };
-  const decline = (r: LearnedRule) => dispatch(ws([remove('learned', r.id)], { toast: 'Declined. Timmy won’t suggest this one again.', undo: true }));
+  const accept = (r: LearnedRule) => acceptLearned(dispatch, r);
+  const decline = (r: LearnedRule) => declineLearned(dispatch, r);
 
   return (
     <>

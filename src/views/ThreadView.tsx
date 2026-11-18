@@ -28,6 +28,7 @@ import { TaskDialog } from '../areas/tasks/TaskDialog';
 import { AutoTextarea, Field, Modal } from '../components/kit';
 import type { Box, Draft, MailFile, Thread } from '../data/types';
 import { AttachButton, FileChips } from '../components/Attach';
+import { ProjectPicker } from '../components/ProjectPicker';
 import { EmailBody } from '../components/EmailBody';
 import { fmtDay, fmtStamp } from '../lib/format';
 import { acmeSeatPrice, counterpart, labelOf, useStore, ws, type ThreadTab } from '../state/store';
@@ -108,6 +109,7 @@ export function ThreadView({ id, tab }: { id: string; tab: ThreadTab }) {
 
       <div className="thread-head">
         <h1 className="thread-title">{t.subject}</h1>
+        <ProjectPicker t={t} hotkey />
         <button
           className={`icon-btn${t.starred ? ' on' : ''}`}
           aria-label={t.starred ? 'Unstar (S)' : 'Star (S)'}
@@ -117,7 +119,7 @@ export function ThreadView({ id, tab }: { id: string; tab: ThreadTab }) {
           <Star size={18} fill={t.starred ? 'currentColor' : 'none'} />
         </button>
       </div>
-      <ThreadChips t={t} />
+      <ThreadChips t={t} showProject={false} />
       <UrgencyLine t={t} />
 
       <div className="move-bar" role="group" aria-label="Move thread">

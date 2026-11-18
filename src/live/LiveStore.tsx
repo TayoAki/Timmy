@@ -104,7 +104,10 @@ export function LiveStoreProvider({ profile, snapshot, children }: { profile: Li
     rebase();
   }, [rebase]);
 
-  const send = useCallback(
+  // A tab's commands reach the server in the order they were made: one that depends on the one before (a new
+  // project, then an email put in it) must not overtake it. Each waits for the answer to the last.
+  const line = useRef<Promise<unknown>>(Promise.resolve());
+  const sendNow = useCallback(
     async (id: string, action: Action) => {
       try {
         const res = await api.command(id, action);
@@ -119,6 +122,14 @@ export function LiveStoreProvider({ profile, snapshot, children }: { profile: Li
       }
     },
     [accept, rebase],
+  );
+  const send = useCallback(
+    (id: string, action: Action) => {
+      const next = line.current.then(() => sendNow(id, action));
+      line.current = next;
+      return next;
+    },
+    [sendNow],
   );
 
   const dispatch = useCallback(
