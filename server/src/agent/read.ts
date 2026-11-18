@@ -4,7 +4,9 @@
  * model, which proposes where it belongs and says in a line what it needs.
  * It only proposes: the thread moves when the person accepts it in Triage.
  */
+import { createHash } from 'node:crypto';
 import type { Thread } from '../../../src/data/types';
+import type { Task } from '../../../src/data/ws-types';
 import { modelFor } from '../config';
 import { withWorkspace } from '../db/pool';
 import { jsonObject } from '../lib/json';
@@ -12,7 +14,7 @@ import { log } from '../lib/log';
 import { BudgetError, complete } from '../providers/model';
 import { mutate, readState } from '../state/mutate';
 import type { Decision } from '../../../src/data/decisions';
-import { noteCommitments, quoted, standsAlone, type Commitment } from '../ontology/ontology';
+import { noteCommitments, quoted, standsAlone, words, type Commitment } from '../ontology/ontology';
 import { certifiedTypes, noteThings, typesForPrompt } from '../ontology/types';
 import { untrusted } from './prompts';
 
@@ -30,16 +32,17 @@ Decide:
 - commitments: what someone in the thread plainly promised to do, at most 3, otherwise []. Each is {"who":"them"|"me","what":"...","due":"YYYY-MM-DD"|null,"quote":"..."}. "them" means the other person promised the user something; "me" means the user promised them. "what" is a few plain words. "quote" is the sentence from the thread that says it, copied character for character.
 - decision: null, unless the other person is asking the user to choose between options or to approve something. Then {"question":"...","options":["...","..."],"facts":[["label","value","quote"]],"same_as":null}. "question" is the choice in at most 120 characters. "options" are 2 or 3 answers the user could give, each at most 60 characters, in the thread's own terms. "facts" are up to 4 numbers or dates that bear on the choice, each with the sentence it comes from copied character for character. If the user's message lists decisions already made and this thread asks the same thing again, set "same_as" to that decision's number.
 - things: [] unless the user's message lists kinds of thing they keep track of. Then up to 3 things of those kinds that the thread plainly mentions, each {"kind":"...","fields":{"field":"value"},"quote":"..."}: "kind" is a listed kind's name; "fields" has only listed fields the thread states, always the kind's first field (it names the thing), with values copied from the thread exactly as written; "quote" is the one sentence that mentions the thing, copied character for character.
+- todos: [] unless the newest message plainly asks the user to do something concrete (send, review, sign, book, decide, call, pay, reply with something), or is the user's own message promising to. Then up to 3, each {"what":"...","due":"YYYY-MM-DD"|null,"quote":"..."}. "what" starts with a verb and says the task in at most 80 characters, with the names in the thread (for example "Send Sam the signed contract"). "due" only when the message states a date. "quote" is the sentence from the newest message that asks or promises it, copied character for character. Not for FYIs, questions answered in the same message, or things already done.
 - new_kinds: up to 2 kinds of thing the thread is plainly about that the user's work seems to keep records of (a property, an order, a job) and that fit no listed kind; otherwise []. Never people, companies, meetings, files, emails or promises. Each is {"kind":"...","name":"...","fields":[["field","value"]],"quote":"..."}: "kind" is a singular noun of one or two words; "name" is what the thread calls this one; "fields" are up to 3 facts about it, with values copied exactly as written; "quote" is the one sentence that mentions it, copied character for character.
 
-Reply with JSON only: {"box":"follow-up"|"read-through"|"archived","confidence":"high"|"medium"|"low","effort":"quick"|"focus","ask":"...","reason":"...","due":"YYYY-MM-DD"|null,"commitments":[],"decision":null,"things":[],"new_kinds":[]}`;
+Reply with JSON only: {"box":"follow-up"|"read-through"|"archived","confidence":"high"|"medium"|"low","effort":"quick"|"focus","ask":"...","reason":"...","due":"YYYY-MM-DD"|null,"commitments":[],"decision":null,"todos":[],"things":[],"new_kinds":[]}`;
 
 /**
- * The most the read may write. 900 covered the sorting, promises and a decision; the 300 added here are for
- * tracked things and untracked kinds (at most 3 and 2 per thread, a sentence each). Most threads have neither,
- * and then the two extra keys cost a handful of tokens.
+ * The most the read may write. 900 covered the sorting, promises and a decision; 300 more are for tracked things and
+ * untracked kinds (at most 3 and 2 per thread, a sentence each), and 150 for to-dos (at most 3, a short line and a
+ * sentence each). Most threads have none of these, and then the extra keys cost a handful of tokens.
  */
-export const READ_MAX_TOKENS = 1200;
+export const READ_MAX_TOKENS = 1350;
 
 const BOXES = new Set(['follow-up', 'read-through', 'archived']);
 const LEVELS = new Set(['high', 'medium', 'low']);
@@ -122,6 +125,8 @@ export async function readThread(workspaceId: string, threadId: string): Promise
       }
     }
     const decisions = asked && !loaded.state.decisions.some((d) => d.id === asked.id) ? [...loaded.state.decisions, asked].slice(-MAX_DECISIONS) : loaded.state.decisions;
+    // To-dos the newest message asks of the person (or that they promised in it), each resting on its own sentence.
+    const todos = todosFrom(cur, out.todos, loaded.state.ws.tasks);
     const settled = repeat ? `You decided this on ${new Date(repeat.chosen!.at).toISOString().slice(0, 10)}: ${repeat.options.find((o) => o.id === repeat.chosen!.option)?.label ?? 'decided'}.` : '';
     const next: Thread = {
       ...cur,
@@ -130,8 +135,52 @@ export async function readThread(workspaceId: string, threadId: string): Promise
       suggestion: { box: out.box as 'follow-up', confidence: out.confidence as 'high', reason: reason || 'Timmy read the thread.', ...(out.box === 'follow-up' ? { effort: out.effort === 'focus' ? ('focus' as const) : ('quick' as const) } : {}) },
       ...(due && !Number.isNaN(due.getTime()) ? { due } : {}),
     };
-    return { state: { ...loaded.state, decisions, threads: loaded.state.threads.map((t) => (t.id === threadId ? next : t)) }, result: { ok: true } };
+    const withTodos: Thread = todos.length ? { ...next, history: [...(next.history ?? []), { at: new Date(), text: `Timmy added ${todos.length === 1 ? 'a to-do' : `${todos.length} to-dos`}: ${todos.map((x) => x.title).join('; ')}` }] } : next;
+    const ws = todos.length ? { ...loaded.state.ws, tasks: { ...loaded.state.ws.tasks, ...Object.fromEntries(todos.map((x) => [x.id, x])) } } : loaded.state.ws;
+    return { state: { ...loaded.state, ws, decisions, threads: loaded.state.threads.map((t) => (t.id === threadId ? withTodos : t)) }, result: { ok: true } };
   });
+}
+
+/* ───────────── To-dos ───────────── */
+
+const MAX_TODOS = 3;
+
+/**
+ * The to-dos the model found in a thread's newest message, held to that message: each needs a short line that says
+ * what to do and the sentence it rests on, copied from the newest message itself, so neither an older message nor
+ * an instruction planted in the mail can add one. The same to-do from the same thread is made once, however
+ * often the thread is read, and one the person already has for it (by the same words) is not made again.
+ */
+export function todosFrom(thread: Thread, raw: unknown, existing: Record<string, Task>): Task[] {
+  if (!Array.isArray(raw)) return [];
+  const newest = thread.messages[thread.messages.length - 1];
+  if (!newest) return [];
+  const said = newest.body.join('\n');
+  const have = new Set(Object.values(existing).filter((t) => t.thread === thread.id).map((t) => words(t.title)));
+  const out: Task[] = [];
+  for (const item of raw.slice(0, MAX_TODOS)) {
+    const t = item as { what?: unknown; due?: unknown; quote?: unknown };
+    const title = typeof t.what === 'string' ? t.what.replace(/\s+/g, ' ').trim().slice(0, 120) : '';
+    const quote = typeof t.quote === 'string' ? t.quote.trim() : '';
+    if (title.length < 3 || !quoted(said, quote) || have.has(words(title))) continue;
+    const id = `tsk-${createHash('sha256').update(`${thread.id}|${words(title)}`).digest('hex').slice(0, 16)}`;
+    if (existing[id] || out.some((x) => x.id === id)) continue;
+    const due = typeof t.due === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(t.due) ? new Date(`${t.due}T17:00:00`) : undefined;
+    out.push({
+      id,
+      title,
+      status: 'todo',
+      priority: 'normal',
+      created: new Date(),
+      thread: thread.id,
+      ...(thread.project ? { project: thread.project } : {}),
+      ...(due && !Number.isNaN(due.getTime()) ? { due } : {}),
+      notes: `From “${thread.subject}”: “${quote.slice(0, 400)}”`,
+      by: 'timmy',
+    });
+    have.add(words(title));
+  }
+  return out;
 }
 
 /* ───────────── Decisions ───────────── */
@@ -151,6 +200,7 @@ interface ReadOutput {
   decision?: { question?: unknown; options?: unknown; facts?: unknown; same_as?: unknown } | null;
   things?: unknown;
   new_kinds?: unknown;
+  todos?: unknown;
 }
 
 const isCommitment = (c: unknown): c is Commitment =>

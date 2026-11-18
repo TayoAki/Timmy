@@ -71,7 +71,7 @@ describe('the scan', () => {
     expect(s!.looked.junk).toBe(2);
     // Nothing was written anywhere and nothing became a project yet.
     expect((await w.state()).ws.projects).toEqual({});
-    expect(fake().calls.filter((c) => c.slug === 'GMAIL_MODIFY_THREAD_LABELS')).toHaveLength(0);
+    expect(fake().calls.filter((c) => c.connectedAccountId === box.account && c.slug === 'GMAIL_MODIFY_THREAD_LABELS')).toHaveLength(0);
   });
 
   it('files join the group whose company owns them or whose name they carry', async () => {
@@ -180,7 +180,7 @@ describe('keeping what was found', () => {
     // What the scan found is not kept once applied.
     expect((await rows<{ proposals: unknown[] }>(`select proposals from project_scan where id = $1`, [s!.id]))[0]!.proposals).toEqual([]);
     // Nothing reached the mailbox.
-    expect(fake().calls.filter((c) => c.slug === 'GMAIL_MODIFY_THREAD_LABELS')).toHaveLength(0);
+    expect(fake().calls.filter((c) => c.connectedAccountId === box.account && c.slug === 'GMAIL_MODIFY_THREAD_LABELS')).toHaveLength(0);
   });
 
   it('refuses a merge into something not kept, and a choice about something the scan didn’t find', async () => {

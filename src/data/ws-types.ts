@@ -164,6 +164,8 @@ export interface Task {
   created: Date;
   /** The email this task came from. */
   thread?: string;
+  /** Timmy added it from what an email asked of the person. */
+  by?: 'timmy';
   contact?: string;
   notes?: string;
   /** Calendar block reserved for it. */

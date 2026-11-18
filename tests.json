@@ -575,6 +575,20 @@
    "covers": "People \u203a Map: the kept project, companies, people by name and the project's file with lines between them; clicking a company shows its people and latest threads; focusing shows only what connects; search finds and opens a person; a thread opens from the map; hiding people leaves the rest",
    "status": "pass",
    "result": "Nov 18, 2026: 13 of 13."
+  },
+  {
+   "id": "api-todos",
+   "file": "server/test/todos.test.ts",
+   "covers": "to-dos from email: what the newest message asks becomes a task with its date, the thread and the sentence it rests on; one resting on a sentence not in the mail is dropped; made once across later messages, a new ask makes a new one; nothing asked makes none; checked off stays checked off when the thread is read again; goes into the thread's project, now or when the thread is put in one; another workspace sees none",
+   "status": "pass",
+   "result": "Nov 18, 2026: 6 of 6."
+  },
+  {
+   "id": "live-todos",
+   "file": "e2e/live/live-todos.cjs",
+   "covers": "an email's ask becomes a to-do with its date, shown in the thread under To-dos, checked off there and saved, and listed in Tasks with the email it came from",
+   "status": "pass",
+   "result": "Nov 18, 2026: 6 of 6."
   }
  ]
 }

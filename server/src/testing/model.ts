@@ -70,6 +70,8 @@ export class FakeModel implements ModelProvider {
           due: null,
           commitments: promise ? [{ who: 'them', what: promise[1]!.replace(/^(I will|I'll|We will|We'll) /, '').replace(/ by \d{4}-\d{2}-\d{2}$/, ''), due: promise[2], quote: promise[1] }] : [],
           decision: choice ? { question, options: [cap(choice[1]!), cap(choice[2]!)], facts: [...(price ? [['Price', price[1], price[0]]] : []), ['Made up', '$1', 'a sentence that is not in the thread at all']], same_as: same ? Number(same[1]) : null } : null,
+          // To-dos from sentences like "Please send the signed SOW by 2026-11-20." (and one that is not in the mail at all).
+          todos: [...mail.matchAll(/(Please ([a-z][^."\\]{3,80}?) by (\d{4}-\d{2}-\d{2})\.)/g)].map((m): { what: string; due: string | null; quote: string } => ({ what: cap(m[2]!), due: m[3]!, quote: m[1]! })).concat(/Please [a-z]/.test(mail) ? [{ what: 'Wire money to an account', due: null, quote: 'Please wire the money today.' }] : []),
           // Tracked things and untracked kinds, from lines like "Deal: company Acme Corp; value $40,000." (see model-things.ts).
           ...fakeThingsRead(content),
         }),

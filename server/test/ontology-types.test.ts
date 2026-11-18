@@ -248,12 +248,13 @@ describe('an accepted kind', () => {
   });
 
   it('the read is still one call per thread, with the limit it says it has, and the kinds go in as outside content', async () => {
-    expect(READ_MAX_TOKENS).toBe(1200);
+    // 1,350 since to-dos were added to the read (150 for at most three short lines and their sentences).
+    expect(READ_MAX_TOKENS).toBe(1350);
     await deliver(DEAL);
     await deliver('Deal: company Globex; value $5,000.');
     // Two threads, two model calls in all: nothing else called a model.
     expect(model().requests.map((r) => r.route)).toEqual(['read', 'read']);
-    for (const r of reads()) expect(r).toMatchObject({ maxTokens: 1200, unattended: true, effort: 'low' });
+    for (const r of reads()) expect(r).toMatchObject({ maxTokens: 1350, unattended: true, effort: 'low' });
     const [system, user] = reads()[0]!.messages;
     expect(system!.content).toBe(READ_SYSTEM);
     expect(system!.content).not.toContain('Deal');

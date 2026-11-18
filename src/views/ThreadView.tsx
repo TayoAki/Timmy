@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { NOW, PEOPLE } from '../data/mock';
-import { decisionOps, firstName, isoDay, pathOf, signOff } from '../state/ws';
+import { decisionOps, firstName, isoDay, patch, pathOf, signOff } from '../state/ws';
 import { BlockTimeDialog } from '../areas/calendar/BlockTimeDialog';
 import { TaskDialog } from '../areas/tasks/TaskDialog';
 import { AutoTextarea, Field, Modal } from '../components/kit';
@@ -233,11 +233,49 @@ function Conversation({ t, replying, focusReply, onReplyDone }: { t: Thread; rep
           );
         })}
       </div>
+      <ThreadTodos t={t} />
       {t.suggestion?.extra && t.project && t.box === 'inbox' && <ArrivedCard t={t} />}
       <ThreadDecisions t={t} />
       {t.draft && <DraftCard t={t} draft={t.draft} />}
       {replying && !t.draft && <ReplyBox t={t} onDone={onReplyDone} autoFocus={focusReply} />}
     </>
+  );
+}
+
+/** The to-dos that came from this thread (Timmy's from what it asks, and any made by hand), to check off here. */
+function ThreadTodos({ t }: { t: Thread }) {
+  const { state, dispatch } = useStore();
+  const todos = Object.values(state.ws.tasks)
+    .filter((x) => x.thread === t.id)
+    .sort((a, b) => Number(a.status === 'done') - Number(b.status === 'done') || +new Date(a.created) - +new Date(b.created));
+  if (!todos.length) return null;
+  const open = todos.filter((x) => x.status !== 'done').length;
+  return (
+    <section className="thread-todos" aria-label="To-dos from this email">
+      <h3>
+        <ListChecks size={14} aria-hidden /> To-dos {open ? <span className="muted">{open} open</span> : <span className="muted">all done</span>}
+      </h3>
+      <ul>
+        {todos.map((x) => (
+          <li key={x.id} data-done={x.status === 'done' || undefined}>
+            <label>
+              <input
+                type="checkbox"
+                checked={x.status === 'done'}
+                onChange={(e) => dispatch(ws([patch('tasks', x.id, { status: e.target.checked ? 'done' : 'todo' })], { toast: e.target.checked ? `Done: ${x.title}` : `Back on your list: ${x.title}`, undo: true }))}
+              />
+              <span className="thread-todo-title">{x.title}</span>
+            </label>
+            {x.due && <span className="thread-todo-due">due {fmtDay(new Date(x.due))}</span>}
+            {x.by === 'timmy' && (
+              <span className="thread-todo-by" title="Timmy added this from what the email asked">
+                <Sparkles size={11} aria-hidden /> Timmy
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

@@ -104,7 +104,7 @@ export async function applyScan(workspaceId: string, userId: string, scanId: str
     }
     const next: State = {
       ...loaded.state,
-      ws: state.ws,
+      ws: withTaskProjects(state.ws, threadProject),
       threads: loaded.state.threads.map((t) => (threadProject.has(t.id) ? ({ ...t, project: threadProject.get(t.id) } as Thread) : t)),
       activity: created.length
         ? [{ id: newId('act'), at: new Date(), kind: 'triage' as const, text: `Timmy created ${created.length === 1 ? `the project ${created[0]!.name}` : `${created.length} projects`} from what it found in your mail and put ${[...threadProject.keys()].length} threads in ${created.length === 1 ? 'it' : 'them'}.` }, ...loaded.state.activity]
@@ -145,5 +145,12 @@ export async function sortIntoProjects(tx: Tx, workspaceId: string, state: State
     if (projects.size === 1) placed.set(t.id, [...projects][0]!);
   }
   if (!placed.size) return state;
-  return { ...state, threads: state.threads.map((t) => (placed.has(t.id) ? ({ ...t, project: placed.get(t.id) } as Thread) : t)) };
+  return { ...state, ws: withTaskProjects(state.ws, placed), threads: state.threads.map((t) => (placed.has(t.id) ? ({ ...t, project: placed.get(t.id) } as Thread) : t)) };
+}
+
+/** A thread's to-dos go into the project the thread goes into, unless the person already put them somewhere. */
+function withTaskProjects(ws: State['ws'], threadProject: Map<string, string>): State['ws'] {
+  const moved = Object.values(ws.tasks).filter((t) => t.thread && !t.project && threadProject.has(t.thread));
+  if (!moved.length) return ws;
+  return { ...ws, tasks: { ...ws.tasks, ...Object.fromEntries(moved.map((t) => [t.id, { ...t, project: threadProject.get(t.thread!)! }])) } };
 }
