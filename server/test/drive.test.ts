@@ -569,3 +569,22 @@ describe('a Google Doc too long to come back whole', () => {
     expect((await indexFileTexts(w.workspaceId, drive.connectionId, { max: 10 })).tried).toBe(0);
   });
 });
+
+describe('a Doc an older reader set aside, that this one can’t read either', () => {
+  it('is tried once and then left until it changes', async () => {
+    add('Still stuck', { mimeType: 'application/vnd.google-apps.document', modifiedTime: ago(1), text: 'Words.', huge: true });
+    await syncFiles(w.workspaceId, drive.connectionId);
+    await sysPool.query(
+      `update item set meta = meta || jsonb_build_object('textFailures', 3, 'textFailedVersion', (extract(epoch from occurred_at) * 1000)::bigint::text) where workspace_id = $1 and subject = 'Still stuck'`,
+      [w.workspaceId],
+    );
+    await sysPool.query(
+      `insert into item_body (item_id, workspace_id, text, version, note) select id, workspace_id, '', (extract(epoch from occurred_at) * 1000)::bigint::text, 'Drive would not hand over this file’s contents.' from item where workspace_id = $1 and subject = 'Still stuck'`,
+      [w.workspaceId],
+    );
+    // The export's store refuses it this time.
+    fake().failNext.set('GOOGLEDRIVE_EXPORT_GOOGLE_WORKSPACE_FILE', 'error');
+    expect((await indexFileTexts(w.workspaceId, drive.connectionId, { max: 10 })).tried).toBe(1);
+    expect((await indexFileTexts(w.workspaceId, drive.connectionId, { max: 10 })).tried).toBe(0);
+  });
+});

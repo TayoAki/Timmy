@@ -113,6 +113,8 @@ export async function indexFileTexts(workspaceId: string, connectionId: string, 
          on conflict (item_id) do update set text = excluded.text, version = excluded.version, note = excluded.note`,
         [row.id, workspaceId, text, row.version, 'reason' in got ? got.reason.slice(0, 300) : null],
       );
+      // This reader has had its try: a file an older one set aside is not asked for again until it changes.
+      await tx.query(`update item set meta = meta || jsonb_build_object('textReader', $3::text) where id = $1 and workspace_id = $2 and meta ? 'textFailures'`, [row.id, workspaceId, TEXT_READER]);
       return (rowCount ?? 0) > 0;
     }).catch(() => false);
     if (kept) {

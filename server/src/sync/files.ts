@@ -307,7 +307,14 @@ export async function exportedDocText(workspaceId: string, connectionId: string,
     return new TextDecoder('utf-8').decode(bytes).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').replace(/\u0000/g, '').replace(/\n{3,}/g, '\n\n').trim();
   } catch (e) {
     await meter(workspaceId, 'file.download', phase, false, Date.now() - started);
-    log.warn('exported document could not be fetched', { workspaceId, connectionId, error: (e as Error).message });
+    // Which store the link pointed at (only its host: the link itself is signed), so the store can be allowed.
+    let host = '';
+    try {
+      host = new URL(url).host;
+    } catch {
+      host = 'not an address';
+    }
+    log.warn('exported document could not be fetched', { workspaceId, connectionId, host, error: (e as Error).message });
     return null;
   }
 }
