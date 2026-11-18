@@ -2391,6 +2391,13 @@ button.rp-person:hover {
   font-size: 13px;
   font-weight: 650;
 }
+.thread-todo-make {
+  margin-left: auto;
+  font-weight: 500;
+}
+.thread-todos ul:empty {
+  display: none;
+}
 .thread-todos h3 .muted {
   font-weight: 500;
   font-size: 12px;

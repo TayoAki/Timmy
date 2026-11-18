@@ -9,6 +9,7 @@
 import type { Hono } from 'hono';
 import { withWorkspace } from '../db/pool';
 import { ApplyError, applyScan, type Choice } from '../projects/apply';
+import { linkFilesToProjects } from '../projects/file-links';
 import { latestScan, startScan } from '../projects/scan';
 import { ctxOf, requireRead, requireWorkspace, type Env } from './session';
 
@@ -26,7 +27,10 @@ export function projectRoutes(app: Hono<Env>): void {
     if (!ctx.rules.work) return c.json({ error: 'Your role can’t make changes in this workspace.' }, 403);
     const body = (await c.req.json().catch(() => ({}))) as { choices?: Choice[] };
     try {
-      return c.json(await applyScan(ctx.workspaceId, ctx.user.id, c.req.param('id'), body.choices ?? []));
+      const out = await applyScan(ctx.workspaceId, ctx.user.id, c.req.param('id'), body.choices ?? []);
+      // Files the scan didn't see (listed while it ran) go into the new projects too, by the same plain signs as new ones.
+      if (out.created.length) await linkFilesToProjects(ctx.workspaceId).catch(() => 0);
+      return c.json(out);
     } catch (e) {
       if (e instanceof ApplyError) return c.json({ error: e.message }, e.status as 400);
       throw e;

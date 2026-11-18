@@ -1,6 +1,11 @@
-// A new workspace's setup (src/live/Setup.tsx), sorting junk automatically, Triage newest first with
-// "Accept all" in batches, and the files from a connected Drive on the Files screen.
+// A new workspace's setup (src/live/Setup.tsx, SetupSteps.tsx): email, then Drive, then the projects Timmy finds in
+// them, then a tour on the person's own mail and files (an email into a project, a to-do from an email in a project, a
+// Drive document in Timmy's editor), then sorting junk, the calendar and the morning run. Then Triage newest first
+// with "Accept all" in batches, and the files from a connected Drive on the Files screen.
 const { BASE, ok, open, signUp, api, connectApp, run } = require('./lib.cjs');
+
+/** With SHOTS set to a folder, pictures of the new steps are kept there. */
+const shot = async (locator, name) => process.env.SHOTS && locator.screenshot({ path: `${process.env.SHOTS}/${name}.png` });
 
 const threads = async (page) => (await api(page, 'GET', '/api/v1/state')).body.slices.threads;
 /** Delivers an email and waits until Timmy has taken it in (new mail is taken in by a background job). */
@@ -31,28 +36,98 @@ run('live-setup', async (browser) => {
   // A new workspace opens on its setup.
   const setup = page.getByRole('dialog', { name: 'Set up Timmy' });
   await setup.waitFor();
-  ok(/0 of 5 done/.test(await setup.innerText()), 'a new workspace opens on its setup, with nothing done yet');
+  ok(/0 of 7 done/.test(await setup.innerText()), 'a new workspace opens on its setup, with nothing done yet');
   ok(/never sends, deletes or changes anything without your OK/.test(await setup.innerText()), 'it says up front that nothing happens without the person’s OK');
   ok((await setup.locator('.setup-step[data-state="open"]').getAttribute('data-step')) === 'mail', 'connecting email comes first');
+  const openStep = async () => setup.locator('.setup-step[data-state="open"]').getAttribute('data-step');
 
-  // Junk that arrives before anything is connected is impossible; connect Gmail from the setup.
+  // 1. Email.
   await connectFromSetup(page, 'Connect Gmail', 'grace@navy.test');
   await setup.waitFor();
   ok(/Gmail is connected\./.test(await setup.innerText()), 'back from Google, the setup opens again and says Gmail is connected');
   ok(!/connect=/.test(page.url()), 'the address bar is cleaned up, so a reload says nothing twice');
-  ok(/1 of 5 done/.test(await setup.innerText()), 'one step done');
-  ok((await setup.locator('.setup-step[data-state="open"]').getAttribute('data-step')) === 'sorting', 'choosing how Timmy sorts comes next');
+  ok(/1 of 7 done/.test(await setup.innerText()), 'one step done');
+  ok((await openStep()) === 'files', 'connecting files comes next');
   ok(/Gmail · grace@navy\.test/.test(await setup.locator('.setup-step[data-step="mail"]').innerText()), 'the email step shows the connected account');
   await setup.locator('.setup-status').waitFor();
   ok(true, 'it shows how much mail has come in so far');
 
-  // Junk already waiting is sorted inside Timmy when the rule is switched on; mail a person wrote waits.
+  // Mail comes in: two people at Acme about one piece of work, a colleague, and a promotion.
   await promo(page, 'Spring sale');
+  await deliver(page, { from: 'Dana Whitfield <dana@acme.test>', subject: 'Website redesign kickoff', body: 'Could you take a look at the plan?' });
+  await deliver(page, { from: 'Sam Rivera <sam@acme.test>', subject: 'Homepage wireframes', body: 'Here are the wireframes. Please send the brand guide by 2026-11-25.' });
   await deliver(page, { from: 'Ada Lovelace <ada@engine.test>', subject: 'Notes on the engine', body: 'Could you read my notes by Friday?' });
+
+  // 2. Files: Google Drive, with a document from Acme in it.
+  await connectFromSetup(page, 'Connect Google Drive', 'grace@navy.test');
+  await setup.waitFor();
+  ok(/Google Drive is connected\./.test(await setup.innerText()), 'Drive connects from the setup too');
+  ok((await api(page, 'POST', '/api/test/fake', { op: 'file', file: { name: 'Acme redesign brief', owner: 'dana@acme.test', mimeType: 'application/vnd.google-apps.document', text: 'The Acme website redesign: goals and timeline.' } })).body.ok, 'a document from Acme is in the Drive');
+  ok(/2 of 7 done/.test(await setup.innerText()), 'two steps done');
+
+  // 3. Projects: the scan starts by itself and lists what it found, ticked; one click creates them.
+  ok((await openStep()) === 'projects', 'finding projects comes next');
+  const found = setup.getByRole('list', { name: 'Projects Timmy found' });
+  await found.waitFor({ timeout: 60000 });
+  ok(true, 'the scan starts by itself once mail is in, and lists the projects it found');
+  const firstBox = found.locator('input[type="checkbox"]').first();
+  ok(await firstBox.isChecked(), 'each project found starts out ticked');
+  await shot(setup, 'setup-projects');
+  ok(/2 emails/.test(await found.locator('li').first().innerText()), 'with how many emails it holds');
+  await setup.getByRole('button', { name: /^Create 1 project$/ }).click();
+  await page.locator('.toast', { hasText: /New mail and files go in them on their own/ }).waitFor();
+  ok(true, 'creating them says what went in, and that new mail and files follow');
+  const project = Object.values((await api(page, 'GET', '/api/v1/state')).body.slices['ws.projects']).find((p) => p.status === 'active');
+  ok(!!project, 'the project exists');
+  let t = await threads(page);
+  ok(t.filter((x) => x.project === project.id).map((x) => x.subject).sort().join('|') === 'Homepage wireframes|Website redesign kickoff', 'its emails are in it');
+  for (let i = 0; i < 40 && (await openStep()) !== 'tour'; i++) await page.waitForTimeout(150);
+  ok(/3 of 7 done/.test(await setup.innerText()) && (await openStep()) === 'tour', 'the tour comes next');
+
+  // 4. The tour, on the person's own mail and files.
+  const tour = setup.locator('.setup-step[data-step="tour"]');
+  const card = (title) => tour.locator('.setup-tour-card', { hasText: title });
+  // An email into a project.
+  const emailCard = card('Put an email in a project');
+  ok(/“Notes on the engine” from Ada Lovelace/.test(await emailCard.innerText()), 'the tour picks an email that is in no project yet');
+  await emailCard.getByRole('button', { name: 'Add to project' }).click();
+  await emailCard.getByRole('dialog', { name: 'Put this email in a project' }).getByRole('option', { name: new RegExp(project.name) }).click();
+  await emailCard.locator('[data-done="true"], .setup-tour-icon').first().waitFor();
+  for (let i = 0; i < 40 && !(await emailCard.getAttribute('data-done')); i++) await page.waitForTimeout(150);
+  ok((await emailCard.getAttribute('data-done')) === 'true', 'putting it in a project ticks the first part');
+  t = await threads(page);
+  ok(t.find((x) => x.subject === 'Notes on the engine').project === project.id, 'the email is in the project');
+  // A to-do Timmy made from an email, already in the email's project.
+  const todoCard = card('A to-do from an email, in a project');
+  ok(/Timmy made “Send the brand guide” from “Homepage wireframes”, due Nov 25/.test(await todoCard.innerText()), 'the tour shows the to-do Timmy made from what an email asked');
+  ok((await todoCard.getByRole('combobox', { name: 'The to-do’s project' }).inputValue()) === project.id, 'and it is in the email’s project already');
+  ok((await todoCard.getAttribute('data-done')) === 'true', 'which ticks the second part');
+  // A Drive document opened in Timmy's own editor.
+  const docCard = card('Open a Drive document in Timmy');
+  await docCard.getByText('“Acme redesign brief” · Google Doc').waitFor();
+  await shot(setup, 'setup-tour');
+  ok(new RegExp(`in ${project.name}`).test(await docCard.innerText()), 'the tour picks a document, one already in a project');
+  await docCard.getByRole('button', { name: 'Open in Timmy’s editor' }).click();
+  const editor = page.getByRole('dialog', { name: 'Acme redesign brief in Timmy’s editor' });
+  await editor.waitFor();
+  let ready = false;
+  for (let i = 0; i < 60 && !ready; i++) {
+    ready = /Saves go to this file in Google Drive/.test(await editor.locator('.craft-state').innerText().catch(() => ''));
+    if (!ready) await page.waitForTimeout(1000);
+  }
+  ok(ready, 'it opens in the document editor, which saves back to Drive');
+  await editor.getByRole('button', { name: 'Close' }).click();
+  ok((await docCard.getAttribute('data-done')) === 'true', 'closing it ticks the third part');
+  ok(/3 of 3 tried/.test(await tour.innerText()), 'all three tried');
+  await tour.getByRole('button', { name: 'Done' }).click();
+  ok(/4 of 7 done/.test(await setup.innerText()), 'the tour is done');
+
+  // 5. Sorting: junk already waiting is sorted inside Timmy when the rule is switched on; mail a person wrote waits.
+  ok((await openStep()) === 'sorting', 'choosing how Timmy sorts comes next');
   await setup.getByRole('button', { name: 'Sort junk automatically' }).click();
   await page.getByText(/Timmy archived 1 in Timmy/).waitFor();
   ok(true, 'switching sorting on says what it sorted, and that the mailbox was left as it was');
-  let t = await threads(page);
+  t = await threads(page);
   ok(t.find((x) => x.subject === 'Spring sale').box === 'archived', 'the promotion already waiting is archived');
   ok(t.find((x) => x.subject === 'Notes on the engine').box === 'inbox', 'the email a person wrote still waits in Triage');
   const labels = (await api(page, 'POST', '/api/test/fake', { op: 'labels' })).body.threads;
@@ -67,18 +142,19 @@ run('live-setup', async (browser) => {
   }
   ok((await threads(page)).find((x) => x.subject === 'Summer sale').box === 'archived' && filed, 'junk that arrives afterwards is archived in Timmy and in Gmail');
 
-  // The calendar, then files skipped, then the morning run.
-  ok((await setup.locator('.setup-step[data-state="open"]').getAttribute('data-step')) === 'calendar', 'the calendar comes next');
+  // 6. The calendar, then 7. the morning run.
+  ok((await openStep()) === 'calendar', 'the calendar comes next');
   await connectFromSetup(page, 'Connect Google Calendar', 'grace@navy.test');
   await setup.waitFor();
   ok(/Google Calendar is connected\./.test(await setup.innerText()), 'back from Google again, the setup says the calendar is connected');
-  ok((await setup.locator('.setup-step[data-state="open"]').getAttribute('data-step')) === 'files', 'files come next, marked optional');
-  await setup.getByRole('button', { name: 'Skip for now' }).click();
-  ok(/Skipped for now/.test(await setup.locator('.setup-step[data-step="files"]').innerText()), 'files can be skipped for now');
+  // Back from Google the page has reloaded, and whether sorting is on is asked of the server again: the open step
+  // settles once it has answered.
+  for (let i = 0; i < 40 && (await openStep()) !== 'morning'; i++) await page.waitForTimeout(150);
+  ok((await openStep()) === 'morning', 'the morning run comes last');
   await setup.getByRole('button', { name: /^Use / }).click();
   const done = page.getByRole('dialog', { name: 'Timmy is set up' });
   await done.waitFor();
-  ok(/5 of 5 done/.test(await done.innerText()), 'every step done: Timmy is set up');
+  ok(/7 of 7 done/.test(await done.innerText()), 'every step done: Timmy is set up');
   await done.getByRole('button', { name: 'Open Triage' }).click();
   await page.getByRole('heading', { name: 'Triage' }).waitFor();
   ok(true, 'Open Triage goes to Triage');

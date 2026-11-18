@@ -2,6 +2,7 @@
  * Reading one email the way its sender laid it out (see mail/original.ts).
  *
  *   GET /api/v1/mail/original?thread=<id>&message=<id>[&images=1]
+ *   POST /api/v1/mail/todo { thread }   a to-do from what the email asks (agent/todo.ts)
  *
  * The thread is looked up in the caller's own workspace and the message must be one of its messages, from a mailbox
  * that is still connected. Nothing is stored; a short-lived copy is kept in memory so opening the same email twice
@@ -9,6 +10,7 @@
  * stops showing at once.
  */
 import type { Hono } from 'hono';
+import { todoFromThread } from '../agent/todo';
 import { readOriginal, type Original } from '../mail/original';
 import { withWorkspace } from '../db/pool';
 import { readState } from '../state/mutate';
@@ -36,6 +38,17 @@ function remember(key: string, value: Original) {
 }
 
 export function mailRoutes(app: Hono<Env>): void {
+  // "Make a to-do" on an email: the to-do goes into Tasks, linked to the thread and its project.
+  app.post('/api/v1/mail/todo', requireWorkspace, async (c) => {
+    const ctx = ctxOf(c);
+    if (!ctx.rules.work) return c.json({ error: 'Your role can’t make changes in this workspace.' }, 403);
+    const body = (await c.req.json().catch(() => ({}))) as { thread?: unknown };
+    if (typeof body.thread !== 'string' || body.thread.length > 200) return c.json({ error: 'Which email?' }, 400);
+    const r = await todoFromThread(ctx.workspaceId, body.thread);
+    if (!r.ok) return c.json({ error: r.error }, r.status as 400);
+    return c.json({ task: { id: r.task.id, title: r.task.title, project: r.task.project ?? null, due: r.task.due ?? null } });
+  });
+
   app.get('/api/v1/mail/original', requireWorkspace, requireRead, async (c) => {
     const ctx = ctxOf(c);
     const threadId = String(c.req.query('thread') ?? '');

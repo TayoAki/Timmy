@@ -233,7 +233,8 @@
 .drive-editor {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  /* Above dialogs (90): it can be opened from one, such as the setup's tour. */
+  z-index: 95;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   padding: 0 12px 12px;

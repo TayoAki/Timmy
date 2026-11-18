@@ -9,7 +9,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Task } from '../../src/data/ws-types';
 import { linkFilesToProjects, scoreFile } from '../src/projects/file-links';
-import { boot, connectApp, connectGmail, fake, jobs, model, newWorkspace, rows, sysPool, type Client } from './helpers';
+import { addMember, boot, connectApp, connectGmail, fake, jobs, model, newWorkspace, rows, sysPool, type Client } from './helpers';
 
 let w: Client;
 let box: { connectionId: string; account: string };
@@ -160,5 +160,50 @@ describe('files into projects, by plain code', () => {
     expect(scoreFile({ name: 'apollo-notes', owner: 'me@x.test', text: null }, p, new Set())).toBe(2);
     expect(scoreFile({ name: 'Notes', owner: 'dana@acme.test', text: null }, p, new Set(['org:acme.test']))).toBe(3);
     expect(scoreFile({ name: 'Notes', owner: 'me@x.test', text: 'the apollo launch is soon' }, p, new Set())).toBe(1);
+  });
+});
+
+describe('Make a to-do on an email', () => {
+  const make = (c: Client, thread: string) => c.post('/api/v1/mail/todo', { thread });
+
+  it('adds what the email asks to Tasks, linked to the email and in its project, and only once', async () => {
+    await addProjects(project('apollo', '10', 'Apollo launch'));
+    const m = fake().deliver(box.account, { from: 'Gene Kranz <gene@mission.test>', subject: 'Telemetry', body: 'Please check the telemetry feed before launch.' });
+    await (await boot()).request('/api/hooks/composio', { method: 'POST', headers: m.webhook.headers, body: m.webhook.body });
+    await jobs().drain();
+    const t = await threadOf('Telemetry');
+    await w.cmd({ type: 'setProject', id: t.id, project: 'apollo' });
+    const before = (await tasks()).filter((x) => x.thread === t.id).length;
+    const r = await make(w, t.id);
+    expect(r.status).toBe(200);
+    const made = ((await r.json()) as { task: { id: string; title: string; project: string } }).task;
+    expect(made).toMatchObject({ title: 'Check the telemetry feed before launch', project: 'apollo' });
+    const task = (await tasks()).find((x) => x.id === made.id)!;
+    expect(task).toMatchObject({ thread: t.id, by: 'timmy', project: 'apollo' });
+    expect(task.notes).toContain('Please check the telemetry feed before launch.');
+    expect((await tasks()).filter((x) => x.thread === t.id).length).toBe(before + 1);
+    expect((await threadOf('Telemetry')).history?.at(-1)?.text).toBe('Timmy added a to-do: Check the telemetry feed before launch');
+    // Asked again, nothing new: the same to-do is never made twice.
+    expect((await make(w, t.id)).status).toBe(422);
+  });
+
+  it('an email that asks nothing, or a to-do resting on words that aren’t in it, makes nothing', async () => {
+    await deliver('Pat Kim <pat@lunch.test>', 'Lunch?', 'Are you free for lunch on Friday?');
+    const t = await threadOf('Lunch?');
+    const r = await make(w, t.id);
+    expect(r.status).toBe(422);
+    expect(((await r.json()) as { error: string }).error).toMatch(/didn’t find anything this email asks you to do/);
+    model().script.push({ content: JSON.stringify({ todos: [{ what: 'Wire money to an account', due: null, quote: 'Please wire the money today.' }] }) });
+    expect((await make(w, t.id)).status).toBe(422);
+    expect((await tasks()).some((x) => /wire/i.test(x.title))).toBe(false);
+  });
+
+  it('needs a role that may make changes, and an email in this workspace', async () => {
+    await deliver('Pat Kim <pat@lunch.test>', 'Please', 'Please send the slides.');
+    const t = await threadOf('Please');
+    const revops = await addMember(w.workspaceId, 'revops');
+    expect((await make(revops, t.id)).status).toBe(403);
+    const other = await newWorkspace('Elsewhere');
+    expect((await make(other, t.id)).status).toBe(404);
   });
 });

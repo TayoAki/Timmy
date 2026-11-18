@@ -48,7 +48,7 @@ Updated Nov 18, 2026.
 
 ## What the tester can try today
 
-- Sign up, then a guided setup: connect Gmail, choose how junk is sorted, Google Calendar, Drive (optional), the morning run.
+- Sign up, then a guided setup: connect Gmail and Google Drive, keep the projects Timmy finds in them (one click), try three things on their own mail and files (an email into a project, a to-do from an email in a project, a Drive document edited in Timmy), then junk sorting, Google Calendar and the morning run.
 - Triage, newest first, with Timmy's suggestion for each email; "Accept all Timmy is sure about"; optional automatic junk sorting (new mail only touches Gmail).
 - An email reader that shows the email as the sender laid it out, with links, full addresses and pictures on request.
 - To-dos taken from what emails ask, to check off in the email, in Tasks, or on the project.
@@ -76,7 +76,7 @@ Updated Nov 18, 2026.
 > Thanks for trying Timmy. Here's how to start:
 >
 > 1. Go to https://app-production-a7a7000d.up.railway.app and choose **Create an account** with this email address: [their email]. **Save your password**; password reset by email isn't switched on yet.
-> 2. Name your workspace. The setup walks you through connecting Gmail, your calendar and (if you like) Google Drive.
+> 2. Name your workspace. The setup walks you through connecting Gmail and Google Drive; Timmy then finds your projects in them and shows you around on your own mail. Your calendar comes after.
 > 3. Google's sign-in page will mention Composio, the service Timmy uses to talk to Google. It asks for wide access (including all of Drive and your contacts): those are its standard settings. Timmy only uses your mail, your calendar and your files, and it changes a file in Drive only when you edit it in Timmy and press Save. If Google warns that the app isn't verified, that's expected during the beta.
 >
 > Good to know:

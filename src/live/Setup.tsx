@@ -1,7 +1,9 @@
 /**
- * Setting up a real workspace: connect email, choose whether Timmy sorts junk by itself, connect the calendar,
- * optionally files, and choose when the morning run happens. It opens by itself right after a workspace is created, from the "Set up Timmy" button on the brief
- * at any time after that, and again when the person comes back from an app's sign-in page they went to from here.
+ * Setting up a real workspace. First the core, in order: connect one mailbox, connect one Drive, let Timmy find the
+ * projects in them and keep the ones that fit, then try Timmy on that mail and those files (SetupSteps.tsx). Then the
+ * rest: whether Timmy sorts junk by itself, the calendar, and when the morning run happens. It opens by itself right
+ * after a workspace is created, from the "Set up Timmy" button on the brief at any time after that, and again when the
+ * person comes back from an app's sign-in page they went to from here.
  *
  * Whether a step is done is read from the workspace itself (which apps are connected, whether the rule to sort
  * mail automatically is on), so it is the same on every device. Only small choices are kept in this browser: that
@@ -9,7 +11,9 @@
  * them just shows those steps again.
  */
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { ArrowRight, Calendar, Check, FolderOpen, Mail, Plug, Sunrise, Wand2 } from 'lucide-react';
+import { ArrowRight, Calendar, Check, FolderKanban, FolderOpen, Mail, Plug, Sparkles, Sunrise, Wand2 } from 'lucide-react';
+import { activeProjects } from '../areas/projects/lib';
+import { ProjectsStep, TourStep, type TourPart } from './SetupSteps';
 import { Modal } from '../components/kit';
 import { TimePicker } from '../components/TimePicker';
 import { APPS } from '../data/connections';
@@ -19,13 +23,16 @@ import { api } from './api';
 import { useProfile } from './LiveApp';
 import { sortedNotice } from './Settings';
 
-type StepId = 'mail' | 'sorting' | 'calendar' | 'files' | 'morning';
+type StepId = 'mail' | 'files' | 'projects' | 'tour' | 'sorting' | 'calendar' | 'morning';
 
 interface Saved {
   skipped: StepId[];
   morning: boolean;
   /** The person chose to sort everything in Triage themselves. */
   sortsThemselves: boolean;
+  /** The tour is finished, and which of its three parts the person tried. */
+  tour: boolean;
+  tried: TourPart[];
 }
 
 /* ───────────── What this browser remembers ───────────── */
@@ -42,9 +49,15 @@ const RESUME_FOR_MS = 30 * 60_000;
 function readSaved(workspaceId: string): Saved {
   try {
     const v = JSON.parse(localStorage.getItem(savedKey(workspaceId)) ?? 'null') as Partial<Saved> | null;
-    return { skipped: Array.isArray(v?.skipped) ? v.skipped.filter((s): s is StepId => s === 'files') : [], morning: v?.morning === true, sortsThemselves: v?.sortsThemselves === true };
+    return {
+      skipped: Array.isArray(v?.skipped) ? v.skipped.filter((s): s is StepId => s === 'files' || s === 'projects') : [],
+      morning: v?.morning === true,
+      sortsThemselves: v?.sortsThemselves === true,
+      tour: v?.tour === true,
+      tried: Array.isArray(v?.tried) ? v.tried.filter((s): s is TourPart => s === 'email' || s === 'todo' || s === 'doc') : [],
+    };
   } catch {
-    return { skipped: [], morning: false, sortsThemselves: false };
+    return { skipped: [], morning: false, sortsThemselves: false, tour: false, tried: [] };
   }
 }
 
@@ -83,6 +96,10 @@ function loadSorting(workspaceId: string) {
     .catch(() => askedSorting.delete(workspaceId));
 }
 
+/** What the tour's parts tried so far are, as this browser has them now (two may be marked one after the other). */
+let triedWorkspace = '';
+const readSavedTried = () => readSaved(triedWorkspace).tried;
+
 /** Called when a workspace has just been created, before the app loads it. */
 export const markFirstRun = () => session('set', FIRST_RUN, '1');
 
@@ -99,7 +116,7 @@ interface Progress {
   next: StepId | null;
 }
 
-const ORDER: StepId[] = ['mail', 'sorting', 'calendar', 'files', 'morning'];
+const ORDER: StepId[] = ['mail', 'files', 'projects', 'tour', 'sorting', 'calendar', 'morning'];
 
 function progressOf(state: State, saved: Saved, setsSchedule: boolean, sorts: boolean | undefined): Progress {
   const apps = state.conn.apps;
@@ -111,6 +128,8 @@ function progressOf(state: State, saved: Saved, setsSchedule: boolean, sorts: bo
     // An Outlook account brings its calendar with it, unless Microsoft was told not to share it.
     calendar: !!apps.gcal?.connected || (!!apps.outlook?.connected && !apps.outlook.calendarRefused),
     files: !!apps.gdrive?.connected || !!apps.onedrive?.connected || saved.skipped.includes('files'),
+    projects: activeProjects(state.ws).length > 0 || saved.skipped.includes('projects'),
+    tour: saved.tour,
     // Only an owner or admin sets the morning run; for anyone else there is nothing to choose.
     morning: saved.morning || !setsSchedule,
   };
@@ -122,6 +141,7 @@ function useSetup() {
   const { state } = useStore();
   const live = useProfile();
   const workspaceId = live?.profile.workspace.id ?? '';
+  triedWorkspace = workspaceId;
   const [saved, setSaved] = useState<Saved>(() => readSaved(workspaceId));
   const [sorts, setSorts] = useState<boolean | undefined>(() => sortingOn.get(workspaceId));
   const can = live?.profile.can;
@@ -199,7 +219,7 @@ const stepOfApp = (id: string): StepId | null => (id === 'gmail' || id === 'outl
 /** Mounted once on a real workspace. Opens on the events above and on the way back from an app's sign-in page. */
 export function SetupDialog() {
   const { state, dispatch } = useStore();
-  const { progress, update, sorts, sortAutomatically, canConnect, canSchedule } = useSetup();
+  const { progress, saved, update, sorts, sortAutomatically, canConnect, canSchedule } = useSetup();
   const [sorting, setSorting] = useState(false);
   const [open, setOpen] = useState(false);
   const [shown, setShown] = useState<StepId | null>(null);
@@ -261,9 +281,9 @@ export function SetupDialog() {
     <Modal
       open
       onClose={close}
-      width={600}
+      width={680}
       title={progress.complete ? 'Timmy is set up' : 'Set up Timmy'}
-      description={progress.complete ? undefined : 'A few minutes. Timmy reads what you connect, and never sends, deletes or changes anything without your OK.'}
+      description={progress.complete ? undefined : 'A few minutes. Connect your email and Drive, and Timmy sorts them into your projects. It never sends, deletes or changes anything without your OK.'}
       footer={
         progress.complete ? (
           <>
@@ -308,7 +328,7 @@ export function SetupDialog() {
 
       {progress.complete && (
         <p className="setup-done-note">
-          New mail lands in Triage with Timmy’s suggestion; accept one and Timmy files it in {progress.mail === 'outlook' ? 'Outlook' : 'Gmail'} too. Drafts, sends and calendar changes always wait for you.
+          New mail lands in Triage with Timmy’s suggestion and goes into its project; accept one and Timmy files it in {progress.mail === 'outlook' ? 'Outlook' : 'Gmail'} too. New files join their projects, and to-dos come from what emails ask. Drafts, sends and calendar changes always wait for you.
         </p>
       )}
 
@@ -334,8 +354,79 @@ export function SetupDialog() {
         </Step>
 
         <Step
-          id="sorting"
+          id="files"
           n={2}
+          icon={<FolderOpen size={16} />}
+          title="Connect your files"
+          done={progress.done.files}
+          summary={apps.gdrive?.connected ? `Google Drive · ${apps.gdrive.account ?? 'connected'}` : apps.onedrive?.connected ? `OneDrive · ${apps.onedrive.account ?? 'connected'}` : progress.done.files ? 'Skipped for now' : undefined}
+          open={current === 'files'}
+          onOpen={() => setShown('files')}
+        >
+          <p className="setup-text">Timmy puts your documents in their projects, finds one by what it says, and opens it in its own editor. It keeps a list of your files and the words in recent documents, spreadsheets and slides, and changes a file only when you edit it in Timmy and press Save.</p>
+          <div className="setup-choices">
+            {(progress.mail === 'outlook' ? ['onedrive', 'gdrive'] : ['gdrive', 'onedrive']).map((id) => (
+              <Choice key={id} app={id} line={id === 'gdrive' ? 'Docs, Sheets and Slides' : 'Word, Excel and PowerPoint'} onConnect={() => connect(id)} />
+            ))}
+          </div>
+          <div className="setup-row-end">
+            <button
+              className="btn btn-sm btn-ghost"
+              onClick={() => {
+                setShown(null);
+                setFlash(null);
+                update({ skipped: [...new Set([...saved.skipped, 'files' as StepId])] });
+              }}
+            >
+              Skip for now
+            </button>
+          </div>
+        </Step>
+
+        <Step
+          id="projects"
+          n={3}
+          icon={<FolderKanban size={16} />}
+          title="Find your projects"
+          done={progress.done.projects}
+          summary={activeProjects(state.ws).length ? `${activeProjects(state.ws).length} project${activeProjects(state.ws).length === 1 ? '' : 's'}` : progress.done.projects ? 'Skipped for now' : undefined}
+          open={current === 'projects'}
+          onOpen={() => setShown('projects')}
+        >
+          <ProjectsStep
+            mailIn={!!progress.mail}
+            onSkip={() => {
+              setShown(null);
+              setFlash(null);
+              update({ skipped: [...new Set([...saved.skipped, 'projects' as StepId])] });
+            }}
+          />
+        </Step>
+
+        <Step
+          id="tour"
+          n={4}
+          icon={<Sparkles size={16} />}
+          title="See Timmy at work"
+          done={progress.done.tour}
+          summary={progress.done.tour ? `${saved.tried.length} of 3 tried` : undefined}
+          open={current === 'tour'}
+          onOpen={() => setShown('tour')}
+        >
+          <TourStep
+            tried={saved.tried}
+            hasFiles={!!apps.gdrive?.connected || !!apps.onedrive?.connected}
+            onTried={(part) => update({ tried: [...new Set([...readSavedTried(), part])] })}
+            onFinish={() => {
+              setShown(null);
+              update({ tour: true });
+            }}
+          />
+        </Step>
+
+        <Step
+          id="sorting"
+          n={5}
           icon={<Wand2 size={16} />}
           title="Choose how Timmy sorts"
           done={progress.done.sorting}
@@ -384,7 +475,7 @@ export function SetupDialog() {
 
         <Step
           id="calendar"
-          n={3}
+          n={6}
           icon={<Calendar size={16} />}
           title="Connect your calendar"
           done={progress.done.calendar}
@@ -408,39 +499,8 @@ export function SetupDialog() {
         </Step>
 
         <Step
-          id="files"
-          n={4}
-          icon={<FolderOpen size={16} />}
-          title="Add your files"
-          optional
-          done={progress.done.files}
-          summary={apps.gdrive?.connected ? `Google Drive · ${apps.gdrive.account ?? 'connected'}` : apps.onedrive?.connected ? `OneDrive · ${apps.onedrive.account ?? 'connected'}` : progress.done.files ? 'Skipped for now' : undefined}
-          open={current === 'files'}
-          onOpen={() => setShown('files')}
-        >
-          <p className="setup-text">So Ask can find a document by what it says. Timmy keeps a list of your files and the words in recent documents, spreadsheets and slides. It changes a file only when you edit it in Timmy and press Save.</p>
-          <div className="setup-choices">
-            {(progress.mail === 'outlook' ? ['onedrive', 'gdrive'] : ['gdrive', 'onedrive']).map((id) => (
-              <Choice key={id} app={id} line={id === 'gdrive' ? 'Docs, Sheets and Slides' : 'Word, Excel and PowerPoint'} onConnect={() => connect(id)} />
-            ))}
-          </div>
-          <div className="setup-row-end">
-            <button
-              className="btn btn-sm btn-ghost"
-              onClick={() => {
-                setShown(null);
-                setFlash(null);
-                update({ skipped: ['files'] });
-              }}
-            >
-              Skip for now
-            </button>
-          </div>
-        </Step>
-
-        <Step
           id="morning"
-          n={5}
+          n={7}
           icon={<Sunrise size={16} />}
           title="Choose your morning run"
           done={progress.done.morning}

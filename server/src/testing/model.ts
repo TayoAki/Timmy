@@ -79,6 +79,12 @@ export class FakeModel implements ModelProvider {
         }),
       };
     }
+    // A to-do asked for on one email: the first "Please …" sentence in it, with its date when it gives one.
+    if (req.route === 'todo') {
+      const content = req.messages[req.messages.length - 1]!.content;
+      const m = /(Please ([a-z][^."\\]{3,80}?)(?: by (\d{4}-\d{2}-\d{2}))?[.!])/.exec(content);
+      return { content: JSON.stringify({ todos: m ? [{ what: m[2]![0]!.toUpperCase() + m[2]!.slice(1), due: m[3] ?? null, quote: m[1] }] : [] }) };
+    }
     if (req.route === 'summary') {
       const listed = [...req.messages[req.messages.length - 1]!.content.matchAll(/^\[([\w.:@+-]+)\] (.+)$/gm)].map((m) => ({ id: m[1]!, text: m[2]! }));
       return {

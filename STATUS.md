@@ -43,6 +43,29 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 | Frontend live mode (`VITE_TIMMY_LIVE=1`) | Built: sign-in, onboarding, state from the API, Connect buttons, model picker, monthly limit, approvals for writes Timmy proposes. The demo is unchanged and still the default build. |
 | Railway | `app` (API + live app), `pgvector` and the bucket `timmy-files` exist in `production` and `staging`. Both `app` services have the OpenRouter and Composio keys. |
 
+## The new onboarding (Nov 18, 2026)
+
+The setup a new workspace opens on now has seven steps, the first four being the core:
+
+1. **Connect your email** (Gmail or Outlook).
+2. **Connect your files** (Google Drive or OneDrive). Can be skipped.
+3. **Find your projects.**
+   - As soon as some mail is in, Timmy scans the mail, meetings and files by itself and lists the projects it found, each ticked, with its email and file counts and people. Names can be edited.
+   - One click creates the ticked ones: their emails go in, their files are linked (also files listed while the scan ran), and new mail and files follow on their own.
+   - Can be skipped.
+4. **See Timmy at work**, on the person's own data:
+   - put an email that is in no project into one, with the same picker as everywhere else;
+   - a to-do Timmy made from an email, shown in its project, with a project picker (or a button to have Timmy make one from an email);
+   - a Drive document, preferably one already in a project, opened in Timmy's editor, where Save goes back to Drive.
+5. Then, as before: **Choose how Timmy sorts**, **Connect your calendar**, **Choose your morning run**.
+
+**Make a to-do** is new on every email too (`POST /api/v1/mail/todo`, `server/src/agent/todo.ts`): one small model call, the to-do held to a sentence really in the thread's last three messages, linked to the email and in its project, made once.
+
+**Tests.**
+- `live-setup` was rewritten for the new order (61 checks, passed twice). It used to check the old order: 5 steps, sorting second, files optional and skipped. It now checks every step above in a real browser, including the editor opening from the tour.
+- `live-todos` checks Make a to-do (7 checks).
+- `auto-organize.test` covers its API (13 tests).
+
 ## Mail and files organized into projects on their own (Nov 18, 2026)
 
 - **New mail.** Plain code still goes first: a thread from a project's own people or company goes into that project.

@@ -40,6 +40,8 @@ import { MicButton } from '../components/Dictation';
 import { joinAt } from '../lib/dictation';
 import { ApprovalCard, ApprovalNotes } from '../areas/approvals/ApprovalCard';
 import { draftNotes, openApprovals } from '../state/approvals';
+import { isLive } from '../live/clock';
+import { api } from '../live/api';
 
 const MOVES: { box: Box; key: string; label: string; icon: ReactNode }[] = [
   { box: 'follow-up', key: 'f', label: 'Follow Up', icon: <Reply size={15} /> },
@@ -247,15 +249,35 @@ function Conversation({ t, replying, focusReply, onReplyDone }: { t: Thread; rep
 /** The to-dos that came from this thread (Timmy's from what it asks, and any made by hand), to check off here. */
 function ThreadTodos({ t }: { t: Thread }) {
   const { state, dispatch } = useStore();
+  const [making, setMaking] = useState(false);
   const todos = Object.values(state.ws.tasks)
     .filter((x) => x.thread === t.id)
     .sort((a, b) => Number(a.status === 'done') - Number(b.status === 'done') || +new Date(a.created) - +new Date(b.created));
-  if (!todos.length) return null;
+  // On a real workspace Timmy can make one from what the email asks, on request (server/src/agent/todo.ts).
+  const canMake = isLive();
+  if (!todos.length && !canMake) return null;
   const open = todos.filter((x) => x.status !== 'done').length;
+  const make = async () => {
+    setMaking(true);
+    try {
+      const r = await api.todoFromEmail(t.id);
+      const project = r.task.project ? state.ws.projects[r.task.project] : undefined;
+      dispatch({ type: 'toast', text: `To-do added: ${r.task.title}${project ? ` (in ${project.name})` : ''}` });
+    } catch (e) {
+      dispatch({ type: 'toast', text: (e as Error).message, tone: 'warn' });
+    } finally {
+      setMaking(false);
+    }
+  };
   return (
     <section className="thread-todos" aria-label="To-dos from this email">
       <h3>
-        <ListChecks size={14} aria-hidden /> To-dos {open ? <span className="muted">{open} open</span> : <span className="muted">all done</span>}
+        <ListChecks size={14} aria-hidden /> To-dos {todos.length ? open ? <span className="muted">{open} open</span> : <span className="muted">all done</span> : null}
+        {canMake && (
+          <button type="button" className="btn btn-xs btn-ghost thread-todo-make" disabled={making} onClick={() => void make()} title="Timmy reads the email and adds what it asks of you to Tasks, in this email’s project">
+            <Sparkles size={12} aria-hidden /> {making ? 'Reading…' : 'Make a to-do'}
+          </button>
+        )}
       </h3>
       <ul>
         {todos.map((x) => (

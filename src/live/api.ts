@@ -111,6 +111,8 @@ export const api = {
       'GET',
       `/api/v1/connected-files/${encodeURIComponent(itemId)}/view`,
     ),
+  /** A to-do from what an email asks, linked to the thread and its project (server/src/agent/todo.ts). */
+  todoFromEmail: (thread: string) => call<{ task: { id: string; title: string; project: string | null; due: string | null } }>('POST', '/api/v1/mail/todo', { thread }),
   /** The files Timmy lists from a connected Google Drive or OneDrive, newest first. */
   connectedFiles: (q = '') =>
     call<{ apps: string[]; total: number; files: { id: string; name: string; kind: string; app: string; owner?: string; changed: string; link?: string; readable: boolean; project?: string }[] }>('GET', `/api/v1/connected-files${q ? `?q=${encodeURIComponent(q)}` : ''}`),

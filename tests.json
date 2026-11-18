@@ -532,9 +532,9 @@
   {
    "id": "live-setup",
    "file": "e2e/live/live-setup.cjs",
-   "covers": "a new workspace's setup (opens by itself, five steps, connect Gmail from it and come back to the next step, sort junk automatically, Google Calendar, skip files, the morning run, done; a connect that did not finish; the brief's button and card; connecting from Connections shows a notice instead), no Watch the story on a real workspace, Triage newest first with the offer to sort junk, Accept all in batches of 100 with a confirmation saying what happens in Gmail, and the Drive files on the Files screen",
+   "covers": "a new workspace's setup in its new order: email, then Drive, then the projects Timmy finds (the scan starts by itself once mail is in, each project found ticked, one click creates them with their emails), then a tour on the person's own mail and files (an email into a project with the picker, the to-do Timmy made from an email already in its project, a Drive document opened in the editor that saves back to Drive), then sorting junk, the calendar and the morning run; plus the connect that didn't finish, the brief's offer, Triage newest first with Accept all in batches, and Drive's files on the Files screen",
    "status": "pass",
-   "result": "Nov 18, 2026: 39 of 39, with opening a Drive file inside Timmy. Nov 18, 2026 (Drive editing): passes again after its Drive check was changed to the new behaviour (a Google Doc now offers Edit in Timmy; the Drive card says what Timmy may write)."
+   "result": "Nov 18, 2026: 61 of 61, twice, after the rewrite for the new onboarding (the old version checked the old order: 5 steps, sorting second, files optional and skipped)."
   },
   {
    "id": "api-mail-reader",
@@ -635,10 +635,10 @@
   {
    "id": "api-auto-organize",
    "file": "server/test/auto-organize.test.ts",
-   "covers": "Timmy's read puts a new thread plainly about a project into it, with a history line, and its to-do goes there too; the projects are offered as outside content, numbered, with client and goal; a thread about none stays out; a workspace with no projects is asked nothing; a pick that isn't a listed open project is ignored; a thread the project's own people placed is never moved or asked about; a Drive file goes into the one project its name, client, own word or owner points to, and what it says counts for less; a tie or an already-linked file is left alone; it happens on its own after Drive's files are listed and writes nothing to Drive",
-   "tests": 10,
+   "covers": "Timmy's read puts a new thread plainly about a project into it, with a history line, and its to-do goes there too; the projects are offered as outside content, numbered, with client and goal; a thread about none stays out; a workspace with no projects is asked nothing; a pick that isn't a listed open project is ignored; a thread the project's own people placed is never moved or asked about; a Drive file goes into the one project its name, client, own word or owner points to, and what it says counts for less; a tie or an already-linked file is left alone; it happens on its own after Drive's files are listed and writes nothing to Drive; Make a to-do on an email adds what it asks to Tasks, linked to the email, in its project, once; an email that asks nothing, or a to-do resting on words not in it, makes nothing; it needs a role that may make changes and an email in this workspace",
+   "tests": 13,
    "status": "pass",
-   "result": "Nov 18, 2026: 10 of 10. Full API run after it: 970 of 970 (53 files)."
+   "result": "Nov 18, 2026: 13 of 13."
   },
   {
    "id": "live-mcp",
@@ -673,7 +673,7 @@
    "file": "e2e/live/live-todos.cjs",
    "covers": "an email's ask becomes a to-do with its date, shown in the thread under To-dos, checked off there and saved, and listed in Tasks with the email it came from",
    "status": "pass",
-   "result": "Nov 18, 2026: 6 of 6."
+   "result": "Nov 18, 2026: 7 of 7 (with Make a to-do)."
   }
  ]
 }

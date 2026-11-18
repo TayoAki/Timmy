@@ -339,6 +339,135 @@
   color: var(--warn);
 }
 
+.setup-scan {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--panel);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.setup-scan svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--accent);
+}
+.setup-found {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 300px;
+  overflow: auto;
+}
+.setup-found li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--panel);
+}
+.setup-found li:not([data-kept]) {
+  opacity: 0.6;
+}
+.setup-found input[type='checkbox'] {
+  margin-top: 8px;
+  flex: none;
+}
+.setup-found-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+.setup-found-name {
+  font-weight: 600;
+}
+.setup-found-meta {
+  font-size: 12px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.setup-tour {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.setup-tour-card {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--panel);
+}
+.setup-tour-card[data-done] {
+  border-color: color-mix(in srgb, var(--ok) 40%, var(--line));
+}
+.setup-tour-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--surface-2, var(--surface));
+  color: var(--text-2);
+}
+.setup-tour-card[data-done] .setup-tour-icon {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+.setup-tour-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+  font-size: 13px;
+}
+.setup-tour-what {
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.setup-tour-what svg {
+  vertical-align: -1px;
+  color: var(--accent);
+}
+.setup-tour-act {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.setup-tour-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.setup-tour-select .input {
+  min-width: 180px;
+}
+.setup-tour-count {
+  margin-right: auto;
+}
+
 .setup-choices {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

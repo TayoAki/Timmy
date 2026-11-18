@@ -1,5 +1,5 @@
 // To-dos from email (server/src/agent/read.ts, ThreadView's To-dos): what an email asks becomes a task, shown in the
-// thread to check off and in Tasks with the email it came from.
+// thread to check off and in Tasks with the email it came from; Make a to-do asks for one on any email (agent/todo.ts).
 const { ok, open, signUp, api, connectGmail, run } = require('./lib.cjs');
 
 run('live-todos', async (browser) => {
@@ -28,6 +28,18 @@ run('live-todos', async (browser) => {
     if (!done) await page.waitForTimeout(150);
   }
   ok(done, 'and it is saved');
+
+  // Make a to-do: Timmy reads an email that came in without an ask of its own and adds what it asks.
+  await api(page, 'POST', '/api/test/fake', { op: 'deliver', message: { from: 'Sam Rivera <sam@acme.test>', subject: 'Wireframes', body: 'Here they are.\n\nPlease share the brand guide with the team.' } });
+  for (let i = 0; i < 80 && !(await api(page, 'GET', '/api/v1/state')).body.slices.threads.some((t) => t.subject === 'Wireframes'); i++) await page.waitForTimeout(150);
+  await page.click('button[aria-label="Today & mail"]');
+  await page.getByRole('tab', { name: /Triage/ }).click();
+  await page.locator('.triage-subject', { hasText: 'Wireframes' }).first().click();
+  const more = page.getByRole('region', { name: 'To-dos from this email' });
+  await more.getByRole('button', { name: 'Make a to-do' }).click();
+  await page.locator('.toast', { hasText: 'To-do added: Share the brand guide with the team' }).waitFor();
+  await more.getByText('Share the brand guide with the team').waitFor();
+  ok(true, 'Make a to-do on an email adds what it asks, and the email shows it');
 
   await page.click('button[aria-label="Tasks"]');
   await page.getByRole('tab', { name: 'List' }).click();
