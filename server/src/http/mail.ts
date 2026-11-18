@@ -10,6 +10,7 @@
  */
 import type { Hono } from 'hono';
 import { readOriginal, type Original } from '../mail/original';
+import { withWorkspace } from '../db/pool';
 import { readState } from '../state/mutate';
 import { connectionById } from '../sync/tools';
 import { ctxOf, requireRead, requireWorkspace, type Env } from './session';
@@ -43,20 +44,24 @@ export function mailRoutes(app: Hono<Env>): void {
     if (!threadId || !messageId || threadId.length > 200 || messageId.length > 300) return c.json({ error: 'Say which email.' }, 400);
     const { state } = await readState(ctx.workspaceId);
     const thread = state.threads.find((t) => t.id === threadId);
-    const message = thread?.messages.find((m) => m.id === messageId);
     const connectionId = thread?.ext?.connectionId;
-    if (!thread || !message || !connectionId) return c.json({ error: 'That email isn’t in this workspace’s mailbox.' }, 404);
+    if (!thread || !connectionId) return c.json({ error: 'That email isn’t in this workspace’s mailbox.' }, 404);
     const conn = await connectionById(ctx.workspaceId, connectionId);
     if (!conn || conn.status !== 'active') return c.json({ error: 'The mailbox this email came from is no longer connected.' }, 404);
+    c.header('Cache-Control', 'private, no-store');
+    // A message Timmy sent that the mailbox hasn't returned yet (or one just replaced by its copy from the mailbox) has
+    // nothing to fetch: the screen shows what Timmy has. The mailbox is only asked about messages it gave Timmy.
+    const stored = thread.messages.some((m) => m.id === messageId) && (await withWorkspace({ workspaceId: ctx.workspaceId }, async (tx) => (await tx.query(`select 1 from item where workspace_id = $1 and connection_id = $2 and kind = 'message' and external_id = $3`, [ctx.workspaceId, conn.id, messageId])).rows.length > 0));
+    if (!stored) return c.json({ unavailable: true, blocked: 0 });
     const key = `${ctx.workspaceId}:${conn.id}:${messageId}:${images ? 1 : 0}`;
     let original = remembered(key);
     if (!original) {
       const read = await readOriginal(ctx.workspaceId, conn, messageId, images);
-      if (!read) return c.json({ error: 'The mailbox didn’t give this email back. Try again in a moment.' }, 502);
+      // The mailbox didn't give it back: the screen shows what Timmy stored, and the next opening asks again.
+      if (!read) return c.json({ unavailable: true, blocked: 0 });
       original = read;
       remember(key, original);
     }
-    c.header('Cache-Control', 'private, no-store');
     return c.json(original);
   });
 }

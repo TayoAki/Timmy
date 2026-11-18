@@ -100,7 +100,13 @@ describe('opening an email', () => {
     const { t, id } = await deliver({ from: 'Dana <dana@acme.test>', subject: 'Private', body: 'Only for us.', html: '<p>Only for us.</p>' });
     const other = await newWorkspace('Elsewhere');
     expect((await original(other, t.id, id)).status).toBe(404);
-    expect((await original(w, t.id, 'not-a-message')).status).toBe(404);
+    // A message the mailbox never gave Timmy (one Timmy sent that hasn't come back yet) is not asked of the mailbox:
+    // the screen shows what Timmy has.
+    const before = fetches();
+    const local = await original(w, t.id, 'not-a-message');
+    expect(local.status).toBe(200);
+    expect(local.body).toEqual({ unavailable: true, blocked: 0 });
+    expect(fetches()).toBe(before);
     expect((await original(w, 'g-nothing', id)).status).toBe(404);
     expect((await w.request('GET', '/api/v1/mail/original')).status).toBe(400);
     // Seen once, then the mailbox is disconnected: the copy kept for a while is not shown any more.
@@ -123,3 +129,15 @@ describe('opening an email', () => {
     expect(r.body.html).toContain('href="https://vendor.test/q"');
   });
 });
+
+describe('when the mailbox can’t give it back', () => {
+  it('says so plainly instead of failing, and asks again next time', async () => {
+    const { t, id } = await deliver({ from: 'Dana <dana@acme.test>', subject: 'Gone', body: 'Here today.', html: '<p>Here today.</p>' });
+    fake().failNext.set('GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID', 'error');
+    const r = await original(w, t.id, id);
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ unavailable: true, blocked: 0 });
+    expect((await original(w, t.id, id)).body.html).toContain('Here today.');
+  });
+});
+

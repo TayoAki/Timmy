@@ -94,7 +94,7 @@ export const api = {
     call<{ files: { id: string; name: string; kind: string; changed: string; link?: string }[]; meetings: { id: string; title: string; at: string }[] }>('GET', `/api/v1/projects/${encodeURIComponent(projectId)}/links`),
   /** One email as its sender laid it out: cleaned HTML, or the plain text when it has no HTML. */
   mailOriginal: (thread: string, message: string, images = false) =>
-    call<{ html?: string; text?: string; blocked: number }>('GET', `/api/v1/mail/original?thread=${encodeURIComponent(thread)}&message=${encodeURIComponent(message)}${images ? '&images=1' : ''}`),
+    call<{ html?: string; text?: string; blocked: number; unavailable?: boolean }>('GET', `/api/v1/mail/original?thread=${encodeURIComponent(thread)}&message=${encodeURIComponent(message)}${images ? '&images=1' : ''}`),
   /** The files Timmy lists from a connected Google Drive or OneDrive, newest first. */
   connectedFiles: (q = '') =>
     call<{ apps: string[]; total: number; files: { id: string; name: string; kind: string; app: string; owner?: string; changed: string; link?: string; readable: boolean }[] }>('GET', `/api/v1/connected-files${q ? `?q=${encodeURIComponent(q)}` : ''}`),
