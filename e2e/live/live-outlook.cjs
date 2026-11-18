@@ -72,8 +72,17 @@ run('live-outlook', async (browser) => {
   await row.waitFor({ timeout: 10000 });
   ok(/John Glenn/.test(await page.locator('.main').innerText()), 'the new Outlook thread appears on its own, with the sender by name');
   await row.click();
-  await page.locator('.main').getByText('Can you check the <re-entry> numbers & confirm by Friday?').first().waitFor();
-  ok(!/<p>|<\/p>|<html|&lt;|&amp;/.test(await page.locator('.main').innerText()), 'the message reads as plain words: no markup and no escape codes');
+  // The reader shows Outlook's HTML as its sender laid it out, in the email's own frame, once it has fetched it; until
+  // then the words Timmy stored. Either way the person reads words: no markup and no escape codes.
+  const said = 'Can you check the <re-entry> numbers & confirm by Friday?';
+  const mailFrame = page.frameLocator('iframe.mail-frame');
+  let shown = '';
+  for (let i = 0; i < 60 && !shown.includes(said); i++) {
+    const frameText = (await page.locator('iframe.mail-frame').count()) ? await mailFrame.locator('body').innerText().catch(() => '') : '';
+    shown = `${await page.locator('.main').innerText()}\n${frameText}`;
+    if (!shown.includes(said)) await page.waitForTimeout(150);
+  }
+  ok(shown.includes(said) && !/<p>|<\/p>|<html|&lt;|&amp;/.test(shown), 'the message reads as plain words: no markup and no escape codes');
   const thread = (await threads()).find((t) => t.subject === 'Trajectory check');
   ok(/^o-[0-9a-f]{20}$/.test(thread.id) && thread.ext.app === 'outlook', 'the thread is known as an Outlook thread');
 
