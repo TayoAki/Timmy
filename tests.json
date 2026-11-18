@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-16",
+ "updated": "2026-11-18",
  "how": "bash scripts/dev.sh runs everything. status is pass, fail, todo or blocked.",
  "safetyProperties": {
   "no outside write without an approved effect record or a rule": [
@@ -9,7 +9,8 @@
    "server/test/filing.test.ts",
    "server/test/calendar-write.test.ts",
    "server/test/outlook.test.ts",
-   "server/test/ontology.test.ts"
+   "server/test/ontology.test.ts",
+   "server/test/auto-sort.test.ts"
   ],
   "no action runs twice": [
    "server/test/gateway.test.ts",
@@ -17,7 +18,8 @@
    "server/test/filing.test.ts",
    "server/test/calendar-write.test.ts",
    "server/test/outlook.test.ts",
-   "server/test/mail.test.ts"
+   "server/test/mail.test.ts",
+   "server/test/auto-sort.test.ts"
   ],
   "no cross-workspace reads": [
    "server/test/isolation.test.ts",
@@ -34,7 +36,8 @@
   ],
   "unattended runs send only what a rule covers": [
    "server/test/gateway.test.ts",
-   "server/test/agent.test.ts"
+   "server/test/agent.test.ts",
+   "server/test/auto-sort.test.ts"
   ]
  },
  "suites": [
@@ -509,6 +512,20 @@
    "covers": "production app: health, serves the app, refuses state without a session, test hooks off",
    "status": "pass",
    "result": "Nov 17, 2026, on the final build: the outside checks in their no-account form (live-outside with OUTSIDE_NO_ACCOUNT=1), 39 of 39, including that an uninvited address cannot sign up."
+  },
+  {
+   "id": "api-auto-sort",
+   "file": "server/test/auto-sort.test.ts",
+   "covers": "sorting mail automatically: plain code's first sort (Promotions and Social tabs and system senders archived and sure; addresses a small business's person might use only guessed), the rule off files nothing, only an owner or admin switches it on and it is a policy row naming them, switching it on files the junk already waiting inside Timmy only (no mailbox write) and re-sorts it with today's rules, new junk is filed in Timmy and in Gmail through an effect the rule approves, mail a person wrote is never filed, mail older than the rule is filed in Timmy only, one filing per thread however often it is seen, the kill switch stops the mailbox write but not the sort, switching off stops it, and a filing without the rule's mark still waits for a person",
+   "status": "pass",
+   "result": "Nov 18, 2026: 16 of 16."
+  },
+  {
+   "id": "live-setup",
+   "file": "e2e/live/live-setup.cjs",
+   "covers": "a new workspace's setup (opens by itself, five steps, connect Gmail from it and come back to the next step, sort junk automatically, Google Calendar, skip files, the morning run, done; a connect that did not finish; the brief's button and card; connecting from Connections shows a notice instead), no Watch the story on a real workspace, Triage newest first with the offer to sort junk, Accept all in batches of 100 with a confirmation saying what happens in Gmail, and the Drive files on the Files screen",
+   "status": "pass",
+   "result": "Nov 18, 2026: see STATUS.md."
   }
  ]
 }

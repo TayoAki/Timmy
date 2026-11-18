@@ -476,3 +476,28 @@ describe('the nightly check for files that left Drive unannounced', () => {
     expect((await files()).map((f) => f.subject)).toEqual(['Alive']);
   });
 });
+
+describe('the Files screen’s list', () => {
+  it('lists the connected files newest first, finds them by name, and only for this workspace', async () => {
+    add('Acme proposal v3', { mimeType: 'application/vnd.google-apps.document', modifiedTime: ago(2) });
+    add('Q4 forecast', { mimeType: 'application/vnd.google-apps.spreadsheet', modifiedTime: ago(10), owner: 'sam@files.test' });
+    await syncFiles(w.workspaceId, drive.connectionId);
+    const listed = await w.json<{ apps: string[]; total: number; files: { name: string; kind: string; app: string; link?: string; readable: boolean }[] }>('GET', '/api/v1/connected-files');
+    expect(listed.apps).toEqual(['Google Drive']);
+    expect(listed.total).toBe(2);
+    expect(listed.files.map((f) => f.name)).toEqual(['Acme proposal v3', 'Q4 forecast']);
+    expect(listed.files[0]).toMatchObject({ kind: 'Google Doc', app: 'Google Drive' });
+    expect(listed.files[0]!.link).toMatch(/^https:\/\/docs\.google\.com\//);
+    const found = await w.json<{ files: { name: string }[] }>('GET', '/api/v1/connected-files?q=forecast');
+    expect(found.files.map((f) => f.name)).toEqual(['Q4 forecast']);
+    // A wildcard typed into the box is a character, not a pattern.
+    expect((await w.json<{ total: number }>('GET', '/api/v1/connected-files?q=%25')).total).toBe(2);
+
+    const other = await newWorkspace('Elsewhere');
+    expect(await other.json('GET', '/api/v1/connected-files')).toEqual({ apps: [], total: 0, files: [] });
+
+    // Disconnected, its files leave the list at once.
+    await w.post('/api/v1/connections/gdrive/disconnect');
+    expect((await w.json<{ total: number }>('GET', '/api/v1/connected-files')).total).toBe(0);
+  });
+});

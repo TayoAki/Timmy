@@ -176,6 +176,7 @@ export function registerJobs() {
   // A finished one is followed by reading what the new and changed files say.
   defineJob('files.sync', async (d) => {
     const p = await syncFileList(String(d.workspaceId), String(d.connectionId));
+    log.info('files pass', { workspaceId: d.workspaceId, ...p });
     if (p.files) learn(String(d.workspaceId));
     if (!p.done) enqueueSoon('files.sync', d);
     else enqueueSoon('files.text', { workspaceId: d.workspaceId, connectionId: d.connectionId }, { singletonKey: `ftext:${String(d.connectionId)}` });

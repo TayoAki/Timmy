@@ -22,7 +22,7 @@ async function open(browser, options = {}) {
 }
 
 /** Signs up a new person and creates their workspace. Returns what was used. */
-async function signUp(page, { name = 'Ada Lovelace', company = `Analytical ${stamp()}`, trade = 'sales' } = {}) {
+async function signUp(page, { name = 'Ada Lovelace', company = `Analytical ${stamp()}`, trade = 'sales', keepSetup = false } = {}) {
   const email = `ada.${stamp()}@example.test`;
   const password = 'correct-horse-battery-9';
   await page.goto(BASE);
@@ -37,6 +37,14 @@ async function signUp(page, { name = 'Ada Lovelace', company = `Analytical ${sta
   await page.getByLabel('What kind of work is it?').selectOption(trade);
   await page.getByRole('button', { name: 'Create workspace' }).click();
   await page.locator('.main').waitFor();
+  // A new workspace opens on its setup (src/live/Setup.tsx; live-setup.cjs walks through it). The other suites
+  // connect what they need themselves, so they put it aside the way a person would.
+  if (!keepSetup) {
+    const setup = page.getByRole('dialog', { name: 'Set up Timmy' });
+    await setup.waitFor();
+    await setup.getByRole('button', { name: 'Finish later' }).click();
+    await setup.waitFor({ state: 'detached' });
+  }
   return { name, email, password, company };
 }
 

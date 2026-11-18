@@ -817,3 +817,13 @@
     margin-left: 0;
   }
 }
+
+/* Triage: what accepting every sure suggestion will do */
+.accept-sure-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13.5px;
+  color: var(--text-2);
+}

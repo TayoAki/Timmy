@@ -85,9 +85,13 @@ export const api = {
   command: (id: string, action: Action) => call<CommandResult>('POST', '/api/v1/commands', { id, action: clearsAsNull(action) }, { outliveThePage: true, repeatable: true }),
   connect: (app: string) => call<{ redirectUrl: string }>('POST', `/api/v1/connections/${app}/connect`, {}),
   disconnect: (app: string) => call('POST', `/api/v1/connections/${app}/disconnect`, {}),
+  /** The files Timmy lists from a connected Google Drive or OneDrive, newest first. */
+  connectedFiles: (q = '') =>
+    call<{ apps: string[]; total: number; files: { id: string; name: string; kind: string; app: string; owner?: string; changed: string; link?: string; readable: boolean }[] }>('GET', `/api/v1/connected-files${q ? `?q=${encodeURIComponent(q)}` : ''}`),
   settings: () =>
-    call<{ model: string; models: LiveProfile['models']; approvalMode: 'ask' | 'auto'; killSwitch: boolean; timezone: string; monthlySpendCapUsd: number; maxConcurrentRuns: number; limits: { monthlySpendCapUsd: number; maxConcurrentRuns: number } }>('GET', '/api/v1/settings'),
-  saveSettings: (patch: { model?: string; approvalMode?: 'ask' | 'auto'; killSwitch?: boolean; monthlySpendCapUsd?: number; timezone?: string }) => call('PATCH', '/api/v1/settings', patch),
+    call<{ model: string; models: LiveProfile['models']; approvalMode: 'ask' | 'auto'; killSwitch: boolean; timezone: string; monthlySpendCapUsd: number; maxConcurrentRuns: number; limits: { monthlySpendCapUsd: number; maxConcurrentRuns: number }; autoSort: { on: boolean; since?: string } }>('GET', '/api/v1/settings'),
+  saveSettings: (patch: { model?: string; approvalMode?: 'ask' | 'auto'; killSwitch?: boolean; monthlySpendCapUsd?: number; timezone?: string; autoSort?: boolean }) =>
+    call<{ ok: boolean; sorted?: { archived?: number; 'read-through'?: number } }>('PATCH', '/api/v1/settings', patch),
   /** Asks the model for a summary of the page as it is on screen. Only lines the page backs come back. */
   summarizePage: (id: string, blocks: unknown[]) => call<{ lines: { text: string; blocks: string[] }[] }>('POST', `/api/v1/pages/${encodeURIComponent(id)}/summarize`, { blocks }),
   /** A page's earlier versions, newest first, without their contents. */

@@ -12,10 +12,12 @@ import { withWorkspace, type Tx } from '../db/pool';
 import { newId } from '../lib/ids';
 import { log } from '../lib/log';
 import { mutate } from '../state/mutate';
+import type { Loaded } from '../state/docs';
 import { onMailStored } from '../automations/triggers';
 import { withAttachmentNames } from './attachment-names';
 import { mailboxFor } from './mailbox';
 import { followMailbox, lookedAtFrom } from './mailbox-changes';
+import { autoSort, suggest } from './sorting';
 import { paragraphs, parseSender, type MailMessage } from './message';
 import { connectionById, type ConnectionRow, type Phase } from './tools';
 
@@ -56,24 +58,8 @@ export async function upsertMessage(tx: Tx, workspaceId: string, conn: Connectio
 
 /* ───────────── A first sort, by plain code ───────────── */
 
-const AUTOMATED = /^(no-?reply|do-?not-?reply|notifications?|notify|mailer|news(letter)?|updates?|digest|marketing|billing|receipts?|invoices?|orders?|accounts?|alerts?|bounce|postmaster|hello|team|info)[+.@_-]?/i;
-const RECEIPT = /\b(receipt|invoice|payment (received|confirmation)|order (confirmation|#|number)|your order|statement is ready|has shipped)\b/i;
-const CALENDAR_REPLY = /^(accepted|declined|tentative(ly accepted)?|updated invitation|invitation):/i;
-
-/**
- * Where a new thread probably belongs, decided without a model: mail that is
- * plainly automated gets a confident suggestion, and anything a person wrote is
- * left for the person to place. The model only looks at what this can't settle.
- */
-export function suggest(last: { sender: string; subject: string; text: string; labels: string[] }): NonNullable<Thread['suggestion']> {
-  const local = last.sender.split('@')[0] ?? '';
-  const bulk = last.labels.some((l) => /^CATEGORY_(PROMOTIONS|SOCIAL|FORUMS)$/.test(l)) || /\bunsubscribe\b|list-unsubscribe|view (this email )?in (your )?browser/i.test(last.text);
-  if (CALENDAR_REPLY.test(last.subject)) return { box: 'archived', confidence: 'high', reason: 'A calendar reply. Your calendar already has it.' };
-  if (RECEIPT.test(last.subject)) return { box: 'archived', confidence: 'high', reason: 'A receipt or order notice. Nothing to answer.' };
-  if (bulk && !RECEIPT.test(last.subject)) return { box: 'read-through', confidence: 'high', reason: 'A newsletter or bulk mailing. Read it when you have time.' };
-  if (AUTOMATED.test(local) || last.labels.includes('CATEGORY_UPDATES')) return { box: 'archived', confidence: 'medium', reason: 'An automated notice from a system, not a person.' };
-  return { box: 'follow-up', confidence: 'low', effort: 'quick', reason: 'A person wrote to you. Timmy hasn’t read it closely yet.', provisional: true };
-}
+// The first sort lives with automatic sorting (sorting.ts); it is exported here too for the code that reads it from sync.
+export { suggest } from './sorting';
 
 /* ───────────── Threads the screens show ───────────── */
 
@@ -197,7 +183,7 @@ export async function ingestThread(workspaceId: string, connectionId: string, th
   // (archived it, labelled it, read it) is picked up here as well.
   const states = fetched ? await box.statesOf(workspaceId, conn, fetched, phase).catch(() => null) : null;
   return mutate(workspaceId, 'sync', async (tx, loaded) => {
-    const stored = await storeMessages(tx, loaded.state, workspaceId, conn, list);
+    const stored = await storeMessages(tx, loaded, loaded.state, workspaceId, conn, list);
     if (!states) return { state: stored.state, result: stored.fresh };
     // Taking the mail in comes first. If picking up the change fails, the mail is still stored and the next look tries again.
     await tx.query('savepoint mailbox_changes');
@@ -217,7 +203,7 @@ export async function ingestThread(workspaceId: string, connectionId: string, th
  * to is rebuilt, and mail to or from a lead is noted on the lead. Every way mail arrives (a trigger,
  * the first backfill, the nightly check) ends here, so they can't disagree about what a message means.
  */
-async function storeMessages(tx: Tx, state: State, workspaceId: string, conn: ConnectionRow, list: MailMessage[]): Promise<{ state: State; fresh: number; threads: number }> {
+async function storeMessages(tx: Tx, loaded: Loaded, state: State, workspaceId: string, conn: ConnectionRow, list: MailMessage[]): Promise<{ state: State; fresh: number; threads: number }> {
   const fresh: MailMessage[] = [];
   // A draft sitting in the mailbox is not mail that was sent or received; it is left out.
   list = list.filter((m) => !m.labels.includes('DRAFT'));
@@ -227,6 +213,9 @@ async function storeMessages(tx: Tx, state: State, workspaceId: string, conn: Co
   for (const key of keys) next = await projectThread(tx, next, workspaceId, conn, key);
   // [automations] New mail may start automations. Their runs are recorded here, in the transaction that stores the mail.
   next = await onMailStored(tx, noteLeadMail(next, fresh), workspaceId, conn, fresh);
+  // With the rule to sort mail automatically on, what plain code is sure of is filed now instead of waiting in Triage.
+  const touched = new Set(next.threads.filter((t) => t.ext?.connectionId === conn.id && keys.includes(t.ext.threadKey ?? '')).map((t) => t.id));
+  if (touched.size) next = (await autoSort(tx, loaded, next, { ids: touched, mailbox: true })).state;
   return { state: next, fresh: fresh.length, threads: keys.length };
 }
 
@@ -310,7 +299,7 @@ export async function backfillMail(workspaceId: string, connectionId: string, op
     progress.pages++;
     progress.messages += list.length;
     await mutate(workspaceId, 'backfill', async (tx, loaded) => {
-      const { state, threads } = await storeMessages(tx, loaded.state, workspaceId, conn, list);
+      const { state, threads } = await storeMessages(tx, loaded, loaded.state, workspaceId, conn, list);
       progress.threads += threads;
       await tx.query(`update sync_cursor set cursor = $3::jsonb, items_done = items_done + $4, state = $5, finished_at = case when $5 = 'done' then now() else null end, updated_at = now() where connection_id = $1 and kind = $2`, [
         connectionId,
@@ -353,7 +342,7 @@ export async function reconcileMail(workspaceId: string, connectionId: string, o
     out.messages += list.length;
     if (list.length) {
       out.fresh += await mutate(workspaceId, 'sync', async (tx, loaded) => {
-        const stored = await storeMessages(tx, loaded.state, workspaceId, conn, list);
+        const stored = await storeMessages(tx, loaded, loaded.state, workspaceId, conn, list);
         return { state: stored.state, result: stored.fresh };
       });
     }

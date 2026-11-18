@@ -20,6 +20,14 @@ export const fmtDay = (d: Date) =>
 
 export const fmtDate = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
+/** When something arrived, short: "3:12 PM" today, "Yesterday 3:12 PM", then "Nov 3", and "Nov 3, 2025" in another year. */
+export const fmtShortWhen = (d: Date) => {
+  const diff = dayDiff(d);
+  if (diff === 0) return fmtTime(d);
+  if (diff === -1) return `Yesterday ${fmtTime(d)}`;
+  return d.getFullYear() === NOW.getFullYear() ? fmtDate(d) : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
 export const fmtLongDate = (d: Date) =>
   d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 

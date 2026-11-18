@@ -12,7 +12,7 @@
 import type { State } from '../../../src/state/store';
 import type { PendingEffect } from '../../../src/live/types';
 import { config } from '../config';
-import { withWorkspace, type Tx } from '../db/pool';
+import { afterCommit, withWorkspace, type Tx } from '../db/pool';
 import { hashOf, newId } from '../lib/ids';
 import { log } from '../lib/log';
 import { commitState, loadState, remember, type Loaded } from '../state/docs';
@@ -203,7 +203,8 @@ export async function propose(tx: Tx, loaded: Loaded, state: State, actor: Actor
   if (approval) {
     await tx.query('insert into approval (workspace_id, effect_id, decision, decided_by, via, note) values ($1, $2, $3, $4, $5, $6)', [workspaceId, id, 'approve', approval.by, approval.via, p.auto?.reason ?? null]);
     await audit(tx, workspaceId, { actor: approval.by, onBehalfOf, action: 'effect.approved', effectId: id, runId: p.runId, detail: { via: approval.via, holdUntil } });
-    effectApproved(effect);
+    // Its job is queued once this transaction has committed, so it finds the approved record.
+    afterCommit(tx, () => effectApproved(effect));
   }
   return { effect, outcome: approval ? 'approved' : 'waiting', state: withPending(state, effect) };
 }
@@ -244,7 +245,7 @@ export async function decide(tx: Tx, loaded: Loaded, state: State, actor: Actor,
   const effect = next.rows[0] as EffectRow;
   await tx.query('insert into approval (workspace_id, effect_id, decision, decided_by, via) values ($1, $2, $3, $4, $5)', [workspaceId, effectId, approve ? 'approve' : 'decline', actor.userId, 'click']);
   await audit(tx, workspaceId, { actor: actor.userId, onBehalfOf: e.on_behalf_of, action: approve ? 'effect.approved' : 'effect.declined', effectId, runId: e.run_id, detail: { via: 'click', requestedBy: e.requested_by, holdUntil } });
-  if (approve) effectApproved(effect);
+  if (approve) afterCommit(tx, () => effectApproved(effect));
   else effectSettled(effect);
   return { effect, state: withPending(state, effect) };
 }

@@ -84,6 +84,20 @@ export interface Scope {
   lock?: boolean;
 }
 
+/** Work to do once a transaction has committed, per open transaction (see afterCommit). */
+const pendingAfterCommit = new WeakMap<Tx, (() => void)[]>();
+
+/**
+ * Runs `fn` once `tx` has committed, or never if it rolls back. Outside a transaction opened by withWorkspace it
+ * runs at once. Used for work another connection will do with what the transaction wrote, such as running an
+ * effect that was just approved: started before the commit, that work would not find the row yet.
+ */
+export function afterCommit(tx: Tx, fn: () => void): void {
+  const list = pendingAfterCommit.get(tx);
+  if (list) list.push(fn);
+  else fn();
+}
+
 /**
  * Runs `fn` in a transaction that can only see one workspace's rows.
  * Row-level security reads `app.workspace_id`; with no value set, every table is empty.
@@ -95,10 +109,21 @@ export async function withWorkspace<T>(scope: Scope, fn: (tx: Tx) => Promise<T>)
     await c.query('begin');
     await c.query("select set_config('app.workspace_id', $1, true), set_config('app.user_id', $2, true)", [scope.workspaceId, scope.userId ?? '']);
     if (scope.lock) await c.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [`ws:${scope.workspaceId}`]);
+    pendingAfterCommit.set(c, []);
     const out = await fn(c);
     await c.query('commit');
+    const later = pendingAfterCommit.get(c) ?? [];
+    pendingAfterCommit.delete(c);
+    for (const job of later) {
+      try {
+        job();
+      } catch {
+        // Each is only a nudge (queueing a job); a safety-net sweep picks up anything a failed one left.
+      }
+    }
     return out;
   } catch (e) {
+    pendingAfterCommit.delete(c);
     await c.query('rollback').catch(() => {});
     throw e;
   } finally {

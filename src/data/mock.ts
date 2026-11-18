@@ -69,7 +69,7 @@ export const PROJECTS: Label[] = [
 export const LABEL_GUIDE: Record<string, { title: string; body: string; rule: string }> = {
   inbox: {
     title: 'Unsorted mail',
-    body: 'Timmy sorts new mail every morning and leaves only the messages it is unsure about here. Work through them oldest first.',
+    body: 'Timmy sorts new mail every morning and leaves only the messages it is unsure about here, newest first.',
     rule: 'Every email ends up in Follow Up, Waiting, Read Through or the archive.',
   },
   'follow-up': {

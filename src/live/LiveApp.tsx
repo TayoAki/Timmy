@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type FormE
 import { api, type Invitation, type Me, type Snapshot } from './api';
 import { forgetConversations } from '../agent/conversations';
 import { LiveStoreProvider, enterLiveWorld } from './LiveStore';
+import { markFirstRun } from './Setup';
 import type { LiveProfile } from './types';
 import './live.css';
 
@@ -258,6 +259,8 @@ function Onboarding({ me, onDone, onSignOut }: { me: Me; onDone: () => void; onS
     setError('');
     try {
       await api.createWorkspace(name.trim(), trade);
+      // The new workspace opens on its setup: connecting email comes first.
+      markFirstRun();
       onDone();
     } catch (err) {
       setError((err as Error).message);

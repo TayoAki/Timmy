@@ -208,8 +208,8 @@ export const BEATS: Beat[] = [
       assistant.close();
       h.go({ view: 'today', tab: 'triage' });
     },
-    spot: [withText('.btn-primary', /^Accept \d+ confident$/)],
-    press: [withText('.btn-primary', /^Accept \d+ confident$/)],
+    spot: [withText('.btn-primary', /^Accept all \d+ Timmy is sure about$/)],
+    press: [withText('.btn-primary', /^Accept all \d+ Timmy is sure about$/)],
   },
   {
     id: 'sorted',

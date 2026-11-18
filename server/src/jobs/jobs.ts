@@ -72,6 +72,36 @@ export function enqueueSoon<N extends JobName>(name: N, data: JobPayloads[N], op
   void jobs.enqueue(name, data, opts).catch((e) => log.warn('could not queue job', { name, error: (e as Error).message }));
 }
 
+/** Jobs that are quick and can arrive by the hundred. */
+const BURSTY = new Set(['effect.execute', 'mail.ingest', 'mail.read']);
+
+/**
+ * How a queue is polled. Short jobs that can come in bursts (a person accepting a hundred suggestions, a burst of new
+ * mail) are fetched ten at a time, and fetched again at once while batches come back full: one at a time with a pause
+ * between them, a thousand filings took a quarter of an hour.
+ */
+export const workOptions = (name: string) => ({ pollingIntervalSeconds: name === 'effect.execute' ? 1 : 2, ...(BURSTY.has(name) ? { batchSize: 10, burstWhenBatchFull: true, includeMetadata: true as const } : {}) });
+
+/**
+ * Runs a fetched batch in the order it was queued, one job after another, so two changes to the same thread still
+ * land in order. One job failing doesn't stop the rest; the batch is then reported failed, so the queue tries it again
+ * where it retries (every job is safe to run twice), and the sweeps pick up what it doesn't.
+ */
+export const batchHandler = (name: string, handler: (data: Record<string, unknown>) => Promise<unknown>) => async (batch: { data?: unknown; createdOn?: Date | string }[]) => {
+  let failed: unknown = null;
+  // The queue hands batches over in order, but not the jobs inside one.
+  const at = (j: { createdOn?: Date | string }) => (j.createdOn ? new Date(j.createdOn).getTime() : 0);
+  for (const job of [...batch].sort((a, b) => at(a) - at(b))) {
+    try {
+      await handler((job.data ?? {}) as Record<string, unknown>);
+    } catch (e) {
+      log.error('job failed', { name, error: (e as Error).message });
+      failed = failed ?? e;
+    }
+  }
+  if (failed) throw failed;
+};
+
 export async function startBoss(): Promise<Jobs> {
   // The queue's tables belong to the system role, like the rest of the schema.
   const boss = new PgBoss({ connectionString: systemDatabaseUrl(), schema: 'pgboss', max: 4 });
@@ -79,16 +109,7 @@ export async function startBoss(): Promise<Jobs> {
   await boss.start();
   for (const [name, handler] of handlers) {
     await boss.createQueue(name, { retryLimit: name.startsWith('effect.') ? 0 : 3, retryBackoff: true, expireInSeconds: 900 });
-    await boss.work(name, { pollingIntervalSeconds: name === 'effect.execute' ? 1 : 2 }, async (batch) => {
-      for (const job of batch) {
-        try {
-          await handler((job.data ?? {}) as Record<string, unknown>);
-        } catch (e) {
-          log.error('job failed', { name, error: (e as Error).message });
-          throw e;
-        }
-      }
-    });
+    await boss.work(name, workOptions(name), batchHandler(name, handler));
   }
   for (const [name, cron] of crons) await boss.schedule(name, cron);
   jobs = new BossJobs(boss);

@@ -1,4 +1,6 @@
 import { isLive } from '../live/clock';
+import { SetupButton, SetupCard } from '../live/Setup';
+import { AutoSortOffer } from '../live/AutoSortOffer';
 import {
   Archive,
   ArrowRight,
@@ -29,8 +31,8 @@ import { NOW, PEOPLE } from '../data/mock';
 const meFirst = () => PEOPLE.me?.name.split(' ')[0] ?? 'there';
 import { todaysEvents } from '../state/ws';
 import type { Box, Thread } from '../data/types';
-import { dayDiff, dueInfo, fmtDate, fmtLongDate, fmtShortTime, fmtTime, plural } from '../lib/format';
-import { boxTag, byOldest, counterpart, inBox, labelOf, useStore, type State, type TodayTab } from '../state/store';
+import { dayDiff, dueInfo, fmtDate, fmtLongDate, fmtShortTime, fmtShortWhen, fmtTime, plural } from '../lib/format';
+import { boxTag, byNewest, counterpart, inBox, labelOf, useStore, type State, type TodayTab } from '../state/store';
 import { type Approval } from '../state/approvals';
 import { eventInScope, scopedApprovals, scopedThreads } from '../state/scope';
 import { ScopeNote } from '../components/ProjectScope';
@@ -38,7 +40,7 @@ import { ProjectFocus } from './ProjectFocus';
 import { LAST_RUN, LAST_RUN_COUNT, daysLabel } from '../state/schedule';
 import { openThreads, useUrgency, type UrgencyInfo } from '../state/urgency';
 import { ApprovalRow } from '../areas/approvals/ApprovalCard';
-import { Segmented } from '../components/kit';
+import { Modal, Segmented } from '../components/kit';
 import { TimePicker } from '../components/TimePicker';
 import { UrgencyReasons, UrgencyTag } from '../components/Urgency';
 import { Avatar, EffortChip, Kbd, tint } from '../components/common';
@@ -125,6 +127,9 @@ function Brief() {
       </p>
       <ScopeNote />
 
+      {/* A real workspace with no mailbox yet: connecting one comes first. */}
+      {isLive() && <SetupCard />}
+
       {/* On a phone, what needs you comes first; quick actions live in Ask and More. */}
       {phone && <UrgentSection ranked={ranked} alerts={alerts} limit={4} />}
 
@@ -159,7 +164,7 @@ function Brief() {
             <strong>2</strong> to Follow Up and saved the Figma receipt to [99] Receipts.{' '}
             {triage.length > 0 ? (
               <>
-                <strong>{plural(triage.length, 'email')}</strong> still need your call, oldest first.
+                <strong>{plural(triage.length, 'email')}</strong> still need your call, newest first.
               </>
             ) : (
               <>You’ve sorted the rest. Inbox zero.</>
@@ -376,8 +381,9 @@ function CalmToggle() {
   );
 }
 
-/** Plays the short story of a Monday morning with Timmy, on fresh demo data. */
+/** Plays the short story of a Monday morning with Timmy, on fresh demo data. A real workspace offers its setup there instead. */
 function StoryButton() {
+  if (isLive()) return <SetupButton />;
   return (
     <button className="btn btn-sm btn-ghost story-btn" onClick={playStory} title="A short story of one Monday morning with Timmy, played in the app">
       <Play size={14} />
@@ -784,25 +790,79 @@ const MOVES: { box: Box; key: string; label: string; icon: ReactNode }[] = [
   { box: 'archived', key: 'E', label: 'Archive', icon: <Archive size={14} /> },
 ];
 
+/** The most threads one command may file in a real workspace; the server refuses more (config.maxFilingsPerCommand). */
+const FILINGS_PER_COMMAND = 100;
+
 function Triage({ threads }: { threads: Thread[] }) {
-  const { dispatch } = useStore();
-  const queue = [...threads].sort(byOldest);
+  const { state, dispatch } = useStore();
+  // Newest first: what just arrived is what the person is most likely looking for.
+  const queue = [...threads].sort(byNewest);
   const sure = queue.filter((t) => t.suggestion?.confidence === 'high');
+  const [confirming, setConfirming] = useState(false);
+  // On a real workspace each accepted suggestion is also filed in the mailbox, so a large batch is confirmed first.
+  const mailbox = state.conn.apps.outlook?.connected ? 'Outlook' : 'Gmail';
+  const synced = sure.filter((t) => t.ext?.threadKey).length;
+  const acceptSure = () => {
+    const ids = sure.map((t) => t.id);
+    if (!isLive()) return dispatch({ type: 'acceptAll', ids });
+    // The server files at most so many threads per command, so a long list goes in several.
+    for (let i = 0; i < ids.length; i += FILINGS_PER_COMMAND) dispatch({ type: 'acceptAll', ids: ids.slice(i, i + FILINGS_PER_COMMAND) });
+  };
 
   return (
     <>
       <div className="page-head-row">
         <div>
           <h1 className="page-title">Triage</h1>
-          <p className="page-sub">Timmy’s suggestion for each unsorted email, oldest first. Accept it, or pick another label and Timmy will learn from it.</p>
+          <p className="page-sub">Timmy’s suggestion for each unsorted email, newest first. Accept it, or pick another label and Timmy will learn from it.</p>
         </div>
         {sure.length > 0 && (
-          <button className="btn btn-primary" onClick={() => dispatch({ type: 'acceptAll', ids: sure.map((t) => t.id) })}>
+          <button className="btn btn-primary" onClick={() => (isLive() && synced > 10 ? setConfirming(true) : acceptSure())} title="Accept every suggestion marked Sure">
             <CheckCheck size={15} />
-            Accept {sure.length} confident
+            Accept all {sure.length} Timmy is sure about
           </button>
         )}
       </div>
+      {confirming && (
+        <Modal
+          open
+          onClose={() => setConfirming(false)}
+          title={`Accept ${plural(sure.length, 'suggestion')}?`}
+          description={`Timmy files each one here and in ${mailbox} too.`}
+          footer={
+            <>
+              <button className="btn btn-sm btn-ghost" onClick={() => setConfirming(false)}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-sm btn-primary"
+                data-autofocus
+                onClick={() => {
+                  setConfirming(false);
+                  acceptSure();
+                }}
+              >
+                <CheckCheck size={14} />
+                Accept {sure.length}
+              </button>
+            </>
+          }
+        >
+          <ul className="accept-sure-list">
+            {(['archived', 'read-through', 'follow-up', 'waiting'] as const).map((box) => {
+              const n = sure.filter((t) => t.suggestion?.box === box).length;
+              return n ? (
+                <li key={box}>
+                  {box === 'archived' ? `${plural(n, 'email')} archived in ${mailbox}` : `${plural(n, 'email')} labelled ${boxTag(box)} in ${mailbox}`}
+                </li>
+              ) : null;
+            })}
+          </ul>
+          <p className="field-hint">You can undo it from the notice that follows, and anything can be moved again later.</p>
+        </Modal>
+      )}
+
+      {isLive() && <AutoSortOffer threads={queue} />}
 
       <div className="triage-list">
         {queue.map((t) => {
@@ -818,7 +878,7 @@ function Triage({ threads }: { threads: Thread[] }) {
                 <div className="triage-text">
                   <div className="row-top">
                     <span className="row-from">{PEOPLE[from]!.name}</span>
-                    <span className="row-company">{fmtShortWhen(t.messages[0]!.at)}</span>
+                    <span className="row-company">{fmtShortWhen(t.messages[t.messages.length - 1]!.at)}</span>
                   </div>
                   <button className="row-subject triage-subject" onClick={() => dispatch({ type: 'openThread', id: t.id })}>
                     {t.subject}
@@ -869,7 +929,6 @@ function Triage({ threads }: { threads: Thread[] }) {
   );
 }
 
-const fmtShortWhen = (d: Date) => (dayDiff(d) === 0 ? fmtTime(d) : `Yesterday ${fmtTime(d)}`);
 
 // ───────────── Drafts ─────────────
 

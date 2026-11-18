@@ -1,3 +1,4 @@
+import { isLive } from '../live/clock';
 import { PEOPLE } from '../data/mock';
 import { Bell, CalendarDays, FileText, FolderKanban, HardDrive, House, Library, ListChecks, Megaphone, Plug, Rocket, Search, Settings, Stamp, Users } from 'lucide-react';
 import { useOutboundCounts } from '../areas/outbound';
@@ -34,7 +35,7 @@ export function useSections(): Item[] {
     { section: 'people', label: 'People', icon: <Users size={20} />, route: { view: 'people', tab: 'priority' } },
     { section: 'outbound', label: 'Outbound', icon: <Rocket size={20} />, route: { view: 'outbound', tab: 'leads' }, badge: b(out.unread + out.waiting) },
     { section: 'social', label: 'Social (coming soon)', icon: <Megaphone size={20} />, route: { view: 'social', tab: 'overview' } },
-    { section: 'files', label: 'Drive', icon: <HardDrive size={20} />, route: { view: 'files', tab: 'browse', folder: 'f02' } },
+    { section: 'files', label: 'Drive', icon: <HardDrive size={20} />, route: { view: 'files', tab: isLive() ? 'connected' : 'browse', folder: 'f02' } },
     { section: 'library', label: 'AI library', icon: <Library size={20} />, route: { view: 'library', tab: 'prompts' } },
     { section: 'activity', label: 'Timmy’s activity', icon: <Bell size={20} />, route: { view: 'activity', tab: 'all' }, badge: b(inbox) },
     { section: 'connections', label: 'Connections', icon: <Plug size={20} />, route: { view: 'connections' } },

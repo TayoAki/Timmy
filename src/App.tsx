@@ -24,6 +24,7 @@ import { SearchPalette } from './components/SearchPalette';
 import { Sidebar } from './components/Sidebar';
 import { StoreProvider, useStore, type Toast } from './state/store';
 import { StoryPlayer } from './story/StoryPlayer';
+import { SetupDialog } from './live/Setup';
 import { Intro } from './intro/Intro';
 import { Outro } from './intro/Outro';
 import { Film } from './film/Film';
@@ -149,6 +150,7 @@ function Shell() {
       <PushToTalk />
       <Toasts />
       <StoryPlayer />
+      {LIVE && <SetupDialog />}
     </div>
   );
 }

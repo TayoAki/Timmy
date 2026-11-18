@@ -7,6 +7,8 @@ import { SideHead } from '../../components/kit';
 import { useStore, type Route } from '../../state/store';
 import { MAX_DEPTH, MAX_STARRED, childFolders, depthOf, pathOf } from '../../state/ws';
 import { Browse } from './Browse';
+import { isLive } from '../../live/clock';
+import { ConnectedFiles } from '../../live/ConnectedFiles';
 import { Shared, Starred, ToFile } from './Decide';
 import { NewFolderDialog } from './NewFolderDialog';
 import { FILING_FOLDER, GRAINS, KEYWORDS, ROOT, SHARED_FOLDER, ancestors, filesIn, filesUnder, itemCount, projectFor } from './drive';
@@ -14,8 +16,9 @@ import { RpSection } from './pickers';
 
 export { FileActionsMenu } from './FileActions';
 
-type Tab = 'browse' | 'filing' | 'shared' | 'starred';
-const TABS: Tab[] = ['browse', 'filing', 'shared', 'starred'];
+type Tab = 'browse' | 'filing' | 'shared' | 'starred' | 'connected';
+// A real workspace also lists the files from a connected Google Drive or OneDrive.
+const TABS: Tab[] = ['browse', 'filing', 'shared', 'starred', 'connected'];
 
 /** The current Drive route, with a folder that still exists. */
 const useDriveRoute = () => {
@@ -47,6 +50,7 @@ export function FilesView() {
         { id: 'filing', label: 'To file', count: counts.filing || undefined },
         { id: 'shared', label: 'Shared with me', count: counts.shared || undefined },
         { id: 'starred', label: `Starred ${counts.starred}/${MAX_STARRED}` },
+        ...(isLive() ? [{ id: 'connected', label: 'Drive & OneDrive' }] : []),
       ]}
       active={tab}
       onTab={(id) => dispatch({ type: 'navigate', route: { view: 'files', tab: id, folder } })}
@@ -57,6 +61,7 @@ export function FilesView() {
       {tab === 'filing' && <ToFile />}
       {tab === 'shared' && <Shared />}
       {tab === 'starred' && <Starred />}
+      {tab === 'connected' && isLive() && <ConnectedFiles />}
     </Frame>
   );
 }

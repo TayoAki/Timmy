@@ -18,7 +18,7 @@ const assert = (c, m) => { if (!c) { throw new Error('FAIL: ' + m); } console.lo
   /* ── #6 Triage never changes a deal ── */
   await p.click('[role=tab]:has-text("Triage")');
   await p.waitForTimeout(300);
-  await p.click('button:has-text("confident")');
+  await p.click('button:has-text("Timmy is sure about")');
   await p.waitForTimeout(300);
   const t6 = await toast();
   assert(/Moving Brightwave to Closed won is waiting for your OK in Approvals/.test(t6), `bulk triage notice names the held CRM change: "${t6}"`);

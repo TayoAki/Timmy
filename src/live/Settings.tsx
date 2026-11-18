@@ -13,6 +13,7 @@ export function LiveSettings() {
   const { dispatch } = useStore();
   const [model, setModel] = useState(live?.profile.model ?? '');
   const [mode, setMode] = useState<'ask' | 'auto'>(live?.profile.approvalMode ?? 'ask');
+  const [sorting, setSorting] = useState<boolean | null>(null);
   const [cap, setCap] = useState('');
   const [savedCap, setSavedCap] = useState('');
   const [ceiling, setCeiling] = useState(0);
@@ -26,6 +27,7 @@ export function LiveSettings() {
       setCap(String(s.monthlySpendCapUsd));
       setSavedCap(String(s.monthlySpendCapUsd));
       setCeiling(s.limits.monthlySpendCapUsd);
+      setSorting(s.autoSort.on);
     });
   }, [live]);
   if (!live) return null;
@@ -41,6 +43,20 @@ export function LiveSettings() {
     } catch (e) {
       dispatch({ type: 'toast', text: (e as Error).message, tone: 'warn' });
       return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveSorting = async (on: boolean) => {
+    setSorting(on);
+    setSaving(true);
+    try {
+      const r = await api.saveSettings({ autoSort: on });
+      dispatch({ type: 'toast', text: on ? sortedNotice(r.sorted) : 'Timmy will leave every email in Triage for you to sort.' });
+    } catch (e) {
+      setSorting(!on);
+      dispatch({ type: 'toast', text: (e as Error).message, tone: 'warn' });
     } finally {
       setSaving(false);
     }
@@ -105,6 +121,24 @@ export function LiveSettings() {
         </span>
       </label>
       <label className="field">
+        <span className="field-label">Sorting new mail</span>
+        <select
+          className="input"
+          name="auto-sort"
+          value={sorting === null ? '' : sorting ? 'on' : 'off'}
+          disabled={!canChange || saving || sorting === null}
+          onChange={(e) => void saveSorting(e.target.value === 'on')}
+        >
+          {sorting === null && <option value="">Loading…</option>}
+          <option value="on">Sort junk automatically</option>
+          <option value="off">Leave everything in Triage for me</option>
+        </select>
+        <span className="field-hint">
+          Sorting automatically files what Timmy is sure is junk or a newsletter (promotions, receipts, system notices, calendar replies, mailing lists) as it arrives, and archives or labels it in your mailbox too. Switching it on also sorts what is already waiting in Triage, in Timmy only. Mail a person wrote always waits for you.
+          {!canChange && ' An owner or admin can change this.'}
+        </span>
+      </label>
+      <label className="field">
         <span className="field-label">When you ask Timmy in the chat to file or archive mail</span>
         <select
           className="input"
@@ -136,3 +170,12 @@ export function LiveSettings() {
 }
 
 const dollars = (n: number) => `$${n.toLocaleString('en-US')}`;
+
+/** What switching automatic sorting on did, in a sentence. */
+export function sortedNotice(sorted?: { archived?: number; 'read-through'?: number }): string {
+  const archived = sorted?.archived ?? 0;
+  const reading = sorted?.['read-through'] ?? 0;
+  if (!archived && !reading) return 'Timmy will sort junk automatically from now on.';
+  const parts = [archived ? `archived ${archived.toLocaleString('en-US')}` : '', reading ? `moved ${reading.toLocaleString('en-US')} to Read Through` : ''].filter(Boolean).join(' and ');
+  return `Timmy ${parts} in Timmy. Your mailbox is left as it was; new junk is filed there too from now on.`;
+}
