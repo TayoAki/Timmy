@@ -148,7 +148,8 @@ export function cleanEmail(html: string, images: boolean): { html: string; block
 
 /** One email's original, cleaned. Plain-text email comes back as text, for the screen to lay out and link. */
 export async function readOriginal(workspaceId: string, conn: ConnectionRow, messageId: string, images: boolean): Promise<Original | null> {
-  const got = await fetchOriginal(workspaceId, conn, messageId);
+  // A provider that fails outright is the same as one that refuses: the screen shows what Timmy stored.
+  const got = await fetchOriginal(workspaceId, conn, messageId).catch(() => null);
   if (!got) return null;
   if (got.html !== undefined) {
     const { html, blocked } = cleanEmail(got.html.slice(0, 2_000_000), images);

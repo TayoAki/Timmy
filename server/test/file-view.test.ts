@@ -87,3 +87,16 @@ describe('other kinds', () => {
     expect((await view(w, id)).status).toBe(404);
   });
 });
+
+describe('when Drive fails outright', () => {
+  it('the viewer says so and offers the file’s own app, instead of failing', async () => {
+    const id = await add({ name: 'Flaky doc', text: 'Words.' });
+    fake().failNext.set('GOOGLEDRIVE_GET_DOCUMENT', 'timeout');
+    const r = await view(w, id);
+    expect(r.status).toBe(200);
+    expect(r.body.view.kind).toBe('none');
+    expect(String(r.body.view.reason)).toMatch(/didn’t hand over this file just now/);
+    expect(r.body.link).toMatch(/^https:\/\/docs\.google\.com\//);
+  });
+});
+

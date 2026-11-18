@@ -501,3 +501,36 @@ describe('the Files screen’s list', () => {
     expect((await w.json<{ total: number }>('GET', '/api/v1/connected-files')).total).toBe(0);
   });
 });
+
+describe('a file the provider won’t hand over', () => {
+  it('is set aside after three passes that fail on it, and the files after it are read', async () => {
+    add('Stuck doc', { mimeType: 'application/vnd.google-apps.document', modifiedTime: ago(1), text: 'Never read.' });
+    add('Readable doc', { mimeType: 'application/vnd.google-apps.document', modifiedTime: ago(2), text: 'Readable words here.' });
+    await syncFiles(w.workspaceId, drive.connectionId);
+    const bodies = () => rows<{ subject: string; text: string; note: string | null }>(`select i.subject, b.text, b.note from item_body b join item i on i.id = b.item_id where i.workspace_id = $1 order by i.subject`, [w.workspaceId]);
+    // The newest file is read first; Drive fails outright on it, twice: each pass stops there and the next starts again.
+    for (let i = 0; i < 2; i++) {
+      fake().failNext.set('GOOGLEDRIVE_GET_DOCUMENT', 'timeout');
+      expect((await indexFileTexts(w.workspaceId, drive.connectionId, { max: 10 })).more).toBe(true);
+      expect(await bodies()).toEqual([]);
+    }
+    // The third time it is set aside, with why, and the pass goes on to the next file.
+    fake().failNext.set('GOOGLEDRIVE_GET_DOCUMENT', 'timeout');
+    await indexFileTexts(w.workspaceId, drive.connectionId, { max: 10 });
+    const after = await bodies();
+    expect(after.find((b) => b.subject === 'Readable doc')!.text).toContain('Readable words here.');
+    expect(after.find((b) => b.subject === 'Stuck doc')).toMatchObject({ text: '' });
+    expect(after.find((b) => b.subject === 'Stuck doc')!.note).toMatch(/would not hand over/);
+    // Nothing is left to do until the file changes.
+    expect((await indexFileTexts(w.workspaceId, drive.connectionId, { max: 10 })).tried).toBe(0);
+  });
+
+  it('a file that fails once and then reads is read', async () => {
+    add('Shy doc', { mimeType: 'application/vnd.google-apps.document', modifiedTime: ago(1), text: 'Read on the second try.' });
+    await syncFiles(w.workspaceId, drive.connectionId);
+    fake().failNext.set('GOOGLEDRIVE_GET_DOCUMENT', 'timeout');
+    await indexFileTexts(w.workspaceId, drive.connectionId, { max: 10 });
+    await indexFileTexts(w.workspaceId, drive.connectionId, { max: 10 });
+    expect((await rows<{ text: string }>(`select b.text from item_body b join item i on i.id = b.item_id where i.workspace_id = $1 and i.subject = 'Shy doc'`, [w.workspaceId]))[0]!.text).toContain('Read on the second try.');
+  });
+});

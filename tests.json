@@ -191,8 +191,8 @@
   {
    "id": "api-drive",
    "file": "server/test/drive.test.ts",
-   "covers": "Google Drive through Composio, read-only: connect beside a mailbox; the list of recent files without folders or trash; links kept only if they are Google's; paging, resuming, and asking only for what changed since; file events; the nightly pass; Ask's file search by name, wrapped as outside content; no other workspace sees the files; disconnect removes them; reading inside a file: Google’s document structure to text, docs, sheets and slides read on demand through the connection and not stored, kinds that can’t be opened said plainly, only files on the workspace’s own list are ever asked of Drive, long files cut off and flagged, contents wrapped as outside content, no other workspace can read a file by its id; contents searchable with a snippet, the text gone on trash, delete and disconnect; the cap per pass; files shared long ago listed; stale trashed entries dropped by the nightly check",
-   "tests": 32,
+   "covers": "Google Drive through Composio, read-only: connect beside a mailbox; the list of recent files without folders or trash; links kept only if they are Google's; paging, resuming, and asking only for what changed since; file events; the nightly pass; Ask's file search by name, wrapped as outside content; no other workspace sees the files; disconnect removes them; reading inside a file: Google’s document structure to text, docs, sheets and slides read on demand through the connection and not stored, kinds that can’t be opened said plainly, only files on the workspace’s own list are ever asked of Drive, long files cut off and flagged, contents wrapped as outside content, no other workspace can read a file by its id; contents searchable with a snippet, the text gone on trash, delete and disconnect; the cap per pass; files shared long ago listed; stale trashed entries dropped by the nightly check; a file Drive fails on outright three passes running set aside with a note until it changes, while the files after it are read, and one that fails once then reads is read",
+   "tests": 35,
    "status": "pass"
   },
   {
@@ -530,9 +530,9 @@
   {
    "id": "api-mail-reader",
    "file": "server/test/mail-reader.test.ts",
-   "covers": "reading an email as its sender laid it out: cleaning keeps formatting, tables, styles and links and drops scripts, forms, frames, SVG, event handlers, @import and javascript:/data:/file: links; pictures and CSS backgrounds from other sites left out and counted until asked for, then loaded over HTTPS; the HTML fetched from Gmail when opened and asked for once for a while; plain-text mail as text; only a message of a thread in this workspace, from a mailbox still connected (the copy kept for a while is not served after a disconnect); Outlook's HTML too",
+   "covers": "reading an email as its sender laid it out: cleaning keeps formatting, tables, styles and links and drops scripts, forms, frames, SVG, event handlers, @import and javascript:/data:/file: links; pictures and CSS backgrounds from other sites left out and counted until asked for, then loaded over HTTPS; the HTML fetched from Gmail when opened and asked for once for a while; plain-text mail as text; only a message of a thread in this workspace, from a mailbox still connected (the copy kept for a while is not served after a disconnect); Outlook's HTML too; when the mailbox refuses or fails outright, \"unavailable\" instead of an error, and asked again next time",
    "status": "pass",
-   "result": "Nov 18, 2026: 7 of 7."
+   "result": "Nov 18, 2026: 8 of 8."
   },
   {
    "id": "live-reader",
@@ -558,9 +558,9 @@
   {
    "id": "api-file-view",
    "file": "server/test/file-view.test.ts",
-   "covers": "a connected file shown inside Timmy: a Google Doc's structure turned into headings, bold, links, lists and tables with every word escaped, then cleaned like an email (no script, no javascript: link) and not stored; a sheet as rows, slides one by one, a PDF says it can't be shown yet; only a file on this workspace's list, from an account still connected",
+   "covers": "a connected file shown inside Timmy: a Google Doc's structure turned into headings, bold, links, lists and tables with every word escaped, then cleaned like an email (no script, no javascript: link) and not stored; a sheet as rows, slides one by one, a PDF says it can't be shown yet; only a file on this workspace's list, from an account still connected; when Drive fails outright, the viewer says so and offers the file's own app instead of a server error",
    "status": "pass",
-   "result": "Nov 18, 2026: 4 of 4."
+   "result": "Nov 18, 2026: 5 of 5."
   },
   {
    "id": "api-people-map",

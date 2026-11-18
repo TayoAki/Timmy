@@ -132,6 +132,16 @@ async function listed(workspaceId: string, itemId: string): Promise<(ListedFile 
 export async function viewFile(workspaceId: string, itemId: string): Promise<Viewed | null> {
   const f = await listed(workspaceId, itemId);
   if (!f) return null;
+  try {
+    return await view(workspaceId, f);
+  } catch {
+    // The provider failed outright (not a polite refusal): the screen says so and offers the file's own app.
+    const app = APP_NAMES[f.toolkit] ?? 'Files';
+    return { name: f.name, type: f.kind, app, ...(f.link ? { link: f.link } : {}), view: { kind: 'none', reason: `${app} didn’t hand over this file just now. Try again, or open it in ${app}.` } };
+  }
+}
+
+async function view(workspaceId: string, f: ListedFile & { link?: string }): Promise<Viewed> {
   const base = { name: f.name, type: f.kind, app: APP_NAMES[f.toolkit] ?? 'Files', ...(f.link ? { link: f.link } : {}) };
   const cannot = (reason: string): Viewed => ({ ...base, view: { kind: 'none', reason } });
   if (!canRead(f.toolkit, f.mime, f.name)) return cannot(`Timmy can’t show a ${f.kind.toLowerCase()} yet. Open it in ${base.app}.`);

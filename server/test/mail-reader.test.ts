@@ -137,6 +137,9 @@ describe('when the mailbox can’t give it back', () => {
     const r = await original(w, t.id, id);
     expect(r.status).toBe(200);
     expect(r.body).toEqual({ unavailable: true, blocked: 0 });
+    // Failing outright (a timeout, not a refusal) is answered the same way.
+    fake().failNext.set('GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID', 'timeout');
+    expect((await original(w, t.id, id)).body).toEqual({ unavailable: true, blocked: 0 });
     expect((await original(w, t.id, id)).body.html).toContain('Here today.');
   });
 });

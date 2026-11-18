@@ -38,6 +38,9 @@ const OFFICE_TYPES = [
 /** The version of a file its words were read from: when it last changed, to the millisecond. */
 const VERSION = `(extract(epoch from i.occurred_at) * 1000)::bigint::text`;
 
+/** How many passes in a row a file may fail before it is set aside until it changes. */
+export const TEXT_FAILURES_BEFORE_SETTING_ASIDE = 3;
+
 export async function indexFileTexts(workspaceId: string, connectionId: string, opts: { max?: number } = {}): Promise<TextPass> {
   const out: TextPass = { read: 0, skipped: 0, more: false, tried: 0 };
   const conn = await connectionById(workspaceId, connectionId);
@@ -69,10 +72,28 @@ export async function indexFileTexts(workspaceId: string, connectionId: string, 
     try {
       got = await readListed(workspaceId, f, 'sync');
     } catch (e) {
-      // A failure that isn't the file's (the provider or the network) ends the pass; the next one starts again here.
-      log.warn('file text could not be read', { workspaceId, connectionId, error: (e as Error).message });
-      out.more = true;
-      break;
+      const error = (e as Error).message;
+      log.warn('file text could not be read', { workspaceId, connectionId, error });
+      // A failure that may not be the file's own (the provider or the network) ends the pass, and the next one starts
+      // again here. But a file that fails the same way three passes running is set aside until it changes, so one
+      // file the provider won't hand over can't hold up every file after it.
+      const failures = await withWorkspace({ workspaceId }, async (tx) =>
+        Number(
+          (
+            await tx.query(
+              `update item set meta = meta || jsonb_build_object('textFailedVersion', $3::text, 'textFailures',
+                 case when meta->>'textFailedVersion' = $3::text then coalesce((meta->>'textFailures')::int, 0) + 1 else 1 end)
+               where id = $1 and workspace_id = $2 returning (meta->>'textFailures')::int as n`,
+              [row.id, workspaceId, row.version],
+            )
+          ).rows[0]?.n ?? 0,
+        ),
+      ).catch(() => 0);
+      if (failures < TEXT_FAILURES_BEFORE_SETTING_ASIDE) {
+        out.more = true;
+        break;
+      }
+      got = { reason: `${f.toolkit === 'one_drive' ? 'OneDrive' : 'Drive'} would not hand over this file’s contents (${error.slice(0, 120)}).` };
     }
     const text = 'text' in got ? got.text.replace(/\u0000/g, '').slice(0, MAX_FILE_TEXT) : '';
     const kept = await withWorkspace({ workspaceId }, async (tx) => {
