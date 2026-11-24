@@ -43,6 +43,12 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 | Frontend live mode (`VITE_TIMMY_LIVE=1`) | Built: sign-in, onboarding, state from the API, Connect buttons, model picker, monthly limit, approvals for writes Timmy proposes. The demo is unchanged and still the default build. |
 | Railway | `app` (API + live app), `pgvector` and the bucket `timmy-files` exist in `production` and `staging`. Both `app` services have the OpenRouter and Composio keys. |
 
+## Archived mail stays in its project; the project picker moves project screens (Nov 24, 2026)
+
+- **"When I archive something it shouldn't remove it from the project folder in email."** It never left the project (archiving changes an email's place, not its project, and the project page's Mail tab listed it under Archived), but the project's folder in the Mail sidebar only had Open, I owe and Waiting, so an archived email vanished from it. The folder now opens on **All** (archived mail included, each row marked with its place), with Open, I owe, Waiting and a new **Archived** tab; its line says "Archiving an email takes it out of your inbox, not out of the project". The number beside a project in the sidebar still counts open emails, and says so on hover. Timmy writes no project labels to Gmail, so nothing changes there.
+- **"The project filter doesn't work if I'm on another project."** The picker at the top of the sidebar only narrowed lists; a screen about one project (its page, its Mail folder, or Tasks with a project chosen on the board) kept showing the old one. Now picking a project moves such a screen to the picked project's page or folder, on the same tab, and on Tasks the board's own project choice gives way to the picker (also for "All projects"). Back returns to where you were.
+- Tested: `e2e-focus` (demo, 6 new checks: a project page and a Mail folder follow the picker, and the board's choice gives way) and `live-flow` (18: the archived email shows in its project's folder under All and Archived, not Open).
+
 ## From an email to done, smarter (Nov 24, 2026)
 
 **Asked:** "is this the smartest flow?" It wasn't: to-dos without a date in the email drifted, the email and its to-do were the same work tracked twice, sending the reply didn't count as doing the to-do, and an email Timmy wasn't sure about stayed in no project. The owner approved all four changes below, then asked for search on a project's emails.

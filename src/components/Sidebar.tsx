@@ -175,7 +175,7 @@ function MailSide() {
                 <span className="num">{p.num}</span>
                 {p.name}
               </span>
-              <span className="nav-count">{inBox(state.threads, p.id).length || ''}</span>
+              <span className="nav-count" title="Open emails in this project; archived ones are in its folder too">{inBox(state.threads, p.id).length || ''}</span>
             </button>
           ))}
         </div>

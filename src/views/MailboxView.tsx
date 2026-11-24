@@ -39,10 +39,14 @@ const TABS: Record<string, { id: string; label: string; test: Filter }[]> = {
     { id: 'reference', label: 'Reference', test: (t) => t.kind === 'reference' },
   ],
   archived: [{ id: 'all', label: 'All', test: () => true }],
+  // A project keeps its mail whatever happens to it: archiving takes an email out of the inbox, never out of its
+  // project, so the project's folder shows everything by default, archived mail included.
   project: [
-    { id: 'all', label: 'Open', test: (t) => t.box !== 'archived' },
+    { id: 'all', label: 'All', test: () => true },
+    { id: 'open', label: 'Open', test: (t) => t.box !== 'archived' },
     { id: 'owe', label: 'I owe', test: (t) => t.box === 'follow-up' },
     { id: 'waiting', label: 'Waiting', test: (t) => t.box === 'waiting' },
+    { id: 'archived', label: 'Archived', test: (t) => t.box === 'archived' },
   ],
 };
 
@@ -93,7 +97,7 @@ export function MailboxView({ box, tab }: { box: Box | ProjectId; tab: string })
         <Folder color={label.color} size={30} />
         <h1 className="page-title">{label.name}</h1>
       </div>
-      <p className="page-sub">{guide ? guide.body : `Everything for ${label.name}, filed where you’ll use it.`}</p>
+      <p className="page-sub">{guide ? guide.body : `Everything for ${label.name}, open and archived. Archiving an email takes it out of your inbox, not out of the project.`}</p>
       {!isProject && <ScopeNote hidden={inBox(state.threads, box).length - base.length} />}
 
       <div className="filters">

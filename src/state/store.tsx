@@ -1123,7 +1123,20 @@ export function reducer(s: State, a: Action): State {
     case 'setScope': {
       if (a.project === s.scope) return s;
       const p = a.project ? s.ws.projects[a.project] : null;
-      return { ...s, scope: p ? p.id : null, toasts: withToast(s, p ? `Showing ${p.name} only` : 'Showing all projects') };
+      if (a.project && !p) return s;
+      // A screen about one project follows the pick, so the picker never says one project while the page shows
+      // another: a project's page or its Mail folder opens the picked project's, on the same tab; on Tasks, a project
+      // chosen on the board gives way to the picker (or to every project, for "All projects").
+      const r = s.route;
+      const route: Route =
+        p && r.view === 'project'
+          ? { ...r, id: p.id }
+          : p && r.view === 'box' && !BOXES.some((b) => b.id === r.box)
+            ? { ...r, box: p.id }
+            : r.view === 'tasks' && r.project
+              ? { ...r, project: undefined }
+              : r;
+      return { ...s, scope: p ? p.id : null, ...(route !== r ? { route, back: r } : {}), toasts: withToast(s, p ? `Showing ${p.name} only` : 'Showing all projects') };
     }
 
     case 'setUrgency': {

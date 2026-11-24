@@ -107,5 +107,17 @@ run('live-flow', async (browser) => {
   await page.getByText('No email in this project matches “nothing like this”.').waitFor();
   ok(true, 'a search with no match says so');
 
+  // 6. Archiving keeps an email in its project's folder in Mail: All shows it, marked Archived, and so does Archived.
+  await page.click('button[aria-label="Today & mail"]');
+  await page.locator('.side .nav-item', { hasText: 'Apollo launch' }).click();
+  const folder = page.locator('.main');
+  await folder.locator('.row', { hasText: 'Quote for the Apollo launch' }).waitFor();
+  ok((await folder.locator('.row', { hasText: 'Quote for the Apollo launch' }).innerText()).includes('Archived'), 'the project’s folder in Mail still shows the archived email, marked Archived');
+  await page.getByRole('tab', { name: /^Open/ }).click();
+  ok((await folder.locator('.row', { hasText: 'Quote for the Apollo launch' }).count()) === 0, 'Open leaves it out');
+  await page.getByRole('tab', { name: /^Archived/ }).click();
+  await folder.locator('.row', { hasText: 'Quote for the Apollo launch' }).waitFor();
+  ok(true, 'and Archived lists it');
+
   ok(errors.length === 0, `no page errors (${errors.join(' | ')})`);
 });

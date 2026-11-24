@@ -67,6 +67,31 @@ const assert = (c, m) => { if (!c) throw new Error('FAIL: ' + m); console.log('o
   assert(await p.locator('.app[data-focus]').count() === 0 && await p.locator('.tri-grid').count() === 1, 'the Focus button turns it off');
   await p.click('.scope-note .link-btn'); await p.waitForTimeout(300);
   assert((await p.locator('.scope-name').innerText()) === 'All projects' && await p.locator('.urg-list .urg-row').count() === urgentAll, '"Show all projects" brings everything back');
+
+  // The picker moves a screen about one project to the picked one: its page, its Mail folder, and the Tasks board.
+  const title = async () => (await p.locator('.main h1.page-title').first().innerText()).trim();
+  const pickProject = async (name) => { await p.click('.scope-btn'); await p.click(`.scope-item:has-text("${name}")`); await p.waitForTimeout(300); };
+  await p.click('button[aria-label="Projects"]'); await p.waitForTimeout(300);
+  await p.locator('.pj-row-main', { hasText: 'Northwind' }).first().click(); await p.waitForTimeout(300);
+  assert(/Northwind/.test(await title()), 'a project’s page is open (Northwind)');
+  await pickProject('Acme Renewal');
+  assert(/Acme Renewal/.test(await title()), 'picking another project in the picker opens that project’s page');
+  await pickProject('All projects');
+  await p.click('button[aria-label="Today & mail"]'); await p.waitForTimeout(300);
+  await p.locator('.side .nav-item', { hasText: 'Northwind' }).first().click(); await p.waitForTimeout(300);
+  assert(/Northwind/.test(await title()), 'a project’s Mail folder is open (Northwind)');
+  await pickProject('Acme Renewal');
+  assert(/Acme Renewal/.test(await title()) && (await p.locator('.main .row').count()) > 0, 'picking another project opens that project’s Mail folder');
+  await p.click('button[aria-label="Tasks"]'); await p.waitForTimeout(300);
+  await p.selectOption('select[aria-label="Filter by project"]', { label: /Northwind/ }).catch(async () => {
+    const opt = await p.locator('select[aria-label="Filter by project"] option', { hasText: 'Northwind' }).first().getAttribute('value');
+    await p.selectOption('select[aria-label="Filter by project"]', opt);
+  });
+  await p.waitForTimeout(300);
+  assert((await p.locator('select[aria-label="Filter by project"]').inputValue()) !== '', 'a project is chosen on the Tasks board');
+  await pickProject('All projects');
+  assert((await p.locator('select[aria-label="Filter by project"]').inputValue()) === '', 'on Tasks, the picker replaces a project chosen on the board');
+
   console.log('errors', errors);
   await b.close();
   if (errors.length) process.exit(1);

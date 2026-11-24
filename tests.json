@@ -718,9 +718,9 @@
   {
    "id": "live-flow",
    "file": "e2e/live/live-flow.cjs",
-   "covers": "from an email to done: a to-do with no date shows a suggested one; a reply sent from Timmy ticks off its to-do and archives the email; ticking the last to-do archives the email and one Undo puts both back; Triage asks \"Is this about Apollo launch?\", Yes files it, No stops asking; a project's emails can be searched, the archived one found by what was said in it; a reply sent from Gmail ticks off its to-do, leaves the email where it was, and the email's log says so; switched on in Settings, the rule files the email such a reply finishes",
+   "covers": "from an email to done: a to-do with no date shows a suggested one; a reply sent from Timmy ticks off its to-do and archives the email; ticking the last to-do archives the email and one Undo puts both back; Triage asks \"Is this about Apollo launch?\", Yes files it, No stops asking; a project's emails can be searched, the archived one found by what was said in it; a reply sent from Gmail ticks off its to-do, leaves the email where it was, and the email's log says so; switched on in Settings, the rule files the email such a reply finishes; an archived email stays in its project's folder in Mail (All and Archived, not Open)",
    "status": "pass",
-   "result": "Nov 24, 2026: 15 of 15 (with the rule to file). Earlier the same day, 13 of 13 (with the Gmail reply). Earlier the same day, 11 of 11."
+   "result": "Nov 24, 2026: 18 of 18 (with the project folder keeping archived mail). Earlier the same day, 15 of 15 (with the rule to file). Earlier the same day, 13 of 13 (with the Gmail reply). Earlier the same day, 11 of 11."
   }
  ]
 }
