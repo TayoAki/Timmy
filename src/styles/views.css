@@ -1164,6 +1164,32 @@ button.rp-person:hover {
   color: var(--text);
 }
 
+/* Done: archive and tick off the email's to-dos in one go. The main way out of an email, so it comes first and stands out. */
+.move-done {
+  padding: 0 12px 0 10px;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+.move-done:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 88%, #000);
+  color: var(--on-accent);
+}
+
+.move-done:disabled {
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+  color: var(--text-3);
+  cursor: default;
+}
+
+.move-done-count {
+  font-weight: 500;
+  opacity: 0.85;
+}
+
 .summary {
   display: flex;
   gap: 14px;

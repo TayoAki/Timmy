@@ -125,6 +125,7 @@ export function ThreadView({ id, tab }: { id: string; tab: ThreadTab }) {
       <UrgencyLine t={t} />
 
       <div className="move-bar" role="group" aria-label="Move thread">
+        <DoneButton t={t} />
         {MOVES.map((m) => (
           <button
             key={m.box}
@@ -148,6 +149,33 @@ export function ThreadView({ id, tab }: { id: string; tab: ThreadTab }) {
       {tab === 'links' && <Links t={t} />}
       {tab === 'history' && <History t={t} />}
     </Frame>
+  );
+}
+
+/**
+ * Done with this email: it is archived (in Gmail or Outlook too, like Archive) and every open to-do that came from it
+ * is ticked off, with one Undo for both. Then back to where the email was opened from.
+ */
+function DoneButton({ t }: { t: Thread }) {
+  const { state, dispatch } = useStore();
+  const open = Object.values(state.ws.tasks).filter((x) => x.thread === t.id && x.status !== 'done').length;
+  const finished = t.box === 'archived' && !open;
+  const what = open ? `Archive this email and tick off its ${open === 1 ? 'to-do' : `${open} to-dos`}` : 'Archive this email';
+  return (
+    <button
+      className="move-btn move-done"
+      disabled={finished}
+      aria-label={finished ? 'Done' : `Done: ${what.charAt(0).toLowerCase()}${what.slice(1)}`}
+      title={finished ? 'Already archived, with nothing left to do' : what}
+      onClick={() => {
+        dispatch({ type: 'done', id: t.id });
+        dispatch({ type: 'back' });
+      }}
+    >
+      <Check size={15} />
+      <span>Done</span>
+      {open > 0 && <span className="move-done-count">{open === 1 ? '+ 1 to-do' : `+ ${open} to-dos`}</span>}
+    </button>
   );
 }
 

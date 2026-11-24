@@ -172,8 +172,8 @@
   {
    "id": "api-filing",
    "file": "server/test/filing.test.ts",
-   "covers": "sorting or archiving a thread writes the label to the mailbox through an approved effect record; labels made once; Undo files it back; written once on a retried command; who may file; the kill switch; a refusal, a deleted label and a timeout; filing asked for in the chat waits for the person by default; Auto mode acts only on the open thread, and its judge sees only the person's words and a fixed description; an unattended run cannot file on its own",
-   "tests": 19,
+   "covers": "sorting or archiving a thread writes the label to the mailbox through an approved effect record; labels made once; Undo files it back; written once on a retried command; who may file; the kill switch; a refusal, a deleted label and a timeout; filing asked for in the chat waits for the person by default; Auto mode acts only on the open thread, and its judge sees only the person's words and a fixed description; an unattended run cannot file on its own; Done on an email archives it in the mailbox and ticks off its open to-dos (others untouched), and one Undo puts both back; Done on an email with nothing left does nothing, and a role that can't file can't use it",
+   "tests": 21,
    "status": "pass"
   },
   {
@@ -696,9 +696,9 @@
   {
    "id": "live-todos",
    "file": "e2e/live/live-todos.cjs",
-   "covers": "an email's ask becomes a to-do with its date, shown in the thread under To-dos, checked off there and saved, and listed in Tasks with the email it came from; one click on a Tasks card's box marks it done, and the list shows it ticked and unticks it back to do",
+   "covers": "an email's ask becomes a to-do with its date, shown in the thread under To-dos, checked off there and saved, and listed in Tasks with the email it came from; one click on a Tasks card's box marks it done, and the list shows it ticked and unticks it back to do; Done on the email archives it and ticks off its to-do, takes you back, and one Undo restores both",
    "status": "pass",
-   "result": "Nov 24, 2026: 10 of 10 (with the tick box on the Tasks board and list). Nov 18: 7 of 7 (with Make a to-do)."
+   "result": "Nov 24, 2026: 13 of 13 (with Done on the email). Earlier the same day, 10 of 10 (with the tick box on the Tasks board and list). Nov 18: 7 of 7 (with Make a to-do)."
   }
  ]
 }

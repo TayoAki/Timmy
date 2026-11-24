@@ -70,5 +70,30 @@ run('live-todos', async (browser) => {
   await sow.click();
   ok(await until('Send the signed SOW', 'todo'), 'unticking it in the list puts it back to do, and it is saved');
 
+  // Done on the email: it is archived and its open to-do is ticked off, in one go, with one Undo.
+  const boxOf = async (subject) => (await api(page, 'GET', '/api/v1/state')).body.slices.threads.find((t) => t.subject === subject)?.box;
+  const before = await boxOf('Signed SOW');
+  await page.click('button[aria-label="Today & mail"]');
+  await page.getByRole('tab', { name: /Triage/ }).click();
+  await page.locator('.triage-subject', { hasText: 'Signed SOW' }).first().click();
+  const doneBtn = page.getByRole('button', { name: 'Done: archive this email and tick off its to-do' });
+  await doneBtn.waitFor();
+  await doneBtn.click();
+  await page.locator('.toast', { hasText: 'Done: archived, its to-do ticked off' }).waitFor();
+  ok((await page.locator('.thread-title', { hasText: 'Signed SOW' }).count()) === 0, 'Done takes you back from the email');
+  let archived = false;
+  for (let i = 0; i < 40 && !archived; i++) {
+    archived = (await boxOf('Signed SOW')) === 'archived' && (await statusOf('Send the signed SOW')) === 'done';
+    if (!archived) await page.waitForTimeout(150);
+  }
+  ok(archived, 'Done archives the email and ticks off its to-do, and both are saved');
+  await page.locator('.toast').getByRole('button', { name: 'Undo' }).click();
+  let back = false;
+  for (let i = 0; i < 40 && !back; i++) {
+    back = (await boxOf('Signed SOW')) === before && (await statusOf('Send the signed SOW')) === 'todo';
+    if (!back) await page.waitForTimeout(150);
+  }
+  ok(back, `one Undo puts the email back in ${before} and the to-do back on the list`);
+
   ok(errors.length === 0, `no page errors (${errors.join(' | ')})`);
 });

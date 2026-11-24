@@ -178,6 +178,8 @@ export type Action =
   | { type: 'back' }
   /** `by: 'timmy'` is set by the server when Timmy filed the thread itself (after approval, or in Auto mode). */
   | { type: 'move'; id: string; box: Box; quiet?: boolean; by?: 'timmy' }
+  /** Done with an email: it is archived and every to-do that came from it is ticked off, with one Undo for both. */
+  | { type: 'done'; id: string }
   | { type: 'acceptSuggestion'; id: string }
   | { type: 'acceptAll'; ids: string[] }
   | { type: 'toggleStar'; id: string }
@@ -496,6 +498,21 @@ export function reducer(s: State, a: Action): State {
       // Mail the person sorts out of Triage the same way twice, from the same sender: Timmy offers it as a rule.
       const learned = a.by === 'timmy' || t.box !== 'inbox' ? null : learnedFromMoves(moved, t, a.box);
       return learned ? { ...moved, ws: { ...moved.ws, learned: { ...moved.ws.learned, [learned.id]: learned } } } : moved;
+    }
+
+    case 'done': {
+      const t = s.threads.find((x) => x.id === a.id);
+      if (!t) return s;
+      const open = Object.values(s.ws.tasks).filter((x) => x.thread === t.id && x.status !== 'done');
+      if (t.box === 'archived' && !open.length) return s;
+      const ticked = open.length === 1 ? 'its to-do ticked off' : `its ${open.length} to-dos ticked off`;
+      return {
+        ...s,
+        threads: t.box === 'archived' ? s.threads : patch(s.threads, a.id, (x) => moveThread(x, 'archived')),
+        ws: open.length ? { ...s.ws, tasks: { ...s.ws.tasks, ...Object.fromEntries(open.map((x) => [x.id, { ...x, status: 'done' as const }])) } } : s.ws,
+        activity: logged(s, `You marked “${t.subject}” done: archived${open.length ? `, ${ticked}` : ''}`, 'move', t.id),
+        toasts: withToast(s, open.length ? `Done: archived, ${ticked}` : 'Done: archived', snap(s)),
+      };
     }
 
     case 'acceptSuggestion': {

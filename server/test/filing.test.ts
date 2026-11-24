@@ -129,6 +129,55 @@ describe('moving a thread in Timmy', () => {
     for (const t of [a, b]) expect(labelsOf(t.ext!.threadKey!)).toContain(LABEL_NAMES['follow-up']);
   });
 
+  it('Done archives it in Gmail and ticks off its open to-dos, other tasks untouched; one Undo puts both back', async () => {
+    const t = await deliver('All sorted');
+    const key = t.ext!.threadKey!;
+    const task = (id: string, title: string, extra: Record<string, unknown> = {}) => ({ id, title, status: 'todo', priority: 'normal', created: new Date(), ...extra });
+    await w.cmd({
+      type: 'ws',
+      ops: [
+        { op: 'put', col: 'tasks', item: task('tsk-a', 'Send the deck', { thread: t.id }) },
+        { op: 'put', col: 'tasks', item: task('tsk-b', 'Book the room', { thread: t.id, status: 'doing' }) },
+        { op: 'put', col: 'tasks', item: task('tsk-c', 'Already done', { thread: t.id, status: 'done' }) },
+        { op: 'put', col: 'tasks', item: task('tsk-d', 'Another email’s to-do') },
+      ],
+    });
+    const done = await w.cmd({ type: 'done', id: t.id });
+    expect(done.ok).toBe(true);
+    await jobs().drain();
+    let s = await w.state();
+    expect(s.threads.find((x) => x.id === t.id)!.box).toBe('archived');
+    expect(Object.fromEntries(['tsk-a', 'tsk-b', 'tsk-c', 'tsk-d'].map((id) => [id, s.ws.tasks[id]!.status]))).toEqual({ 'tsk-a': 'done', 'tsk-b': 'done', 'tsk-c': 'done', 'tsk-d': 'todo' });
+    // The archive is written to Gmail like any other: one effect record, approved by the person's own click.
+    const [e] = await filings();
+    expect(e).toMatchObject({ status: 'completed', source: 'user', approved_by: w.userId, approved_via: 'click' });
+    expect(e!.payload).toMatchObject({ threadKey: key, box: 'archived' });
+    expect(labelsOf(key)).toEqual(['UNREAD']);
+    expect(s.activity[0]!.text).toBe('You marked “All sorted” done: archived, its 2 to-dos ticked off');
+
+    expect((await w.cmd({ type: 'undo', command: done.id })).ok).toBe(true);
+    await jobs().drain();
+    s = await w.state();
+    expect(s.threads.find((x) => x.id === t.id)!.box).toBe(t.box);
+    expect(Object.fromEntries(['tsk-a', 'tsk-b', 'tsk-c'].map((id) => [id, s.ws.tasks[id]!.status]))).toEqual({ 'tsk-a': 'todo', 'tsk-b': 'doing', 'tsk-c': 'done' });
+    expect(labelsOf(key)).toContain('INBOX');
+    expect((await filings()).every((x) => x.status === 'completed')).toBe(true);
+  });
+
+  it('Done on an email with no to-dos only archives it; on one already done, or not in the workspace, it does nothing', async () => {
+    const t = await deliver('Nothing to do');
+    expect((await w.cmd({ type: 'done', id: t.id })).ok).toBe(true);
+    await jobs().drain();
+    expect((await w.state()).threads.find((x) => x.id === t.id)!.box).toBe('archived');
+    expect(await filings()).toHaveLength(1);
+    const again = await w.cmd({ type: 'done', id: t.id });
+    expect(again.ok).toBe(true);
+    expect(again.patches).toHaveLength(0);
+    expect((await w.cmd({ type: 'done', id: 'thr-nope' })).ok).toBe(false);
+    await jobs().drain();
+    expect(await filings()).toHaveLength(1);
+  });
+
   it('a thread that is not in a mailbox, and a change that is not a move, write nothing', async () => {
     const t = await deliver('Stays put');
     await w.cmd({ type: 'ws', ops: [{ op: 'put', col: 'notes', item: { id: 'n1', text: 'x' } }] });
@@ -152,6 +201,7 @@ describe('who may file, and when it can’t be written', () => {
     for (const role of ['revops', 'client']) {
       const other = await addMember(w.workspaceId, role);
       expect((await other.cmd({ type: 'move', id: t.id, box: 'archived' })).ok).toBe(false);
+      expect((await other.cmd({ type: 'done', id: t.id })).ok).toBe(false);
     }
     await jobs().drain();
     expect(await filings()).toHaveLength(1);
