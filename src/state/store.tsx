@@ -463,13 +463,16 @@ const moveThread = (t: Thread, box: Box): Thread => {
 
 const clipped = (s: string, n = 48) => (s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s);
 const capFirst = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-const openTodos = (tasks: WS['tasks'], threadId: string) => Object.values(tasks).filter((x) => x.thread === threadId && x.status !== 'done');
+export const openTodos = (tasks: WS['tasks'], threadId: string) => Object.values(tasks).filter((x) => x.thread === threadId && x.status !== 'done');
 
 /** To-dos a sent reply itself does: answering, sending or sharing something, confirming, letting them know. */
 const REPLY_DOES = /^(reply|respond|answer|write back|get back|send|share|forward|confirm|email|e-mail|tell|let \S+ know|update|ask|follow up)\b/i;
 
-/** The email's open to-dos a reply ticks off; none when the reply only promises to do them later. */
-const doneByReply = (tasks: WS['tasks'], threadId: string, body: string) => (promiseIn(body) ? [] : openTodos(tasks, threadId).filter((x) => REPLY_DOES.test(x.title.trim())));
+/**
+ * The email's open to-dos a reply ticks off; none when the reply only promises to do them later. Used for replies sent
+ * from Timmy here, and for replies the person writes in Gmail or Outlook when sync brings them in (sync/ingest.ts).
+ */
+export const doneByReply = (tasks: WS['tasks'], threadId: string, body: string) => (promiseIn(body) ? [] : openTodos(tasks, threadId).filter((x) => REPLY_DOES.test(x.title.trim())));
 
 /** "1 to-do" / "3 to-dos". */
 const todoCount = (n: number) => (n === 1 ? '1 to-do' : `${n} to-dos`);

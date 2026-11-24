@@ -186,8 +186,8 @@
   {
    "id": "api-follow-tasks",
    "file": "server/test/follow-tasks.test.ts",
-   "covers": "ticking off an email's last to-do files it: archived (in Gmail too, one effect record, Undo puts back the email and the to-do) or to Waiting when the person's own newest message asked for something; left alone while another to-do is open, a draft waits, or it sits in Read Through or Waiting; a reply ticks off the to-dos it does and keeps the email in Follow Up while others are open; a reply that only promises ticks nothing; sending Timmy's draft ticks too, and Undo takes it back",
-   "tests": 7,
+   "covers": "ticking off an email's last to-do files it: archived (in Gmail too, one effect record, Undo puts back the email and the to-do) or to Waiting when the person's own newest message asked for something; left alone while another to-do is open, a draft waits, or it sits in Read Through or Waiting; a reply ticks off the to-dos it does and keeps the email in Follow Up while others are open; a reply that only promises ticks nothing; sending Timmy's draft ticks too, and Undo takes it back; a reply written in Gmail or Outlook ticks the reply-type to-do when it syncs in, says so in the email's log and the activity, and leaves the email where it is with no write to the mailbox; a promise, or a reply sent before the to-do was made, ticks nothing; Timmy's own reply coming back from the mailbox isn't counted twice",
+   "tests": 11,
    "status": "pass"
   },
   {
@@ -717,9 +717,9 @@
   {
    "id": "live-flow",
    "file": "e2e/live/live-flow.cjs",
-   "covers": "from an email to done: a to-do with no date shows a suggested one; a reply sent from Timmy ticks off its to-do and archives the email; ticking the last to-do archives the email and one Undo puts both back; Triage asks \"Is this about Apollo launch?\", Yes files it, No stops asking; a project's emails can be searched, the archived one found by what was said in it",
+   "covers": "from an email to done: a to-do with no date shows a suggested one; a reply sent from Timmy ticks off its to-do and archives the email; ticking the last to-do archives the email and one Undo puts both back; Triage asks \"Is this about Apollo launch?\", Yes files it, No stops asking; a project's emails can be searched, the archived one found by what was said in it; a reply sent from Gmail ticks off its to-do, leaves the email where it was, and the email's log says so",
    "status": "pass",
-   "result": "Nov 24, 2026: 11 of 11."
+   "result": "Nov 24, 2026: 13 of 13 (with the Gmail reply). Earlier the same day, 11 of 11."
   }
  ]
 }

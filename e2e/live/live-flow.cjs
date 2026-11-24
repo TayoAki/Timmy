@@ -45,6 +45,17 @@ run('live-flow', async (browser) => {
   await page.locator('.toast', { hasText: 'ticked off “Reply to Dana with the quote”' }).waitFor();
   ok(await until((s) => taskBy('Reply to Dana with the quote')(s)?.status === 'done' && threadBy('Quote for the Apollo launch')(s)?.box === 'archived'), 'the reply ticks off its to-do and the email is archived');
 
+  // 2b. A reply written in Gmail itself ticks the to-do too, and the email shows it; nothing is moved in the mailbox.
+  await deliver(page, { from: 'Dana Whitfield <dana@acme.test>', subject: 'Agenda', body: 'When you can, reply to Dana with the agenda.' });
+  await until(taskBy('Reply to Dana with the agenda'));
+  const agenda = await until(threadBy('Agenda'));
+  await deliver(page, { from: 'grace@mycompany.test', to: ['dana@acme.test'], subject: 'Re: Agenda', body: 'Agenda attached.', threadId: agenda.ext.threadKey, labels: ['SENT'] });
+  ok(await until((s) => taskBy('Reply to Dana with the agenda')(s)?.status === 'done' && threadBy('Agenda')(s)?.box === agenda.box), 'a reply sent from Gmail ticks off its to-do and leaves the email where it was');
+  await openEmail('Agenda');
+  await page.getByRole('tab', { name: /Timmy’s log/ }).click();
+  await page.getByText('Your reply in Gmail ticked off: Reply to Dana with the agenda. All its to-dos are done').waitFor();
+  ok(true, 'the email’s log says the Gmail reply ticked it off');
+
   // 3. Ticking off an email's last to-do files the email; one Undo puts both back.
   await deliver(page, { from: 'Dana Whitfield <dana@acme.test>', subject: 'Board deck', body: 'When you can, send the board deck.' });
   await until(taskBy('Send the board deck'));

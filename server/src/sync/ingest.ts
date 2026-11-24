@@ -4,7 +4,8 @@
  * threads that need attention are projected into the state the screens show.
  */
 import { createHash } from 'node:crypto';
-import type { State } from '../../../src/state/store';
+import { doneByReply, openTodos, type State } from '../../../src/state/store';
+import type { Task } from '../../../src/data/ws-types';
 import type { Thread } from '../../../src/data/types';
 import { draftHash } from '../../../src/live/hash';
 import { config } from '../config';
@@ -163,7 +164,29 @@ export async function projectThread(tx: Tx, state: State, workspaceId: string, c
         }
       : {}),
   };
-  return { ...state, threads: state.threads.map((t) => (t.id === existing.id ? next : t)) };
+  // The person's own reply, written in Gmail or Outlook, ticks off the email's to-dos a reply does, as one sent from
+  // Timmy does (doneByReply). Only a reply written after the to-do was made counts, so old sent mail read in later
+  // ticks nothing. Timmy's own reply coming back from the mailbox finds them ticked already. The email stays where it
+  // is: moving it would be a write to the mailbox that nobody clicked; the person files it there, or presses Done.
+  let tasks = state.ws.tasks;
+  const ticked: Task[] = [];
+  for (const m of arrived.filter((x) => x.from === 'me')) {
+    const done = doneByReply(tasks, existing.id, m.body.join('\n')).filter((x) => new Date(x.created).getTime() <= m.at.getTime());
+    if (!done.length) continue;
+    tasks = { ...tasks, ...Object.fromEntries(done.map((x) => [x.id, { ...x, status: 'done' as const }])) };
+    ticked.push(...done);
+  }
+  if (!ticked.length) return { ...state, threads: state.threads.map((t) => (t.id === existing.id ? next : t)) };
+  const app = existing.ext?.app === 'outlook' ? 'Outlook' : 'Gmail';
+  const all = openTodos(tasks, existing.id).length === 0;
+  const said = `Your reply in ${app} ticked off: ${ticked.map((x) => x.title).join('; ')}${all ? '. All its to-dos are done' : ''}`;
+  const withNote: LiveThread = { ...next, history: [...(next.history ?? []), { at: new Date(), text: said }] };
+  return {
+    ...state,
+    ws: { ...state.ws, tasks },
+    threads: state.threads.map((t) => (t.id === existing.id ? withNote : t)),
+    activity: [{ id: newId('act'), at: new Date(), kind: 'task' as const, text: `${said} (“${existing.subject}”)`, threadId: existing.id }, ...state.activity],
+  };
 }
 
 /* ───────────── New mail ───────────── */

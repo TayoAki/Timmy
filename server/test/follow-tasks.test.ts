@@ -9,7 +9,7 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Thread } from '../../src/data/types';
 import type { EffectRow } from '../src/gateway/gateway';
 import { LABEL_NAMES } from '../src/sync/labels';
-import { boot, connectGmail, fake, jobs, model, newWorkspace, rows, type Client } from './helpers';
+import { boot, connectApp, connectGmail, fake, jobs, model, newWorkspace, rows, type Client } from './helpers';
 
 let w: Client;
 let box: { connectionId: string; account: string };
@@ -156,5 +156,71 @@ describe('a reply ticks off what it does', () => {
     expect((await threadOf(t.id)).box).toBe('archived');
     expect((await w.cmd({ type: 'undo', command: sent.id })).ok).toBe(true);
     expect(await statusOf('t-d')).toBe('todo');
+  });
+});
+
+describe('a reply written in Gmail or Outlook ticks off what it does', () => {
+  /** The person's own message on a thread, as their mailbox would show it once they send it there. */
+  const sendFromMailbox = async (account: string, from: string, threadKey: string, body: string, at?: Date) => {
+    const d = fake().deliver(account, { from, to: ['dana@acme.test'], subject: 'Re: mail', body, threadId: threadKey, labels: ['SENT'], ...(at ? { at } : {}) });
+    await (await boot()).request('/api/hooks/composio', { method: 'POST', headers: d.webhook.headers, body: d.webhook.body });
+    await jobs().drain();
+  };
+
+  it('a Gmail reply ticks the reply-type to-do, says so, and leaves the email where it is with no write to the mailbox', async () => {
+    const t = await deliver('Quote from Gmail');
+    await w.cmd({ type: 'move', id: t.id, box: 'follow-up' });
+    await jobs().drain();
+    const writesBefore = (await filings()).length;
+    await addTasks(task('t-g', 'Reply to Dana with the quote', t.id), task('t-o', 'Book the kickoff', t.id));
+    await sendFromMailbox(box.account, 'owner@follow.test', t.ext!.threadKey!, 'It is $58 per seat.');
+    expect(await statusOf('t-g')).toBe('done');
+    expect(await statusOf('t-o')).toBe('todo');
+    const after = await threadOf(t.id);
+    expect(after.box).toBe('follow-up');
+    expect(after.history?.at(-1)?.text).toBe('Your reply in Gmail ticked off: Reply to Dana with the quote');
+    expect((await w.state()).activity[0]!.text).toBe('Your reply in Gmail ticked off: Reply to Dana with the quote (“Quote from Gmail”)');
+    expect((await filings()).length).toBe(writesBefore);
+  });
+
+  it('says when that was the last one; a promise, or a reply sent before the to-do was made, ticks nothing', async () => {
+    const t = await deliver('Several replies');
+    await addTasks(task('t-1', 'Send Dana the deck', t.id, { created: new Date(Date.now() - 60_000) }));
+    // Sent an hour before the to-do existed: old mail read in late is not a reply to it.
+    await sendFromMailbox(box.account, 'owner@follow.test', t.ext!.threadKey!, 'Deck attached.', new Date(Date.now() - 3600_000));
+    expect(await statusOf('t-1')).toBe('todo');
+    await sendFromMailbox(box.account, 'owner@follow.test', t.ext!.threadKey!, 'Thanks! I’ll send the deck tomorrow.');
+    expect(await statusOf('t-1')).toBe('todo');
+    await sendFromMailbox(box.account, 'owner@follow.test', t.ext!.threadKey!, 'Deck attached, as promised.');
+    expect(await statusOf('t-1')).toBe('done');
+    expect((await threadOf(t.id)).history?.at(-1)?.text).toBe('Your reply in Gmail ticked off: Send Dana the deck. All its to-dos are done');
+  });
+
+  it('Timmy’s own reply coming back from Gmail doesn’t tick or say anything twice', async () => {
+    const t = await deliver('Sent from Timmy');
+    await w.cmd({ type: 'move', id: t.id, box: 'follow-up' });
+    await addTasks(task('t-t', 'Reply to Dana', t.id));
+    await w.cmd({ type: 'reply', id: t.id, body: 'Done, thanks.' });
+    await w.post('/api/test/release-holds', {});
+    await jobs().drain();
+    const sent = fake().sent(box.account).at(-1)!;
+    await sendFromMailbox(box.account, 'owner@follow.test', t.ext!.threadKey!, sent.body);
+    const notes = ((await threadOf(t.id)).history ?? []).map((h) => h.text).filter((x) => /ticked off/.test(x));
+    expect(notes).toEqual(['The reply ticked off: Reply to Dana']);
+  });
+
+  it('an Outlook reply ticks it too, and says Outlook', async () => {
+    const ow = await newWorkspace('Follow Outlook');
+    const out = await connectApp(ow, 'outlook', 'owner@outlook-follow.test');
+    await jobs().drain();
+    const d = fake().deliver(out.account, { from: 'Dana Whitfield <dana@acme.test>', subject: 'Outlook quote', body: 'Could you send the quote?' });
+    await (await boot()).request('/api/hooks/composio', { method: 'POST', headers: d.webhook.headers, body: d.webhook.body });
+    await jobs().drain();
+    const t = (await ow.state()).threads.find((x) => x.subject === 'Outlook quote')!;
+    expect((await ow.cmd({ type: 'ws', ops: [{ op: 'put', col: 'tasks', item: task('t-ol', 'Send Dana the quote', t.id) }] })).ok).toBe(true);
+    await sendFromMailbox(out.account, 'owner@outlook-follow.test', d.message.threadId, 'Quote attached.');
+    const s = await ow.state();
+    expect(s.ws.tasks['t-ol']!.status).toBe('done');
+    expect(s.threads.find((x) => x.id === t.id)!.history?.at(-1)?.text).toBe('Your reply in Outlook ticked off: Send Dana the quote. All its to-dos are done');
   });
 });
