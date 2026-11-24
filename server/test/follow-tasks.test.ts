@@ -9,7 +9,7 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Thread } from '../../src/data/types';
 import type { EffectRow } from '../src/gateway/gateway';
 import { LABEL_NAMES } from '../src/sync/labels';
-import { boot, connectApp, connectGmail, fake, jobs, model, newWorkspace, rows, type Client } from './helpers';
+import { addMember, boot, connectApp, connectGmail, fake, jobs, model, newWorkspace, rows, type Client } from './helpers';
 
 let w: Client;
 let box: { connectionId: string; account: string };
@@ -222,5 +222,98 @@ describe('a reply written in Gmail or Outlook ticks off what it does', () => {
     const s = await ow.state();
     expect(s.ws.tasks['t-ol']!.status).toBe('done');
     expect(s.threads.find((x) => x.id === t.id)!.history?.at(-1)?.text).toBe('Your reply in Outlook ticked off: Send Dana the quote. All its to-dos are done');
+  });
+});
+
+describe('the rule to file an email a reply in the mailbox finishes', () => {
+  const reply = async (threadKey: string, body: string, at?: Date) => {
+    const d = fake().deliver(box.account, { from: 'owner@follow.test', to: ['dana@acme.test'], subject: 'Re: mail', body, threadId: threadKey, labels: ['SENT'], ...(at ? { at } : {}) });
+    const hook = async () => (await boot()).request('/api/hooks/composio', { method: 'POST', headers: d.webhook.headers, body: d.webhook.body });
+    await hook();
+    await jobs().drain();
+    return hook;
+  };
+  const settings = (c: Client = w) => c.json<{ replyFiling: { on: boolean; since?: string } }>('GET', '/api/v1/settings');
+  const switchRule = (on: boolean, c: Client = w) => c.request('PATCH', '/api/v1/settings', { replyFiling: on });
+  const ready = async (subject: string, ...todos: string[]) => {
+    const t = await deliver(subject);
+    await w.cmd({ type: 'move', id: t.id, box: 'follow-up' });
+    await jobs().drain();
+    await addTasks(...todos.map((title, i) => task(`t-${subject.replace(/\W/g, '')}-${i}`, title, t.id)));
+    return t;
+  };
+
+  it('is off until an owner or admin switches it on; someone who may not change policy can’t', async () => {
+    expect((await settings()).replyFiling).toEqual({ on: false });
+    const member = await addMember(w.workspaceId, 'member');
+    expect((await switchRule(true, member)).status).toBe(403);
+    expect((await settings()).replyFiling.on).toBe(false);
+    expect((await switchRule(true)).status).toBe(200);
+    expect((await settings()).replyFiling.on).toBe(true);
+    const [row] = await rows<{ action: string }>(`select action from audit_log where workspace_id = $1 and action like 'replyfiling.%' order by id desc limit 1`, [w.workspaceId]);
+    expect(row!.action).toBe('replyfiling.switched_on');
+  });
+
+  it('on: the reply that finishes the to-dos archives the email in Timmy and in Gmail, through one record the rule approves', async () => {
+    await switchRule(true);
+    const t = await ready('Finished by Gmail', 'Reply to Dana with the quote');
+    const hook = await reply(t.ext!.threadKey!, 'It is $58 per seat.');
+    await jobs().drain();
+    const after = await threadOf(t.id);
+    expect(after.box).toBe('archived');
+    expect(after.history?.at(-1)?.text).toBe('Your reply in Gmail finished its to-dos, so Timmy archived it, as your rule says');
+    expect(labelsOf(t.ext!.threadKey!)).not.toContain('INBOX');
+    const mine = (await filings()).filter((e) => (e.payload as { threadId?: string }).threadId === t.id && e.source === 'rule');
+    expect(mine).toHaveLength(1);
+    expect(mine[0]).toMatchObject({ kind: 'mail.modify', status: 'completed', source: 'rule', approved_via: 'rule', requested_by: 'system' });
+    // The same event delivered again writes nothing more.
+    await hook();
+    await jobs().drain();
+    expect((await filings()).filter((e) => (e.payload as { threadId?: string }).threadId === t.id && e.source === 'rule')).toHaveLength(1);
+  });
+
+  it('on: a reply that asks them something moves it to Waiting, labelled so in Gmail', async () => {
+    await switchRule(true);
+    const t = await ready('Asked back', 'Send Dana the plan');
+    await reply(t.ext!.threadKey!, 'Plan attached. Could you confirm the budget?');
+    await jobs().drain();
+    const after = await threadOf(t.id);
+    expect(after.box).toBe('waiting');
+    expect(after.waiting?.item).toBe('An answer to your email');
+    expect(labelsOf(t.ext!.threadKey!)).toContain(LABEL_NAMES.waiting);
+  });
+
+  it('on: nothing is filed while another to-do is open, a draft waits, or for a reply written before it was switched on', async () => {
+    const early = await ready('Written before', 'Send Dana the deck');
+    // The to-do is older than the reply, and the reply is older than the rule.
+    await w.cmd({ type: 'ws', ops: [{ op: 'patch', col: 'tasks', id: 't-Writtenbefore-0', patch: { created: new Date(Date.now() - 7200_000) } }] });
+    const writtenAt = new Date(Date.now() - 3600_000);
+    await switchRule(true);
+    await reply(early.ext!.threadKey!, 'Deck attached.', writtenAt);
+    expect(await statusOf('t-Writtenbefore-0')).toBe('done');
+    expect((await threadOf(early.id)).box).toBe('follow-up');
+
+    const open = await ready('Still open', 'Send Dana the deck', 'Book the kickoff');
+    await reply(open.ext!.threadKey!, 'Deck attached.');
+    expect((await threadOf(open.id)).box).toBe('follow-up');
+
+    const drafted = await ready('Draft waiting', 'Reply to Dana');
+    await w.cmd({ type: 'makeDraft', id: drafted.id });
+    await jobs().drain();
+    await reply(drafted.ext!.threadKey!, 'Quick answer: yes.');
+    expect(await statusOf('t-Draftwaiting-0')).toBe('done');
+    expect((await threadOf(drafted.id)).box).toBe('follow-up');
+    await jobs().drain();
+    expect((await filings()).filter((e) => e.source === 'rule')).toHaveLength(0);
+  });
+
+  it('off again: replies tick their to-dos and the email stays put', async () => {
+    await switchRule(true);
+    await switchRule(false);
+    expect((await settings()).replyFiling.on).toBe(false);
+    const t = await ready('Rule off', 'Reply to Dana');
+    await reply(t.ext!.threadKey!, 'Yes, that works.');
+    expect(await statusOf('t-Ruleoff-0')).toBe('done');
+    expect((await threadOf(t.id)).box).toBe('follow-up');
   });
 });

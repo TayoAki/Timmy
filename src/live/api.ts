@@ -117,8 +117,8 @@ export const api = {
   connectedFiles: (q = '') =>
     call<{ apps: string[]; total: number; files: { id: string; name: string; kind: string; app: string; owner?: string; changed: string; link?: string; readable: boolean; project?: string }[] }>('GET', `/api/v1/connected-files${q ? `?q=${encodeURIComponent(q)}` : ''}`),
   settings: () =>
-    call<{ model: string; models: LiveProfile['models']; approvalMode: 'ask' | 'auto'; killSwitch: boolean; timezone: string; monthlySpendCapUsd: number; maxConcurrentRuns: number; limits: { monthlySpendCapUsd: number; maxConcurrentRuns: number }; autoSort: { on: boolean; since?: string } }>('GET', '/api/v1/settings'),
-  saveSettings: (patch: { model?: string; approvalMode?: 'ask' | 'auto'; killSwitch?: boolean; monthlySpendCapUsd?: number; timezone?: string; autoSort?: boolean }) =>
+    call<{ model: string; models: LiveProfile['models']; approvalMode: 'ask' | 'auto'; killSwitch: boolean; timezone: string; monthlySpendCapUsd: number; maxConcurrentRuns: number; limits: { monthlySpendCapUsd: number; maxConcurrentRuns: number }; autoSort: { on: boolean; since?: string }; replyFiling: { on: boolean; since?: string } }>('GET', '/api/v1/settings'),
+  saveSettings: (patch: { model?: string; approvalMode?: 'ask' | 'auto'; killSwitch?: boolean; monthlySpendCapUsd?: number; timezone?: string; autoSort?: boolean; replyFiling?: boolean }) =>
     call<{ ok: boolean; sorted?: { archived?: number; 'read-through'?: number } }>('PATCH', '/api/v1/settings', patch),
   /** Asks the model for a summary of the page as it is on screen. Only lines the page backs come back. */
   summarizePage: (id: string, blocks: unknown[]) => call<{ lines: { text: string; blocks: string[] }[] }>('POST', `/api/v1/pages/${encodeURIComponent(id)}/summarize`, { blocks }),

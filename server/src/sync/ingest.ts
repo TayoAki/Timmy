@@ -21,6 +21,7 @@ import { followMailbox, lookedAtFrom } from './mailbox-changes';
 import { autoSort, suggest } from './sorting';
 import { sortIntoProjects } from '../projects/apply';
 import { applyMailRules } from './mail-rules';
+import { fileAfterReplies } from './reply-filing';
 import { paragraphs, parseSender, type MailMessage } from './message';
 import { connectionById, type ConnectionRow, type Phase } from './tools';
 
@@ -234,6 +235,7 @@ async function storeMessages(tx: Tx, loaded: Loaded, state: State, workspaceId: 
   list = list.filter((m) => !m.labels.includes('DRAFT'));
   for (const m of list) if ((await upsertMessage(tx, workspaceId, conn, m)).inserted) fresh.push(m);
   const keys = [...new Set(list.map((m) => m.threadKey))];
+  const before = state;
   let next = state;
   for (const key of keys) next = await projectThread(tx, next, workspaceId, conn, key);
   // [automations] New mail may start automations. Their runs are recorded here, in the transaction that stores the mail.
@@ -243,6 +245,9 @@ async function storeMessages(tx: Tx, loaded: Loaded, state: State, workspaceId: 
   // The person's own sorting rules come first: what they said outranks what plain code guesses.
   if (touched.size) next = await applyMailRules(tx, loaded, next, touched, { mailbox: true });
   if (touched.size) next = (await autoSort(tx, loaded, next, { ids: touched, mailbox: true })).state;
+  // With the rule to file emails a reply finishes on, an email whose last to-dos the person's own reply in the
+  // mailbox just ticked is filed (reply-filing.ts); without it, the to-dos are ticked and the email stays put.
+  if (touched.size) next = await fileAfterReplies(tx, loaded, before, next, touched);
   // Mail from the people or company of a project Timmy found (and the person kept) goes into that project.
   if (touched.size) next = await sortIntoProjects(tx, workspaceId, next, touched, new Set([conn.account_label, loaded.workspace.owner_email].filter((a): a is string => !!a).map((a) => a.toLowerCase())));
   return { state: next, fresh: fresh.length, threads: keys.length };

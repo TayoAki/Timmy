@@ -56,6 +56,20 @@ run('live-flow', async (browser) => {
   await page.getByText('Your reply in Gmail ticked off: Reply to Dana with the agenda. All its to-dos are done').waitFor();
   ok(true, 'the email’s log says the Gmail reply ticked it off');
 
+  // 2c. With the rule switched on in Settings, the email such a reply finishes is filed too.
+  await page.click('button[aria-label="Rules & settings"]');
+  await page.getByRole('tab', { name: 'Approvals' }).click();
+  const rule = page.locator('select[name="reply-filing"]');
+  await rule.waitFor();
+  ok((await rule.inputValue()) === 'off', 'the rule to file emails a Gmail reply finishes is off at first');
+  await rule.selectOption('on');
+  await page.locator('.toast', { hasText: 'Timmy files the email there too' }).waitFor();
+  await deliver(page, { from: 'Dana Whitfield <dana@acme.test>', subject: 'Minutes', body: 'When you can, send Dana the minutes.' });
+  await until(taskBy('Send Dana the minutes'));
+  const minutes = await until(threadBy('Minutes'));
+  await deliver(page, { from: 'grace@mycompany.test', to: ['dana@acme.test'], subject: 'Re: Minutes', body: 'Minutes attached.', threadId: minutes.ext.threadKey, labels: ['SENT'] });
+  ok(await until((s) => taskBy('Send Dana the minutes')(s)?.status === 'done' && threadBy('Minutes')(s)?.box === 'archived'), 'with the rule on, the Gmail reply that finishes the to-dos files the email');
+
   // 3. Ticking off an email's last to-do files the email; one Undo puts both back.
   await deliver(page, { from: 'Dana Whitfield <dana@acme.test>', subject: 'Board deck', body: 'When you can, send the board deck.' });
   await until(taskBy('Send the board deck'));

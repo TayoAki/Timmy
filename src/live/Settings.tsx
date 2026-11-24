@@ -15,6 +15,7 @@ export function LiveSettings() {
   const [model, setModel] = useState(live?.profile.model ?? '');
   const [mode, setMode] = useState<'ask' | 'auto'>(live?.profile.approvalMode ?? 'ask');
   const [sorting, setSorting] = useState<boolean | null>(null);
+  const [replyFiling, setReplyFiling] = useState<boolean | null>(null);
   const [cap, setCap] = useState('');
   const [savedCap, setSavedCap] = useState('');
   const [ceiling, setCeiling] = useState(0);
@@ -29,6 +30,7 @@ export function LiveSettings() {
       setSavedCap(String(s.monthlySpendCapUsd));
       setCeiling(s.limits.monthlySpendCapUsd);
       setSorting(s.autoSort.on);
+      setReplyFiling(s.replyFiling.on);
     });
   }, [live]);
   if (!live) return null;
@@ -57,6 +59,20 @@ export function LiveSettings() {
       dispatch({ type: 'toast', text: on ? sortedNotice(r.sorted) : 'Timmy will leave every email in Triage for you to sort.' });
     } catch (e) {
       setSorting(!on);
+      dispatch({ type: 'toast', text: (e as Error).message, tone: 'warn' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveReplyFiling = async (on: boolean) => {
+    setReplyFiling(on);
+    setSaving(true);
+    try {
+      await api.saveSettings({ replyFiling: on });
+      dispatch({ type: 'toast', text: on ? 'From now on, when your reply in Gmail or Outlook finishes an email’s to-dos, Timmy files the email there too.' : 'Your replies in Gmail or Outlook will tick to-dos and leave the email where it is.' });
+    } catch (e) {
+      setReplyFiling(!on);
       dispatch({ type: 'toast', text: (e as Error).message, tone: 'warn' });
     } finally {
       setSaving(false);
@@ -136,6 +152,24 @@ export function LiveSettings() {
         </select>
         <span className="field-hint">
           Sorting automatically files what Timmy is sure is junk or a newsletter (promotions, receipts, system notices, calendar replies, mailing lists) as it arrives, and archives or labels it in your mailbox too. Switching it on also sorts what is already waiting in Triage, in Timmy only. Mail a person wrote always waits for you.
+          {!canChange && ' An owner or admin can change this.'}
+        </span>
+      </label>
+      <label className="field">
+        <span className="field-label">When your reply in Gmail or Outlook finishes an email’s to-dos</span>
+        <select
+          className="input"
+          name="reply-filing"
+          value={replyFiling === null ? '' : replyFiling ? 'on' : 'off'}
+          disabled={!canChange || saving || replyFiling === null}
+          onChange={(e) => void saveReplyFiling(e.target.value === 'on')}
+        >
+          {replyFiling === null && <option value="">Loading…</option>}
+          <option value="off">Tick the to-dos and leave the email where it is</option>
+          <option value="on">Tick the to-dos and file the email</option>
+        </select>
+        <span className="field-hint">
+          A reply you write in Gmail or Outlook ticks off the to-dos it does (replying, sending, confirming) either way. Filing the email archives it in your mailbox too, or moves it to Waiting when your reply asked them something, the same as ticking its last to-do in Timmy. It covers replies you write from now on, never one that only promises to do something later, and not an email with another to-do still open or a draft waiting.
           {!canChange && ' An owner or admin can change this.'}
         </span>
       </label>

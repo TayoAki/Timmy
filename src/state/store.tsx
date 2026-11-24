@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, type Dispatch, type ReactNode } from 'react';
 import { ACTIVITY, BOXES, DEALS, NOW, PEOPLE, PROJECTS, RULES, THREADS } from '../data/mock';
-import type { Activity, Box, Deal, Label, MailFile, MailRule, ProjectId, Rule, RuleGroup, Thread } from '../data/types';
+import type { Activity, Box, Deal, Label, MailFile, MailRule, ProjectId, Rule, RuleGroup, Thread, Waiting } from '../data/types';
 import { describeMailRule, RULE_BOXES, senderKey, sweepRule } from './mail-rules';
 import { DECISIONS, type Decision } from '../data/decisions';
 import { WS_SEED } from '../data/ws-mock';
@@ -491,6 +491,27 @@ const workingDaysFrom = (from: Date, n: number) => {
 /** The person's own email asks the other side for something: a question, or "could you", "please", "let me know". */
 const ASKS = /\?|\b(could you|can you|would you|please|let me know)\b/i;
 
+/**
+ * Where an email goes once its to-dos are done: to Waiting when the person's own newest message asked the other side
+ * for something (three working days to answer, unless a wait is already set), archived otherwise. Shared with the
+ * server, which files an email the same way when a reply written in Gmail or Outlook finishes it (sync/reply-filing.ts).
+ */
+export function finishedPlace(th: Thread, now: Date = NOW): { box: 'waiting' | 'archived'; waiting?: Waiting } {
+  const newest = th.messages[th.messages.length - 1];
+  if (!(newest?.from === 'me' && ASKS.test(newest.body.join(' ')))) return { box: 'archived' };
+  return { box: 'waiting', waiting: th.waiting ?? { on: counterpart(th), item: 'An answer to your email', due: workingDaysFrom(now, 3), since: now } };
+}
+
+/** The email filed where `finishedPlace` says, with the wait it now has and a line in its history. */
+export function fileFinished(th: Thread, place: ReturnType<typeof finishedPlace>, note: string, now: Date = NOW): Thread {
+  const w = place.waiting;
+  return {
+    ...moveThread(th, place.box),
+    ...(w ? { waiting: w, ask: `${firstName(w.on)} owes you: ${lowerFirst(w.item)}${w.due ? ` by ${fmtDay(w.due)}` : ''}` } : {}),
+    history: [...(th.history ?? []), { at: now, text: note }],
+  };
+}
+
 /** Past this many emails in one change the person is tidying tasks in bulk, and filing that much mail by the way would surprise them. */
 const MAX_FOLLOWS = 10;
 
@@ -509,17 +530,12 @@ function followTasks(s: State, before: WS['tasks']): { state: State; notes: stri
   for (const tid of [...finished].slice(0, MAX_FOLLOWS)) {
     const th = next.threads.find((x) => x.id === tid);
     if (!th || (th.box !== 'inbox' && th.box !== 'follow-up') || th.draft || openTodos(after, tid).length) continue;
-    const newest = th.messages[th.messages.length - 1];
-    const asked = newest?.from === 'me' && ASKS.test(newest.body.join(' '));
-    const waiting = asked ? (th.waiting ?? { on: counterpart(th), item: 'An answer to your email', due: workingDaysFrom(NOW, 3), since: NOW }) : undefined;
+    const place = finishedPlace(th);
+    const waiting = place.waiting;
     const short = clipped(th.subject);
     next = {
       ...next,
-      threads: patch(next.threads, tid, (x) => ({
-        ...moveThread(x, waiting ? 'waiting' : 'archived'),
-        ...(waiting ? { waiting, ask: `${firstName(waiting.on)} owes you: ${lowerFirst(waiting.item)}${waiting.due ? ` by ${fmtDay(waiting.due)}` : ''}` } : {}),
-        history: [...(x.history ?? []), { at: NOW, text: waiting ? `Its to-dos are done; moved to [02] Waiting for ${firstName(waiting.on)}’s answer` : 'Its to-dos are done; archived' }],
-      })),
+      threads: patch(next.threads, tid, (x) => fileFinished(x, place, waiting ? `Its to-dos are done; moved to [02] Waiting for ${firstName(waiting.on)}’s answer` : 'Its to-dos are done; archived')),
       activity: logged(next, waiting ? `“${th.subject}” moved to Waiting: its to-dos are done and your last email asked for an answer` : `“${th.subject}” archived: its to-dos are done`, 'move', tid),
     };
     notes.push(waiting ? `“${short}” now waits for ${firstName(waiting.on)}’s answer` : `nothing is left on “${short}”, so the email is archived`);
