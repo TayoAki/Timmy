@@ -143,6 +143,28 @@
   color: var(--accent-text);
 }
 
+/* The done check sits by the title, on the board, in the list and under Due today. */
+.tk-card-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.tk-done {
+  margin-top: 2px;
+}
+
+.tk-due-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tk-due-row .rp-person {
+  flex: 1;
+  min-width: 0;
+}
+
 .tk-card[data-done] .tk-card-title {
   color: var(--text-3);
   text-decoration: line-through;

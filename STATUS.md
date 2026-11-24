@@ -48,10 +48,17 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 **Asked:** "how do users sign out?" Before this, only from Rules & settings › Approvals, at the foot of the page, which nobody would find. The owner asked for the person's icon to sit in the bottom-left corner of the bottom bar and to be the way out.
 
 - **Desktop and tablet:** the icon moved from the foot of the left rail into the bottom bar's left corner, under the rail's column (`src/components/AccountMenu.tsx`). Clicking it opens a card: name, email, workspace and role, Rules & settings, and **Sign out**. Escape or a click elsewhere closes it. It stays visible at every width above a phone (the bar's status text hides below 1100 px; the icon does not).
-- **Phone:** the tab bar keeps its five tabs; the same card, with Sign out, is at the foot of the More sheet.
+- **Phone:** the icon is the tab bar's first tab, bottom left (six tabs now: Account, Today, Approve, Ask, Calendar, More), and opens the same card in a sheet. Ask sits fourth of six, a little right of centre. At 320 px wide every tab still fits and is at least 44 px each way.
 - **Sample demo:** the card shows the made-up person and says there is nothing to sign out of.
 - Sign out in Settings and during setup are unchanged. Sign out still has to reach the server, with one retry, or the person is told (unchanged).
-- Tested: `live-signup` signs out from the corner icon and checks the card's words, its place in the corner, Escape, the phone sheet, and that the API refuses afterwards (39 checks).
+- Tested: `live-signup` signs out from the corner icon and checks the card's words, its place in the corner, Escape, the phone tab and its sheet, and that the API refuses afterwards (40 checks).
+
+**Marking things done (Nov 24).** Asked how to-dos from email are made and ticked off. They are made without a button: when Timmy reads a new email that plainly asks you to do something, it adds up to three to-dos to Tasks, each tied to the email and to the email's project (Timmy also files the email into a project when one clearly fits). “Make a to-do” on any email asks for one. They could already be ticked off on the email (its To-dos list) and on the project's page; on the Tasks screen it took dragging a card to Done or its menu. Now every Tasks card, every row of the list and every task under Due today has a box: one click marks it done, with Undo, and clicking it again puts it back. `live-todos` ticks a card on the board and unticks a row in the list, and checks both are saved (10 checks).
+
+Tests changed in this round, and why:
+- `e2e-calm-phone` (demo) asserted five phone tabs. The owner asked for the icon in the phone's tab bar, so it now asserts six, with the icon first, none overlapping, each at least 44 px tall **and** wide (the width check is new).
+- `live-signup` looked for the card in the More sheet; it now opens it from the phone's Account tab.
+- `e2e-uis` (demo) failed 3 runs in 9 on one step, waiting for the website chat screen. Its helper opens a screen by writing the route into the saved state and reloading; the app saves its state 400 ms after any change (a notice closing on its own is one), so a save still pending could land after the route was written and put the old screen back. The helper now checks where the reload landed and does it again if the route was overwritten; the check that the chat screen shows is unchanged. Without my change the suite passed 3 of 3, so I can't rule out that the new code made the race likelier, but nothing in it touches saving or that screen. With the fix it passed 5 of 5, then in the full run.
 
 
 **The complaint:** "it's classifying everything as Read Through". The first sort by plain code decided too much on its own:

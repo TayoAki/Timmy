@@ -14,13 +14,14 @@ const overlap = (a, b) => !(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y 
   await p.goto(BASE); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(800);
   assert(!(await p.locator('.rail').isVisible()), 'no icon rail on a phone');
   const tabs = p.locator('.bar-phone .ptab');
-  assert(await tabs.count() === 5, 'five tabs: Today, Approve, Ask, Calendar, More');
+  assert(await tabs.count() === 6, 'six tabs: Account, Today, Approve, Ask, Calendar, More');
+  assert(/^Account: /.test(await tabs.nth(0).getAttribute('aria-label')) && (await tabs.nth(0).locator('.avatar').count()) === 1, 'the person\'s own icon is the first tab, bottom left');
   const boxes = [];
-  for (let i = 0; i < 5; i++) boxes.push(await tabs.nth(i).boundingBox());
+  for (let i = 0; i < 6; i++) boxes.push(await tabs.nth(i).boundingBox());
   let clash = false;
-  for (let i = 0; i < 5; i++) for (let j = i + 1; j < 5; j++) if (overlap(boxes[i], boxes[j])) clash = true;
+  for (let i = 0; i < 6; i++) for (let j = i + 1; j < 6; j++) if (overlap(boxes[i], boxes[j])) clash = true;
   assert(!clash, 'no tab overlaps another (Ask no longer covers Urgent)');
-  assert(boxes.every(x => x.height >= 44), 'tap targets are at least 44 px tall');
+  assert(boxes.every(x => x.height >= 44 && x.width >= 44), 'tap targets are at least 44 px tall and wide');
   assert(await p.locator('.kbd:visible').count() === 0, 'no keyboard hints on a touch screen');
   assert(await p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'no sideways scroll');
   const firstTitle = await p.locator('.main-inner .section-title').first().innerText();

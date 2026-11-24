@@ -123,14 +123,18 @@ run('live-signup', async (browser) => {
   ok(said.includes('Ada Lovelace') && said.includes(who.email) && /Analytical .* · Owner/.test(said), `the card names the person, their email, the workspace and their role (${said.replace(/\s+/g, ' ')})`);
   await page.keyboard.press('Escape');
   ok((await card.count()) === 0, 'Escape closes it');
-  // On a phone, the same card is at the foot of the More sheet.
+  // On a phone, the icon is the first tab of the tab bar, at the bottom left, and opens the same card.
   const wide = page.viewportSize();
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.locator('.bar-phone').getByRole('button', { name: 'More' }).click();
-  const sheet = page.getByRole('dialog', { name: 'More' });
+  const tab = page.locator('.bar-phone').getByRole('button', { name: 'Account: Ada Lovelace' });
+  const tabAt = await tab.boundingBox();
+  ok(tabAt && tabAt.x < 20 && tabAt.y > 844 - 100, `on a phone the icon is the tab bar's first tab, bottom left (x ${tabAt && Math.round(tabAt.x)}, y ${tabAt && Math.round(tabAt.y)})`);
+  await tab.click();
+  const sheet = page.getByRole('dialog', { name: 'Account' });
   await sheet.waitFor();
-  ok((await sheet.locator('.sheet-account').getByRole('button', { name: 'Sign out' }).count()) === 1 && (await sheet.locator('.sheet-account').innerText()).includes(who.email), 'on a phone the More sheet shows who is signed in, with Sign out');
+  ok((await sheet.getByRole('button', { name: 'Sign out' }).count()) === 1 && (await sheet.innerText()).includes(who.email), 'and it opens who is signed in, with Sign out');
   await page.keyboard.press('Escape');
+  await sheet.waitFor({ state: 'detached' });
   await page.setViewportSize(wide);
   await corner.click();
   await card.getByRole('button', { name: 'Sign out' }).click();

@@ -1,6 +1,7 @@
 import {
   CalendarClock,
   CalendarPlus,
+  Check,
   ChevronDown,
   CircleCheck,
   Columns3,
@@ -29,7 +30,7 @@ import { useStore, ws, type Route } from '../../state/store';
 import { patch, put, remove, uid, type WsOp } from '../../state/ws';
 import { BlockTimeDialog } from '../calendar/BlockTimeDialog';
 import { fmtRange, showEvent } from '../calendar/shared';
-import { activeProjects, byDue, byPriority, isDueNow, openTasks, PRIORITIES, PriorityChip, reviewQueue, statusMeta, StatusIcon, STATUSES } from './bits';
+import { activeProjects, byDue, byPriority, isDueNow, openTasks, PRIORITIES, PriorityChip, reviewQueue, statusMeta, STATUSES } from './bits';
 import { Review } from './Review';
 import { TaskDialog } from './TaskDialog';
 
@@ -69,6 +70,28 @@ function useTaskActions() {
   };
 }
 
+/** One click marks a task done, or puts it back on the list, with Undo: on the board, the list and Due today. */
+function DoneCheck({ t }: { t: Task }) {
+  const { dispatch } = useStore();
+  const done = t.status === 'done';
+  return (
+    <button
+      type="button"
+      className="pj-check tk-done"
+      role="checkbox"
+      aria-checked={done}
+      aria-label={done ? `Mark “${t.title}” as not done` : `Mark “${t.title}” as done`}
+      title={done ? 'Mark as not done' : 'Mark as done'}
+      onClick={(e) => {
+        e.stopPropagation();
+        dispatch(ws([patch('tasks', t.id, { status: done ? 'todo' : 'done' })], { toast: done ? `Back on your list: ${clip(t.title, 60)}` : `Done: ${clip(t.title, 60)}`, undo: true }));
+      }}
+    >
+      {done && <Check size={12} strokeWidth={3} />}
+    </button>
+  );
+}
+
 /* ───────────── Main view ───────────── */
 
 export function TasksView() {
@@ -102,7 +125,7 @@ export function TasksView() {
     tab === 'review'
       ? 'Everything you captured, oldest first. Give each item a home: a task, a permanent note, the calendar or the archive.'
       : `${plural(open.length, 'open task')}${dueNow ? `, ${dueNow} due today or overdue` : ''}. ${
-          tab === 'board' ? 'Drag a card to change its status, or use its menu.' : 'Sorted by due date.'
+          tab === 'board' ? 'Tick a card’s box when it’s done. Drag a card to change its status, or use its menu.' : 'Sorted by due date.'
         }`;
 
   return (
@@ -404,15 +427,18 @@ function TaskCard({
           />
         </span>
       </div>
-      <button
-        className="tk-card-title"
-        onClick={(e) => {
-          e.stopPropagation();
-          onOpen(t);
-        }}
-      >
-        {t.title}
-      </button>
+      <div className="tk-card-row">
+        <DoneCheck t={t} />
+        <button
+          className="tk-card-title"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpen(t);
+          }}
+        >
+          {t.title}
+        </button>
+      </div>
       <div className="tk-card-sub">
         {project ? (
           <>
@@ -509,7 +535,7 @@ function TaskList({ tasks, onOpen, onNew }: { tasks: Task[]; onOpen: (t: Task) =
         return (
           <div key={t.id} className="table-row" data-done={t.status === 'done' || undefined} onClick={() => onOpen(t)}>
             <span className="tk-cell-task">
-              <StatusIcon status={t.status} />
+              <DoneCheck t={t} />
               <span className="tk-cell-text">
                 <button
                   className="tk-row-title"
@@ -735,9 +761,9 @@ export function TasksContext() {
         ) : (
           <ul className="rp-list">
             {due.map((t) => (
-              <li key={t.id}>
+              <li key={t.id} className="tk-due-row">
+                <DoneCheck t={t} />
                 <button className="rp-person" onClick={() => setEditing(t)}>
-                  <StatusIcon status={t.status} size={16} />
                   <span className="rp-person-text">
                     <span className="rp-person-name">{t.title}</span>
                     <span className="rp-person-sub">

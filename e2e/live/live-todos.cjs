@@ -41,13 +41,34 @@ run('live-todos', async (browser) => {
   await more.getByText('Share the brand guide with the team').waitFor();
   ok(true, 'Make a to-do on an email adds what it asks, and the email shows it');
 
+  const statusOf = async (title) => Object.values((await api(page, 'GET', '/api/v1/state')).body.slices['ws.tasks']).find((t) => t.title === title)?.status;
+  const until = async (title, status) => {
+    for (let i = 0; i < 40; i++) {
+      if ((await statusOf(title)) === status) return true;
+      await page.waitForTimeout(150);
+    }
+    return false;
+  };
+
+  // On the Tasks board, one click on a card's box marks it done.
   await page.click('button[aria-label="Tasks"]');
+  await page.getByRole('tab', { name: 'Board' }).click();
+  const box = page.getByRole('checkbox', { name: 'Mark “Share the brand guide with the team” as done' });
+  await box.click();
+  await page.locator('.toast', { hasText: 'Done: Share the brand guide with the team' }).waitFor();
+  ok(await until('Share the brand guide with the team', 'done'), 'ticking the box on a Tasks card marks it done, and it is saved');
+
   await page.getByRole('tab', { name: 'List' }).click();
   // Finished tasks are hidden until asked for.
   await page.getByRole('button', { name: 'Show done' }).click();
   const row = page.locator('.table-row', { hasText: 'Send the signed SOW' });
   await row.waitFor();
   ok((await row.getByRole('button', { name: 'Open the source email: Signed SOW' }).count()) === 1, 'Tasks lists it with the email it came from');
+  // In the list, the box shows it is done, and unticking it puts it back on the list.
+  const sow = row.getByRole('checkbox', { name: 'Mark “Send the signed SOW” as not done' });
+  ok((await sow.getAttribute('aria-checked')) === 'true', 'the list shows the to-do ticked in the email as done');
+  await sow.click();
+  ok(await until('Send the signed SOW', 'todo'), 'unticking it in the list puts it back to do, and it is saved');
 
   ok(errors.length === 0, `no page errors (${errors.join(' | ')})`);
 });

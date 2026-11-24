@@ -1,8 +1,9 @@
 /*
  * On a phone the left rail and the desktop bottom bar give way to one tab
- * bar: Today, Approvals, Ask Timmy in the middle, Calendar, and More (every
- * other section, search, focus, theme, and who is signed in with Sign out, in a
- * sheet). Nothing overlaps, and every tap target is at least 44 px.
+ * bar: the person's own icon (who is signed in, Settings and Sign out),
+ * Today, Approvals, Ask Timmy, Calendar, and More (every other section,
+ * search, focus and theme in a sheet). Nothing overlaps, and every tap target
+ * is at least 44 px.
  */
 import { CalendarDays, Focus, House, LayoutGrid, MessageSquareText, Moon, Search, Settings, Stamp, Sun, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -16,7 +17,7 @@ import { TimmyMark } from './common';
 import { leadAlerts } from '../state/leads';
 import { useSections } from './LeftRail';
 import { FeedbackButton } from '../live/Feedback';
-import { AccountCard } from './AccountMenu';
+import { AccountTab } from './AccountMenu';
 
 export function PhoneTabs() {
   const { state, dispatch } = useStore();
@@ -31,6 +32,7 @@ export function PhoneTabs() {
 
   return (
     <nav className="bar-phone" aria-label="Sections">
+      <AccountTab />
       <button className="ptab" aria-current={section === 'mail' ? 'page' : undefined} onClick={() => dispatch({ type: 'navigate', route: { view: 'today', tab: 'brief' } })}>
         <span className="ptab-icon">
           <House size={21} />
@@ -124,9 +126,6 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
           <FeedbackButton className="sheet-chip">
             <MessageSquareText size={17} /> Feedback
           </FeedbackButton>
-        </div>
-        <div className="sheet-account">
-          <AccountCard onDone={onClose} settings={false} />
         </div>
       </div>
     </div>,

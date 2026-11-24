@@ -7,10 +7,17 @@ const assert = (c, m) => { if (!c) { throw new Error('FAIL: ' + m); } console.lo
 const KEY = 'timmy-state-v3';
 // The store writes to localStorage 400 ms after a change.
 const saved = async (p) => (await p.waitForTimeout(500), p.evaluate((KEY) => JSON.parse(localStorage.getItem(KEY) || '{}'), KEY));
+// Opens a screen by writing its route into the saved state and reloading. The app saves its state 400 ms after any
+// change (a notice closing on its own is one), so a save still pending from the page being left can land after the
+// route is written and put the old screen back. The reload is checked and done again when that happened.
 const go = async (p, route) => {
-  await p.evaluate(([KEY, route]) => { const s = JSON.parse(localStorage.getItem(KEY) || '{}'); s.route = route; localStorage.setItem(KEY, JSON.stringify(s)); }, [KEY, route]);
-  await p.reload();
-  await p.waitForTimeout(500);
+  for (let i = 0; i < 3; i++) {
+    await p.evaluate(([KEY, route]) => { const s = JSON.parse(localStorage.getItem(KEY) || '{}'); s.route = route; localStorage.setItem(KEY, JSON.stringify(s)); }, [KEY, route]);
+    await p.reload();
+    await p.waitForTimeout(500);
+    const now = await p.evaluate((KEY) => JSON.parse(localStorage.getItem(KEY) || '{}').route, KEY);
+    if (now && now.view === route.view && now.tab === route.tab) return;
+  }
 };
 
 (async () => {

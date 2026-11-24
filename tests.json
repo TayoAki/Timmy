@@ -333,10 +333,10 @@
   {
    "id": "live-signup",
    "file": "e2e/live/live-signup.cjs",
-   "covers": "sign up, name the workspace, land on an empty Today with none of the demo's sample data, Approvals and Connections show the workspace's own state, sign out and in; a change survives an immediate reload; a save and a sign-out whose first attempt is lost on the way still happen, once; the account icon in the bottom bar's left corner shows who is signed in and signs out, and the phone's More sheet has the same card",
+   "covers": "sign up, name the workspace, land on an empty Today with none of the demo's sample data, Approvals and Connections show the workspace's own state, sign out and in; a change survives an immediate reload; a save and a sign-out whose first attempt is lost on the way still happen, once; the account icon in the bottom bar's left corner shows who is signed in and signs out, and on a phone the same icon is the tab bar's first tab and opens the card",
    "status": "pass",
-   "tests": 35,
-   "checks": 39
+   "tests": 36,
+   "checks": 40
   },
   {
    "id": "live-mail",
@@ -696,9 +696,9 @@
   {
    "id": "live-todos",
    "file": "e2e/live/live-todos.cjs",
-   "covers": "an email's ask becomes a to-do with its date, shown in the thread under To-dos, checked off there and saved, and listed in Tasks with the email it came from",
+   "covers": "an email's ask becomes a to-do with its date, shown in the thread under To-dos, checked off there and saved, and listed in Tasks with the email it came from; one click on a Tasks card's box marks it done, and the list shows it ticked and unticks it back to do",
    "status": "pass",
-   "result": "Nov 18, 2026: 7 of 7 (with Make a to-do)."
+   "result": "Nov 24, 2026: 10 of 10 (with the tick box on the Tasks board and list). Nov 18: 7 of 7 (with Make a to-do)."
   }
  ]
 }

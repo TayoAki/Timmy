@@ -1,10 +1,12 @@
 /*
  * The person's own icon, in the bottom-left corner of the bottom bar (under the left rail): it opens a small card
- * saying who is signed in and in which workspace, with Rules & settings and Sign out. On a phone the same card sits
- * at the foot of the More sheet (AccountCard). The sample demo shows its made-up person and has nothing to sign out of.
+ * saying who is signed in and in which workspace, with Rules & settings and Sign out. On a phone the icon is the first
+ * tab of the tab bar and opens the same card in a sheet (AccountTab). The sample demo shows its made-up person and has
+ * nothing to sign out of.
  */
-import { LogOut, Settings } from 'lucide-react';
+import { LogOut, Settings, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { PEOPLE } from '../data/mock';
 import { useProfile } from '../live/LiveApp';
 import { useStore } from '../state/store';
@@ -21,11 +23,8 @@ function useAccount() {
   return { name: user.name || PEOPLE.me?.name || user.email, email: user.email, where: `${workspace.name} · ${titleCase(workspace.role)}`, signOut: live.signOut };
 }
 
-/**
- * The card itself: who, where, and what to do from it. `onDone` closes whatever holds it; `settings: false` leaves out
- * the Rules & settings link where one is already next to it (the phone's More sheet).
- */
-export function AccountCard({ onDone, settings = true }: { onDone?: () => void; settings?: boolean }) {
+/** The card itself: who, where, and what to do from it. `onDone` closes whatever holds it. */
+export function AccountCard({ onDone }: { onDone?: () => void }) {
   const { dispatch } = useStore();
   const me = useAccount();
   const [leaving, setLeaving] = useState(false);
@@ -40,17 +39,15 @@ export function AccountCard({ onDone, settings = true }: { onDone?: () => void; 
         </span>
       </div>
       <div className="acct-actions">
-        {settings && (
-          <button
-            className="acct-item"
-            onClick={() => {
-              dispatch({ type: 'navigate', route: { view: 'rules', tab: 'triage' } });
-              onDone?.();
-            }}
-          >
-            <Settings size={16} /> Rules & settings
-          </button>
-        )}
+        <button
+          className="acct-item"
+          onClick={() => {
+            dispatch({ type: 'navigate', route: { view: 'rules', tab: 'triage' } });
+            onDone?.();
+          }}
+        >
+          <Settings size={16} /> Rules & settings
+        </button>
         {me.signOut ? (
           <button
             className="acct-item"
@@ -116,5 +113,48 @@ export function AccountMenu() {
         </div>
       )}
     </div>
+  );
+}
+
+/** On a phone: the icon as the tab bar's first tab, and the card in a sheet above the bar. */
+export function AccountTab() {
+  const me = useAccount();
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button className="ptab ptab-me" aria-label={`Account: ${me.name}`} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>
+        <span className="ptab-icon">
+          <Avatar id="me" size={24} />
+        </span>
+        <span className="ptab-label">Account</span>
+      </button>
+      {open && <AccountSheet onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+function AccountSheet({ onClose }: { onClose: () => void }) {
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    box.current?.querySelector<HTMLElement>('.acct-card button')?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return createPortal(
+    <div className="sheet-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="sheet" role="dialog" aria-modal="true" aria-label="Account" ref={box}>
+        <header className="sheet-head">
+          <strong>Account</strong>
+          <button className="icon-btn sm" aria-label="Close" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </header>
+        <div className="sheet-account">
+          <AccountCard onDone={onClose} />
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
