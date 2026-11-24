@@ -110,6 +110,33 @@ run('live-signup', async (browser) => {
   await page.getByRole('tab', { name: 'Triage' }).click();
   ok(/Always flag mail from my accountant/.test(await page.locator('.main').innerText()), 'signing back in opens the same workspace with the rule intact');
 
+  // The person's icon in the bottom-left corner of the bottom bar says who is signed in, and signs out.
+  ok((await page.locator('.rail .avatar').count()) === 0, 'the icon is no longer at the foot of the left rail');
+  const corner = page.locator('footer.bar').getByRole('button', { name: 'Account: Ada Lovelace' });
+  const at = await corner.boundingBox();
+  const bar = await page.locator('footer.bar').boundingBox();
+  ok(at && bar && at.x < 60 && at.y >= bar.y, `the icon sits in the bottom bar's left corner (x ${at && Math.round(at.x)}, bar top ${bar && Math.round(bar.y)}, icon top ${at && Math.round(at.y)})`);
+  await corner.click();
+  const card = page.getByRole('dialog', { name: 'Account' });
+  await card.waitFor();
+  const said = await card.innerText();
+  ok(said.includes('Ada Lovelace') && said.includes(who.email) && /Analytical .* · Owner/.test(said), `the card names the person, their email, the workspace and their role (${said.replace(/\s+/g, ' ')})`);
+  await page.keyboard.press('Escape');
+  ok((await card.count()) === 0, 'Escape closes it');
+  // On a phone, the same card is at the foot of the More sheet.
+  const wide = page.viewportSize();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator('.bar-phone').getByRole('button', { name: 'More' }).click();
+  const sheet = page.getByRole('dialog', { name: 'More' });
+  await sheet.waitFor();
+  ok((await sheet.locator('.sheet-account').getByRole('button', { name: 'Sign out' }).count()) === 1 && (await sheet.locator('.sheet-account').innerText()).includes(who.email), 'on a phone the More sheet shows who is signed in, with Sign out');
+  await page.keyboard.press('Escape');
+  await page.setViewportSize(wide);
+  await corner.click();
+  await card.getByRole('button', { name: 'Sign out' }).click();
+  await page.getByRole('heading', { name: 'Sign in to Timmy' }).waitFor();
+  ok((await api(page, 'GET', '/api/v1/state')).status === 401, 'Sign out from the corner icon signs the person out');
+
   // An email link: asking for one never says whether the address exists.
   await api(page, 'POST', '/api/auth/sign-out', {});
   await page.goto(BASE);

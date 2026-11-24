@@ -9,6 +9,7 @@ import { openThreads, useUrgency } from '../state/urgency';
 import { MODES, PALETTES, Swatch, useTheme, type Mode } from '../state/theme';
 import { AssistantLauncher } from '../agent/Assistant';
 import { PhoneTabs } from './PhoneNav';
+import { AccountMenu } from './AccountMenu';
 
 /** "8:02 AM" for a run today, "Mon, Nov 16, 8:02 AM" for an earlier one. */
 const fmtRunDay = (d: Date) => (dayDiff(d) === 0 ? fmtTime(d) : `${fmtDay(d)}, ${fmtTime(d)}`);
@@ -28,6 +29,7 @@ export function BottomBar() {
 
   return (
     <footer className="bar">
+      <AccountMenu />
       <div className="bar-group bar-left">
         <span className={`bar-status${focus ? ' focus' : ''}`} aria-hidden />
         {focus ? (

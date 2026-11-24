@@ -950,6 +950,11 @@
     padding: 0 6px 0 10px;
   }
 
+  .bar-account {
+    margin-left: -10px;
+    margin-right: 0;
+  }
+
   .bar-ask {
     flex-basis: 0;
   }

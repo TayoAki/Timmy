@@ -1,12 +1,11 @@
 import { isLive } from '../live/clock';
-import { PEOPLE } from '../data/mock';
 import { Bell, CalendarDays, FileText, FolderKanban, HardDrive, House, Library, ListChecks, Megaphone, MessageSquareText, Plug, Rocket, Search, Settings, Stamp, Users } from 'lucide-react';
 import { FeedbackButton } from '../live/Feedback';
 import { useOutboundCounts } from '../areas/outbound';
 import { scopedApprovals } from '../state/scope';
 import type { ReactNode } from 'react';
 import { sectionOf, useStore, type Route, type Section } from '../state/store';
-import { Avatar, TimmyMark } from './common';
+import { TimmyMark } from './common';
 
 export interface Item {
   section: Section | 'search';
@@ -85,9 +84,6 @@ export function LeftRail() {
         <Settings size={20} />
         <span className="rail-tip">Rules & settings</span>
       </button>
-      <div className="rail-me" title={`Signed in as ${PEOPLE.me?.name ?? 'Taylor Morgan'}`}>
-        <Avatar id="me" size={30} />
-      </div>
     </nav>
   );
 }

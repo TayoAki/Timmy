@@ -1,6 +1,6 @@
 # Timmy backend: status
 
-Last updated: Nov 18, 2026 (after the owner's first real Gmail and Drive test on production). Read this first, then `tests.json`, then `git log`.
+Last updated: Nov 24, 2026 (account menu with Sign out in the bottom-left corner). Read this first, then `tests.json`, then `git log`.
 The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 
 ## Where things stand
@@ -43,7 +43,16 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 | Frontend live mode (`VITE_TIMMY_LIVE=1`) | Built: sign-in, onboarding, state from the API, Connect buttons, model picker, monthly limit, approvals for writes Timmy proposes. The demo is unchanged and still the default build. |
 | Railway | `app` (API + live app), `pgvector` and the bucket `timmy-files` exist in `production` and `staging`. Both `app` services have the OpenRouter and Composio keys. |
 
-## Sorting made smarter (Nov 18, 2026)
+## Signing out from the corner (Nov 24, 2026)
+
+**Asked:** "how do users sign out?" Before this, only from Rules & settings › Approvals, at the foot of the page, which nobody would find. The owner asked for the person's icon to sit in the bottom-left corner of the bottom bar and to be the way out.
+
+- **Desktop and tablet:** the icon moved from the foot of the left rail into the bottom bar's left corner, under the rail's column (`src/components/AccountMenu.tsx`). Clicking it opens a card: name, email, workspace and role, Rules & settings, and **Sign out**. Escape or a click elsewhere closes it. It stays visible at every width above a phone (the bar's status text hides below 1100 px; the icon does not).
+- **Phone:** the tab bar keeps its five tabs; the same card, with Sign out, is at the foot of the More sheet.
+- **Sample demo:** the card shows the made-up person and says there is nothing to sign out of.
+- Sign out in Settings and during setup are unchanged. Sign out still has to reach the server, with one retry, or the person is told (unchanged).
+- Tested: `live-signup` signs out from the corner icon and checks the card's words, its place in the corner, Escape, the phone sheet, and that the API refuses afterwards (39 checks).
+
 
 **The complaint:** "it's classifying everything as Read Through". The first sort by plain code decided too much on its own:
 - any email with an "unsubscribe" line went to Read Through with certainty (Slack and Notion digests, GitHub notices, cold pitches, a client writing through HubSpot);

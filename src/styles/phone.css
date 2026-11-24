@@ -197,6 +197,16 @@
   color: var(--accent-text);
   box-shadow: inset 0 0 0 1px var(--accent-line);
 }
+/* Who is signed in, with Sign out, at the foot of the More sheet. */
+.sheet-account {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: var(--r);
+  background: var(--surface);
+}
+.sheet-account .acct-item {
+  min-height: 44px;
+}
 
 /* Chat widgets with tables scroll inside themselves on narrow screens. */
 .aw-body {
