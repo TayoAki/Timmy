@@ -8,6 +8,9 @@ import { createHash } from 'node:crypto';
 import type { Rule, Thread } from '../../../src/data/types';
 import { ruleSuggestion } from '../../../src/state/mail-rules';
 import type { Task } from '../../../src/data/ws-types';
+import { NOW } from '../../../src/data/mock';
+import type { State } from '../../../src/state/store';
+import { urgencyOf } from '../../../src/state/urgency';
 import { modelFor } from '../config';
 import { withWorkspace } from '../db/pool';
 import { jsonObject } from '../lib/json';
@@ -18,6 +21,7 @@ import type { Decision } from '../../../src/data/decisions';
 import { noteCommitments, quoted, standsAlone, words, type Commitment } from '../ontology/ontology';
 import { certifiedTypes, noteThings, typesForPrompt } from '../ontology/types';
 import { untrusted } from './prompts';
+import { withDates } from './todo-dates';
 
 export const READ_SYSTEM = `You sort one email thread for the user and say what it needs from them.
 
@@ -35,9 +39,10 @@ Decide:
 - things: [] unless the user's message lists kinds of thing they keep track of. Then up to 3 things of those kinds that the thread plainly mentions, each {"kind":"...","fields":{"field":"value"},"quote":"..."}: "kind" is a listed kind's name; "fields" has only listed fields the thread states, always the kind's first field (it names the thing), with values copied from the thread exactly as written; "quote" is the one sentence that mentions the thing, copied character for character.
 - todos: [] unless the newest message plainly asks the user to do something concrete (send, review, sign, book, decide, call, pay, reply with something), or is the user's own message promising to. Then up to 3, each {"what":"...","due":"YYYY-MM-DD"|null,"quote":"..."}. "what" starts with a verb and says the task in at most 80 characters, with the names in the thread (for example "Send Sam the signed contract"). "due" only when the message states a date. "quote" is the sentence from the newest message that asks or promises it, copied character for character. Not for FYIs, questions answered in the same message, or things already done.
 - project: null, unless the user's message lists their projects and this thread is plainly about one of them (its client or company, its people, or its subject). Then that project's number. When in doubt, null.
+- maybe_project: null, unless "project" is null and the thread might be about one of the listed projects without plainly being so (a likely client, person or subject in common). Then that project's number, and the user will be asked.
 - new_kinds: up to 2 kinds of thing the thread is plainly about that the user's work seems to keep records of (a property, an order, a job) and that fit no listed kind; otherwise []. Never people, companies, meetings, files, emails or promises. Each is {"kind":"...","name":"...","fields":[["field","value"]],"quote":"..."}: "kind" is a singular noun of one or two words; "name" is what the thread calls this one; "fields" are up to 3 facts about it, with values copied exactly as written; "quote" is the one sentence that mentions it, copied character for character.
 
-Reply with JSON only: {"box":"follow-up"|"read-through"|"archived","confidence":"high"|"medium"|"low","effort":"quick"|"focus","ask":"...","reason":"...","due":"YYYY-MM-DD"|null,"commitments":[],"decision":null,"todos":[],"things":[],"new_kinds":[],"project":null}`;
+Reply with JSON only: {"box":"follow-up"|"read-through"|"archived","confidence":"high"|"medium"|"low","effort":"quick"|"focus","ask":"...","reason":"...","due":"YYYY-MM-DD"|null,"commitments":[],"decision":null,"todos":[],"things":[],"new_kinds":[],"project":null,"maybe_project":null}`;
 
 /**
  * The most the read may write. 900 covered the sorting, promises and a decision; 300 more are for tracked things and
@@ -137,9 +142,10 @@ export async function readThread(workspaceId: string, threadId: string): Promise
     const picked = Number.isInteger(out.project) ? choices[(out.project as number) - 1] : undefined;
     const into = !cur.project && picked && loaded.state.ws.projects[picked.id]?.status === 'active' ? loaded.state.ws.projects[picked.id]! : undefined;
     const placed: Thread = into ? { ...cur, project: into.id, history: [...(cur.history ?? []), { at: new Date(), text: `Timmy put it in the project “${into.name}”` }] } : cur;
-    // To-dos the newest message asks of the person (or that they promised in it), each resting on its own sentence.
-    // They go into the thread's project with it.
-    const todos = todosFrom(placed, out.todos, loaded.state.ws.tasks);
+    // Not plainly about one, but maybe: the person is asked (“Acme Renewal?”) instead of the thread being filed. Never a
+    // project they already said it isn't about.
+    const maybe = Number.isInteger(out.maybe_project) ? choices[(out.maybe_project as number) - 1] : undefined;
+    const guess = !into && !cur.project && maybe && loaded.state.ws.projects[maybe.id]?.status === 'active' && !cur.notProjects?.includes(maybe.id) ? maybe.id : undefined;
     const settled = repeat ? `You decided this on ${new Date(repeat.chosen!.at).toISOString().slice(0, 10)}: ${repeat.options.find((o) => o.id === repeat.chosen!.option)?.label ?? 'decided'}.` : '';
     // A sorting rule that keeps this thread in sight decided its place before Timmy read it, and keeps deciding it:
     // the read adds what the thread asks, never a different place.
@@ -147,6 +153,7 @@ export async function readThread(workspaceId: string, threadId: string): Promise
     const effort = out.effort === 'focus' ? ('focus' as const) : ('quick' as const);
     const next: Thread = {
       ...placed,
+      ...(guess ? { maybeProject: guess } : {}),
       ...(settled ? { context: settled } : {}),
       ask: ask || cur.ask,
       suggestion: rule
@@ -154,10 +161,23 @@ export async function readThread(workspaceId: string, threadId: string): Promise
         : { box: out.box as 'follow-up', confidence: out.confidence as 'high', reason: reason || 'Timmy read the thread.', ...(out.box === 'follow-up' ? { effort } : {}) },
       ...(due && !Number.isNaN(due.getTime()) ? { due } : {}),
     };
+    // To-dos the newest message asks of the person (or that they promised in it), each resting on its own sentence.
+    // They go into the thread's project with it, each with a date (todo-dates.ts).
+    const todos = withDates(todosFrom(next, out.todos, loaded.state.ws.tasks), next, isUrgent(next, loaded.state), loaded.workspace.timezone);
     const withTodos: Thread = todos.length ? { ...next, history: [...(next.history ?? []), { at: new Date(), text: `Timmy added ${todos.length === 1 ? 'a to-do' : `${todos.length} to-dos`}: ${todos.map((x) => x.title).join('; ')}` }] } : next;
     const ws = todos.length ? { ...loaded.state.ws, tasks: { ...loaded.state.ws.tasks, ...Object.fromEntries(todos.map((x) => [x.id, x])) } } : loaded.state.ws;
     return { state: { ...loaded.state, ws, decisions, threads: loaded.state.threads.map((t) => (t.id === threadId ? withTodos : t)) }, result: { ok: true } };
   });
+}
+
+/** Whether the app ranks this email Urgent: the same ranking the brief and Today use (src/state/urgency.ts). */
+export function isUrgent(thread: Thread, state: Pick<State, 'ws' | 'deals' | 'rules'>): boolean {
+  NOW.setTime(Date.now());
+  try {
+    return urgencyOf(thread, { ws: state.ws, deals: state.deals, rules: state.rules }).level === 'urgent';
+  } catch {
+    return false;
+  }
 }
 
 /* ───────────── The person's own words on sorting ───────────── */
@@ -260,6 +280,7 @@ interface ReadOutput {
   new_kinds?: unknown;
   todos?: unknown;
   project?: unknown;
+  maybe_project?: unknown;
 }
 
 const isCommitment = (c: unknown): c is Commitment =>

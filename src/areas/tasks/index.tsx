@@ -459,7 +459,7 @@ function TaskCard({
       {(t.due || ev || people.length > 0 || thread) && (
         <div className="tk-card-foot">
           <div className="chips">
-            {t.due && !done && <DueChip due={t.due} />}
+            {t.due && !done && <DueChip due={t.due} suggested={t.dueSuggested} compact />}
             {ev && !done && (
               <span className="chip accent" title={`${ev.title}, ${fmtDay(ev.start)} ${fmtRange(ev.start, ev.end)}`}>
                 <CalendarClock size={12} />
@@ -562,7 +562,7 @@ function TaskList({ tasks, onOpen, onNew }: { tasks: Task[]; onOpen: (t: Task) =
                 <span className="muted">None</span>
               )}
             </span>
-            <span>{t.due ? <DueChip due={t.due} /> : <span className="muted">No date</span>}</span>
+            <span>{t.due ? <DueChip due={t.due} suggested={t.dueSuggested && t.status !== 'done'} /> : <span className="muted">No date</span>}</span>
             <span>
               <PriorityChip priority={t.priority} />
             </span>

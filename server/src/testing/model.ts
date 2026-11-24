@@ -71,11 +71,16 @@ export class FakeModel implements ModelProvider {
           commitments: promise ? [{ who: 'them', what: promise[1]!.replace(/^(I will|I'll|We will|We'll) /, '').replace(/ by \d{4}-\d{2}-\d{2}$/, ''), due: promise[2], quote: promise[1] }] : [],
           decision: choice ? { question, options: [cap(choice[1]!), cap(choice[2]!)], facts: [...(price ? [['Price', price[1], price[0]]] : []), ['Made up', '$1', 'a sentence that is not in the thread at all']], same_as: same ? Number(same[1]) : null } : null,
           // To-dos from sentences like "Please send the signed SOW by 2026-11-20." (and one that is not in the mail at all).
-          todos: [...mail.matchAll(/(Please ([a-z][^."\\]{3,80}?) by (\d{4}-\d{2}-\d{2})\.)/g)].map((m): { what: string; due: string | null; quote: string } => ({ what: cap(m[2]!), due: m[3]!, quote: m[1]! })).concat(/Please [a-z]/.test(mail) ? [{ what: 'Wire money to an account', due: null, quote: 'Please wire the money today.' }] : []),
+          todos: [...mail.matchAll(/(Please ([a-z][^."\\]{3,80}?) by (\d{4}-\d{2}-\d{2})\.)/g)].map((m): { what: string; due: string | null; quote: string } => ({ what: cap(m[2]!), due: m[3]!, quote: m[1]! }))
+            // An ask that names no date: "When you can, send the deck."
+            .concat([...mail.matchAll(/(When you can, ([a-z][^."\\]{3,80}?)\.)/g)].map((m) => ({ what: cap(m[2]!), due: null, quote: m[1]! })))
+            .concat(/Please [a-z]/.test(mail) ? [{ what: 'Wire money to an account', due: null, quote: 'Please wire the money today.' }] : []),
           // Tracked things and untracked kinds, from lines like "Deal: company Acme Corp; value $40,000." (see model-things.ts).
           ...fakeThingsRead(content),
           // The project the mail names, by its name or its client's, when the user's projects are listed.
           project: fakeProjectPick(content, mail),
+          // Maybe a project: the mail names a project's first word (five letters or more) but not the project itself.
+          maybe_project: fakeProjectPick(content, mail) ? null : fakeProjectGuess(content, mail),
         }),
       };
     }
@@ -163,6 +168,15 @@ export class FakeModel implements ModelProvider {
 }
 
 /** The stand-in's project pick: the listed project whose name or client the mail mentions, else none. */
+function fakeProjectGuess(content: string, mail: string): number | null {
+  const block = /<untrusted source="projects">([\s\S]*?)<\/untrusted>/.exec(content)?.[1] ?? '';
+  for (const m of block.matchAll(/^(\d+)\. (.+?)(?: \(client: ([^)]+)\))?(?: — .*)?$/gm)) {
+    const first = m[2]!.split(' ')[0]!;
+    if (first.length >= 5 && new RegExp(`\\b${first.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(mail)) return Number(m[1]);
+  }
+  return null;
+}
+
 function fakeProjectPick(content: string, mail: string): number | null {
   const block = /<untrusted source="projects">([\s\S]*?)<\/untrusted>/.exec(content)?.[1] ?? '';
   const lower = mail.toLowerCase();

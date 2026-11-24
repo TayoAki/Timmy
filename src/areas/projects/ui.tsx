@@ -85,7 +85,7 @@ export function TaskLine({
       <button type="button" className="pj-task-body" onClick={() => onEdit?.(task)} disabled={!onEdit}>
         <span className="pj-task-title">{task.title}</span>
         <span className="pj-task-meta">
-          {task.due && !done && <DueChip due={task.due} />}
+          {task.due && !done && <DueChip due={task.due} suggested={task.dueSuggested} />}
           {task.status === 'doing' && (
             <span className="chip accent">
               <Timer size={12} />

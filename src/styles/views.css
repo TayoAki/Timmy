@@ -2721,3 +2721,28 @@ button.rp-person:hover {
   display: flex;
   gap: 6px;
 }
+
+/* “Is this about Acme Renewal?” when Timmy thinks an email may belong to a project but isn't sure. */
+.project-guess {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 5px 6px 5px 10px;
+  border-radius: var(--r);
+  border: 1px dashed var(--line-strong);
+  background: var(--surface-2);
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.project-guess-q strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.thread-head + .chips + .project-guess,
+.chips + .project-guess {
+  margin-bottom: 4px;
+}

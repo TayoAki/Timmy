@@ -21,6 +21,7 @@ import {
   UserPlus,
   WandSparkles,
   Radar,
+  Search,
   FileText,
   CalendarDays,
 } from 'lucide-react';
@@ -818,10 +819,18 @@ function NotesTab({ ctx }: { ctx: TabCtx }) {
 
 /* ───────────── Mail ───────────── */
 
+/** What a project's email search looks through: the subject, Timmy's line about it, who is on it, and every message. */
+const mailText = (t: { subject: string; ask: string; participants: string[]; messages: { body: string[] }[] }) =>
+  [t.subject, t.ask, ...t.participants.map((x) => `${personName(x)} ${x.replace(/^mail:/, '')}`), ...t.messages.flatMap((m) => m.body)].join(' ').toLowerCase();
+
 function MailTab({ ctx }: { ctx: TabCtx }) {
   const { state, dispatch } = useStore();
   const { p } = ctx;
-  const threads = projectThreads(state.threads, p.id).sort(byNewest);
+  const [q, setQ] = useState('');
+  const all = projectThreads(state.threads, p.id).sort(byNewest);
+  // Every word typed has to be somewhere in the email; archived emails are searched too.
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const threads = words.length ? all.filter((t) => words.every((w) => mailText(t).includes(w))) : all;
   const open = threads.filter((t) => t.box !== 'archived');
   const done = threads.filter((t) => t.box === 'archived');
   return (
@@ -838,13 +847,24 @@ function MailTab({ ctx }: { ctx: TabCtx }) {
           Compose
         </button>
       </SectionHead>
+      {all.length > 0 && (
+        <label className="pj-search pj-mail-search">
+          <Search size={15} aria-hidden />
+          <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search this project’s emails" aria-label="Search this project’s emails" />
+        </label>
+      )}
+      {words.length > 0 && (
+        <p className="pj-search-count" role="status">
+          {threads.length ? `${threads.length} of ${all.length} ${all.length === 1 ? 'email matches' : 'emails match'}` : `No email in this project matches “${q.trim()}”.`}
+        </p>
+      )}
       {open.length > 0 ? (
         <div role="list" className="pj-threads">
           {open.map((t) => (
             <ThreadRow key={t.id} t={t} showProject={false} />
           ))}
         </div>
-      ) : (
+      ) : words.length ? null : (
         <p className="pj-none">No open threads for this project.</p>
       )}
       {done.length > 0 && (

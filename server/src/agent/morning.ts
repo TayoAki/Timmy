@@ -14,6 +14,7 @@ import { DEFAULT_SCHEDULE, type Schedule } from '../../../src/state/schedule';
 import { config } from '../config';
 import { withWorkspace } from '../db/pool';
 import { newId } from '../lib/ids';
+import { localTime } from '../lib/local-time';
 import { log } from '../lib/log';
 import { BudgetError, checkBudget, modelReady } from '../providers/model';
 import { mutate, readState } from '../state/mutate';
@@ -25,31 +26,10 @@ import { needsReading, readThread } from './read';
 
 /* ───────────── When a run is due ───────────── */
 
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 /** A run that could not start on time (the server was down) still happens if it is no later than this. */
 const LATE_MINUTES = 6 * 60;
 
-/** The calendar date, minutes past midnight and weekday on the wall clock of a time zone. */
-export function localTime(at: Date, timeZone: string): { date: string; minutes: number; weekday: number } {
-  let parts: Intl.DateTimeFormatPart[];
-  try {
-    parts = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', weekday: 'short' }).formatToParts(at);
-  } catch {
-    // A time zone the runtime doesn't know is treated as UTC rather than stopping every workspace's run.
-    return localTime(at, 'UTC');
-  }
-  const p = Object.fromEntries(parts.map((x) => [x.type, x.value]));
-  return { date: `${p.year}-${p.month}-${p.day}`, minutes: Number(p.hour) * 60 + Number(p.minute), weekday: WEEKDAYS.indexOf(p.weekday ?? '') };
-}
-
-export const isTimeZone = (tz: string): boolean => {
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone: tz });
-    return true;
-  } catch {
-    return false;
-  }
-};
+export { isTimeZone, localTime } from '../lib/local-time';
 
 /** Whether the scheduled run should start now: it is a chosen day, the time has come, and today's run hasn't happened. */
 export function runDue(schedule: Pick<Schedule, 'time' | 'days'>, timeZone: string, lastRun: Date | null, now = new Date()): boolean {

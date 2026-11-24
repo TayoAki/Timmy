@@ -3,7 +3,7 @@
  * when a schedule is next due, how long a Wait lasts, when a send may be put forward, when a task is due.
  * The choices are the fixed ones the canvas offers; a choice this file doesn't know gives null.
  */
-import { localTime } from '../agent/morning';
+import { localTime } from '../lib/local-time';
 
 const MINUTE = 60_000;
 const DAY = 86400_000;

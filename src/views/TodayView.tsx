@@ -44,7 +44,7 @@ import { Modal, Segmented } from '../components/kit';
 import { TimePicker } from '../components/TimePicker';
 import { UrgencyReasons, UrgencyTag } from '../components/Urgency';
 import { Avatar, EffortChip, Kbd, tint } from '../components/common';
-import { ProjectPicker } from '../components/ProjectPicker';
+import { ProjectGuess, ProjectPicker } from '../components/ProjectPicker';
 import { LearnedOffer } from '../components/LearnedOffer';
 import { DocIcon } from '../components/DocBits';
 import { Frame } from '../components/Frame';
@@ -893,6 +893,7 @@ function Triage({ threads }: { threads: Thread[] }) {
                       {s?.extra && <strong> {s.extra}.</strong>}
                     </span>
                   </p>
+                  <ProjectGuess t={t} />
                 </div>
               </div>
               <div className="triage-actions">

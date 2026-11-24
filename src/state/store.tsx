@@ -180,6 +180,8 @@ export type Action =
   | { type: 'move'; id: string; box: Box; quiet?: boolean; by?: 'timmy' }
   /** Done with an email: it is archived and every to-do that came from it is ticked off, with one Undo for both. */
   | { type: 'done'; id: string }
+  /** “No” to Timmy's question whether an email is about a project: it isn't asked again for that email. */
+  | { type: 'dismissProjectGuess'; id: string }
   | { type: 'acceptSuggestion'; id: string }
   | { type: 'acceptAll'; ids: string[] }
   | { type: 'toggleStar'; id: string }
@@ -459,6 +461,69 @@ const moveThread = (t: Thread, box: Box): Thread => {
   return next;
 };
 
+const clipped = (s: string, n = 48) => (s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s);
+const capFirst = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const openTodos = (tasks: WS['tasks'], threadId: string) => Object.values(tasks).filter((x) => x.thread === threadId && x.status !== 'done');
+
+/** To-dos a sent reply itself does: answering, sending or sharing something, confirming, letting them know. */
+const REPLY_DOES = /^(reply|respond|answer|write back|get back|send|share|forward|confirm|email|e-mail|tell|let \S+ know|update|ask|follow up)\b/i;
+
+/** The email's open to-dos a reply ticks off; none when the reply only promises to do them later. */
+const doneByReply = (tasks: WS['tasks'], threadId: string, body: string) => (promiseIn(body) ? [] : openTodos(tasks, threadId).filter((x) => REPLY_DOES.test(x.title.trim())));
+
+/** "1 to-do" / "3 to-dos". */
+const todoCount = (n: number) => (n === 1 ? '1 to-do' : `${n} to-dos`);
+
+/** A weekday `n` working days after `from`, at 5 PM. */
+const workingDaysFrom = (from: Date, n: number) => {
+  const d = new Date(from);
+  d.setHours(17, 0, 0, 0);
+  for (let left = n; left > 0; ) {
+    d.setDate(d.getDate() + 1);
+    if (d.getDay() !== 0 && d.getDay() !== 6) left--;
+  }
+  return d;
+};
+
+/** The person's own email asks the other side for something: a question, or "could you", "please", "let me know". */
+const ASKS = /\?|\b(could you|can you|would you|please|let me know)\b/i;
+
+/** Past this many emails in one change the person is tidying tasks in bulk, and filing that much mail by the way would surprise them. */
+const MAX_FOLLOWS = 10;
+
+/**
+ * The email follows its tasks. When a change ticks off the last open to-do of an email still in Triage or Follow Up,
+ * with no draft of the person's waiting to go, the email is filed: to Waiting when the person's own message is the
+ * newest and asked the other side for something (with three working days to answer), archived otherwise. Moving it
+ * writes to Gmail or Outlook like any move, and the change's Undo puts it back. Returns what to add to the notice.
+ */
+function followTasks(s: State, before: WS['tasks']): { state: State; notes: string[] } {
+  const after = s.ws.tasks;
+  const finished = new Set<string>();
+  for (const [id, t] of Object.entries(after)) if (t.thread && t.status === 'done' && before[id] && before[id]!.status !== 'done') finished.add(t.thread);
+  let next = s;
+  const notes: string[] = [];
+  for (const tid of [...finished].slice(0, MAX_FOLLOWS)) {
+    const th = next.threads.find((x) => x.id === tid);
+    if (!th || (th.box !== 'inbox' && th.box !== 'follow-up') || th.draft || openTodos(after, tid).length) continue;
+    const newest = th.messages[th.messages.length - 1];
+    const asked = newest?.from === 'me' && ASKS.test(newest.body.join(' '));
+    const waiting = asked ? (th.waiting ?? { on: counterpart(th), item: 'An answer to your email', due: workingDaysFrom(NOW, 3), since: NOW }) : undefined;
+    const short = clipped(th.subject);
+    next = {
+      ...next,
+      threads: patch(next.threads, tid, (x) => ({
+        ...moveThread(x, waiting ? 'waiting' : 'archived'),
+        ...(waiting ? { waiting, ask: `${firstName(waiting.on)} owes you: ${lowerFirst(waiting.item)}${waiting.due ? ` by ${fmtDay(waiting.due)}` : ''}` } : {}),
+        history: [...(x.history ?? []), { at: NOW, text: waiting ? `Its to-dos are done; moved to [02] Waiting for ${firstName(waiting.on)}’s answer` : 'Its to-dos are done; archived' }],
+      })),
+      activity: logged(next, waiting ? `“${th.subject}” moved to Waiting: its to-dos are done and your last email asked for an answer` : `“${th.subject}” archived: its to-dos are done`, 'move', tid),
+    };
+    notes.push(waiting ? `“${short}” now waits for ${firstName(waiting.on)}’s answer` : `nothing is left on “${short}”, so the email is archived`);
+  }
+  return { state: next, notes };
+}
+
 export function reducer(s: State, a: Action): State {
   // Some actions need someone else's OK first: CRM writes (RevOps), and in delegate mode the exec's calls.
   if (a.type === 'applyDeal' || a.type === 'editDeal' || a.type === 'sendDraft' || a.type === 'resolve') {
@@ -603,7 +668,11 @@ export function reducer(s: State, a: Action): State {
       };
       const track = a.track && draft.trackAs;
       const promise = promiseIn(draft.body);
-      const box: Box = track ? 'waiting' : t.box === 'waiting' ? 'waiting' : promise ? 'follow-up' : 'archived';
+      // Tasks this email finishes (not when it only promises to do them later): the ones the draft names, and the
+      // email's reply-type to-dos. Any others still open keep it in Follow Up.
+      const ticks = promise ? [] : [...new Set([...(draft.completes ?? []).filter((id) => base.ws.tasks[id] && base.ws.tasks[id]!.status !== 'done'), ...doneByReply(base.ws.tasks, t.id, draft.body).map((x) => x.id)])];
+      const left = openTodos(base.ws.tasks, t.id).filter((x) => !ticks.includes(x.id)).length;
+      const box: Box = track ? 'waiting' : t.box === 'waiting' ? 'waiting' : promise ? 'follow-up' : left ? 'follow-up' : 'archived';
       const steps = t.steps?.map((st) => (isSendStep(st) ? { ...st, done: true } : st));
       const updated: Thread = {
         ...t,
@@ -620,7 +689,11 @@ export function reducer(s: State, a: Action): State {
             ? `You promised ${firstName(draft.to[0]!)}: ${promise}`
             : t.ask,
         context: track ? 'Timmy will draft a nudge if the date slips.' : promise ? 'Your reply made a promise. This stays in Follow Up until you do it.' : t.context,
-        history: [...(t.history ?? []), { at: NOW, text: track ? `Sent. Moved to [02] Waiting until ${fmtDay(draft.trackAs!.due)}` : promise ? `Sent. You promised to ${promise}; kept in [01] Follow Up` : 'Sent' }],
+        history: [
+          ...(t.history ?? []),
+          { at: NOW, text: track ? `Sent. Moved to [02] Waiting until ${fmtDay(draft.trackAs!.due)}` : promise ? `Sent. You promised to ${promise}; kept in [01] Follow Up` : left ? `Sent. ${capFirst(todoCount(left))} still open, so it stays in [01] Follow Up` : 'Sent' },
+          ...(ticks.length ? [{ at: NOW, text: `The email ticked off: ${ticks.map((id) => base.ws.tasks[id]?.title ?? id).join('; ')}` }] : []),
+        ],
       };
       let threads = patch(base.threads, a.id, () => updated);
       let approvalLog = recorded(base, { key: `draft:${t.id}`, kind: 'email', title: draft.subject, choice: track ? 'Sent and tracked' : 'Sent', approved: true, thread: t.id });
@@ -628,9 +701,7 @@ export function reducer(s: State, a: Action): State {
       let deals = base.deals;
       const notes: string[] = [];
 
-      // Tasks this email finishes (not when it only promises to do them later).
-      const finished = promise ? [] : (draft.completes ?? []).filter((id) => space.tasks[id] && space.tasks[id]!.status !== 'done');
-      if (finished.length) space = applyOps(space, finished.map((id) => wsPatch('tasks', id, { status: 'done' })));
+      if (ticks.length) space = applyOps(space, ticks.map((id) => wsPatch('tasks', id, { status: 'done' })));
 
       // The CRM follows: last touch, and what you're now waiting for.
       if (t.deal && deals[t.deal]) {
@@ -682,8 +753,11 @@ export function reducer(s: State, a: Action): State {
         ? `Sent · tracking in [02] Waiting until ${fmtDay(draft.trackAs!.due)}`
         : box === 'archived'
           ? 'Sent · label cleared and archived'
-          : 'Sent';
-      const extra = [settled.length ? `Logged your call: ${settled.join(', ')}` : '', notes.length ? `Timmy ${notes.join(' and ')}` : ''].filter(Boolean).join('. ');
+          : left && !promise
+            ? `Sent · ${todoCount(left)} still open, kept in Follow Up`
+            : 'Sent';
+      const ticked = ticks.length ? `Ticked off ${ticks.length === 1 ? `“${clipped(base.ws.tasks[ticks[0]!]?.title ?? '')}”` : todoCount(ticks.length)}` : '';
+      const extra = [ticked, settled.length ? `Logged your call: ${settled.join(', ')}` : '', notes.length ? `Timmy ${notes.join(' and ')}` : ''].filter(Boolean).join('. ');
       return {
         ...base,
         threads,
@@ -845,9 +919,25 @@ export function reducer(s: State, a: Action): State {
       return {
         ...s,
         ws,
-        threads: patch(s.threads, a.id, (x) => ({ ...x, project: a.project ?? undefined, history: [...(x.history ?? []), { at: stamp(), text: project ? `You put this in ${project.name}` : `You took this out of ${before?.name ?? 'its project'}` }] })),
+        threads: patch(s.threads, a.id, (x) => ({ ...x, project: a.project ?? undefined, maybeProject: undefined, history: [...(x.history ?? []), { at: stamp(), text: project ? `You put this in ${project.name}` : `You took this out of ${before?.name ?? 'its project'}` }] })),
         activity: logged(s, text, 'move', t.id),
         toasts: withToast(s, project ? `In ${project.name}` : `Out of ${before?.name ?? 'the project'}`, snap(s)),
+      };
+    }
+
+    case 'dismissProjectGuess': {
+      const t = s.threads.find((x) => x.id === a.id);
+      if (!t?.maybeProject) return s;
+      const guess = s.ws.projects[t.maybeProject];
+      return {
+        ...s,
+        threads: patch(s.threads, a.id, (x) => ({
+          ...x,
+          maybeProject: undefined,
+          notProjects: [...new Set([...(x.notProjects ?? []), t.maybeProject!])].slice(-10),
+          history: [...(x.history ?? []), { at: stamp(), text: `You said it isn’t about ${guess?.name ?? 'that project'}` }],
+        })),
+        toasts: withToast(s, `Not ${guess?.name ?? 'that project'}. Timmy won’t ask about it again for this email.`, snap(s)),
       };
     }
 
@@ -878,13 +968,17 @@ export function reducer(s: State, a: Action): State {
     case 'drawer':
       return { ...s, drawer: s.drawer === a.drawer ? null : a.drawer };
 
-    case 'ws':
+    case 'ws': {
+      // Ticking off an email's last to-do files the email too (followTasks); the notice says so and Undo covers both.
+      const { state: followed, notes } = followTasks({ ...s, ws: applyOps(s.ws, a.ops) }, s.ws.tasks);
+      const filed = notes.length ? `${capFirst(notes.join('; '))}.` : '';
+      const toast = a.toast ? (filed ? `${a.toast.replace(/\.$/, '')}. ${filed}` : a.toast) : filed;
       return {
-        ...s,
-        ws: applyOps(s.ws, a.ops),
-        activity: a.log ? logged(s, a.log, 'file') : s.activity,
-        toasts: a.toast ? withToast(s, a.toast, a.undo ? snap(s) : undefined, a.tone) : s.toasts,
+        ...followed,
+        activity: a.log ? logged(followed, a.log, 'file') : followed.activity,
+        toasts: toast ? withToast(s, toast, a.undo || filed ? snap(s) : undefined, a.tone) : s.toasts,
       };
+    }
 
     case 'compose':
       return { ...s, compose: a.draft };
@@ -929,7 +1023,11 @@ export function reducer(s: State, a: Action): State {
       const msg = { id: `reply-${Date.now().toString(36)}`, from: 'me', to: to.length ? to : t.participants.filter((p) => p !== 'me'), at: NOW, body: a.body.split(/\n\n+/), ...(a.files?.length ? { files: a.files } : {}) };
       const track = a.track?.item ? a.track : null;
       const due = dueDate(track?.due);
-      const box: Box = track ? 'waiting' : t.box === 'follow-up' || t.box === 'inbox' ? 'archived' : t.box;
+      // The reply does the email's reply-type to-dos ("Reply to Dana", "Send Sam the deck"); any others keep it in Follow Up.
+      const ticked = doneByReply(s.ws.tasks, t.id, a.body);
+      const tasks = ticked.length ? { ...s.ws.tasks, ...Object.fromEntries(ticked.map((x) => [x.id, { ...x, status: 'done' as const }])) } : s.ws.tasks;
+      const left = openTodos(tasks, t.id).length;
+      const box: Box = track ? 'waiting' : t.box === 'follow-up' || t.box === 'inbox' ? (left ? 'follow-up' : 'archived') : t.box;
       const next: Thread = {
         ...t,
         box,
@@ -939,14 +1037,20 @@ export function reducer(s: State, a: Action): State {
         messages: [...t.messages, msg],
         waiting: track ? { on: track.on, item: track.item, due, since: NOW } : t.waiting,
         ask: track ? `${firstName(track.on)} owes you: ${lowerFirst(track.item)}${due ? ` by ${fmtDay(due)}` : ''}` : t.ask,
-        history: [...(t.history ?? []), { at: NOW, text: track ? `Replied and tracked in [02] Waiting${due ? ` until ${fmtDay(due)}` : ''}` : 'Replied' }],
+        history: [
+          ...(t.history ?? []),
+          { at: NOW, text: track ? `Replied and tracked in [02] Waiting${due ? ` until ${fmtDay(due)}` : ''}` : box === 'follow-up' && left ? `Replied; ${todoCount(left)} still open, so it stays in [01] Follow Up` : 'Replied' },
+          ...(ticked.length ? [{ at: NOW, text: `The reply ticked off: ${ticked.map((x) => x.title).join('; ')}` }] : []),
+        ],
       };
-      const where = track ? `Replied · tracking in [02] Waiting${due ? ` until ${fmtDay(due)}` : ''}` : box === 'archived' ? 'Replied · label cleared and archived' : 'Replied';
+      const where = track ? `Replied · tracking in [02] Waiting${due ? ` until ${fmtDay(due)}` : ''}` : box === 'archived' ? 'Replied · label cleared and archived' : box === 'follow-up' && left ? `Replied · ${todoCount(left)} still open, kept in Follow Up` : 'Replied';
+      const tickNote = ticked.length ? ` · ticked off ${ticked.length === 1 ? `“${clipped(ticked[0]!.title)}”` : todoCount(ticked.length)}` : '';
       return {
         ...s,
+        ws: ticked.length ? { ...s.ws, tasks } : s.ws,
         threads: patch(s.threads, a.id, () => next),
         activity: logged(s, `You replied to “${t.subject}”`, 'send', t.id),
-        toasts: withToast(s, where, snap(s)),
+        toasts: withToast(s, `${where}${tickNote}`, snap(s)),
       };
     }
 

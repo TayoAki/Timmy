@@ -250,6 +250,7 @@ function taskProblem(t: Record<string, unknown>): string | null {
   if (!TASK_STATUS.has(t.status as string) || !TASK_PRIORITY.has(t.priority as string)) return refused;
   if (t.notes !== undefined && !text(t.notes, 20_000)) return 'A task’s notes can be up to 20,000 characters.';
   if (!date(t.created) || (t.due !== undefined && !date(t.due))) return refused;
+  if (t.dueSuggested !== undefined && t.dueSuggested !== true) return refused;
   for (const k of ['project', 'thread', 'contact', 'event']) if (t[k] !== undefined && !text(t[k], 200)) return refused;
   return null;
 }

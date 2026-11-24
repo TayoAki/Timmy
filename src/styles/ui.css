@@ -144,6 +144,18 @@
   flex: none;
 }
 
+/* "· suggested" on a date Timmy picked because the email named none. The chip stays on one line. */
+.chip-note {
+  font-weight: 400;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.chip-suggested {
+  border-style: dashed;
+  white-space: nowrap;
+}
+
 .chip.overdue {
   background: var(--danger-soft);
   border-color: transparent;

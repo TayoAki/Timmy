@@ -177,6 +177,20 @@
    "status": "pass"
   },
   {
+   "id": "api-todo-dates",
+   "file": "server/test/todo-dates.test.ts",
+   "covers": "every to-do from an email gets a date: its own, the email's, or one Timmy suggests (marked suggested): today for an urgent email while the working day lasts, otherwise the next working day; two working days for anything else; weekends skipped; on the workspace's own clock at 5 PM; Make a to-do too; changing the date makes it the person's own",
+   "tests": 11,
+   "status": "pass"
+  },
+  {
+   "id": "api-follow-tasks",
+   "file": "server/test/follow-tasks.test.ts",
+   "covers": "ticking off an email's last to-do files it: archived (in Gmail too, one effect record, Undo puts back the email and the to-do) or to Waiting when the person's own newest message asked for something; left alone while another to-do is open, a draft waits, or it sits in Read Through or Waiting; a reply ticks off the to-dos it does and keeps the email in Follow Up while others are open; a reply that only promises ticks nothing; sending Timmy's draft ticks too, and Undo takes it back",
+   "tests": 7,
+   "status": "pass"
+  },
+  {
    "id": "api-waiting",
    "file": "server/test/waiting.test.ts",
    "covers": "a draft that asks for something carries the item and a date; Send & track moves the thread to Waiting and labels it; the morning run drafts a nudge once the date passes; a nudge is never sent by itself; a reply ends the wait and drops the nudge",
@@ -638,10 +652,10 @@
   {
    "id": "api-auto-organize",
    "file": "server/test/auto-organize.test.ts",
-   "covers": "Timmy's read puts a new thread plainly about a project into it, with a history line, and its to-do goes there too; the projects are offered as outside content, numbered, with client and goal; a thread about none stays out; a workspace with no projects is asked nothing; a pick that isn't a listed open project is ignored; a thread the project's own people placed is never moved or asked about; a Drive file goes into the one project its name, client, own word or owner points to, and what it says counts for less; a tie or an already-linked file is left alone; it happens on its own after Drive's files are listed and writes nothing to Drive; Make a to-do on an email adds what it asks to Tasks, linked to the email, in its project, once; an email that asks nothing, or a to-do resting on words not in it, makes nothing; it needs a role that may make changes and an email in this workspace",
-   "tests": 13,
+   "covers": "Timmy's read puts a new thread plainly about a project into it, with a history line, and its to-do goes there too; the projects are offered as outside content, numbered, with client and goal; a thread about none stays out; a workspace with no projects is asked nothing; a pick that isn't a listed open project is ignored; a thread the project's own people placed is never moved or asked about; a Drive file goes into the one project its name, client, own word or owner points to, and what it says counts for less; a tie or an already-linked file is left alone; it happens on its own after Drive's files are listed and writes nothing to Drive; Make a to-do on an email adds what it asks to Tasks, linked to the email, in its project, once; an email that asks nothing, or a to-do resting on words not in it, makes nothing; it needs a role that may make changes and an email in this workspace; a thread that may be about a project is asked about instead of filed (maybe_project): Yes puts it there, No stops the question for that project, also after a later message",
+   "tests": 14,
    "status": "pass",
-   "result": "Nov 18, 2026: 13 of 13."
+   "result": "Nov 24, 2026: 14 of 14 (with the project question). Nov 18: 13 of 13."
   },
   {
    "id": "api-copilotkit",
@@ -696,9 +710,16 @@
   {
    "id": "live-todos",
    "file": "e2e/live/live-todos.cjs",
-   "covers": "an email's ask becomes a to-do with its date, shown in the thread under To-dos, checked off there and saved, and listed in Tasks with the email it came from; one click on a Tasks card's box marks it done, and the list shows it ticked and unticks it back to do; Done on the email archives it and ticks off its to-do, takes you back, and one Undo restores both",
+   "covers": "an email's ask becomes a to-do with its date, shown in the thread under To-dos, checked off there and saved, and listed in Tasks with the email it came from; one click on a Tasks card's box marks it done, and the list shows it ticked and unticks it back to do; Done on the email archives it and ticks off its to-do, takes you back, and one Undo restores both; ticking off an email's last to-do archives the email",
    "status": "pass",
-   "result": "Nov 24, 2026: 13 of 13 (with Done on the email). Earlier the same day, 10 of 10 (with the tick box on the Tasks board and list). Nov 18: 7 of 7 (with Make a to-do)."
+   "result": "Nov 24, 2026: 14 of 14 (ticking the last to-do now archives the email; Done is tested on its own email). Before that, 13 of 13 (with Done on the email). Earlier the same day, 10 of 10 (with the tick box on the Tasks board and list). Nov 18: 7 of 7 (with Make a to-do)."
+  },
+  {
+   "id": "live-flow",
+   "file": "e2e/live/live-flow.cjs",
+   "covers": "from an email to done: a to-do with no date shows a suggested one; a reply sent from Timmy ticks off its to-do and archives the email; ticking the last to-do archives the email and one Undo puts both back; Triage asks \"Is this about Apollo launch?\", Yes files it, No stops asking; a project's emails can be searched, the archived one found by what was said in it",
+   "status": "pass",
+   "result": "Nov 24, 2026: 11 of 11."
   }
  ]
 }

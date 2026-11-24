@@ -1,6 +1,6 @@
 # Timmy backend: status
 
-Last updated: Nov 24, 2026 (account menu with Sign out in the bottom-left corner). Read this first, then `tests.json`, then `git log`.
+Last updated: Nov 24, 2026 (from an email to done: dates on every to-do, the email follows its tasks, replies tick to-dos, the project question, project search). Read this first, then `tests.json`, then `git log`.
 The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 
 ## Where things stand
@@ -42,6 +42,22 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 | Cold email (phase 2, built early because the decision was made) | Built as decided: Timmy writes it and opens the compose window of the connected mail app (Gmail, or Outlook on the web); nothing cold goes through an API. The lead is marked contacted when sync sees the email in Sent, and replies show in the Unibox. |
 | Frontend live mode (`VITE_TIMMY_LIVE=1`) | Built: sign-in, onboarding, state from the API, Connect buttons, model picker, monthly limit, approvals for writes Timmy proposes. The demo is unchanged and still the default build. |
 | Railway | `app` (API + live app), `pgvector` and the bucket `timmy-files` exist in `production` and `staging`. Both `app` services have the OpenRouter and Composio keys. |
+
+## From an email to done, smarter (Nov 24, 2026)
+
+**Asked:** "is this the smartest flow?" It wasn't: to-dos without a date in the email drifted, the email and its to-do were the same work tracked twice, sending the reply didn't count as doing the to-do, and an email Timmy wasn't sure about stayed in no project. The owner approved all four changes below, then asked for search on a project's emails.
+
+1. **Every to-do gets a date** (`server/src/agent/todo-dates.ts`). Its own date if the email gives one; otherwise the date the email asks for in general; otherwise one Timmy suggests and marks as suggested: today for an email the app ranks Urgent (the next working day once 5 PM has passed, or on a weekend), two working days out for anything else. Weekends are skipped, on the workspace's own clock, due at 5 PM. Plain code using the same urgency ranking as Today; no extra model call. The date shows "· suggested" on the email, in the Tasks list and on the project page, and a sparkle with a dashed outline on a Tasks card. Changing the date in the task makes it the person's own. Make a to-do gets the same.
+2. **The email follows its tasks** (`followTasks` in `src/state/store.tsx`). Ticking off the last open to-do of an email still in Triage or Follow Up files the email, wherever the tick happens (the email, Tasks, the project page, the task dialog): archived, or to Waiting when the person's own newest message asked for something (three working days to answer). Not while another to-do is open, a draft is waiting, or the email sits in Read Through or Waiting; unticking moves nothing; at most 10 emails per change, so tidying many tasks at once doesn't file a pile of mail. It goes through the normal filing path (Gmail labels or Outlook folders, one effect record), and the notice says what happened, with one Undo for both.
+3. **Sending the reply ticks the to-do it does** (`doneByReply`). A reply sent from Timmy, typed or Timmy's draft, ticks off the email's open to-dos that a reply does: reply, respond, answer, send, share, forward, confirm, email, tell, let … know, update, ask, follow up. Not when the reply only promises ("I'll send it tomorrow"). Any other to-do still open keeps the email in Follow Up instead of archiving it. Undo inside the send window takes the ticks back too. A reply sent from Gmail itself doesn't tick anything yet.
+4. **Timmy asks when unsure about a project** (`maybe_project` in the read). When an email might be about one of the projects but not plainly, Triage and the email show "Is this about Acme Renewal? Yes / No". Yes puts it there (its to-dos follow); No means that project isn't asked about again for that email. Part of the read Timmy already makes; the sorting eval is unchanged (37 of 37, held-out 23 of 24; about $0.60 for the runs).
+5. **Search on a project's emails.** The project's Mail tab has a search box over subject, Timmy's line, who is on it and every message, open and archived alike ("1 of 6 emails match"). An archived email stays in its project for good: archiving changes its place, not its project, and emails are never dropped from a workspace.
+
+Tested: `todo-dates.test` (11), `follow-tasks.test` (7), `auto-organize.test` (14, with the project question), and the new live suite `live-flow` (11) walks all five in a browser.
+
+Tests changed in this round, and why:
+- `live-todos` ticked the "Signed SOW" to-do on its email and later found that email in Triage to press Done. Ticking its last to-do now archives the email (change 2, as asked), so the suite checks that, and presses Done on a fresh email instead. 14 checks.
+- The stand-in model learned one more phrase, "When you can, …", which gives a to-do with no date, so the suggested-date path can be tested; the phrases it already knew behave as before.
 
 ## Signing out from the corner (Nov 24, 2026)
 

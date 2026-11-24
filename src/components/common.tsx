@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { CircleAlert, Clock, FilePenLine, Hourglass, Timer, Zap } from 'lucide-react';
+import { CircleAlert, Clock, FilePenLine, Hourglass, Sparkles, Timer, Zap } from 'lucide-react';
 import { PEOPLE, PROJECTS } from '../data/mock';
 import { useStore } from '../state/store';
 import type { Thread } from '../data/types';
@@ -54,14 +54,20 @@ export function Kbd({ children }: { children: ReactNode }) {
   return <kbd className="kbd">{children}</kbd>;
 }
 
-export function DueChip({ due, prefix }: { due: Date; prefix?: string }) {
+/**
+ * A due date. `suggested`: Timmy picked it because the email named none. The chip says so in words, or, where room is
+ * short (`compact`, a Tasks card), with Timmy's sparkle and a dashed outline; the tooltip explains either way.
+ */
+export function DueChip({ due, prefix, suggested, compact }: { due: Date; prefix?: string; suggested?: boolean; compact?: boolean }) {
   const { label, tone } = dueInfo(due);
   const cls = tone === 'overdue' ? 'overdue' : tone === 'today' ? 'today' : '';
   return (
-    <span className={`chip ${cls}`}>
-      {tone === 'overdue' ? <CircleAlert size={12} /> : <Clock size={12} />}
+    <span className={`chip ${cls}${suggested ? ' chip-suggested' : ''}`} title={suggested ? 'Timmy suggested this date because the email named none. Change it in the task.' : undefined}>
+      {tone === 'overdue' ? <CircleAlert size={12} /> : suggested ? <Sparkles size={12} /> : <Clock size={12} />}
       {prefix ? `${prefix} ` : ''}
       {label}
+      {suggested && !compact && <span className="chip-note">· suggested</span>}
+      {suggested && compact && <span className="sr-only"> (suggested)</span>}
     </span>
   );
 }

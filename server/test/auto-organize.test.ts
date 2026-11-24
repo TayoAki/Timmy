@@ -55,6 +55,35 @@ describe('new mail into projects, by Timmy’s read', () => {
     expect(user).toMatch(/\d\. Apollo launch \(client: NASA\) — Land on the moon/);
   });
 
+  it('a thread that may be about a project is asked about, not filed: Yes puts it there, No stops the question', async () => {
+    await addProjects(project('apollo', '10', 'Apollo launch'));
+    // The stand-in reads "Apollo" alone (not "Apollo launch") as a maybe.
+    const first = await deliver('Gene Kranz <gene@mission.test>', 'Countdown', 'Gene here. The Apollo team meeting moved to Thursday.');
+    let t = await threadOf('Countdown');
+    expect(t.project).toBeUndefined();
+    expect(t.maybeProject).toBe('apollo');
+    expect((await w.cmd({ type: 'dismissProjectGuess', id: t.id })).ok).toBe(true);
+    t = await threadOf('Countdown');
+    expect(t.maybeProject).toBeUndefined();
+    expect(t.notProjects).toEqual(['apollo']);
+    expect(t.history?.at(-1)?.text).toBe('You said it isn’t about Apollo launch');
+    // A later message is read again, and the project the person said no to isn't asked about again.
+    const d = fake().deliver(box.account, { from: 'Gene Kranz <gene@mission.test>', subject: 'Re: Countdown', body: 'Apollo again: the room changed.', threadId: first.threadId });
+    await (await boot()).request('/api/hooks/composio', { method: 'POST', headers: d.webhook.headers, body: d.webhook.body });
+    await jobs().drain();
+    expect((await threadOf('Countdown')).maybeProject).toBeUndefined();
+
+    await deliver('Gene Kranz <gene@mission.test>', 'Patches', 'Can we order Apollo patches for everyone?');
+    const other = await threadOf('Patches');
+    expect(other.maybeProject).toBe('apollo');
+    expect((await w.cmd({ type: 'setProject', id: other.id, project: 'apollo' })).ok).toBe(true);
+    const yes = await threadOf('Patches');
+    expect(yes.project).toBe('apollo');
+    expect(yes.maybeProject).toBeUndefined();
+    // Nobody else's thread can be dismissed through this.
+    expect((await w.cmd({ type: 'dismissProjectGuess', id: 'thr-nope' })).ok).toBe(false);
+  });
+
   it('a thread about none of them stays out of every project', async () => {
     await addProjects(project('apollo', '10', 'Apollo launch'));
     await deliver('Pat Kim <pat@lunch.test>', 'Lunch?', 'Are you free for lunch on Friday?');

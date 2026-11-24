@@ -28,7 +28,7 @@ import { TaskDialog } from '../areas/tasks/TaskDialog';
 import { AutoTextarea, Field, Modal } from '../components/kit';
 import type { Box, Draft, MailFile, Thread } from '../data/types';
 import { AttachButton, FileChips } from '../components/Attach';
-import { ProjectPicker } from '../components/ProjectPicker';
+import { ProjectGuess, ProjectPicker } from '../components/ProjectPicker';
 import { EmailBody } from '../components/EmailBody';
 import { fmtDay, fmtStamp } from '../lib/format';
 import { acmeSeatPrice, counterpart, labelOf, useStore, ws, type ThreadTab } from '../state/store';
@@ -122,6 +122,7 @@ export function ThreadView({ id, tab }: { id: string; tab: ThreadTab }) {
         </button>
       </div>
       <ThreadChips t={t} showProject={false} />
+      <ProjectGuess t={t} />
       <UrgencyLine t={t} />
 
       <div className="move-bar" role="group" aria-label="Move thread">
@@ -318,7 +319,12 @@ function ThreadTodos({ t }: { t: Thread }) {
               />
               <span className="thread-todo-title">{x.title}</span>
             </label>
-            {x.due && <span className="thread-todo-due">due {fmtDay(new Date(x.due))}</span>}
+            {x.due && (
+              <span className="thread-todo-due" title={x.dueSuggested ? 'Timmy suggested this date because the email named none. Change it in Tasks.' : undefined}>
+                due {fmtDay(new Date(x.due))}
+                {x.dueSuggested ? ' · suggested' : ''}
+              </span>
+            )}
             {x.by === 'timmy' && (
               <span className="thread-todo-by" title="Timmy added this from what the email asked">
                 <Sparkles size={11} aria-hidden /> Timmy
@@ -603,7 +609,7 @@ function ReplyBox({ t, onDone, autoFocus }: { t: Thread; onDone: () => void; aut
               <input className="input" type="date" value={due} onChange={(e) => setDue(e.target.value)} aria-label="Promised by" />
             </div>
           ) : (
-            <span className="muted">Without tracking, sending clears the label and archives the thread.</span>
+            <span className="muted">Without tracking, sending clears the label and archives the thread, unless it still has a to-do open.</span>
           )}
         </div>
       </div>

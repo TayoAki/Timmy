@@ -56,6 +56,8 @@ function TaskForm({ onClose, initial, extraOps, savedToast }: Parameters<typeof 
     notes: notes.trim() || undefined,
     project: project || undefined,
     due: dueFromIso(due, base.due),
+    // A date Timmy suggested stays marked until the person changes it; then it is theirs.
+    dueSuggested: base.dueSuggested && due === (base.due ? isoDay(base.due) : '') ? true : undefined,
     priority,
     status,
     created: existing?.created ?? NOW,
@@ -135,7 +137,7 @@ function TaskForm({ onClose, initial, extraOps, savedToast }: Parameters<typeof 
                 ))}
               </select>
             </Field>
-            <Field label="Due">
+            <Field label="Due" hint={base.dueSuggested && due === (base.due ? isoDay(base.due) : '') ? 'Suggested by Timmy: the email named no date.' : undefined}>
               <input className="input" type="date" value={due} onChange={(e) => setDue(e.target.value)} />
             </Field>
           </div>

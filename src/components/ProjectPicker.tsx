@@ -171,3 +171,27 @@ export function ProjectPicker({ t, compact, hotkey }: { t: Thread; compact?: boo
     </div>
   );
 }
+
+/**
+ * Timmy's question when it thinks an email may be about a project but isn't sure: “Acme Renewal?” with Yes, which
+ * puts it there, and No, which means it isn't asked about that project for this email again.
+ */
+export function ProjectGuess({ t }: { t: Thread }) {
+  const { state, dispatch } = useStore();
+  const p = t.maybeProject && !t.project ? state.ws.projects[t.maybeProject] : undefined;
+  if (!p || p.status !== 'active') return null;
+  return (
+    <div className="project-guess" role="group" aria-label={`Is this about ${p.name}?`}>
+      <FolderInput size={14} aria-hidden style={{ color: p.color }} />
+      <span className="project-guess-q">
+        Is this about <strong>{p.name}</strong>?
+      </span>
+      <button type="button" className="btn btn-xs" onClick={() => dispatch({ type: 'setProject', id: t.id, project: p.id })}>
+        Yes
+      </button>
+      <button type="button" className="btn btn-xs btn-ghost" onClick={() => dispatch({ type: 'dismissProjectGuess', id: t.id })}>
+        No
+      </button>
+    </div>
+  );
+}

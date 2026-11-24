@@ -131,6 +131,10 @@ export interface Thread {
   history?: { at: Date; text: string }[];
   /** Urgency you set yourself; otherwise Timmy ranks the thread. */
   urgency?: 'urgent' | 'later';
+  /** Timmy thinks it may be about this project but isn't sure, and asks (“Acme Renewal?”) instead of filing it. */
+  maybeProject?: ProjectId;
+  /** Projects the person said it isn't about: Timmy doesn't ask about them again for this thread. */
+  notProjects?: ProjectId[];
   /** Live mode: where this thread lives in the connected mailbox, and the names of the people in it. */
   ext?: {
     threadKey?: string;

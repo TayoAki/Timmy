@@ -237,6 +237,7 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
     }
   }
   if (a.type === 'done' && (typeof a.id !== 'string' || !state.threads.some((t) => t.id === a.id))) return { state, reject: 'That email is no longer here.' };
+  if (a.type === 'dismissProjectGuess' && (typeof a.id !== 'string' || !state.threads.some((t) => t.id === a.id))) return { state, reject: 'That email is no longer here.' };
   if (a.type === 'move') {
     // A thread can only be put in one of the five places. Who moved it is the server's to say, never the caller's:
     // "Timmy filed this" is written only when Timmy did.

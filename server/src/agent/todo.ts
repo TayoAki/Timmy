@@ -13,7 +13,8 @@ import { log } from '../lib/log';
 import { BudgetError, complete } from '../providers/model';
 import { mutate, readState } from '../state/mutate';
 import { untrusted } from './prompts';
-import { todosFrom } from './read';
+import { isUrgent, todosFrom } from './read';
+import { withDates } from './todo-dates';
 
 export const TODO_SYSTEM = `The user asked for a to-do from one email thread. Say the one most important thing the thread asks the user to do, or that the user promised to do.
 
@@ -54,7 +55,7 @@ export async function todoFromThread(workspaceId: string, threadId: string): Pro
     if (!cur) return { result: { ok: false, status: 404, error: 'That email isn’t in this workspace.' } };
     // The sentence may be in any of the last three messages, the ones the model was shown.
     const shown: Thread = { ...cur, messages: [{ ...cur.messages[cur.messages.length - 1]!, body: cur.messages.slice(-3).flatMap((m) => m.body) }] };
-    const [task] = todosFrom(shown, Array.isArray(raw) ? raw.slice(0, 1) : [], loaded.state.ws.tasks);
+    const [task] = withDates(todosFrom(shown, Array.isArray(raw) ? raw.slice(0, 1) : [], loaded.state.ws.tasks), cur, isUrgent(cur, loaded.state), loaded.workspace.timezone);
     if (!task) return { result: { ok: false, status: 422, error: 'Timmy didn’t find anything this email asks you to do, or you already have it as a to-do.' } };
     const made: Task = { ...task, ...(cur.project ? { project: cur.project } : {}) };
     const threads = loaded.state.threads.map((t) => (t.id === threadId ? { ...t, history: [...(t.history ?? []), { at: new Date(), text: `Timmy added a to-do: ${made.title}` }] } : t));

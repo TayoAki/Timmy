@@ -28,6 +28,13 @@ run('live-todos', async (browser) => {
     if (!done) await page.waitForTimeout(150);
   }
   ok(done, 'and it is saved');
+  // With its last to-do done, the email is filed too (it asked nothing more of the person): archived.
+  let filed = false;
+  for (let i = 0; i < 40 && !filed; i++) {
+    filed = (await api(page, 'GET', '/api/v1/state')).body.slices.threads.find((t) => t.subject === 'Signed SOW')?.box === 'archived';
+    if (!filed) await page.waitForTimeout(150);
+  }
+  ok(filed, 'ticking off the email’s last to-do archives the email');
 
   // Make a to-do: Timmy reads an email that came in without an ask of its own and adds what it asks.
   await api(page, 'POST', '/api/test/fake', { op: 'deliver', message: { from: 'Sam Rivera <sam@acme.test>', subject: 'Wireframes', body: 'Here they are.\n\nPlease share the brand guide with the team.' } });
@@ -72,25 +79,27 @@ run('live-todos', async (browser) => {
 
   // Done on the email: it is archived and its open to-do is ticked off, in one go, with one Undo.
   const boxOf = async (subject) => (await api(page, 'GET', '/api/v1/state')).body.slices.threads.find((t) => t.subject === subject)?.box;
-  const before = await boxOf('Signed SOW');
+  await api(page, 'POST', '/api/test/fake', { op: 'deliver', message: { from: 'Dana Whitfield <dana@acme.test>', subject: 'Contract', body: 'Hi Grace,\n\nPlease sign the contract by 2026-11-28.\n\nDana' } });
+  for (let i = 0; i < 80 && !(await statusOf('Sign the contract')); i++) await page.waitForTimeout(150);
+  const before = await boxOf('Contract');
   await page.click('button[aria-label="Today & mail"]');
   await page.getByRole('tab', { name: /Triage/ }).click();
-  await page.locator('.triage-subject', { hasText: 'Signed SOW' }).first().click();
+  await page.locator('.triage-subject', { hasText: 'Contract' }).first().click();
   const doneBtn = page.getByRole('button', { name: 'Done: archive this email and tick off its to-do' });
   await doneBtn.waitFor();
   await doneBtn.click();
   await page.locator('.toast', { hasText: 'Done: archived, its to-do ticked off' }).waitFor();
-  ok((await page.locator('.thread-title', { hasText: 'Signed SOW' }).count()) === 0, 'Done takes you back from the email');
+  ok((await page.locator('.thread-title', { hasText: 'Contract' }).count()) === 0, 'Done takes you back from the email');
   let archived = false;
   for (let i = 0; i < 40 && !archived; i++) {
-    archived = (await boxOf('Signed SOW')) === 'archived' && (await statusOf('Send the signed SOW')) === 'done';
+    archived = (await boxOf('Contract')) === 'archived' && (await statusOf('Sign the contract')) === 'done';
     if (!archived) await page.waitForTimeout(150);
   }
   ok(archived, 'Done archives the email and ticks off its to-do, and both are saved');
   await page.locator('.toast').getByRole('button', { name: 'Undo' }).click();
   let back = false;
   for (let i = 0; i < 40 && !back; i++) {
-    back = (await boxOf('Signed SOW')) === before && (await statusOf('Send the signed SOW')) === 'todo';
+    back = (await boxOf('Contract')) === before && (await statusOf('Sign the contract')) === 'todo';
     if (!back) await page.waitForTimeout(150);
   }
   ok(back, `one Undo puts the email back in ${before} and the to-do back on the list`);

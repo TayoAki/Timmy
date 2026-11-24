@@ -160,6 +160,8 @@ export interface Task {
   status: TaskStatus;
   project?: ProjectId;
   due?: Date;
+  /** Timmy chose the date because the email named none; changing it makes it the person's own. */
+  dueSuggested?: true;
   priority: Priority;
   created: Date;
   /** The email this task came from. */
