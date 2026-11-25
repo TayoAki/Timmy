@@ -68,10 +68,12 @@ run('live-outlook', async (browser) => {
   await page.click('button[aria-label="Today & mail"]');
   await deliver(page, { from: 'John Glenn <john@nasa.test>', subject: 'Trajectory check', body: 'Katherine,\n\nCan you check the <re-entry> numbers & confirm by Friday?\n\nJohn' });
   await page.getByRole('tab', { name: /Triage/ }).click();
-  const row = page.locator('.main').getByText('Trajectory check').first();
+  // The email's own Triage row, read until it has settled: the subject can show a moment before the row is drawn.
+  const row = page.locator('.triage-item', { hasText: 'Trajectory check' }).first();
   await row.waitFor({ timeout: 10000 });
-  ok(/John Glenn/.test(await page.locator('.main').innerText()), 'the new Outlook thread appears on its own, with the sender by name');
-  await row.click();
+  const named = await row.locator('.row-from', { hasText: 'John Glenn' }).waitFor({ timeout: 10000 }).then(() => true, () => false);
+  ok(named, `the new Outlook thread appears on its own, with the sender by name (${(await row.innerText()).split('\n')[0]})`);
+  await row.locator('.triage-subject').click();
   // The reader shows Outlook's HTML as its sender laid it out, in the email's own frame, once it has fetched it; until
   // then the words Timmy stored. Either way the person reads words: no markup and no escape codes.
   const said = 'Can you check the <re-entry> numbers & confirm by Friday?';
