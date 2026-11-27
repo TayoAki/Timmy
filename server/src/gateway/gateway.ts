@@ -27,7 +27,7 @@ export interface EffectRow {
   kind: EffectKind;
   payload: Record<string, unknown>;
   payload_hash: string;
-  preview: PendingEffect['preview'] & { title?: string; why?: string; thread?: string; conversation?: string; replay?: unknown };
+  preview: PendingEffect['preview'] & { title?: string; why?: string; thread?: string; conversation?: string; replay?: unknown; completes?: string };
   target: string | null;
   idempotency_key: string;
   status: 'intended' | 'approved' | 'executing' | 'completed' | 'uncertain' | 'failed' | 'declined' | 'cancelled';
@@ -66,6 +66,8 @@ export interface Proposal {
   conversation?: string;
   /** The person's own action, kept so it can be applied to the screen once someone else has approved the send. */
   replay?: unknown;
+  /** The task this does ("Do it with Timmy"): once it has gone out, the task is ticked off (gateway/screens.ts). */
+  completes?: string;
   onBehalfOf?: string;
   /** Fields a rule's scope is matched against. */
   meta?: Record<string, unknown>;
@@ -169,7 +171,7 @@ export async function propose(tx: Tx, loaded: Loaded, state: State, actor: Actor
 
   const id = newId('eff');
   const holdUntil = approval && k.hold ? new Date(Date.now() + config.sendHoldSeconds * 1000) : null;
-  const preview = { ...p.preview, title: p.title, why: p.why, thread: p.thread, conversation: p.conversation, ...(p.replay ? { replay: p.replay } : {}) };
+  const preview = { ...p.preview, title: p.title, why: p.why, thread: p.thread, conversation: p.conversation, ...(p.replay ? { replay: p.replay } : {}), ...(p.completes ? { completes: p.completes } : {}) };
   const { rows } = await tx.query(
     `insert into effect (id, workspace_id, kind, payload, payload_hash, preview, target, idempotency_key, status, source, run_id, command_id,
                          requested_by, on_behalf_of, approver_route, approved_by, approved_via, policy_id, approved_at, hold_until)

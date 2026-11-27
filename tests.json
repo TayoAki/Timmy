@@ -192,6 +192,13 @@
    "status": "pass"
   },
   {
+   "id": "api-do-task",
+   "file": "server/test/do-task.test.ts",
+   "covers": "Do it with Timmy: a run started from a task links what it prepares; a draft reply carries the task and sending it ticks it; an email or a meeting carries it to the gateway and the task is ticked only once it has gone out, not when turned down; a done or unknown task links nothing; the chat endpoint takes the task only for an open task of this workspace, as marked data. Booking from Ask: the meeting waits for approval and is booked once approved, with its guests and length; clashes are shown; a past time and an unattended run are refused; list_events shows the calendar as outside content",
+   "tests": 8,
+   "status": "pass"
+  },
+  {
    "id": "api-waiting",
    "file": "server/test/waiting.test.ts",
    "covers": "a draft that asks for something carries the item and a date; Send & track moves the thread to Waiting and labels it; the morning run drafts a nudge once the date passes; a nudge is never sent by itself; a reply ends the wait and drops the nudge",
@@ -711,9 +718,9 @@
   {
    "id": "live-todos",
    "file": "e2e/live/live-todos.cjs",
-   "covers": "an email's ask becomes a to-do with its date, shown in the thread under To-dos, checked off there and saved, and listed in Tasks with the email it came from; one click on a Tasks card's box marks it done, and the list shows it ticked and unticks it back to do; Done on the email archives it and ticks off its to-do, takes you back, and one Undo restores both; ticking off an email's last to-do archives the email",
+   "covers": "an email's ask becomes a to-do with its date, shown in the thread under To-dos, checked off there and saved, and listed in Tasks with the email it came from; one click on a Tasks card's box marks it done, and the list shows it ticked and unticks it back to do; Done on the email archives it and ticks off its to-do, takes you back, and one Undo restores both; ticking off an email's last to-do archives the email; Do it with Timmy on an email's to-do opens Ask with the task asked for, and Timmy answers",
    "status": "pass",
-   "result": "Nov 24, 2026: 14 of 14 (ticking the last to-do now archives the email; Done is tested on its own email). Before that, 13 of 13 (with Done on the email). Earlier the same day, 10 of 10 (with the tick box on the Tasks board and list). Nov 18: 7 of 7 (with Make a to-do)."
+   "result": "Nov 27, 2026: 15 of 15 (with Do it with Timmy). Nov 24: 14 of 14 (ticking the last to-do now archives the email; Done is tested on its own email). Before that, 13 of 13 (with Done on the email). Earlier the same day, 10 of 10 (with the tick box on the Tasks board and list). Nov 18: 7 of 7 (with Make a to-do)."
   },
   {
    "id": "live-flow",

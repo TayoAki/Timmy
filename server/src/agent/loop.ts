@@ -51,6 +51,8 @@ export interface StartRun {
   effort?: Effort;
   /** The mail thread the person has open in the app while they ask, if any. The only thing Auto mode may act on. */
   openThreadId?: string;
+  /** The task the person asked Timmy to do ("Do it with Timmy"). An email the run prepares is linked to it. */
+  taskId?: string;
 }
 
 export interface RunResult {
@@ -71,6 +73,8 @@ interface Checkpoint {
   userWords: string[];
   /** The thread the person had open when they asked. Auto mode may act on this one thread and no other. */
   openThreadId?: string;
+  /** The task the person asked Timmy to do, if they asked from a task. */
+  taskId?: string;
   /** Auto mode has already decided one action in this run; the next one asks. */
   autoUsed?: boolean;
   /** The conversation came with earlier answers, which may quote mail: the judge is told to be stricter. */
@@ -139,6 +143,7 @@ export async function startRun(ctx: Ctx, input: StartRun, events: RunEvents = {}
     effort: input.effort ?? 'low',
     userWords: input.userWords ?? input.messages.filter((m) => m.role === 'user').map((m) => m.content),
     openThreadId: input.openThreadId,
+    taskId: input.taskId,
     carriesHistory: input.messages.some((m) => m.role === 'assistant' || m.role === 'tool'),
   };
   return drive(ctx, { runId, fence: 1, model, attended: input.attended, threadId: input.threadId, kind: input.kind }, cp, 0, events);
@@ -221,7 +226,7 @@ async function runTools(ctx: Ctx, run: Driving, cp: Checkpoint, calls: ToolCall[
       continue;
     }
     events.step?.(tool.step, false);
-    const t: ToolRun = { ctx, runId: run.runId, fence: run.fence, callId: call.id, conversation: run.threadId, attended: run.attended };
+    const t: ToolRun = { ctx, runId: run.runId, fence: run.fence, callId: call.id, conversation: run.threadId, attended: run.attended, task: cp.taskId };
     // Auto mode. What it may decide is fixed here in code, before any model is asked: one action per run, of a kind
     // that reaches nobody else, and only on the thread the person has open in the app. A model that was steered by
     // something it read can ask to file other threads, or many; those all go to the person. The judge then decides

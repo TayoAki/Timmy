@@ -14,6 +14,7 @@ import {
   Mail,
   Pencil,
   Plus,
+  Sparkles,
   Target,
   Trash2,
   Zap,
@@ -32,6 +33,8 @@ import { BlockTimeDialog } from '../calendar/BlockTimeDialog';
 import { fmtRange, showEvent } from '../calendar/shared';
 import { activeProjects, byDue, byPriority, isDueNow, openTasks, PRIORITIES, PriorityChip, reviewQueue, statusMeta, STATUSES } from './bits';
 import { Review } from './Review';
+import { doWithTimmy, doWithTimmyLabel } from '../../agent/do-task';
+import { isLive } from '../../live/clock';
 import { TaskDialog } from './TaskDialog';
 
 type TasksRoute = Extract<Route, { view: 'tasks' }>;
@@ -422,6 +425,7 @@ function TaskCard({
               { label: 'Edit', icon: Pencil, onSelect: () => onOpen(t) },
               { label: 'Block time', icon: CalendarPlus, onSelect: () => onBlock(t), disabled: done },
               { label: 'Make today’s highlight', icon: Target, onSelect: () => highlight(t), disabled: done || state.highlight === t.title },
+              ...(isLive() && !done ? [{ label: doWithTimmyLabel, icon: Sparkles, onSelect: () => doWithTimmy(t) }] : []),
               { label: 'Delete', icon: Trash2, danger: true, onSelect: () => del(t, ev?.kind === 'focus' && ev.task === t.id ? ev.id : undefined) },
             ]}
           />

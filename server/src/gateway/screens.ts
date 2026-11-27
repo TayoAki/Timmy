@@ -46,6 +46,25 @@ export function withPending(state: State, e: EffectRow): State {
 
 /** What the screens show once a send has gone out, failed, or is unconfirmed. */
 export function afterEffect(loaded: Loaded, state0: State, e: EffectRow, outcome: Outcome): State {
+  return ticked(e, outcome, screensAfter(loaded, state0, e, outcome));
+}
+
+/**
+ * "Do it with Timmy": an email Timmy prepared for a task ticks the task off once it has gone out, and only then.
+ * Turned down, failed or undone, the task stays open.
+ */
+function ticked(e: EffectRow, outcome: Outcome, state: State): State {
+  const id = e.preview.completes;
+  const task = id ? state.ws.tasks[id] : undefined;
+  if (outcome.status !== 'completed' || !task || task.status === 'done') return state;
+  return {
+    ...state,
+    ws: { ...state.ws, tasks: { ...state.ws.tasks, [task.id]: { ...task, status: 'done' } } },
+    activity: [{ id: `act-${e.id}-task`, at: new Date(), kind: 'task' as const, text: `Ticked off “${task.title}”: the email Timmy prepared for it went out`, ...(e.preview.thread ? { threadId: e.preview.thread } : {}) }, ...state.activity],
+  };
+}
+
+function screensAfter(loaded: Loaded, state0: State, e: EffectRow, outcome: Outcome): State {
   // An automation's question changes nothing on the screens by being answered; its run carries on by itself.
   if (e.kind === 'automation.ask') return state0;
   // A sorting rule is saved by its executor, in the same transaction as the policy row behind it (sync/mail-rules.ts).

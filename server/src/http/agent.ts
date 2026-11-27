@@ -15,6 +15,8 @@ import { modelReady, type ChatMessage, type ToolCall, type ToolDef } from '../pr
 import { safeChatAction } from '../../../src/live/chat-actions';
 import { untrusted } from '../agent/prompts';
 import type { Ctx } from '../state/engine';
+import { readState } from '../state/mutate';
+import type { Task } from '../../../src/data/ws-types';
 import { ctxOf, requireWorkspace, type Env } from './session';
 
 interface AgUiMessage {
@@ -147,6 +149,14 @@ function approvalWidget(e: EffectRow) {
   };
 }
 
+/** The task a "Do it with Timmy" run is for: one in this workspace that is still open, or none. */
+async function taskFor(ctx: Ctx, id: unknown): Promise<Task | null> {
+  if (typeof id !== 'string' || !id || id.length > 200) return null;
+  const { state } = await readState(ctx.workspaceId);
+  const task = state.ws.tasks[id];
+  return task && task.status !== 'done' ? task : null;
+}
+
 /**
  * One Ask run, as AG-UI events: RUN_STARTED, steps, text as it is written, tool calls for the widgets the browser
  * draws, a prepared action with the buttons that decide it, then RUN_FINISHED or RUN_ERROR. The same run serves the
@@ -168,7 +178,11 @@ export async function runAsk(ctx: Ctx, input: RunAgentInput, emit: (event: Recor
     // What is open on screen includes text other people wrote (an email's subject), so it travels as marked data.
     const screen = (Array.isArray(input.context) ? input.context : []).map((x) => `${x.description}: ${x.value}`).join('\n').slice(0, 600);
     const open = input.forwardedProps?.route ? `Open in the app: ${JSON.stringify(input.forwardedProps.route).slice(0, 300)}` : '';
-    const onScreen = screen || open ? `\n${untrusted('screen', [screen, open].filter(Boolean).join('\n'))}` : '';
+    // "Do it with Timmy": the task the person asked Timmy to do, with the email it came from. Its title may come from
+    // an email, so it travels with what is on screen, as marked data; the ask itself is the person's own message.
+    const task = await taskFor(ctx, input.forwardedProps?.task);
+    const doing = task ? `The task the user asked you to do: ${JSON.stringify({ id: task.id, title: task.title, due: task.due ?? null, thread: task.thread ?? null, project: task.project ?? null })}` : '';
+    const onScreen = screen || open || doing ? `\n${untrusted('screen', [screen, open, doing].filter(Boolean).join('\n'))}` : '';
     last.content = `<context>\nNow: ${new Date().toISOString()}\nUser: ${ctx.user.name.replace(/[<>]/g, '')}\n</context>${onScreen}\n\n${last.content}`;
     const displayTools = displayToolsOf(input.tools);
 
@@ -180,7 +194,7 @@ export async function runAsk(ctx: Ctx, input: RunAgentInput, emit: (event: Recor
 
     const result = await startRun(
       ctx,
-      { kind: 'ask', attended: true, threadId, system: ASK_SYSTEM, messages, userWords, displayTools, effort: 'low', openThreadId: openThreadOf(input.forwardedProps?.route) },
+      { kind: 'ask', attended: true, threadId, system: ASK_SYSTEM, messages, userWords, displayTools, effort: 'low', openThreadId: openThreadOf(input.forwardedProps?.route), ...(task ? { taskId: task.id } : {}) },
       {
         step: (name, done) => push({ type: done ? 'STEP_FINISHED' : 'STEP_STARTED', stepName: name }),
         text: (turn, delta) => {

@@ -104,5 +104,19 @@ run('live-todos', async (browser) => {
   }
   ok(back, `one Undo puts the email back in ${before} and the to-do back on the list`);
 
+  // Do it with Timmy: the open to-do on the email hands itself to Ask, which starts a chat with the request sent.
+  await page.locator('.triage-subject', { hasText: 'Contract' }).first().click().catch(() => undefined);
+  if (!(await page.locator('.thread-title', { hasText: 'Contract' }).count())) {
+    await page.click('button[aria-label="Today & mail"]');
+    await page.getByRole('tab', { name: /Triage/ }).click();
+    await page.locator('.triage-subject', { hasText: 'Contract' }).first().click();
+  }
+  await page.getByRole('button', { name: 'Do it with Timmy: Sign the contract' }).click();
+  const chat = page.getByRole('dialog', { name: 'Ask Timmy' });
+  await chat.locator('.ai-msg.me', { hasText: 'Do my task “Sign the contract”' }).waitFor();
+  await chat.locator('.ai-msg.timmy').last().waitFor();
+  ok(true, 'Do it with Timmy on an email’s to-do opens Ask with the task asked for, and Timmy answers');
+  await page.keyboard.press('Escape');
+
   ok(errors.length === 0, `no page errors (${errors.join(' | ')})`);
 });

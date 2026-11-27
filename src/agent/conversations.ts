@@ -26,6 +26,8 @@ export interface Conversation {
   asked: Record<string, string>;
   /** Saved in CopilotKit Intelligence and not yet read into this browser: its messages are fetched when it is opened. */
   remote?: boolean;
+  /** Started from a task ("Do it with Timmy"): every question in it is about that task, which the server is told. */
+  task?: string;
 }
 
 export interface RunProgress {
@@ -231,15 +233,19 @@ export const assistant = {
   },
   choose: (convo: string, toolCallId: string, note: string) => patchConvo(convo, (c) => ({ ...c, chosen: { ...c.chosen, [toolCallId]: note } })),
 
-  /** Sends your message and runs the agent. `screen` is the label of what you have open. */
-  async ask(text: string, screen?: string) {
+  /**
+   * Sends your message and runs the agent. `screen` is the label of what you have open. `task` starts a new
+   * conversation about that task ("Do it with Timmy"); the server is told which task it is with every question in it.
+   */
+  async ask(text: string, screen?: string, opts: { task?: string } = {}) {
     const q = text.trim();
     if (!q || store.running) return;
-    let convo = store.convos.find((c) => c.id === store.active);
+    let convo = opts.task ? undefined : store.convos.find((c) => c.id === store.active);
     if (!convo) {
-      convo = { id: newId('chat'), title: q.length > 60 ? `${q.slice(0, 57)}…` : q, updated: Date.now(), messages: [], steps: {}, chosen: {}, asked: {} };
+      convo = { id: newId('chat'), title: q.length > 60 ? `${q.slice(0, 57)}…` : q, updated: Date.now(), messages: [], steps: {}, chosen: {}, asked: {}, ...(opts.task ? { task: opts.task } : {}) };
       set({ convos: [convo, ...store.convos], active: convo.id });
     }
+    const task = convo.task;
     const cid = convo.id;
     const agent = agentFor(convo);
     const user: Message = { id: newId('user'), role: 'user', content: q };
@@ -251,7 +257,7 @@ export const assistant = {
     const progress = () => set({ running: { convo: cid, steps: steps.map((x) => ({ ...x })) } });
     try {
       const result = await agent.runAgent(
-        { tools: TOOLS, context: screen ? [{ description: 'The screen the user has open in Timmy', value: screen }] : [], forwardedProps: { route: bridge.route() } },
+        { tools: TOOLS, context: screen ? [{ description: 'The screen the user has open in Timmy', value: screen }] : [], forwardedProps: { route: bridge.route(), ...(task ? { task } : {}) } },
         {
           onStepStartedEvent: ({ event }) => {
             steps.push({ name: event.stepName, done: false });

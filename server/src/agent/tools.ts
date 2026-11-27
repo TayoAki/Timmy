@@ -6,7 +6,12 @@
  *              at the Action gateway and the run waits for the decision.
  * A tool never talks to a provider directly, and never holds a credential.
  */
+import { createHash } from 'node:crypto';
 import type { Thread } from '../../../src/data/types';
+import type { WEvent } from '../../../src/data/ws-types';
+import { zoned } from '../automations/when';
+import { eventProposal } from '../sync/calendar-write';
+import { CALENDAR_TOOLKITS } from '../sync/calendars';
 import { withWorkspace, type Tx } from '../db/pool';
 import { propose, type EffectRow } from '../gateway/gateway';
 import { ADDRESS, prepareMailSend, type MailSend } from '../gateway/mail';
@@ -34,6 +39,8 @@ export interface ToolRun {
   attended: boolean;
   /** Auto mode's verdict for this call, when one was asked for. */
   auto?: { verdict: 'approve' | 'ask'; reason: string };
+  /** The task the person asked Timmy to do ("Do it with Timmy"). An email or meeting this run prepares does it. */
+  task?: string;
 }
 
 export type ToolOutcome =
@@ -167,6 +174,35 @@ const readPageTool: AgentTool = {
   },
 };
 
+/** The calendar between two days, so Ask can find a free time or see what a day holds before booking (book_meeting). */
+const listEvents: AgentTool = {
+  kind: 'read',
+  step: 'Checking the calendar',
+  def: {
+    name: 'list_events',
+    description:
+      'List what is on the user’s calendar between two days (at most 14 days): each event’s title, start and end on the user’s own clock, and who is on it. Use it to find a free time before booking a meeting, or to answer what a day looks like.',
+    parameters: { type: 'object', properties: { from: { type: 'string', description: 'First day, YYYY-MM-DD' }, to: { type: 'string', description: 'Last day, YYYY-MM-DD (defaults to the first)' } }, required: ['from'] },
+  },
+  async run(args, t) {
+    const from = str(args.from, 10);
+    const to = str(args.to, 10) || from;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return { result: 'Give the days as YYYY-MM-DD.' };
+    const loaded = await readState(t.ctx.workspaceId);
+    const zone = loaded.workspace.timezone;
+    const start = zoned(from, 0, zone);
+    const end = new Date(Math.min(zoned(to, 24 * 60, zone).getTime(), start.getTime() + 14 * 86400_000));
+    const clock = (d: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d).replace(', ', 'T');
+    const events = Object.values(loaded.state.ws.events)
+      .filter((e) => new Date(e.start) < end && new Date(e.end) > start)
+      .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
+      .slice(0, 80)
+      .map((e) => ({ title: e.title, start: clock(new Date(e.start)), end: clock(new Date(e.end)), with: e.with.map((w) => w.replace(/^mail:/, '')) }));
+    // Titles and guests come from other people's invitations as well as the user's own, so they are outside content.
+    return { result: untrusted('calendar', { timeZone: zone, from, to, events }), outside: true };
+  },
+};
+
 const lookupPerson: AgentTool = {
   kind: 'read',
   step: 'Looking up who that is',
@@ -239,7 +275,10 @@ const draftReply: AgentTool = {
       // A draft someone already wrote or reviewed is never replaced from the chat.
       if (thread.draft) return { result: 'exists' as const };
       const to = [...new Set(thread.messages.map((m) => m.from).filter((p) => p !== 'me'))].slice(-1);
-      const draft = { to: to.length ? to : thread.participants.filter((p) => p !== 'me').slice(0, 1), subject: /^re:/i.test(thread.subject) ? thread.subject : `Re: ${thread.subject}`, body, sources: [], kind: 'reply' as const };
+      // Drafted for a task ("Do it with Timmy"): sending the draft ticks the task off (sendDraft in src/state/store.tsx).
+      const task = t.task ? loaded.state.ws.tasks[t.task] : undefined;
+      const completes = task && task.status !== 'done' ? [task.id] : undefined;
+      const draft = { to: to.length ? to : thread.participants.filter((p) => p !== 'me').slice(0, 1), subject: /^re:/i.test(thread.subject) ? thread.subject : `Re: ${thread.subject}`, body, sources: [], kind: 'reply' as const, ...(completes ? { completes } : {}) };
       const history = [...(thread.history ?? []), { at: new Date(), text: 'Timmy drafted a reply from the chat' }];
       return { state: { ...loaded.state, threads: loaded.state.threads.map((x) => (x.id === id ? { ...x, draft, history } : x)) }, result: 'saved' as const };
     });
@@ -299,9 +338,12 @@ async function proposeMail(t: ToolRun, m: MailSend): Promise<ToolOutcome> {
     await assertFence(tx, t);
     const mail = await prepareMailSend(tx, t.ctx.workspaceId, m);
     if (!mail.ok) return { result: { result: `${mail.reason} Nothing was prepared.` } };
+    const task = t.task ? loaded.state.ws.tasks[t.task] : undefined;
+    const forTask = task && task.status !== 'done' ? task : undefined;
     const p = await propose(tx, loaded, loaded.state, t.attended ? actorOf(t.ctx) : null, {
       ...mail.proposal,
-      why: 'Timmy prepared this from your request in the chat.',
+      why: forTask ? `Timmy prepared this for your task “${forTask.title}”, which is ticked off once it goes out.` : 'Timmy prepared this from your request in the chat.',
+      ...(forTask ? { completes: forTask.id } : {}),
       idempotencyKey: `run:${t.runId}:${t.callId}`,
       source: t.attended ? 'agent' : 'routine',
       runId: t.runId,
@@ -312,6 +354,77 @@ async function proposeMail(t: ToolRun, m: MailSend): Promise<ToolOutcome> {
     return { state: p.state, result: { effect: p.effect, outcome: p.outcome } };
   });
 }
+
+const WALL = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})$/;
+
+/**
+ * A meeting, or time on the person's own calendar, booked from the chat. It goes onto the connected calendar the way
+ * an event added in Timmy does (sync/calendar-write.ts), through the gateway: the person sees the time, the guests
+ * and what the invitation says, and nothing is booked until they say so. With guests their calendar invites them.
+ */
+const bookMeeting: AgentTool = {
+  kind: 'write',
+  step: 'Preparing the meeting',
+  effectKind: 'calendar.create',
+  def: {
+    name: 'book_meeting',
+    description:
+      'Put a meeting, or a block of time, on the user’s connected calendar (Google Calendar or Outlook). With guests, the calendar sends each an invitation. It is not booked by this call: it goes to the user for approval, and they see exactly the time, the guests and the invitation. Use it only when the user asks you to book, schedule or set up a meeting or time. Give the start on the user’s own clock.',
+    parameters: {
+      type: 'object',
+      properties: {
+        title: { type: 'string' },
+        start: { type: 'string', description: 'When it starts, on the user’s own clock: YYYY-MM-DDTHH:MM' },
+        minutes: { type: 'integer', description: 'How long it lasts, in minutes. 30 when the user didn’t say.' },
+        guests: { type: 'array', items: { type: 'string' }, description: 'Email addresses to invite. Empty for time on the user’s own calendar.' },
+        note: { type: 'string', description: 'What it is about, for the invitation' },
+      },
+      required: ['title', 'start'],
+    },
+  },
+  async run(args, t) {
+    if (!t.attended) return { result: 'Meetings are only booked when the user asks in the chat.' };
+    if (!t.ctx.rules.work) return { result: 'This person’s role can’t add to the calendar in this workspace. Nothing was prepared.' };
+    const title = str(args.title, 300).trim();
+    const wall = WALL.exec(str(args.start, 40).trim());
+    const minutes = Number.isInteger(args.minutes) ? Math.min(Math.max(args.minutes as number, 5), 600) : 30;
+    const guests = [...new Set((Array.isArray(args.guests) ? args.guests : []).map((x) => str(x, 320).trim().toLowerCase()).filter((x) => ADDRESS.test(x)))].slice(0, 20);
+    const note = str(args.note, 2000).trim();
+    if (!title) return { result: 'The meeting needs a title. Nothing was prepared.' };
+    if (!wall) return { result: 'The start needs a date and a time on the user’s clock, as YYYY-MM-DDTHH:MM. Nothing was prepared.' };
+    return mutate<ToolOutcome>(t.ctx.workspaceId, 'agent', async (tx, loaded) => {
+      await assertFence(tx, t);
+      // The person's own calendar if they connected one, otherwise the workspace's first, as for an event added in Timmy.
+      const cal = (await tx.query(`select id, toolkit from connection where workspace_id = $1 and status = 'active' and toolkit = any($3::text[]) and not (meta ? 'calendarRefused') order by (user_id = $2) desc, created_at limit 1`, [t.ctx.workspaceId, t.ctx.user.id, CALENDAR_TOOLKITS])).rows[0] as { id: string; toolkit: string } | undefined;
+      if (!cal) return { result: { result: 'No calendar is connected, so nothing can be booked. The user can connect Google Calendar or Outlook in Connections.' } };
+      const zone = loaded.workspace.timezone;
+      const start = zoned(wall[1]!, Number(wall[2]) * 60 + Number(wall[3]), zone);
+      if (Number.isNaN(start.getTime()) || start.getTime() < Date.now() - 5 * 60_000) return { result: { result: 'That time has already passed. Nothing was prepared.' } };
+      const end = new Date(start.getTime() + minutes * 60_000);
+      const ev: WEvent = { id: `ev-${createHash('sha256').update(`${t.runId}:${t.callId}`).digest('hex').slice(0, 16)}`, title, start, end, kind: guests.length ? 'meeting' : 'focus', with: guests.map((g) => `mail:${g}`), ...(note ? { note } : {}) };
+      const made = eventProposal(ev, cal, (id) => (id.startsWith('mail:') ? id.slice(5) : null), zone);
+      if (!made.ok) return { result: { result: `${made.reason} Nothing was prepared.` } };
+      // What is already on the calendar then, so the person sees a clash before they approve.
+      const clashes = Object.values(loaded.state.ws.events).filter((x) => new Date(x.start) < end && new Date(x.end) > start).map((x) => `“${x.title}”`).slice(0, 3);
+      const preview = clashes.length ? { ...made.proposal.preview, lines: [...(made.proposal.preview.lines ?? []), `At the same time as ${clashes.join(', ')}`] } : made.proposal.preview;
+      const task = t.task ? loaded.state.ws.tasks[t.task] : undefined;
+      const forTask = task && task.status !== 'done' ? task : undefined;
+      const p = await propose(tx, loaded, loaded.state, actorOf(t.ctx), {
+        ...made.proposal,
+        preview,
+        why: forTask ? `Timmy prepared this for your task “${forTask.title}”, which is ticked off once it is booked.` : 'Timmy prepared this from your request in the chat.',
+        ...(forTask ? { completes: forTask.id } : {}),
+        idempotencyKey: `run:${t.runId}:${t.callId}`,
+        source: 'agent',
+        runId: t.runId,
+        conversation: t.conversation,
+        auto: t.auto,
+      });
+      if (p.outcome === 'blocked' || !p.effect) return { result: { blocked: p.reason ?? 'That isn’t allowed.' } };
+      return { state: p.state, result: { effect: p.effect, outcome: p.outcome } };
+    });
+  },
+};
 
 const fileThread: AgentTool = {
   kind: 'write',
@@ -417,5 +530,5 @@ const saveRule: AgentTool = {
   },
 };
 
-export const TOOLS: AgentTool[] = [searchMail, readThread, listInbox, searchFiles, readFile, searchPagesTool, readPageTool, lookupPerson, listCommitments, findThingsTool, draftReply, sendEmail, sendReply, fileThread, saveRule, ...ORGANIZE_TOOLS];
+export const TOOLS: AgentTool[] = [searchMail, readThread, listInbox, searchFiles, readFile, searchPagesTool, readPageTool, lookupPerson, listCommitments, findThingsTool, listEvents, draftReply, sendEmail, sendReply, bookMeeting, fileThread, saveRule, ...ORGANIZE_TOOLS];
 export const TOOL_BY_NAME: Record<string, AgentTool> = Object.fromEntries(TOOLS.map((t) => [t.def.name, t]));

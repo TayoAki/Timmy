@@ -42,6 +42,7 @@ import { ApprovalCard, ApprovalNotes } from '../areas/approvals/ApprovalCard';
 import { draftNotes, openApprovals } from '../state/approvals';
 import { isLive } from '../live/clock';
 import { api } from '../live/api';
+import { doWithTimmy, doWithTimmyLabel } from '../agent/do-task';
 
 const MOVES: { box: Box; key: string; label: string; icon: ReactNode }[] = [
   { box: 'follow-up', key: 'f', label: 'Follow Up', icon: <Reply size={15} /> },
@@ -329,6 +330,11 @@ function ThreadTodos({ t }: { t: Thread }) {
               <span className="thread-todo-by" title="Timmy added this from what the email asked">
                 <Sparkles size={11} aria-hidden /> Timmy
               </span>
+            )}
+            {canMake && x.status !== 'done' && (
+              <button type="button" className="btn btn-xs btn-ghost thread-todo-do" onClick={() => doWithTimmy(x)} aria-label={`${doWithTimmyLabel}: ${x.title}`} title="Timmy prepares what it needs; anything that goes out waits for your OK">
+                <Sparkles size={12} aria-hidden /> Do it
+              </button>
             )}
           </li>
         ))}

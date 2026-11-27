@@ -1,4 +1,6 @@
-import { CalendarClock, CalendarPlus, Mail, Target, Trash2 } from 'lucide-react';
+import { CalendarClock, CalendarPlus, Mail, Sparkles, Target, Trash2 } from 'lucide-react';
+import { doWithTimmy, doWithTimmyLabel } from '../../agent/do-task';
+import { isLive } from '../../live/clock';
 import { useState } from 'react';
 import { AutoTextarea, Field, Modal, PeoplePicker, Segmented } from '../../components/kit';
 import { NOW } from '../../data/mock';
@@ -99,6 +101,19 @@ function TaskForm({ onClose, initial, extraOps, savedToast }: Parameters<typeof 
               <button className="btn btn-ghost tk-danger" onClick={del}>
                 <Trash2 size={15} />
                 Delete
+              </button>
+            )}
+            {isEdit && existing && existing.status !== 'done' && isLive() && (
+              <button
+                className="btn"
+                title="Timmy reads the email it came from and prepares what it needs; anything that goes out waits for your OK"
+                onClick={() => {
+                  onClose();
+                  doWithTimmy(existing);
+                }}
+              >
+                <Sparkles size={15} />
+                {doWithTimmyLabel}
               </button>
             )}
             <span className="tk-foot-gap" />
