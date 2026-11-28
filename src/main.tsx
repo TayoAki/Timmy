@@ -8,6 +8,7 @@ import './styles/ui.css';
 import './styles/views.css';
 import './styles/kit.css';
 import './styles/invoices.css';
+import './styles/bids.css';
 import './styles/tasks.css';
 import './styles/calendar.css';
 import './styles/docs.css';

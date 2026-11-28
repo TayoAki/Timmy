@@ -28,6 +28,7 @@ import { ApprovalsSide } from '../areas/approvals';
 import { CalendarSide } from '../areas/calendar';
 import { DocsSide } from '../areas/docs';
 import { InvoicesSide } from '../areas/invoices';
+import { BidsSide } from '../areas/bids';
 import { FilesSide } from '../areas/files';
 import { LibrarySide } from '../areas/library';
 import { PeopleSide } from '../areas/people';
@@ -71,6 +72,8 @@ export function Sidebar() {
         <DocsSide />
       ) : section === 'invoices' ? (
         <InvoicesSide />
+      ) : section === 'bids' ? (
+        <BidsSide />
       ) : section === 'projects' ? (
         <ProjectsSide />
       ) : section === 'library' ? (

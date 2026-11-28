@@ -1,5 +1,6 @@
 import { isLive } from '../live/clock';
 import { InvoicesContext } from '../areas/invoices';
+import { BidsContext } from '../areas/bids';
 import {
   ArrowUpRight,
   BadgeDollarSign,
@@ -56,6 +57,8 @@ export function RightPanel() {
     body = <DocsContext />;
   } else if (r.view === 'invoices' || r.view === 'invoice') {
     body = <InvoicesContext />;
+  } else if (r.view === 'bids' || r.view === 'bid') {
+    body = <BidsContext />;
   } else if (r.view === 'file') {
     body = <FileContext />;
   } else if (r.view === 'projects' || r.view === 'project') {

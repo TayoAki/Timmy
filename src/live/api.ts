@@ -1,4 +1,5 @@
 import type { Action } from '../state/store';
+import type { FoundSub, OpportunityResults, PermitContractor } from '../data/kontract-api';
 import { clearsAsNull, fromWire, toWire } from './patches';
 import type { TrackedOverview, TrackedThing } from './tracked';
 import type { CommandResult, LiveProfile } from './types';
@@ -116,6 +117,15 @@ export const api = {
   invoiceAttachment: (id: string) => call<{ file: { id: string; name: string; type: string; size: number } }>('POST', `/api/v1/invoices/${encodeURIComponent(id)}/attachment`, {}),
   /** Timmy drafts an invoice or quote from what an email says (server/src/invoices/from-email.ts). */
   invoiceFromEmail: (thread: string, kind: 'invoice' | 'quote') => call<{ invoice: { id: string; number: string; lines: number } }>('POST', '/api/v1/invoices/from-email', { thread, kind }),
+  /** Bids, with Kontract as the engine (server/src/http/bids.ts). */
+  bidsStatus: () => call<{ on: boolean; sample: boolean }>('GET', '/api/v1/bids/status'),
+  bidSearch: (q: Record<string, string>) => call<OpportunityResults>('GET', `/api/v1/bids/search?${new URLSearchParams(q)}`),
+  bidTrack: (notice: string) => call<{ bid: { id: string; created: boolean } }>('POST', '/api/v1/bids/track', { notice }),
+  bidRead: (id: string) => call<{ read: { documents: number; facts: number; breakdown: string } }>('POST', `/api/v1/bids/${encodeURIComponent(id)}/read`, {}),
+  bidPricing: (id: string) => call<{ pricing: { awards: number; medianAnnual: number | null; medianTotal: number | null } }>('POST', `/api/v1/bids/${encodeURIComponent(id)}/pricing`, {}),
+  bidSubSearch: (id: string, query: string, location: string) => call<{ results: FoundSub[]; source: string; notice?: string }>('POST', `/api/v1/bids/${encodeURIComponent(id)}/subs/search`, { query, location }),
+  bidSubsNearby: (id: string) => call<{ contractors: PermitContractor[] }>('GET', `/api/v1/bids/${encodeURIComponent(id)}/subs/nearby`),
+  bidWebsite: (url: string) => call<{ facts: { url: string; emails: string[]; phones: string[]; licenses: string[]; services: string[]; serviceArea: string | null; insured: boolean; experience: string | null } }>('POST', '/api/v1/bids/website', { url }),
   todoFromEmail: (thread: string) => call<{ task: { id: string; title: string; project: string | null; due: string | null } }>('POST', '/api/v1/mail/todo', { thread }),
   /** The files Timmy lists from a connected Google Drive or OneDrive, newest first. */
   connectedFiles: (q = '') =>

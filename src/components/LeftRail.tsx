@@ -1,5 +1,6 @@
 import { isLive } from '../live/clock';
-import { Bell, CalendarDays, FileText, FolderKanban, HardDrive, House, Library, ListChecks, Megaphone, MessageSquareText, Plug, Receipt, Rocket, Search, Settings, Stamp, Users } from 'lucide-react';
+import { Bell, CalendarDays, FileText, FolderKanban, HardDrive, House, Landmark, Library, ListChecks, Megaphone, MessageSquareText, Plug, Receipt, Rocket, Search, Settings, Stamp, Users } from 'lucide-react';
+import { useBidsStatus } from '../areas/bids/status';
 import { FeedbackButton } from '../live/Feedback';
 import { useOutboundCounts } from '../areas/outbound';
 import { scopedApprovals } from '../state/scope';
@@ -22,6 +23,8 @@ export function useSections(): Item[] {
   const captured = Object.values(state.ws.notes).filter((n) => !n.processed).length;
   const approvals = scopedApprovals(state).length;
   const out = useOutboundCounts();
+  // Bids show only where the server has Kontract set up (always in the sample demo).
+  const bids = useBidsStatus();
   // Calm home: only Approvals keeps a badge.
   const b = (n: number) => (state.calm ? undefined : n || undefined);
   return [
@@ -32,6 +35,7 @@ export function useSections(): Item[] {
     { section: 'calendar', label: 'Calendar', icon: <CalendarDays size={20} />, route: { view: 'calendar', tab: 'week' } },
     { section: 'docs', label: 'Docs', icon: <FileText size={20} />, route: { view: 'docs', tab: 'recent' } },
     { section: 'invoices', label: 'Invoices & quotes', icon: <Receipt size={20} />, route: { view: 'invoices', tab: 'invoices' } },
+    ...(bids.on ? [{ section: 'bids' as const, label: 'Bids', icon: <Landmark size={20} />, route: { view: 'bids', tab: 'find' } as Route }] : []),
     { section: 'projects', label: 'Projects', icon: <FolderKanban size={20} />, route: { view: 'projects', tab: 'active' } },
     { section: 'people', label: 'People', icon: <Users size={20} />, route: { view: 'people', tab: 'priority' } },
     { section: 'outbound', label: 'Outbound', icon: <Rocket size={20} />, route: { view: 'outbound', tab: 'leads' }, badge: b(out.unread + out.waiting) },

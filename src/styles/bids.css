@@ -1,0 +1,500 @@
+/* ───────────── Bids ───────────── */
+/* The summary cards, filters, tables and totals reuse the invoice screens' classes (invoices.css). */
+
+.bd-find,
+.bd-mine,
+.bd-overview,
+.bd-pricing,
+.bd-subs,
+.bd-proposal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+.bd-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.bd-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+}
+
+.bd-search-q {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 260px;
+  color: var(--text-3);
+}
+
+.bd-search-q .input {
+  flex: 1;
+}
+
+.bd-search select.input {
+  width: auto;
+}
+
+.bd-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.bd-count,
+.bd-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.bd-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.bd-results,
+.bd-sublist,
+.bd-docs,
+.bd-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bd-result {
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 14px 16px;
+}
+
+.bd-result-main,
+.bd-sub-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.bd-result-title {
+  font-size: 15px;
+  color: var(--text);
+}
+
+.bd-result-sub {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.bd-result-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.bd-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.bd-chips .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.bd-due {
+  font-weight: 600;
+}
+
+.bd-due.bd-soon {
+  background: var(--warn-soft);
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+  color: var(--warn);
+}
+
+.bd-due.bd-closed {
+  color: var(--text-3);
+  text-decoration: line-through;
+}
+
+.bd-stage {
+  font-weight: 600;
+}
+
+.bd-stage-sourcing,
+.bd-stage-quoted {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--accent-text);
+}
+
+.bd-stage-submitted {
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+  color: var(--accent-text);
+}
+
+.bd-stage-won {
+  background: var(--ok-soft);
+  border-color: color-mix(in srgb, var(--ok) 40%, transparent);
+  color: var(--ok);
+}
+
+.bd-stage-lost {
+  color: var(--text-3);
+}
+
+.bd-table .table-row {
+  grid-template-columns: minmax(200px, 1fr) 100px 110px 110px 130px;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+}
+
+.bd-awards .table-row {
+  grid-template-columns: minmax(160px, 1fr) minmax(120px, 1fr) 60px 110px 120px;
+  gap: 12px;
+}
+
+/* One bid */
+.bd-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.bd-stage-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.bd-stage-pick .input {
+  height: 30px;
+  max-width: 220px;
+}
+
+.bd-title {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.bd-title .page-title {
+  margin: 0;
+}
+
+.bd-section {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  padding: 18px 20px;
+  min-width: 0;
+}
+
+.bd-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.bd-section-head > div:first-child {
+  flex: 1 1 300px;
+  min-width: 0;
+}
+
+.bd-section-head .section-title {
+  margin: 0;
+}
+
+.bd-section-head .section-sub {
+  margin: 4px 0 0;
+  max-width: 640px;
+}
+
+.bd-desc,
+.bd-plain {
+  margin: 0;
+  white-space: pre-line;
+  line-height: 1.55;
+}
+
+.bd-plain {
+  font-size: 15px;
+}
+
+.bd-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.bd-fact {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--panel);
+}
+
+.bd-quote {
+  font-size: 13px;
+  color: var(--text-2);
+  font-style: italic;
+}
+
+.bd-doc {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.bd-h3 {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-2);
+}
+
+.bd-list li {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.bd-list:not(.bd-docs) {
+  padding-left: 18px;
+  list-style: disc;
+  gap: 6px;
+}
+
+.bd-flags li::marker {
+  color: var(--danger);
+}
+
+.bd-docs li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.bd-read-scanned,
+.bd-read-failed {
+  color: var(--danger);
+}
+
+.bd-dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 0;
+  font-size: 14px;
+}
+
+.bd-dl dt {
+  color: var(--text-3);
+}
+
+.bd-dl dd {
+  margin: 0;
+}
+
+.bd-dl .cap {
+  text-transform: capitalize;
+}
+
+/* Pricing */
+.bd-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.bd-inline > .input:not(.bd-narrow) {
+  width: auto;
+  flex: 1 1 180px;
+}
+
+.bd-narrow {
+  width: 84px;
+}
+
+.bd-periods select.input {
+  width: auto;
+}
+
+.bd-lines {
+  display: grid;
+}
+
+.bd-line {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 80px 76px 104px 104px 110px 28px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+
+.bd-line .input {
+  width: 100%;
+  height: 32px;
+}
+
+.bd-line-head {
+  padding-top: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.bd-amount {
+  font-weight: 560;
+  font-variant-numeric: tabular-nums;
+}
+
+.bd-totals .inv-total-row,
+.bd-totals .inv-total-row > span:last-child {
+  color: var(--text-2);
+}
+
+.bd-totals .inv-grand,
+.bd-totals .inv-grand > span:last-child {
+  color: var(--text);
+  border-top-color: var(--line);
+}
+
+.bd-vs {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-2);
+  text-align: right;
+}
+
+.bd-vs.warn {
+  color: var(--danger);
+}
+
+/* Subs */
+.bd-sub {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.bd-sub:last-child {
+  border-bottom: 0;
+}
+
+.bd-sub-side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.bd-sub-side .input {
+  height: 30px;
+  width: auto;
+}
+
+.bd-sub-side .inv-money {
+  width: 110px;
+}
+
+.bd-manual .input {
+  flex: 1 1 180px;
+}
+
+.bd-notes {
+  width: 100%;
+  min-height: 110px;
+}
+
+@media (max-width: 760px) {
+  .bd-result,
+  .bd-sub {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .bd-result-side {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .bd-sub-side {
+    justify-content: flex-start;
+  }
+
+  .bd-table .table-row {
+    grid-template-columns: minmax(0, 1fr) 100px;
+  }
+
+  .bd-table .table-row > :not(:nth-child(1)):not(:nth-child(3)) {
+    display: none;
+  }
+
+  .bd-awards .table-row {
+    grid-template-columns: minmax(0, 1fr) 100px;
+  }
+
+  .bd-awards .table-row > :not(:nth-child(1)):not(:nth-child(4)) {
+    display: none;
+  }
+
+  .bd-line {
+    grid-template-columns: minmax(0, 1fr) 90px 28px;
+  }
+
+  .bd-line > :nth-child(2),
+  .bd-line > :nth-child(3),
+  .bd-line > :nth-child(4),
+  .bd-line > :nth-child(6) {
+    display: none;
+  }
+
+  .bd-dl {
+    grid-template-columns: 1fr;
+  }
+}
