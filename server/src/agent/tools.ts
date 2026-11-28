@@ -28,6 +28,7 @@ import { untrusted } from './prompts';
 import { findThingsTool } from './things-tool';
 // Finding and reading the person's files (Google Drive and OneDrive) live in their own module.
 import { readFile, searchFiles } from './file-tools';
+import { BID_TOOLS } from './bid-tools';
 
 export interface ToolRun {
   ctx: Ctx;
@@ -64,6 +65,8 @@ export interface AgentTool {
   /** For writes Auto mode may decide: the id of the one thing this call acts on, so it can be checked against what the person has open. */
   target?(args: Record<string, unknown>): string | undefined;
   run(args: Record<string, unknown>, t: ToolRun): Promise<ToolOutcome>;
+  /** Offered only while this says yes (a tool that needs a service the server may not have set up). */
+  available?: () => boolean;
 }
 
 const str = (v: unknown, max = 4000) => String(v ?? '').slice(0, max);
@@ -530,5 +533,5 @@ const saveRule: AgentTool = {
   },
 };
 
-export const TOOLS: AgentTool[] = [searchMail, readThread, listInbox, searchFiles, readFile, searchPagesTool, readPageTool, lookupPerson, listCommitments, findThingsTool, listEvents, draftReply, sendEmail, sendReply, bookMeeting, fileThread, saveRule, ...ORGANIZE_TOOLS];
+export const TOOLS: AgentTool[] = [searchMail, readThread, listInbox, searchFiles, readFile, searchPagesTool, readPageTool, lookupPerson, listCommitments, findThingsTool, listEvents, draftReply, sendEmail, sendReply, bookMeeting, fileThread, saveRule, ...ORGANIZE_TOOLS, ...BID_TOOLS];
 export const TOOL_BY_NAME: Record<string, AgentTool> = Object.fromEntries(TOOLS.map((t) => [t.def.name, t]));

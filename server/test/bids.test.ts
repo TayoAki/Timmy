@@ -19,6 +19,10 @@ import { FAKE_COST } from '../src/testing/kontract';
 import { forgetServiceSpend } from '../src/providers/model';
 import { sysPool } from '../src/db/pool';
 import { addMember, boot, connectGmail, jobs, model, newWorkspace, releaseHolds, rows, type Client } from './helpers';
+import { startRun } from '../src/agent/loop';
+import { ASK_SYSTEM } from '../src/agent/prompts';
+import { rulesFor } from '../src/auth/roles';
+import { kontract, setKontractForTests } from '../src/kontract/client';
 
 describe('the client for the real engine', () => {
   let server: Server;
@@ -281,5 +285,69 @@ describe('bids on a workspace', () => {
     expect((await revops.request('POST', `/api/v1/bids/${id}/read`, {})).status).toBe(403);
     expect((await revops.request('POST', `/api/v1/bids/${id}/subs/search`, { query: 'x', location: 'y' })).status).toBe(403);
     expect((await revops.request('POST', '/api/v1/bids/website', { url: 'https://a.example' })).status).toBe(403);
+  });
+
+  describe('in Ask', () => {
+    const ask = (text: string, attended = true) =>
+      startRun({ user: { id: w.userId, name: 'Owner', email: w.email }, workspaceId: w.workspaceId, role: 'owner', rules: rulesFor('owner') }, { kind: attended ? 'ask' : 'routine', attended, system: ASK_SYSTEM, messages: [{ role: 'user', content: text }], threadId: 'chat-bids' });
+    /** Runs one tool call and returns what the tool gave back to the model. */
+    const toolSays = async (name: string, args: Record<string, unknown>, attended = true) => {
+      let said = '';
+      model().script.push({ toolCalls: [{ name, arguments: args }] }, (req) => {
+        said = String(req.messages.at(-1)!.content);
+        return { content: 'Done.' };
+      });
+      await ask('Help me with bids', attended);
+      return said;
+    };
+
+    it('searches and reads notices as outside content, and reads the documents with Timmy’s own model for free', async () => {
+      const found = await toolSays('search_opportunities', { query: 'janitorial', state: 'or' });
+      expect(found).toMatch(/^<untrusted source="opportunities">/);
+      expect(found).toContain('"id":"sample-janitorial-va"');
+      expect(found).toContain('"sample":true');
+      const docs = await toolSays('read_bid_documents', { id: 'sample-janitorial-va' });
+      expect(docs).toMatch(/^<untrusted source="bid-documents">/);
+      expect(docs).toContain('The estimated annual value is $180,000 to $240,000.');
+      expect(docs).toContain('"next_offset":null');
+      const past = await toolSays('get_past_pricing', { keywords: ['janitorial'], state: 'OR' });
+      expect(past).toContain('"medianAnnual":201000');
+      expect((await usage('kontract:text')).map((u) => Number(u.cost_usd))).toEqual([0]);
+    });
+
+    it('finds businesses only in a conversation someone is having, and tracks a bid when asked, once', async () => {
+      const before = fk().calls.length;
+      expect(await toolSays('find_subcontractors', { query: 'commercial cleaning', location: 'Portland, OR' }, false)).toBe('Finding businesses can only be done in a conversation with the user. Nothing was searched.');
+      expect(fk().calls.length).toBe(before);
+      expect(await toolSays('find_subcontractors', { query: 'commercial cleaning', location: 'Portland, OR' })).toContain('Evergreen Commercial Cleaning (sample)');
+      expect(await toolSays('track_bid', { id: 'sample-hvac-gsa' })).toBe('Tracking it as a bid in Bids, with its deadline on the to-do list.');
+      expect(await toolSays('track_bid', { id: 'sample-hvac-gsa' })).toBe('The user was already tracking this one. Nothing changed.');
+      expect((await bids()).map((b) => b.notice.id)).toEqual(['sample-hvac-gsa']);
+      const mine = await toolSays('list_my_bids', {});
+      expect(mine).toContain('"stage":"Found"');
+    });
+
+    it('offers the bid tools only when Kontract is set up', async () => {
+      const offered = async () => {
+        let names: string[] = [];
+        model().script.push((req) => {
+          names = (req.tools ?? []).map((t) => t.name);
+          return { content: 'Hello.' };
+        });
+        await ask('Hi');
+        return names;
+      };
+      expect(await offered()).toContain('search_opportunities');
+      const engine = kontract();
+      setKontractForTests(null);
+      try {
+        expect(await offered()).not.toContain('search_opportunities');
+        expect((await w.json<{ on: boolean }>('GET', '/api/v1/bids/status')).on).toBe(false);
+        const off = await w.request('GET', '/api/v1/bids/search?q=x');
+        expect(off.status).toBe(503);
+      } finally {
+        setKontractForTests(engine);
+      }
+    });
   });
 });

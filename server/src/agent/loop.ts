@@ -165,7 +165,7 @@ async function drive(ctx: Ctx, run: Driving, cp: Checkpoint, fromStep: number, e
   try {
     for (let step = fromStep; step < MAX_STEPS; step++) {
       await renew(workspaceId, run.runId, run.fence, step, readOutside);
-      const tools = [...TOOLS.map((t) => t.def), ...cp.displayTools.filter((d) => !TOOL_BY_NAME[d.name])];
+      const tools = [...TOOLS.filter((t) => !t.available || t.available()).map((t) => t.def), ...cp.displayTools.filter((d) => !TOOL_BY_NAME[d.name])];
       const res = await complete({ workspaceId, runId: run.runId, route: run.kind, model: run.model, effort: cp.effort, messages: [{ role: 'system', content: cp.system }, ...cp.messages], tools }, (delta) => events.text?.(step, delta));
       lastText = res.content || lastText;
       const assistant: ChatMessage = { role: 'assistant', content: res.content, toolCalls: res.toolCalls, reasoningDetails: res.reasoningDetails };
