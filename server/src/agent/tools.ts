@@ -29,6 +29,7 @@ import { findThingsTool } from './things-tool';
 // Finding and reading the person's files (Google Drive and OneDrive) live in their own module.
 import { readFile, searchFiles } from './file-tools';
 import { BID_TOOLS } from './bid-tools';
+import { suggestLeadsTool } from './lead-tools';
 
 export interface ToolRun {
   ctx: Ctx;
@@ -533,5 +534,5 @@ const saveRule: AgentTool = {
   },
 };
 
-export const TOOLS: AgentTool[] = [searchMail, readThread, listInbox, searchFiles, readFile, searchPagesTool, readPageTool, lookupPerson, listCommitments, findThingsTool, listEvents, draftReply, sendEmail, sendReply, bookMeeting, fileThread, saveRule, ...ORGANIZE_TOOLS, ...BID_TOOLS];
+export const TOOLS: AgentTool[] = [searchMail, readThread, listInbox, searchFiles, readFile, searchPagesTool, readPageTool, lookupPerson, listCommitments, findThingsTool, listEvents, draftReply, sendEmail, sendReply, bookMeeting, fileThread, saveRule, ...ORGANIZE_TOOLS, ...BID_TOOLS, suggestLeadsTool];
 export const TOOL_BY_NAME: Record<string, AgentTool> = Object.fromEntries(TOOLS.map((t) => [t.def.name, t]));

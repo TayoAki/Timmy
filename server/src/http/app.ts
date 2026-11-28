@@ -32,6 +32,7 @@ import { assetHeaders, fileRoutes, isFileUpload } from './files';
 import { connectedFileRoutes } from './connected-files';
 import { invoiceRoutes } from './invoices';
 import { bidRoutes } from './bids';
+import { leadRoutes } from './leads';
 import { mailRoutes } from './mail';
 import { projectRoutes } from './projects';
 import { mapRoutes } from './map';
@@ -165,6 +166,7 @@ export function buildApp(): Hono<Env> {
   connectedFileRoutes(app);
   invoiceRoutes(app);
   bidRoutes(app);
+  leadRoutes(app);
   mailRoutes(app);
   projectRoutes(app);
   mapRoutes(app);
