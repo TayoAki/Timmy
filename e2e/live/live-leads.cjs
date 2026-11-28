@@ -82,5 +82,25 @@ run('live-leads', async (browser) => {
   ok(opened.length === 1 && new URL(opened[0]).searchParams.get('to') === lead.email, 'it opens in Gmail, to them');
   ok((await sentMail(page)).length === 0, 'Timmy sent nothing itself');
 
+  // Due today: every lead's first step, written for them; the one opened in Gmail says so until it is in Sent.
+  await page.getByRole('tab', { name: /^Due today/ }).click();
+  const list = page.getByRole('list', { name: 'Steps due' });
+  await list.waitFor();
+  ok((await list.locator('.due-row').count()) === 10, 'Due today lists the first step for each of the ten leads');
+  const mine = list.locator('.due-row', { hasText: `${lead.first} ${lead.last}` });
+  await mine.locator('.due-opened').waitFor();
+  ok(/Opened in Gmail/.test(await mine.innerText()) && (await mine.getByRole('button', { name: 'Open again' }).count()) === 1, 'the step opened in Gmail says so until it is in Sent');
+  await api(page, 'POST', '/api/test/fake', { op: 'deliver', message: { from: 'morgan@chair.test', to: [lead.email], subject: 'no-shows at Cedar Dental Studio', body: 'Hi, a quick idea.', labels: ['SENT'] } });
+  const moved = await until((s) => s['out.leads'][lead.id]?.step === 1 && !s['out.leads'][lead.id]?.openedStep);
+  ok(moved, 'once it is in Sent, the lead moves on to their next step');
+  await page.waitForFunction(() => document.querySelectorAll('[aria-label="Steps due"] .due-row').length === 9, null, { timeout: 15000 });
+  ok(true, 'and leaves Due today until their next step is due');
+  const other = list.locator('.due-row').first();
+  const otherName = (await other.locator('strong').innerText()).trim();
+  await other.getByRole('button', { name: 'Skip this step' }).click();
+  await page.locator('.toast', { hasText: /Skipped step 1 for/ }).waitFor();
+  const skipped = await until((s) => Object.values(s['out.leads']).some((l) => `${l.first} ${l.last}` === otherName && l.step === 1));
+  ok(skipped && (await list.locator('.due-row').count()) === 8, 'a step can be skipped, and the lead waits for their next');
+
   ok(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.join(' | ') : ''));
 });

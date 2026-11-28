@@ -284,7 +284,7 @@ export function noteLeadMail(state: State, fresh: MailMessage[]): State {
       // A reply from them stops the sequence where it is.
       const camp = sentByUser && cur.campaign && !['replied', 'interested', 'meeting', 'not-interested', 'unsubscribed', 'bounced'].includes(cur.status) ? state.out.campaigns[cur.campaign] : undefined;
       const nextStep = camp ? (cur.step ?? 0) + 1 : undefined;
-      const moved = camp && nextStep !== undefined ? { step: nextStep, ...(camp.steps[nextStep] ? { nextAt: new Date(new Date(m.at).getTime() + camp.steps[nextStep]!.wait * 86_400_000) } : { nextAt: undefined }) } : {};
+      const moved = camp && nextStep !== undefined ? { step: nextStep, openedStep: undefined, ...(camp.steps[nextStep] ? { nextAt: new Date(new Date(m.at).getTime() + camp.steps[nextStep]!.wait * 86_400_000) } : { nextAt: undefined }) } : {};
       leads = { ...leads, [lead.id]: { ...cur, status, ...moved, ...(sentByUser ? {} : { unread: true }) } as typeof cur };
     }
   }

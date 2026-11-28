@@ -53,7 +53,7 @@ export type Route =
   | { view: 'social'; tab: 'overview' | 'create' | 'calendar' | 'trends' }
   | { view: 'connections'; group?: string };
 
-export type OutboundTab = 'leads' | 'campaigns' | 'drafts' | 'unibox' | 'speed' | 'chat' | 'calls' | 'templates' | 'channels';
+export type OutboundTab = 'leads' | 'campaigns' | 'due' | 'drafts' | 'unibox' | 'speed' | 'chat' | 'calls' | 'templates' | 'channels';
 
 export type Section = 'mail' | 'approvals' | 'activity' | 'people' | 'files' | 'rules' | 'tasks' | 'calendar' | 'docs' | 'invoices' | 'bids' | 'projects' | 'library' | 'outbound' | 'social' | 'connections';
 

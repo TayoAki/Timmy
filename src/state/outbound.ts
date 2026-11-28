@@ -36,6 +36,8 @@ export type OutOp =
   | { op: 'removeCampaign'; id: string }
   | { op: 'send'; lead: string; channel: Channel; subject?: string; body: string }
   | { op: 'logCall'; lead: string; outcome: string; notes?: string; callbackAt?: Date; callbackNote?: string }
+  /** Moves a lead past their current step without sending it, as when it no longer fits. */
+  | { op: 'skipStep'; lead: string }
   | { op: 'label'; lead: string; label: ReplyLabel | null }
   | { op: 'read'; lead: string }
   | { op: 'mailbox'; mailbox: Mailbox }
@@ -192,6 +194,51 @@ const patchLeads = (s: State, ids: string[], fn: (l: Lead) => Lead): Record<stri
 
 /** Cold emails Timmy saved as drafts in your sending accounts, oldest first. */
 export const draftsOf = (s: Pick<State, 'out'>) => s.out.messages.filter((m) => m.status === 'draft').sort((a, b) => a.at.getTime() - b.at.getTime());
+
+/** A step of a sequence that is the person's to send now, filled in for the lead. */
+export interface DueStep {
+  lead: Lead;
+  campaign: Campaign;
+  /** Which step (0 is the first). */
+  step: number;
+  channel: Channel;
+  due: Date;
+  overdue: boolean;
+  subject: string;
+  body: string;
+  /** When its email was opened in the person's mail app, if it was and isn't in Sent yet. */
+  opened?: Date;
+}
+
+/** Campaigns worked by hand: every campaign on a real workspace (none sends by itself), and the demo's unlaunched ones. */
+const handWorked = (c: Campaign) => c.status !== 'active' && c.status !== 'completed';
+const STILL_IN_SEQUENCE: Lead['status'][] = ['new', 'queued', 'contacted'];
+
+/**
+ * What is due today in sequences worked by hand: for each lead still in one (they haven't replied or opted out), the
+ * step they are on, when its wait is up by the end of today. A first step is due as soon as they join. Oldest first.
+ */
+export function dueSteps(s: Pick<State, 'out' | 'ws'> & Partial<State>): DueStep[] {
+  const now = liveNow();
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const out: DueStep[] = [];
+  for (const lead of Object.values(s.out.leads)) {
+    const c = lead.campaign ? s.out.campaigns[lead.campaign] : undefined;
+    if (!c || !handWorked(c) || !STILL_IN_SEQUENCE.includes(lead.status)) continue;
+    const i = lead.step ?? 0;
+    const st = c.steps[i];
+    if (!st || (st.channel === 'email' && !lead.email)) continue;
+    const at = lead.nextAt ? new Date(lead.nextAt) : now;
+    const due = i === 0 && at > now ? now : at;
+    if (due > end) continue;
+    const v = st.variants[0] ?? { subject: '', body: '' };
+    const filled = (t: string) => (t ? fill(s as State, t, lead).text : '');
+    const opened = lead.openedStep && lead.openedStep.step === i ? new Date(lead.openedStep.at) : undefined;
+    out.push({ lead, campaign: c, step: i, channel: st.channel, due, overdue: due < dayStart, subject: filled(v.subject), body: filled(v.body), ...(opened ? { opened } : {}) });
+  }
+  return out.sort((a, b) => a.due.getTime() - b.due.getTime() || a.lead.first.localeCompare(b.lead.first));
+}
 
 export function outbound(s: State, a: OutOp, h: OutHelpers): State {
   const out = s.out;
@@ -433,8 +480,15 @@ export function outbound(s: State, a: OutOp, h: OutHelpers): State {
       } else if (!out.channels[a.channel]?.connected) {
         return { ...s, toasts: h.toast(s, `${out.channels[a.channel]?.name ?? a.channel} isn’t connected yet.`, { tone: 'warn' }) };
       }
+      // The step of a sequence worked by hand, sent: the lead moves on to the next one, due after its wait.
+      const camp = lead.campaign ? out.campaigns[lead.campaign] : undefined;
+      const stepAt = lead.step ?? 0;
+      const onStep = !!camp && handWorked(camp) && camp.steps[stepAt]?.channel === a.channel;
+      const after = onStep ? camp!.steps[stepAt + 1] : undefined;
+      const stepped: Partial<Lead> = onStep ? { step: stepAt + 1, nextAt: after ? atClock(addDays(at, Math.max(1, after.wait)), camp!.schedule.start) : undefined, openedStep: undefined } : {};
       const nextLead: Lead = {
         ...lead,
+        ...stepped,
         unread: false,
         status: lead.status === 'new' || lead.status === 'queued' ? 'contacted' : lead.status,
         firstReplyAt: lead.receivedAt && !lead.firstReplyAt ? at : lead.firstReplyAt,
@@ -445,6 +499,21 @@ export function outbound(s: State, a: OutOp, h: OutHelpers): State {
         out: { ...out, mailboxes, channels, leads: { ...out.leads, [lead.id]: nextLead }, messages: [...out.messages, msg] },
         activity: h.log(s, `${what} ${fullName(lead)} (${lead.company})`, 'send'),
         toasts: h.toast(s, `${a.channel === 'sms' ? 'Text sent' : a.channel === 'call' ? 'Call logged' : 'Sent'} to ${lead.first}${note}`, { undo: true }),
+      };
+    }
+
+    case 'skipStep': {
+      const lead = out.leads[a.lead];
+      const c = lead?.campaign ? out.campaigns[lead.campaign] : undefined;
+      const i = lead?.step ?? 0;
+      if (!lead || !c || i >= c.steps.length) return s;
+      const next = c.steps[i + 1];
+      const nextAt = next ? atClock(addDays(liveNow(), Math.max(1, next.wait)), c.schedule.start) : undefined;
+      return {
+        ...s,
+        out: { ...out, leads: { ...out.leads, [lead.id]: { ...lead, step: i + 1, nextAt, openedStep: undefined } } },
+        activity: h.log(s, `Skipped step ${i + 1} of “${c.name}” for ${fullName(lead)}`, 'triage'),
+        toasts: h.toast(s, `Skipped step ${i + 1} for ${lead.first}${nextAt ? `; the next is due ${fmtDay(nextAt)}` : '; that was their last step'}`, { undo: true }),
       };
     }
 

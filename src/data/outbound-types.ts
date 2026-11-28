@@ -72,6 +72,8 @@ export interface Lead {
   suggested?: { at: Date; why: string[]; about?: string; sources: { field: string; from: string }[]; ask?: string };
   /** A first line about them for {{opener}}, written from what was learned about the company and checked against it. */
   opener?: string;
+  /** On a real workspace: the step whose email was opened in the person's mail app, and when. Cleared once it is in Sent. */
+  openedStep?: { step: number; at: Date };
 }
 
 export interface LeadList {

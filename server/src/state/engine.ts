@@ -349,7 +349,9 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
     if (!lead) return { state, reject: 'That lead is no longer in the list.' };
     const mailApp = state.conn.apps.gmail?.connected ? 'Gmail' : state.conn.apps.outlook?.connected ? 'Outlook' : 'your mail app';
     const logged = reduce(loaded, state, { type: 'ws', ops: [], log: `Opened an email to ${lead.first} ${lead.last} in ${mailApp} to send by hand` });
-    return { state: logged, toast: { text: `Opened in ${mailApp}. Send it from there; Timmy marks the lead as contacted when it sees the email in your Sent folder.` } };
+    // A sequence step opened in the mail app is marked, so Due today can say it is on its way until it shows in Sent.
+    const marked = lead.campaign ? { ...logged, out: { ...logged.out, leads: { ...logged.out.leads, [lead.id]: { ...logged.out.leads[lead.id]!, openedStep: { step: lead.step ?? 0, at: new Date() } } } } } : logged;
+    return { state: marked, toast: { text: `Opened in ${mailApp}. Send it from there; Timmy marks the lead as contacted when it sees the email in your Sent folder.` } };
   }
   if (a.type === 'out' && OUT_NOT_LIVE[a.op.op]) return { state, reject: OUT_NOT_LIVE[a.op.op] };
   if (a.type === 'resolve' && a.key.startsWith('camp:') && a.option === 'launch') return { state, reject: OUT_NOT_LIVE.launch };

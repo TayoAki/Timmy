@@ -4,11 +4,11 @@
  * your lists and campaigns and the right panel showing the lead you picked
  * (or what needs you today).
  */
-import { FilePen, Gauge, Inbox, LayoutTemplate, List, Mail, MessagesSquare, PhoneCall, Plus, Rocket, Send, Timer, Users } from 'lucide-react';
+import { CalendarClock, FilePen, Gauge, Inbox, LayoutTemplate, List, Mail, MessagesSquare, PhoneCall, Plus, Rocket, Send, Timer, Users } from 'lucide-react';
 import { ChatTab } from './Chat';
 import { fmtListDate, plural } from '../../lib/format';
 import { campaignCap, liveNow, project } from '../../lib/outbound';
-import { coldToday, ctxOf, draftsOf } from '../../state/outbound';
+import { coldToday, ctxOf, draftsOf, dueSteps } from '../../state/outbound';
 import { useStore, type OutboundTab } from '../../state/store';
 import { Frame } from '../../components/Frame';
 import { Field, Modal, SideHead } from '../../components/kit';
@@ -19,6 +19,7 @@ import { CampaignView } from './Campaign';
 import { CampaignsTab } from './Campaigns';
 import { CallsTab } from './Calls';
 import { DraftsTab } from './Drafts';
+import { DueTab } from './Due';
 import { callQueue, waitingForFirstReply } from '../../state/leads';
 import { ChannelsTab } from './Channels';
 import { LeadPanel } from './LeadPanel';
@@ -40,6 +41,7 @@ export function useOutboundCounts() {
     waiting: waitingForFirstReply(state).length,
     review: Object.values(state.out.campaigns).filter((c) => c.status === 'review').length,
     drafts: draftsOf(state).length,
+    due: dueSteps(state).filter((d) => !d.opened).length,
   };
 }
 
@@ -53,6 +55,7 @@ export function OutboundView() {
       tabs={[
         { id: 'leads', label: 'Leads', count: Object.keys(state.out.leads).length },
         { id: 'campaigns', label: 'Campaigns', count: n.review || undefined },
+        { id: 'due', label: 'Due today', count: n.due || undefined },
         { id: 'drafts', label: 'Drafts', count: n.drafts || undefined },
         { id: 'unibox', label: 'Unibox', count: n.unread || undefined },
         { id: 'speed', label: 'Speed to lead', count: n.waiting || undefined },
@@ -69,6 +72,7 @@ export function OutboundView() {
       <ClientBar />
       {tab === 'leads' && <LeadsTab />}
       {tab === 'campaigns' && <CampaignsTab />}
+      {tab === 'due' && <DueTab />}
       {tab === 'drafts' && <DraftsTab />}
       {tab === 'unibox' && <UniboxTab />}
       {tab === 'speed' && <SpeedTab />}
@@ -85,6 +89,7 @@ export function OutboundView() {
 const NAV: { tab: OutboundTab; label: string; icon: typeof Users; hint: string; color: string }[] = [
   { tab: 'leads', label: 'Leads', icon: Users, hint: 'Lists, fit and qualification', color: 'var(--c-sky)' },
   { tab: 'campaigns', label: 'Campaigns', icon: Send, hint: 'Sequences across channels', color: 'var(--c-violet)' },
+  { tab: 'due', label: 'Due today', icon: CalendarClock, hint: 'Sequence steps yours to send', color: 'var(--c-blue)' },
   { tab: 'drafts', label: 'Drafts', icon: FilePen, hint: 'Cold emails waiting for you', color: 'var(--c-indigo)' },
   { tab: 'unibox', label: 'Unibox', icon: Inbox, hint: 'Every reply in one place', color: 'var(--c-green)' },
   { tab: 'speed', label: 'Speed to lead', icon: Timer, hint: 'Form leads, on the clock', color: 'var(--c-amber)' },
@@ -101,7 +106,7 @@ export function OutboundSide() {
   const today = coldToday(state);
   const lists = Object.values(state.out.lists);
   const campaigns = Object.values(state.out.campaigns);
-  const countFor: Partial<Record<OutboundTab, number>> = { unibox: n.unread, speed: n.waiting, campaigns: n.review, drafts: n.drafts, chat: Object.values(state.ws.chats ?? {}).filter((c) => c.unread).length };
+  const countFor: Partial<Record<OutboundTab, number>> = { unibox: n.unread, speed: n.waiting, campaigns: n.review, due: n.due, drafts: n.drafts, chat: Object.values(state.ws.chats ?? {}).filter((c) => c.unread).length };
   return (
     <>
       <SideHead
