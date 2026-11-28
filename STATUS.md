@@ -81,7 +81,7 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 - Email lookups wait up to three minutes (finding and checking can take over one).
 - `server/scripts/treg-smoke.mts` repeats the test.
 
-**Off until you add `TREG_TOKEN`** on the `app` service (see "Needs your attention"). The token saved through the secure form only reaches this session's own network proxy; production needs it as a Railway variable.
+**On in production** since Nov 28: `TREG_TOKEN` is set on the production `app` service (see "Needs your attention" about rotating it).
 
 **Tested:**
 - `treg.test` (14): includes the real HTTP client against a local server.
@@ -691,7 +691,7 @@ Next: the code debt listed below (the gateway's screen list moved out, routes sp
 
 ## Needs your attention
 
-- **Turn on lead suggestions (Treg).** On Railway, on the `app` service, add `TREG_TOKEN`: the team's org-scoped token, made with `treg org agent-new timmy`, not a personal login token. `TREG_MAX_COST_USD` (default $0.25 a lookup) and `TREG_LEADS_PER_DAY` (default 25) are optional. In Treg, set a default daily cap on the `workspace` tag and keep a prepaid balance or auto top-up: Treg's caps per customer are advisory, and the balance is the hard limit.
+- **Lead suggestions (Treg) are on in production.** At the owner's request (Nov 28), I set `TREG_TOKEN` on the production `app` service, using the token the owner pasted in the chat. **Because it was pasted in the chat, rotate it in Treg and put the new one in that variable yourself** (the secure form's copy only reaches the session's own network proxy). Staging runs on stand-ins and doesn't need it. `TREG_MAX_COST_USD` (default $0.25 a lookup) and `TREG_LEADS_PER_DAY` (default 25) are optional. In Treg, set a default daily cap on the `workspace` tag and keep a prepaid balance or auto top-up: Treg's caps per customer are advisory, and the balance is the hard limit.
 
 - **Turn on bids (Kontract).** On Railway, on the `app` service, add `KONTRACT_URL` (Kontract's public `https://` address, no trailing slash) and `KONTRACT_SERVICE_KEY` (at least 32 characters; `openssl rand -hex 32`). Add the same key to the `kontract` service's `KONTRACT_SERVICE_KEYS`, after a comma, so Magpie's key keeps working. Until then the Bids section doesn't show on real workspaces. Kontract's business search and website reading cost a little per call, and each workspace's Kontract cost counts toward its Timmy monthly limit.
 

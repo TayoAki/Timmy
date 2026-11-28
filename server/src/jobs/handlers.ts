@@ -99,7 +99,7 @@ export function registerJobs() {
   defineJob(
     'mail.reconcile.all',
     async () => {
-      const { rows } = await sysPool.query(`select id, workspace_id from connection where status = 'active' and toolkit = any($1::text[])`, [MAIL_TOOLKITS]);
+      const { rows } = await sysPool.query(`select id, workspace_id from connection where status = 'active' and toolkit = any($1::text[]) order by created_at, id`, [MAIL_TOOLKITS]);
       for (const c of rows) enqueueSoon('mail.reconcile', { workspaceId: c.workspace_id, connectionId: c.id }, { singletonKey: `recon:${c.id}` });
     },
     '41 2 * * *',
@@ -225,7 +225,7 @@ export function registerJobs() {
   defineJob(
     'files.sync.all',
     async () => {
-      const { rows } = await sysPool.query(`select id, workspace_id, toolkit from connection where status = 'active' and toolkit = any($1::text[])`, [FILE_TOOLKITS]);
+      const { rows } = await sysPool.query(`select id, workspace_id, toolkit from connection where status = 'active' and toolkit = any($1::text[]) order by created_at, id`, [FILE_TOOLKITS]);
       for (const c of rows) {
         enqueueSoon('files.sync', { workspaceId: c.workspace_id, connectionId: c.id }, { singletonKey: `files:${c.id}` });
         if (c.toolkit === 'googledrive') enqueueSoon('files.check', { workspaceId: c.workspace_id, connectionId: c.id }, { singletonKey: `fcheck:${c.id}` });

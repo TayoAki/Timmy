@@ -54,7 +54,7 @@ export const TEXT_READER = '3';
  * do is one query.
  */
 export async function textPassesAtStart(enqueue: (connection: { id: string; workspace_id: string }) => void): Promise<number> {
-  const { rows } = await sysPool.query(`select id, workspace_id from connection where status = 'active' and toolkit = any($1::text[])`, [['googledrive', 'one_drive']]);
+  const { rows } = await sysPool.query(`select id, workspace_id from connection where status = 'active' and toolkit = any($1::text[]) order by created_at, id`, [['googledrive', 'one_drive']]);
   for (const r of rows) enqueue(r as { id: string; workspace_id: string });
   return rows.length;
 }

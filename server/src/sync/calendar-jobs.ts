@@ -20,7 +20,8 @@ export function registerCalendarJobs() {
   defineJob(
     'calendar.sync.all',
     async () => {
-      const { rows } = await sysPool.query(`select id, workspace_id from connection where status = 'active' and toolkit = any($1::text[]) and not (meta ? 'calendarRefused')`, [CALENDAR_TOOLKITS]);
+      // Oldest connection first, in the same order every night (without an order, Postgres returns rows as they lie).
+      const { rows } = await sysPool.query(`select id, workspace_id from connection where status = 'active' and toolkit = any($1::text[]) and not (meta ? 'calendarRefused') order by created_at, id`, [CALENDAR_TOOLKITS]);
       for (const c of rows) enqueueSoon('calendar.sync', { workspaceId: c.workspace_id, connectionId: c.id, nightly: true }, { singletonKey: `cal:${c.id}` });
     },
     // After the mail check (2:41) and before Drive's (3:17), so the three passes do not start together.
