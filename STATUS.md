@@ -1,6 +1,6 @@
 # Timmy backend: status
 
-Last updated: Nov 28, 2026 (bids on Kontract's engine; invoices tied to projects). Read this first, then `tests.json`, then `git log`.
+Last updated: Nov 28, 2026 (leads through Treg and sequences by Timmy's model; bids on Kontract's engine). Read this first, then `tests.json`, then `git log`.
 The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 
 ## Where things stand
@@ -42,6 +42,45 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 | Cold email (phase 2, built early because the decision was made) | Built as decided: Timmy writes it and opens the compose window of the connected mail app (Gmail, or Outlook on the web); nothing cold goes through an API. The lead is marked contacted when sync sees the email in Sent, and replies show in the Unibox. |
 | Frontend live mode (`VITE_TIMMY_LIVE=1`) | Built: sign-in, onboarding, state from the API, Connect buttons, model picker, monthly limit, approvals for writes Timmy proposes. The demo is unchanged and still the default build. |
 | Railway | `app` (API + live app), `pgvector` and the bucket `timmy-files` exist in `production` and `staging`. Both `app` services have the OpenRouter and Composio keys. |
+
+## Leads that fit the offer, through Treg, and sequences by Timmy's model (Nov 28, 2026)
+
+**Asked:** "suggest leads for a person's business using Treg and their offer", and whether Timmy can write cold email sequences. Then: "yes connect treg, build it with the stand-in first."
+
+**This overrides decision 21** (Composio only) for Treg. Cold email is unchanged: each email opens in the person's own mail app, and a sequence never sends itself. Full write-up: `docs/leads-plan.md`.
+
+**Treg on the server** (`treg/client.ts`)
+- One team token, `TREG_TOKEN`, on the server only.
+- Every call is tagged `workspace=timmy-<id>,feature=…` by our code, never by the model.
+- Each call has a cost cap and an idempotency key.
+- The monthly limit is checked before every lookup, and each call is logged with its cost, the provider and Treg's call id.
+- A workspace's own limits are told to the person; the team account's are logged and never shown.
+- A stand-in answers with made-up companies on `.example` domains.
+
+**Suggest leads** (Outbound › Leads, and Ask's `suggest_leads`)
+- Companies like the ideal customer, a page at a time, skipping ones already in the leads.
+- The person with the right title at each.
+- Their email found and checked in the same call, and kept only when it takes mail.
+- Why each fits the offer, and where each detail came from.
+- A first line (`{{opener}}`) from the provider's description of the company, kept only when the description states it.
+- At most 25 a day per workspace, into "Suggested by Timmy". Nobody is contacted.
+
+**The offer from a website.** Templates & offer › Draft from my website fills in the offer and the ideal customer. The proof is kept only when the page has it, and nothing is saved until Save offer.
+
+**Sequences by Timmy's model**
+- New campaign › Timmy writes it, on a real workspace: four emails (plus an optional call).
+- A step with a made-up figure, an unknown merge field, or a link in the first email is replaced by Timmy's own wording.
+- No sending mailbox is needed on a real workspace.
+- Writing to a lead in a campaign starts from their next step. When the email shows in Sent, the lead moves to the next step, due after its wait.
+- Launch is still refused on a real workspace.
+
+**Off until you add `TREG_TOKEN`** on the `app` service (see "Needs your attention").
+
+**Tested:**
+- `treg.test` (14): includes the real HTTP client against a local server.
+- `live-leads` (13).
+- `coldmail.test` (8) still passes.
+- `e2e-outbound` (53), `e2e-round4` and `e2e-fixes` still pass.
 
 ## Bids, with Kontract as the engine (Nov 28, 2026)
 
@@ -584,7 +623,7 @@ Test changes that came with this, so you can check them:
 20. **Outlook is asked only for what Timmy uses.** Composio's default sign-in for Outlook asks for calendars, contacts, Teams chat and mailbox settings as well as mail. Timmy asks for mail (read, change, send), the calendar (read and write, since Nov 16) and the profile only (`COMPOSIO_SCOPES_OUTLOOK`; set it empty to go back to Composio's defaults if a real connect needs something more). Composio's real API issued a connect link with this set. Google is left at Composio's defaults, because Google only lets an app ask for permissions it has been approved for and Composio does not publish which narrower ones its app holds (see "Needs your attention").
 19. **Timmy's own mail goes through Resend** (your choice). With it configured, sign-up requires confirming the address, which closes the gap the audit left open (anyone could register an address they don't own).
 
-21. **Every connection is Composio; anything Composio doesn't offer is skipped for now** (owner's instruction, Nov 16). That covers CRMs and lead sources in phase 2, and it means the "treg" enrichment provider, which uses its own token, is not connected on real workspaces.
+21. **Every connection is Composio; anything Composio doesn't offer is skipped for now** (owner's instruction, Nov 16). That covers CRMs and lead sources in phase 2. **Changed for Treg on Nov 28** (owner: "yes connect treg"): Treg is connected with its own team token for suggesting leads (see "Leads that fit the offer, through Treg"). Every other connection is still Composio.
 22. **No model evaluation is planned.** The evaluation in the PRD was for adding more models to the picker in Settings. Timmy reaches models through OpenRouter and the picker holds one, Claude Opus 5.5, so there is nothing to compare (owner's instruction, Nov 16). It comes back only if a second model is ever proposed.
 23. **The "60% of drafts sent" goal is dropped** as a gate for phase 1 (owner's instruction, Nov 16).
 24. **A decision card never acts by itself.** Choosing an answer only records the choice and starts a draft. The card's wording comes from a model reading someone else's email, so its answers are short labels, its figures need a real sentence behind them, and what the person picks is passed to the drafting step as their own words.
@@ -644,6 +683,8 @@ Next: the code debt listed below (the gateway's screen list moved out, routes sp
 
 
 ## Needs your attention
+
+- **Turn on lead suggestions (Treg).** On Railway, on the `app` service, add `TREG_TOKEN`: the team's org-scoped token, made with `treg org agent-new timmy`, not a personal login token. `TREG_MAX_COST_USD` (default $0.25 a lookup) and `TREG_LEADS_PER_DAY` (default 25) are optional. In Treg, set a default daily cap on the `workspace` tag and keep a prepaid balance or auto top-up: Treg's caps per customer are advisory, and the balance is the hard limit.
 
 - **Turn on bids (Kontract).** On Railway, on the `app` service, add `KONTRACT_URL` (Kontract's public `https://` address, no trailing slash) and `KONTRACT_SERVICE_KEY` (at least 32 characters; `openssl rand -hex 32`). Add the same key to the `kontract` service's `KONTRACT_SERVICE_KEYS`, after a comma, so Magpie's key keeps working. Until then the Bids section doesn't show on real workspaces. Kontract's business search and website reading cost a little per call, and each workspace's Kontract cost counts toward its Timmy monthly limit.
 

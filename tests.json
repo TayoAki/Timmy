@@ -213,6 +213,13 @@
    "status": "pass"
   },
   {
+   "id": "api-treg",
+   "file": "server/test/treg.test.ts",
+   "covers": "Treg for leads: the HTTP client against a local server (X-Treg-Token, X-Treg-Meta workspace tag, X-Treg-Route-Max-Cost, Idempotency-Key, routing headers, cost, call id and provider read); a workspace's own refusals said (its daily allowance, blocked, cost cap, busy with Retry-After, no provider), the team account's never (balance, funds, platform cap), the token and balance never repeated; workspace tags; first lines kept only when the description states them; sequence steps kept only with known merge fields, no made-up figure and no link in the first email; suggestions: the right person at companies that fit, emails found and checked and kept only when they take mail, why each fits and where each detail came from, nobody contacted, every call tagged and logged with its cost; a first line dropped when it adds a figure; no company twice, the daily limit, the monthly limit before any lookup; Treg's refusals; the offer from a website with the proof only when on the page, website addresses checked; a sequence written by the model with bad steps replaced; a sent email moving a lead in a campaign to the next step while launch stays refused; Ask's suggest_leads attended only and hidden when Treg is off; a read-only role can't look up, draft or write",
+   "tests": 14,
+   "status": "pass"
+  },
+  {
    "id": "api-waiting",
    "file": "server/test/waiting.test.ts",
    "covers": "a draft that asks for something carries the item and a date; Send & track moves the thread to Waiting and labels it; the morning run drafts a nudge once the date passes; a nudge is never sent by itself; a reply ends the wait and drops the nudge",
@@ -532,6 +539,13 @@
    "file": "e2e/live/live-bids.cjs",
    "covers": "in the browser on a real workspace with the stand-in Kontract: Bids on, Find, tracking with the deadline as a to-do, reading the documents (a fact with its words), five years of price lines, past awards, pricing at markup saved in cents, a sub found and added, their email from their website, a quote request sent through the mailbox without the bid's price and marking them asked, the proposal page saved with bracketed blanks, and Kontract calls in the usage log",
    "checks": 15,
+   "status": "pass"
+  },
+  {
+   "id": "live-leads",
+   "file": "e2e/live/live-leads.cjs",
+   "covers": "in the browser on a real workspace with the stand-in Treg: the offer drafted from a website with its proof copied from the page and saved; Suggest leads adding ten leads with checked emails, sources and first lines; the lead panel's reasons; a campaign for the list with four steps written by Timmy's model, a made-up figure and field replaced; the lead's first step opened in Gmail, filled in with their first line; nothing sent by Timmy",
+   "checks": 13,
    "status": "pass"
   },
   {
