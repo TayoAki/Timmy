@@ -16,7 +16,7 @@ import type { Bid, BidLine, BidProfile, BidStage, BidSub, Contact, WFile } from 
 import { api } from '../../live/api';
 import { isLive } from '../../live/clock';
 import { money } from '../../state/invoices';
-import { bidTotals, daysLeft, defaultProfile, dueText, factText, levelText, lineTotal, linesFromBreakdown, placeText, priceFromMarkup, pricingQueryFor, proposalBlocks, quoteRequest, STAGE_LABEL, STAGES, SUB_STATUS, trimDetails } from '../../state/bids';
+import { bidTotals, byDeadline, daysLeft, defaultProfile, dueText, factText, levelText, lineTotal, linesFromBreakdown, placeText, priceFromMarkup, pricingQueryFor, proposalBlocks, quoteRequest, STAGE_LABEL, STAGES, SUB_STATUS, trimDetails } from '../../state/bids';
 import { useStore, ws } from '../../state/store';
 import { mailId, put, remove, uid } from '../../state/ws';
 import { useBidsStatus } from './status';
@@ -233,7 +233,7 @@ function FindBids() {
 function MyBids() {
   const { state, dispatch } = useStore();
   const [filter, setFilter] = useState<'all' | BidStage>('all');
-  const all = Object.values(state.ws.bids ?? {}).sort((a, b) => (a.notice.responseDeadline ?? '9').localeCompare(b.notice.responseDeadline ?? '9'));
+  const all = Object.values(state.ws.bids ?? {}).sort(byDeadline);
   const rows = filter === 'all' ? all : all.filter((b) => b.stage === filter);
   const open = all.filter((b) => b.stage !== 'won' && b.stage !== 'lost');
   const week = open.filter((b) => {
@@ -736,7 +736,7 @@ function Pricing({ bid, save }: { bid: Bid; save: Save }) {
                 <div key={a.id} role="row" className="table-row">
                   <span>{a.recipient}</span>
                   <span>{a.subAgency || a.agency}</span>
-                  <span>{a.startDate ? a.startDate.slice(0, 4) : '—'}</span>
+                  <span>{a.startDate ? new Date(a.startDate).getUTCFullYear() : '—'}</span>
                   <span className="inv-num">{usd(a.annualAmount)}</span>
                   <span className="inv-num">{usd(a.amount)}</span>
                 </div>
@@ -1071,7 +1071,7 @@ export function BidsSide() {
   const r = state.route;
   const tab = r.view === 'bids' ? r.tab : r.view === 'bid' ? 'mine' : null;
   const all = Object.values(state.ws.bids ?? {});
-  const open = all.filter((b) => b.stage !== 'won' && b.stage !== 'lost').sort((a, b) => (a.notice.responseDeadline ?? '9').localeCompare(b.notice.responseDeadline ?? '9'));
+  const open = all.filter((b) => b.stage !== 'won' && b.stage !== 'lost').sort(byDeadline);
   const views: { id: Tab; label: string; hint: string; icon: typeof Search; count?: number }[] = [
     { id: 'find', label: 'Find', hint: 'Open notices to bid on', icon: Search },
     { id: 'mine', label: 'My bids', hint: `${open.length} open`, icon: Gavel, count: open.length },
@@ -1129,7 +1129,7 @@ export function BidsContext() {
   const { state, dispatch } = useStore();
   const soon = Object.values(state.ws.bids ?? {})
     .filter((b) => b.stage !== 'won' && b.stage !== 'lost' && (daysLeft(b.notice.responseDeadline, now()) ?? 99) <= 14 && (daysLeft(b.notice.responseDeadline, now()) ?? -1) >= 0)
-    .sort((a, b) => (a.notice.responseDeadline ?? '').localeCompare(b.notice.responseDeadline ?? ''));
+    .sort(byDeadline);
   return (
     <div className="rp-section">
       <h2 className="rp-title">Due in the next two weeks</h2>

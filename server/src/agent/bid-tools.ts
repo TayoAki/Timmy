@@ -8,7 +8,7 @@
  * monthly limit. Tracking a bid changes only the workspace's own records, with Kontract's own copy of the notice.
  */
 import type { Opportunity } from '../../../src/data/kontract-api';
-import { bidTotals, dueText, placeText, STAGE_LABEL, trimNotice } from '../../../src/state/bids';
+import { bidTotals, byDeadline, dueText, placeText, STAGE_LABEL, trimNotice } from '../../../src/state/bids';
 import { callKontract, kontractReady, KontractError } from '../kontract/client';
 import { newId } from '../lib/ids';
 import { BudgetError } from '../providers/model';
@@ -194,7 +194,7 @@ const listMyBids: AgentTool = {
     const { state } = await readState(t.ctx.workspaceId);
     const now = new Date();
     const list = Object.values(state.ws.bids ?? {})
-      .sort((a, b) => (a.notice.responseDeadline ?? '9').localeCompare(b.notice.responseDeadline ?? '9'))
+      .sort(byDeadline)
       .map((b) => {
         const tot = bidTotals(b);
         return { bid: b.id, notice: b.notice.id, title: b.notice.title, agency: b.notice.agency, stage: STAGE_LABEL[b.stage], due: dueText(b.notice.responseDeadline, now), subs: b.subs.length, quoted: b.subs.filter((s) => s.status === 'quoted' || s.status === 'selected').length, price_per_period: tot.price ? tot.price / 100 : undefined, contract_total: tot.contractPrice ? tot.contractPrice / 100 : undefined };

@@ -33,15 +33,27 @@ export function bidTotals(b: Pick<Bid, 'pricing'>) {
 /** A price from what the sub charges and the markup, in whole cents. */
 export const priceFromMarkup = (subCost: number, markupPct: number) => Math.round(subCost * (1 + markupPct / 100));
 
+/**
+ * A date from Kontract as text. Kontract sends ISO strings; the sample demo's saved copy turns them into dates when it
+ * is read back, so both are taken.
+ */
+export function isoOf(v: unknown): string | null {
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v.toISOString();
+  return typeof v === 'string' && v ? v : null;
+}
+export const deadlineOf = (o: Pick<Opportunity, 'responseDeadline'>) => isoOf(o.responseDeadline);
+/** Soonest deadline first; no deadline last. */
+export const byDeadline = (a: { notice: Opportunity }, b: { notice: Opportunity }) => (deadlineOf(a.notice) ?? '9').localeCompare(deadlineOf(b.notice) ?? '9');
+
 /** Whole days until the deadline (negative once passed), or null with no deadline. */
-export function daysLeft(deadline: string | null | undefined, now: Date): number | null {
+export function daysLeft(deadline: string | Date | null | undefined, now: Date): number | null {
   if (!deadline) return null;
   const t = new Date(deadline).getTime();
   if (Number.isNaN(t)) return null;
   return Math.ceil((t - now.getTime()) / 86_400_000);
 }
 
-export function dueText(deadline: string | null | undefined, now: Date): string {
+export function dueText(deadline: string | Date | null | undefined, now: Date): string {
   const d = daysLeft(deadline, now);
   if (d === null) return 'No deadline given';
   if (d < 0) return 'Closed';
@@ -78,7 +90,7 @@ export function trimDetails(d: BidDetails): BidDetails {
   const cite = <T,>(c: { value: T; quote: string; doc: string } | null) => (c ? { value: c.value, quote: cut(c.quote, LIMITS.quote), doc: cut(c.doc, 300) } : null);
   return {
     noticeId: d.noticeId,
-    readAt: d.readAt,
+    readAt: isoOf(d.readAt) ?? new Date().toISOString(),
     fingerprint: cut(d.fingerprint, 200),
     documents: d.documents.slice(0, LIMITS.documents).map((x) => ({ id: cut(x.id, 200), name: cut(x.name, 300), url: cut(x.url, 1000), size: x.size, postedDate: x.postedDate, read: x.read, ...(x.pages ? { pages: x.pages } : {}), ...(x.chars ? { chars: x.chars } : {}), ...(x.note ? { note: cut(x.note, 300) } : {}) })),
     budget: cite(d.budget),
@@ -192,6 +204,7 @@ export function proposalBlocks(b: Bid, p: BidProfile, uid: (prefix: string) => s
 export function factText(v: unknown): string {
   if (v === null || v === undefined) return '';
   if (typeof v === 'string') return v;
+  if (v instanceof Date) return isoOf(v)!.slice(0, 10);
   if (Array.isArray(v)) return v.join(', ');
   if (typeof v === 'object') {
     const o = v as Record<string, unknown>;
@@ -201,7 +214,7 @@ export function factText(v: unknown): string {
       const kind = o.kind === 'ceiling' ? 'not to exceed' : o.kind === 'magnitude' ? 'magnitude' : 'estimate';
       return `${lo && hi && lo !== hi ? `${lo} to ${hi}` : lo || hi} (${kind})`;
     }
-    if ('date' in o) return `${o.date ?? 'Date not given'}${o.mandatory ? ', mandatory' : ', not mandatory'}`;
+    if ('date' in o) return `${isoOf(o.date)?.slice(0, 10) ?? 'Date not given'}${o.mandatory ? ', mandatory' : ', not mandatory'}`;
   }
   return String(v);
 }
