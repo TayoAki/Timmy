@@ -9,8 +9,8 @@
  */
 import { NOW, PEOPLE } from '../data/mock';
 import { liveSuffix } from '../live/clock';
-import type { Person } from '../data/types';
-import type { Col, Folder, ItemOf, Sheet, SheetColumn, WEvent, WS } from '../data/ws-types';
+import type { Person, Thread } from '../data/types';
+import type { Col, Contact, Folder, ItemOf, Sheet, SheetColumn, WEvent, WS } from '../data/ws-types';
 import { FILING_FOLDER, SHARED_FOLDER } from '../data/ws-mock';
 import type { Route } from './store';
 
@@ -61,6 +61,45 @@ export const uid = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${+
 export const registerPerson = (p: Person) => {
   PEOPLE[p.id] = { ...PEOPLE[p.id], ...p };
 };
+
+/**
+ * Who a real workspace's contacts and mail put a name to, each under the best name known for them. A contact's own
+ * name comes first: the person typed it, or Timmy learned it from their mail. Next is the name a sender gives in
+ * their mail ("John Glenn <john@nasa.test>"), from the newest thread that has one. A contact Timmy knows only by
+ * address, such as a meeting guest who has not written yet, is listed under that address until mail names them.
+ * The answer depends only on the state, so it does not matter whether the contact or the mail arrived first.
+ */
+export function namesKnown(threads: readonly Thread[], contacts: Readonly<Record<string, Contact>>): Person[] {
+  // An id such as "__proto__" or "constructor" names something every object has; nothing is listed under one.
+  const usable = (id: string) => !(id in Object.prototype);
+  const said = new Map<string, { name: string; email: string }>();
+  for (const t of threads) for (const [id, p] of Object.entries(t.ext?.people ?? {})) if (usable(id) && typeof p?.name === 'string' && p.name.trim() && !said.has(id)) said.set(id, p);
+  const out = new Map<string, Person>();
+  // A record saved by a screen may lack an address, or have one that is not text; it still gets listed, as before.
+  const plain = (v: unknown) => (typeof v === 'string' ? v.trim().toLowerCase() : '');
+  for (const c of Object.values(contacts)) {
+    if (!usable(c.id)) continue;
+    const mail = said.get(c.id);
+    const ownName = plain(c.name) !== '' && plain(c.name) !== plain(c.email);
+    out.set(c.id, { id: c.id, name: ownName || !mail ? c.name : mail.name, email: c.email, title: c.title, company: c.company });
+  }
+  for (const [id, p] of said) if (!out.has(id)) out.set(id, { id, name: p.name, email: p.email });
+  return [...out.values()];
+}
+
+/**
+ * Brings the name directory up to what a real workspace's state says now (namesKnown decides which name wins). It runs
+ * each time the state changes, and a name is not kept just because it was learned first: a meeting guest listed by
+ * address takes the name their mail gives once it arrives, and a contact renamed elsewhere shows its new name.
+ */
+export function learnNames(threads: readonly Thread[], contacts: Readonly<Record<string, Contact>>) {
+  for (const p of namesKnown(threads, contacts)) {
+    if (p.id === 'me') continue;
+    const cur = p.id in PEOPLE ? PEOPLE[p.id] : undefined;
+    if (cur && cur.name === p.name && cur.email === p.email && cur.title === p.title && cur.company === p.company) continue;
+    registerPerson(p);
+  }
+}
 
 /** The signed-in person's first name: Taylor in the demo, the real person's own on a real workspace. Empty when unknown. */
 export const myFirstName = () => (PEOPLE.me?.name ?? '').trim().split(/\s+/)[0] ?? '';

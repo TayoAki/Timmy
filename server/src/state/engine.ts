@@ -11,7 +11,7 @@
  */
 import { reducer, type Action, type State } from '../../../src/state/store';
 import { PEOPLE, NOW, setUnknownPerson } from '../../../src/data/mock';
-import { personFromMail } from '../../../src/state/ws';
+import { namesKnown, personFromMail } from '../../../src/state/ws';
 import { enterLive } from '../../../src/live/clock';
 import type { Patch } from '../../../src/live/patches';
 import { applyPatches, fromWire } from '../../../src/live/patches';
@@ -80,7 +80,8 @@ export const actorOf = (ctx: Ctx): Actor => ({ userId: ctx.user.id, name: ctx.us
 export function withGlobals<T>(loaded: Loaded, state: State, fn: () => T): T {
   const me = { id: 'me', name: loaded.workspace.owner_name ?? 'You', email: loaded.workspace.owner_email ?? '', company: loaded.workspace.name, internal: true };
   PEOPLE.me = me;
-  for (const c of Object.values(state.ws.contacts)) PEOPLE[c.id] = { id: c.id, name: c.name, email: c.email, title: c.title, company: c.company };
+  // The same names the screens show (namesKnown): a contact's own name, else the name the sender's mail gives.
+  for (const p of namesKnown(state.threads, state.ws.contacts)) if (p.id !== 'me') PEOPLE[p.id] = p;
   for (const l of Object.values(state.out.leads)) if (!PEOPLE[l.id]) PEOPLE[l.id] = { id: l.id, name: `${l.first} ${l.last}`, email: l.email, title: l.title, company: l.company };
   NOW.setTime(Date.now());
   try {
