@@ -1,6 +1,6 @@
 # Timmy backend: status
 
-Last updated: Nov 24, 2026 (from an email to done: dates on every to-do, the email follows its tasks, replies tick to-dos, the project question, project search). Read this first, then `tests.json`, then `git log`.
+Last updated: Nov 28, 2026 (invoices and quotes, version 1). Read this first, then `tests.json`, then `git log`.
 The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 
 ## Where things stand
@@ -42,6 +42,44 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 | Cold email (phase 2, built early because the decision was made) | Built as decided: Timmy writes it and opens the compose window of the connected mail app (Gmail, or Outlook on the web); nothing cold goes through an API. The lead is marked contacted when sync sees the email in Sent, and replies show in the Unibox. |
 | Frontend live mode (`VITE_TIMMY_LIVE=1`) | Built: sign-in, onboarding, state from the API, Connect buttons, model picker, monthly limit, approvals for writes Timmy proposes. The demo is unchanged and still the default build. |
 | Railway | `app` (API + live app), `pgvector` and the bucket `timmy-files` exist in `production` and `staging`. Both `app` services have the OpenRouter and Composio keys. |
+
+## Invoices and quotes, version 1 (Nov 28, 2026)
+
+**Asked:** "research and add in creating invoices and etc; we can use the Tiptap editor and PandaDoc for inspiration." The research and the plan for what comes next are in `docs/invoices-plan.md`.
+
+- **A new section, Invoices & quotes**, in the left rail (on a phone, under More). It has three tabs:
+  - Invoices: outstanding, overdue, paid in 30 days, drafts.
+  - Quotes: waiting, accepted, expired, drafts.
+  - Business details: name, address, billing email, tax number, how clients pay, currency, terms, number prefixes.
+- **The page is laid out as it prints**, PandaDoc-style:
+  - the business block, the dates, Bill to (pick a contact or type), what it is for;
+  - lines with quantity, price, tax %, amount and, on quotes, optional lines the client can take;
+  - totals with a percent or amount discount; notes, terms, how to pay.
+  - It is editable while a draft; once sent it is read-only.
+- **The sums** are plain code in whole cents (`src/state/invoices.ts`). A discount lowers the tax in proportion; an optional line counts only when chosen.
+- **Numbers** (INV-0001, Q-0001) are given out by the server, in order, and never shared.
+- **The PDF** is made on the server (pdfkit) and downloads from the invoice. No paid Tiptap export and no outside service.
+- **Send** opens the compose window already written: the amount, the due date, how to pay, the PDF attached, and the payment tracked in Waiting. Nothing goes out until Send, and the undo window applies as for any email. Sending marks the invoice sent.
+- **Mark paid** takes its email out of Waiting.
+- **A quote** can be marked accepted or declined, and turned into an invoice with the lines the client chose.
+- **Void** keeps it for the records; **Open it again** undoes it.
+- **Bill for this** on an email (Make an invoice / Make a quote) starts a draft for the person who wrote, in the email's project.
+  - On a real workspace one small model call lists the lines the email prices.
+  - A line is kept only if its sentence is really in the email and states the price.
+  - The email is treated as information, never as instructions.
+- **The server checks every invoice and the business details** before saving (kinds, statuses, whole-cent prices, quantities, tax, discount, currency, email shape, text limits). Read-only roles can see and download but not start, change or send.
+- **One fix found by the live suite:** before any invoice existed, the Business details form rebuilt its defaults on every render, so what was typed was lost. The defaults are now made once.
+- **One test changed:** `e2e-calm-phone` counted 10 sections under More on a phone. There are 11 now, with Invoices & quotes; the check says so.
+- **Not built** (version 2, for the owner to choose, in `docs/invoices-plan.md`):
+  - a share link with click-to-accept and an audit certificate;
+  - Stripe pay-now (needs the owner's OK and keys);
+  - viewed tracking, reminders and expiry;
+  - a pricing-table block and variables in pages;
+  - templates; Ask tools; QuickBooks or Xero.
+- **Tested:**
+  - `invoices.test` (14);
+  - `e2e-invoices` (demo, 34 checks, including a phone width);
+  - `live-invoices` (21).
 
 ## Do it with Timmy, and booking meetings from Ask (Nov 27, 2026)
 

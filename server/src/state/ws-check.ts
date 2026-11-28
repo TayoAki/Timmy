@@ -324,10 +324,73 @@ export function withClearedFields(ops: unknown): unknown {
   });
 }
 
+/* ───────────── Invoices and quotes ───────────── */
+
+const INVOICE_KINDS = new Set(['invoice', 'quote']);
+const INVOICE_STATUS = new Set(['draft', 'sent', 'paid', 'accepted', 'declined', 'void']);
+const CURRENCY = /^[A-Z]{3}$/;
+const MONEY_MAX = 1e12;
+const finite = (v: unknown, min: number, max: number) => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
+
+/**
+ * An invoice or quote every screen can draw and every sum can be worked out from: known kind and state, a client,
+ * lines with real numbers (prices in whole cents), dates, and text within limits. Totals are never stored: they are
+ * always worked out from the lines (src/state/invoices.ts), so a saved record can't claim a total its lines don't.
+ */
+function invoiceProblem(inv: Record<string, unknown>): string | null {
+  const refused = 'That invoice isn’t in a form Timmy can save.';
+  if (!INVOICE_KINDS.has(inv.kind as string) || !INVOICE_STATUS.has(inv.status as string)) return refused;
+  if (inv.kind === 'quote' && inv.status === 'paid') return refused;
+  if (inv.kind === 'invoice' && (inv.status === 'accepted' || inv.status === 'declined')) return refused;
+  if (!text(inv.number, 40) || !(inv.number as string).trim()) return 'An invoice needs a number of up to 40 characters.';
+  if (!text(inv.currency, 3) || !CURRENCY.test(inv.currency as string)) return 'The currency is a three-letter code, such as USD.';
+  const c = inv.client as Record<string, unknown> | undefined;
+  if (!c || typeof c !== 'object' || !text(c.name, 300)) return refused;
+  if (c.email !== undefined && c.email !== '' && !(typeof c.email === 'string' && EMAIL_SHAPE.test(c.email))) return 'The client’s email address doesn’t look right.';
+  for (const k of ['contact', 'company']) if (!shortText(c[k])) return refused;
+  if (!shortText(c.address, 1000)) return refused;
+  if (!date(inv.issued) || !date(inv.created) || (inv.due !== undefined && !date(inv.due))) return refused;
+  for (const k of ['sentAt', 'paidAt', 'acceptedAt', 'declinedAt', 'voidedAt']) if (inv[k] !== undefined && !date(inv[k])) return refused;
+  if (!Array.isArray(inv.items) || inv.items.length > 200) return 'An invoice can have up to 200 lines.';
+  const ids = new Set<string>();
+  for (const raw of inv.items) {
+    const l = raw as Record<string, unknown>;
+    if (!l || typeof l !== 'object' || !text(l.id, 100) || ids.has(l.id as string)) return refused;
+    ids.add(l.id as string);
+    if (!text(l.description, 2000)) return 'A line’s description can be up to 2,000 characters.';
+    if (!finite(l.qty, 0, 1e7)) return 'A line’s quantity has to be a number from 0 up.';
+    if (!finite(l.unitPrice, -MONEY_MAX, MONEY_MAX) || !Number.isInteger(l.unitPrice)) return refused;
+    if (l.taxRate !== undefined && !finite(l.taxRate, 0, 100)) return 'A tax rate is a percentage from 0 to 100.';
+    for (const k of ['optional', 'chosen']) if (l[k] !== undefined && typeof l[k] !== 'boolean') return refused;
+  }
+  if (inv.discount !== undefined) {
+    const d = inv.discount as Record<string, unknown>;
+    if (!d || (d.kind !== 'percent' && d.kind !== 'amount') || !finite(d.value, 0, d.kind === 'percent' ? 100 : MONEY_MAX)) return 'A discount is a percentage from 0 to 100, or an amount from 0 up.';
+  }
+  for (const k of ['intro', 'notes', 'terms']) if (!shortText(inv[k], 20_000)) return 'Notes and terms can be up to 20,000 characters.';
+  for (const k of ['project', 'thread', 'fromQuote']) if (inv[k] !== undefined && !text(inv[k], 200)) return refused;
+  if (inv.by !== undefined && inv.by !== 'timmy') return refused;
+  return null;
+}
+
+/** The business details and numbering: plain text within limits, Net terms in days, numbers that only go up. */
+function billingProblem(b: Record<string, unknown>): string | null {
+  const refused = 'Those billing details aren’t in a form Timmy can save.';
+  if (b.id !== 'settings' || !text(b.business, 300)) return refused;
+  for (const k of ['email', 'phone', 'taxId']) if (!shortText(b[k])) return refused;
+  if (b.email && !EMAIL_SHAPE.test(b.email as string)) return 'The billing email address doesn’t look right.';
+  for (const k of ['address', 'payment']) if (!shortText(b[k], 4000)) return refused;
+  if (!text(b.currency, 3) || !CURRENCY.test(b.currency as string)) return 'The currency is a three-letter code, such as USD.';
+  if (!finite(b.termsDays, 0, 365) || !finite(b.quoteDays, 1, 365) || !Number.isInteger(b.termsDays) || !Number.isInteger(b.quoteDays)) return 'Terms are whole days, up to a year.';
+  for (const k of ['invoicePrefix', 'quotePrefix']) if (!text(b[k], 20)) return refused;
+  for (const k of ['nextInvoice', 'nextQuote']) if (!finite(b[k], 1, 1e9) || !Number.isInteger(b[k])) return refused;
+  return null;
+}
+
 /** The settings on a visitor's conversation that a member may flip. Everything else in it is written by the server. */
 const CHAT_FLAGS = new Set(['unread', 'starred']);
 
-const CHECKS: Partial<Record<string, (item: Record<string, unknown>, pictures: Pictures) => string | null>> = { docs: docProblem, automations: automationProblem, chat: chatProblem, tasks: taskProblem, contacts: contactProblem, events: eventProblem };
+const CHECKS: Partial<Record<string, (item: Record<string, unknown>, pictures: Pictures) => string | null>> = { docs: docProblem, automations: automationProblem, chat: chatProblem, tasks: taskProblem, contacts: contactProblem, events: eventProblem, invoices: invoiceProblem, billing: billingProblem };
 
 /** The record a collection really holds under an id: its own, never something every object has. */
 const ownRecord = (col: Record<string, unknown> | undefined, id: string) => (col && Object.hasOwn(col, id) ? (col[id] as Record<string, unknown>) : null);
@@ -375,6 +438,7 @@ export function checkWsOps(state: State, ops: unknown, pictures: Pictures = NO_P
     if (!okId(id)) return refused;
 
     if (col === 'chat' && o.op === 'remove') return 'The website chat’s settings can be changed, not removed.';
+    if (col === 'billing' && o.op === 'remove') return 'The billing details can be changed, not removed.';
     if (item) {
       const bad = CHECKS[col]?.(item, pictures) ?? null;
       if (bad) return bad;
@@ -382,6 +446,17 @@ export function checkWsOps(state: State, ops: unknown, pictures: Pictures = NO_P
       if ('name' in item && item.name !== undefined && !text(item.name, 300)) return 'That name is too long.';
     }
     staged.set(`${col}/${id}`, item);
+  }
+  // An invoice or quote number is never shared: two of the same kind can't carry the same one.
+  if ([...staged.keys()].some((k) => k.startsWith('invoices/'))) {
+    const all = new Map<string, Record<string, unknown>>(Object.entries((state.ws as unknown as { invoices?: Record<string, Record<string, unknown>> }).invoices ?? {}));
+    for (const [k, v] of staged) if (k.startsWith('invoices/')) (v ? all.set(k.slice(9), v) : all.delete(k.slice(9)));
+    const seen = new Set<string>();
+    for (const inv of all.values()) {
+      const key = `${inv.kind}:${String(inv.number).trim().toLowerCase()}`;
+      if (seen.has(key)) return `Another ${inv.kind} already has the number ${String(inv.number)}.`;
+      seen.add(key);
+    }
   }
   return null;
 }

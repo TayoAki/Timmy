@@ -1,6 +1,7 @@
 import { PEOPLE } from './mock';
 import type {
   Automation,
+  BillingSettings,
   ChatConvo,
   ChatWidget,
   Contact,
@@ -8,6 +9,7 @@ import type {
   DocBody,
   Folder,
   Interaction,
+  Invoice,
   LearnedRule,
   Project,
   Prompt,
@@ -674,6 +676,83 @@ const chats: ChatConvo[] = [
   },
 ];
 
+/* ───────────── Invoices and quotes ───────────── */
+
+const billing: BillingSettings = {
+  id: 'settings',
+  business: 'Northpeak',
+  address: '410 Harbor Street, Suite 200\nPortland, OR 97204',
+  email: 'billing@northpeak.io',
+  taxId: 'EIN 84-1234567',
+  payment: 'Bank transfer to Northpeak Inc., First Harbor Bank, routing 123000848, account 4401 2290 18.\nOr pay by card from the link in your account portal.',
+  currency: 'USD',
+  termsDays: 30,
+  quoteDays: 30,
+  invoicePrefix: 'INV-',
+  quotePrefix: 'Q-',
+  nextInvoice: 1043,
+  nextQuote: 218,
+};
+
+const invoices: Invoice[] = [
+  {
+    id: 'inv-1042',
+    kind: 'invoice',
+    number: 'INV-1042',
+    status: 'sent',
+    client: { contact: 'marcus', name: 'Marcus Lee', email: 'marcus@northwindhealth.com', company: 'Northwind Health', address: '88 Commonwealth Ave\nBoston, MA 02116' },
+    issued: d(2, 10),
+    due: d(12, 17),
+    currency: 'USD',
+    items: [
+      { id: 'inv-1042-1', description: 'Pilot setup and onboarding (fixed fee)', qty: 1, unitPrice: 450000 },
+      { id: 'inv-1042-2', description: 'Pilot seats, December (per seat)', qty: 40, unitPrice: 5800 },
+    ],
+    intro: 'For the Northwind Health 90-day pilot, first month.',
+    terms: 'Payment due within 10 days.',
+    project: 'northwind',
+    created: d(2, 10),
+    sentAt: d(2, 11),
+  },
+  {
+    id: 'inv-1041',
+    kind: 'invoice',
+    number: 'INV-1041',
+    status: 'paid',
+    client: { contact: 'dana', name: 'Dana Whitfield', email: 'dana.whitfield@acme.com', company: 'Acme Corp' },
+    issued: d(1, 9),
+    due: d(31, 17),
+    currency: 'USD',
+    items: [{ id: 'inv-1041-1', description: 'Annual licence, 100 seats (2026)', qty: 100, unitPrice: 6200, taxRate: 0 }],
+    terms: 'Payment due within 30 days.',
+    project: 'acme',
+    created: d(1, 9),
+    sentAt: d(1, 9, 30),
+    paidAt: d(9, 14),
+  },
+  {
+    id: 'q-217',
+    kind: 'quote',
+    number: 'Q-217',
+    status: 'draft',
+    client: { contact: 'dana', name: 'Dana Whitfield', email: 'dana.whitfield@acme.com', company: 'Acme Corp' },
+    issued: d(16, 9),
+    due: d(30, 17),
+    currency: 'USD',
+    items: [
+      { id: 'q-217-1', description: 'Annual licence, 120 seats (2027)', qty: 120, unitPrice: 5800 },
+      { id: 'q-217-2', description: 'Onboarding for 20 new seats', qty: 1, unitPrice: 150000 },
+      { id: 'q-217-3', description: 'Priority support (optional)', qty: 1, unitPrice: 360000, optional: true },
+    ],
+    discount: { kind: 'percent', value: 5 },
+    intro: 'Renewal for 2027 at 120 seats, as discussed on the call.',
+    terms: 'This quote is valid for 30 days.',
+    project: 'acme',
+    thread: 'acme-quote',
+    created: d(16, 9),
+  },
+];
+
 export const WS_SEED: WS = {
   folders: byId(folders),
   files: byId(files),
@@ -693,4 +772,6 @@ export const WS_SEED: WS = {
   automations: byId(automations),
   chat: { site: chatWidget },
   chats: byId(chats),
+  invoices: byId(invoices),
+  billing: { settings: billing },
 };

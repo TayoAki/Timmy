@@ -413,6 +413,89 @@ export interface WS {
   automations: Record<string, Automation>;
   chat: Record<string, ChatWidget>;
   chats: Record<string, ChatConvo>;
+  /** Invoices and quotes (src/state/invoices.ts). */
+  invoices: Record<string, Invoice>;
+  /** The business details and numbering invoices and quotes use: one record, `settings`. */
+  billing: Record<string, BillingSettings>;
+}
+
+/* ───────────── Invoices and quotes ───────────── */
+
+export type InvoiceKind = 'invoice' | 'quote';
+/** Overdue (an invoice past its due date) and expired (a quote past its date) are worked out, never stored. */
+export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'accepted' | 'declined' | 'void';
+
+/** One line of an invoice or quote. Money is in cents, so sums are exact. */
+export interface LineItem {
+  id: string;
+  description: string;
+  /** Hours, units, seats… Can have decimals (1.5 hours). */
+  qty: number;
+  /** Price of one, in cents. */
+  unitPrice: number;
+  /** Sales tax on this line, as a percentage (8.25 for 8.25%). */
+  taxRate?: number;
+  /** A quote's optional line: the client may take it or leave it. Counted only when `chosen`. */
+  optional?: boolean;
+  chosen?: boolean;
+}
+
+export interface Invoice {
+  id: string;
+  kind: InvoiceKind;
+  /** INV-0001, Q-0001: given when it is made, never reused. */
+  number: string;
+  status: InvoiceStatus;
+  client: { contact?: string; name: string; email?: string; company?: string; address?: string };
+  issued: Date;
+  /** An invoice's due date; a quote's "valid until". */
+  due?: Date;
+  /** ISO 4217, e.g. USD. */
+  currency: string;
+  items: LineItem[];
+  discount?: { kind: 'percent' | 'amount'; value: number };
+  /** Shown above the lines: what this is for. */
+  intro?: string;
+  /** Shown below the totals: thanks, scope notes. */
+  notes?: string;
+  /** Payment terms, or a quote's terms. */
+  terms?: string;
+  project?: ProjectId;
+  /** The email it was made from, or the one it was sent in. */
+  thread?: string;
+  /** For an invoice made from a quote: that quote. */
+  fromQuote?: string;
+  created: Date;
+  sentAt?: Date;
+  paidAt?: Date;
+  acceptedAt?: Date;
+  declinedAt?: Date;
+  voidedAt?: Date;
+  /** Timmy drafted it from an email. */
+  by?: 'timmy';
+}
+
+export interface BillingSettings {
+  id: 'settings';
+  /** The business name on every invoice. */
+  business: string;
+  address?: string;
+  email?: string;
+  phone?: string;
+  /** Tax or registration number, when the business has one to show. */
+  taxId?: string;
+  /** How to pay: bank details, a payment link, "checks payable to…". */
+  payment?: string;
+  currency: string;
+  /** Days from the issue date an invoice is due (Net 30 is 30). */
+  termsDays: number;
+  /** Days a quote stays valid. */
+  quoteDays: number;
+  invoicePrefix: string;
+  quotePrefix: string;
+  /** The next number each will get. */
+  nextInvoice: number;
+  nextQuote: number;
 }
 
 export type Col = keyof WS;

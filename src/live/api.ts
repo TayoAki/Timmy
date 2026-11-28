@@ -112,6 +112,10 @@ export const api = {
       `/api/v1/connected-files/${encodeURIComponent(itemId)}/view`,
     ),
   /** A to-do from what an email asks, linked to the thread and its project (server/src/agent/todo.ts). */
+  /** An invoice or quote's PDF, kept as an attachment for the email that sends it. */
+  invoiceAttachment: (id: string) => call<{ file: { id: string; name: string; type: string; size: number } }>('POST', `/api/v1/invoices/${encodeURIComponent(id)}/attachment`, {}),
+  /** Timmy drafts an invoice or quote from what an email says (server/src/invoices/from-email.ts). */
+  invoiceFromEmail: (thread: string, kind: 'invoice' | 'quote') => call<{ invoice: { id: string; number: string; lines: number } }>('POST', '/api/v1/invoices/from-email', { thread, kind }),
   todoFromEmail: (thread: string) => call<{ task: { id: string; title: string; project: string | null; due: string | null } }>('POST', '/api/v1/mail/todo', { thread }),
   /** The files Timmy lists from a connected Google Drive or OneDrive, newest first. */
   connectedFiles: (q = '') =>

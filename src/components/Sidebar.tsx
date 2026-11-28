@@ -27,6 +27,7 @@ import { todaysEvents } from '../state/ws';
 import { ApprovalsSide } from '../areas/approvals';
 import { CalendarSide } from '../areas/calendar';
 import { DocsSide } from '../areas/docs';
+import { InvoicesSide } from '../areas/invoices';
 import { FilesSide } from '../areas/files';
 import { LibrarySide } from '../areas/library';
 import { PeopleSide } from '../areas/people';
@@ -68,6 +69,8 @@ export function Sidebar() {
         <CalendarSide />
       ) : section === 'docs' ? (
         <DocsSide />
+      ) : section === 'invoices' ? (
+        <InvoicesSide />
       ) : section === 'projects' ? (
         <ProjectsSide />
       ) : section === 'library' ? (

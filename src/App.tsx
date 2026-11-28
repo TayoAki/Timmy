@@ -10,6 +10,7 @@ const AutomationEditor = lazy(() => import('./areas/automations/Editor').then((m
 import { ContactView, PeopleView } from './areas/people';
 import { ProjectsView, ProjectView } from './areas/projects';
 import { TasksView } from './areas/tasks';
+import { InvoicesView, InvoiceView } from './areas/invoices';
 import { CampaignView, OutboundView } from './areas/outbound';
 import { SocialView } from './areas/outbound/Social';
 import { ConnectionsView } from './areas/connections';
@@ -125,6 +126,8 @@ function Shell() {
       {r.view === 'appearance' && <AppearanceView />}
       {r.view === 'voice' && <VoiceView />}
       {r.view === 'tasks' && <TasksView />}
+      {r.view === 'invoices' && <InvoicesView />}
+      {r.view === 'invoice' && <InvoiceView key={r.id} />}
       {r.view === 'calendar' && <CalendarView />}
       {r.view === 'docs' && <DocsView />}
       {r.view === 'file' && <FileView key={r.id} />}

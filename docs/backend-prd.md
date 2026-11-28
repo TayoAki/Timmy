@@ -342,6 +342,20 @@ The sales features are where the simulation said users pay. They are also where 
 | Enrichment and finding leads | Agent tools `find_leads(icp, filters, count)` and `enrich(lead)`. They call Treg by default, which picks the best data provider for each lookup. If the workspace connects its own provider (Apollo, Clay, People Data Labs, Hunter) through Composio, that provider takes over. Every address is verified before the first send. | Provider terms and credits. Verification costs about $19.50 per 1,000 checks pay-as-you-go. Provenance is stored per field so GDPR and CCPA requests can be answered. | [ZeroBounce](https://www.zerobounce.net/email-validation-pricing) |
 | Agencies | Client workspaces, each with its own mailbox pool, offer, leads, Unibox and reports. Client logins are read-only. Bulk mailbox import and DNS checks are included. | Per-client sending domains and DMARC alignment |  |
 
+**Invoices and quotes, as built (Nov 28, 2026).** Version 1 is in `docs/invoices-plan.md`, with the research behind it (PandaDoc, Tiptap, US invoice fields, ESIGN and UETA).
+- **One record** serves invoices and quotes: workspace state, checked by the server, with lines in whole cents and numbers given out in order.
+- **The PDF** is made on the server.
+- **Sending** goes through the compose window and the gateway like any email. The payment or answer is tracked in Waiting; paid ends the wait.
+- **An accepted quote** becomes an invoice.
+- **Bill for this** on an email drafts the lines the email prices, kept only when their sentence and price are in the email.
+
+Next, in this order:
+1. a share link with click-to-accept and an audit certificate;
+2. Stripe pay-now (needs the owner's OK and keys);
+3. reminders and expiry through the morning run;
+4. a pricing-table block in pages;
+5. QuickBooks or Xero sync through Composio.
+
 **Leads the agent finds on its own.** The assistant can add and enrich leads without asking, up to a daily cap (25 by default) and inside the monthly credit budget. Both are set in Connections. Adding a lead only changes the workspace's own list and can be undone. Contacting a lead never happens on its own: Timmy drafts, and the user sends. Each found lead records its provider and the search that produced it.
 
 **Treg for data.** [Treg](https://treg.to/) is a pay-per-call marketplace of data and tools for AI agents: more than 4,100 endpoints from 127 providers behind one token, open source under Apache 2.0. Every workspace has it on by default. Following Treg's guide for products, Timmy holds one Treg team token and tags every call with the workspace in the `X-Treg-Meta` header. Our code sets that tag, never the model ([integration guide](https://treg.to/integrate.md)). A per-workspace daily cap comes from Treg's budgets endpoint, and `X-Treg-Route-Max-Cost` caps each call. Costs come back in `X-Treg-Cost-Micro` and count against the workspace's enrichment budget. The agent uses Treg's routed lookups, which pick the provider and fall back on failure, and only catalog tools, never raw upstream URLs. v1 uses Treg only to look things up; a write through Treg would be an effect record like any other.

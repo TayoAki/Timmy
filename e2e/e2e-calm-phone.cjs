@@ -33,7 +33,7 @@ const overlap = (a, b) => !(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y 
   assert(!(await p.locator('.ai-foot-keys').isVisible()), 'no Ctrl+I hint in the chat on a phone');
   await p.keyboard.press('Escape'); await p.waitForTimeout(200);
   await p.locator('.ptab:has-text("More")').click(); await p.waitForTimeout(300);
-  assert(await p.locator('.sheet-item').count() === 10, 'More lists the other 10 sections');
+  assert(await p.locator('.sheet-item').count() === 11, 'More lists the other 11 sections (Invoices & quotes is new)');
   await p.locator('.sheet-item:has-text("Outbound")').click(); await p.waitForTimeout(300);
   let s = await p.evaluate(() => { const x = JSON.parse(localStorage.getItem('timmy-state-v3') || '{}'); return x; });
   await p.waitForTimeout(500);

@@ -7,12 +7,14 @@ import {
   ChevronDown,
   ChevronRight,
   CircleDot,
+  FileText,
   FlaskConical,
   Hourglass,
   ListChecks,
   ListPlus,
   NotebookPen,
   Paperclip,
+  Receipt,
   Reply,
   ReplyAll,
   Send,
@@ -22,10 +24,10 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { NOW, PEOPLE } from '../data/mock';
-import { decisionOps, firstName, isoDay, patch, pathOf, signOff } from '../state/ws';
+import { decisionOps, firstName, isoDay, patch, pathOf, signOff, uid } from '../state/ws';
 import { BlockTimeDialog } from '../areas/calendar/BlockTimeDialog';
 import { TaskDialog } from '../areas/tasks/TaskDialog';
-import { AutoTextarea, Field, Modal } from '../components/kit';
+import { AutoTextarea, Field, Menu, Modal } from '../components/kit';
 import type { Box, Draft, MailFile, Thread } from '../data/types';
 import { AttachButton, FileChips } from '../components/Attach';
 import { ProjectGuess, ProjectPicker } from '../components/ProjectPicker';
@@ -400,6 +402,47 @@ const recapBody = (t: Thread) => {
     .join('\n\n');
 };
 
+/**
+ * "Bill for this": an invoice or quote from this email. On a real workspace Timmy reads the email and drafts the lines
+ * whose prices it states (server/src/invoices/from-email.ts); in the sample demo a draft is started for whoever wrote.
+ * Either way it opens as a draft to check, and nothing is sent.
+ */
+function BillButton({ t }: { t: Thread }) {
+  const { dispatch } = useStore();
+  const [busy, setBusy] = useState(false);
+  const make = async (kind: 'invoice' | 'quote') => {
+    if (!isLive()) {
+      dispatch({ type: 'newInvoice', kind, id: uid(kind === 'invoice' ? 'inv' : 'quo'), thread: t.id });
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await api.invoiceFromEmail(t.id, kind);
+      dispatch({ type: 'navigate', route: { view: 'invoice', id: r.invoice.id } });
+      dispatch({ type: 'toast', text: r.invoice.lines ? `${kind === 'invoice' ? 'Invoice' : 'Quote'} ${r.invoice.number} drafted with ${r.invoice.lines} line${r.invoice.lines === 1 ? '' : 's'} from this email. Check it before you send it.` : `${kind === 'invoice' ? 'Invoice' : 'Quote'} ${r.invoice.number} started. The email names no prices, so add the lines.` });
+    } catch (e) {
+      dispatch({ type: 'toast', text: (e as Error).message, tone: 'warn' });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Menu
+      label="Bill for this"
+      trigger={
+        <>
+          <Receipt size={14} />
+          {busy ? 'Reading…' : 'Bill for this'}
+        </>
+      }
+      items={[
+        { label: 'Make an invoice', icon: Receipt, onSelect: () => void make('invoice'), hint: isLive() ? 'Timmy drafts the lines from the prices in the email' : undefined },
+        { label: 'Make a quote', icon: FileText, onSelect: () => void make('quote') },
+      ]}
+    />
+  );
+}
+
 function ThreadActions({ t, onReply }: { t: Thread; onReply: () => void }) {
   const { state, dispatch } = useStore();
   const [taskOpen, setTaskOpen] = useState(false);
@@ -456,6 +499,7 @@ function ThreadActions({ t, onReply }: { t: Thread; onReply: () => void }) {
           Record decision
         </button>
       )}
+      <BillButton t={t} />
       {t.box === 'waiting' && t.waiting && (
         <button className="btn btn-sm btn-ghost demo-btn" onClick={() => dispatch({ type: 'simulateReply', id: t.id })} title="Demo only: pretend the reply arrived">
           <FlaskConical size={14} />

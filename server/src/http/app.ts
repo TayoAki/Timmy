@@ -30,6 +30,7 @@ import { switchOffWithoutOwner } from '../automations/roles';
 import { connectionEventRoutes, connectionRoutes } from './connections';
 import { assetHeaders, fileRoutes, isFileUpload } from './files';
 import { connectedFileRoutes } from './connected-files';
+import { invoiceRoutes } from './invoices';
 import { mailRoutes } from './mail';
 import { projectRoutes } from './projects';
 import { mapRoutes } from './map';
@@ -161,6 +162,7 @@ export function buildApp(): Hono<Env> {
   copilotKitRoutes(app);
   fileRoutes(app);
   connectedFileRoutes(app);
+  invoiceRoutes(app);
   mailRoutes(app);
   projectRoutes(app);
   mapRoutes(app);

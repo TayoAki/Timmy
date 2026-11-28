@@ -237,6 +237,14 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
     }
   }
   if (a.type === 'done' && (typeof a.id !== 'string' || !state.threads.some((t) => t.id === a.id))) return { state, reject: 'That email is no longer here.' };
+  // Invoices and quotes: a new one gets its number from the reducer, here, so two people can't be given the same one.
+  if (a.type === 'newInvoice') {
+    const ref = (v: unknown) => v === undefined || (typeof v === 'string' && v.length <= 200);
+    if (typeof a.id !== 'string' || !/^[\w-]{1,100}$/.test(a.id) || (a.kind !== 'invoice' && a.kind !== 'quote') || !ref(a.contact) || !ref(a.project) || !ref(a.thread) || !ref(a.fromQuote)) return { state, reject: 'That isn’t an invoice Timmy can start.' };
+    if (state.ws.invoices?.[a.id]) return { state, reject: 'That invoice already exists.' };
+  }
+  if (a.type === 'invoice' && (typeof a.id !== 'string' || !state.ws.invoices?.[a.id] || !['paid', 'accepted', 'declined', 'void', 'reopen'].includes(a.op))) return { state, reject: 'That invoice isn’t here.' };
+  if (a.type === 'sendNew' && a.draft?.invoice !== undefined && (typeof a.draft.invoice !== 'string' || !state.ws.invoices?.[a.draft.invoice])) return { state, reject: 'That invoice isn’t here.' };
   if (a.type === 'dismissProjectGuess' && (typeof a.id !== 'string' || !state.threads.some((t) => t.id === a.id))) return { state, reject: 'That email is no longer here.' };
   if (a.type === 'move') {
     // A thread can only be put in one of the five places. Who moved it is the server's to say, never the caller's:

@@ -1,5 +1,5 @@
 import { isLive } from '../live/clock';
-import { Bell, CalendarDays, FileText, FolderKanban, HardDrive, House, Library, ListChecks, Megaphone, MessageSquareText, Plug, Rocket, Search, Settings, Stamp, Users } from 'lucide-react';
+import { Bell, CalendarDays, FileText, FolderKanban, HardDrive, House, Library, ListChecks, Megaphone, MessageSquareText, Plug, Receipt, Rocket, Search, Settings, Stamp, Users } from 'lucide-react';
 import { FeedbackButton } from '../live/Feedback';
 import { useOutboundCounts } from '../areas/outbound';
 import { scopedApprovals } from '../state/scope';
@@ -31,6 +31,7 @@ export function useSections(): Item[] {
     { section: 'tasks', label: 'Tasks', icon: <ListChecks size={20} />, route: { view: 'tasks', tab: 'board' }, badge: b(captured) },
     { section: 'calendar', label: 'Calendar', icon: <CalendarDays size={20} />, route: { view: 'calendar', tab: 'week' } },
     { section: 'docs', label: 'Docs', icon: <FileText size={20} />, route: { view: 'docs', tab: 'recent' } },
+    { section: 'invoices', label: 'Invoices & quotes', icon: <Receipt size={20} />, route: { view: 'invoices', tab: 'invoices' } },
     { section: 'projects', label: 'Projects', icon: <FolderKanban size={20} />, route: { view: 'projects', tab: 'active' } },
     { section: 'people', label: 'People', icon: <Users size={20} />, route: { view: 'people', tab: 'priority' } },
     { section: 'outbound', label: 'Outbound', icon: <Rocket size={20} />, route: { view: 'outbound', tab: 'leads' }, badge: b(out.unread + out.waiting) },

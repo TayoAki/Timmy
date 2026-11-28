@@ -4,7 +4,8 @@ import type { Activity, Box, Deal, Label, MailFile, MailRule, ProjectId, Rule, R
 import { describeMailRule, RULE_BOXES, senderKey, sweepRule } from './mail-rules';
 import { DECISIONS, type Decision } from '../data/decisions';
 import { WS_SEED } from '../data/ws-mock';
-import type { LearnedRule, WS } from '../data/ws-types';
+import type { Invoice, InvoiceKind, LearnedRule, WS } from '../data/ws-types';
+import { counts as lineCounts, defaultBilling, newDraft } from './invoices';
 import { fmtDate, fmtDay, fmtTime, money } from '../lib/format';
 import type { ApprovalKind, ApprovalRecord } from './approvals';
 import { draftFor } from './drafting';
@@ -32,6 +33,8 @@ export type Route =
   | { view: 'appearance' }
   | { view: 'voice' }
   | { view: 'tasks'; tab: 'board' | 'list' | 'review'; project?: string }
+  | { view: 'invoices'; tab: 'invoices' | 'quotes' | 'details' }
+  | { view: 'invoice'; id: string }
   | { view: 'calendar'; tab: 'week' | 'day'; date?: string }
   | { view: 'docs'; tab: 'recent' | 'meetings' | 'templates' }
   | { view: 'file'; id: string }
@@ -48,7 +51,7 @@ export type Route =
 
 export type OutboundTab = 'leads' | 'campaigns' | 'drafts' | 'unibox' | 'speed' | 'chat' | 'calls' | 'templates' | 'channels';
 
-export type Section = 'mail' | 'approvals' | 'activity' | 'people' | 'files' | 'rules' | 'tasks' | 'calendar' | 'docs' | 'projects' | 'library' | 'outbound' | 'social' | 'connections';
+export type Section = 'mail' | 'approvals' | 'activity' | 'people' | 'files' | 'rules' | 'tasks' | 'calendar' | 'docs' | 'invoices' | 'projects' | 'library' | 'outbound' | 'social' | 'connections';
 
 export const sectionOf = (r: Route): Section => {
   switch (r.view) {
@@ -70,6 +73,9 @@ export const sectionOf = (r: Route): Section => {
     case 'docs':
     case 'file':
       return 'docs';
+    case 'invoices':
+    case 'invoice':
+      return 'invoices';
     case 'projects':
     case 'project':
       return 'projects';
@@ -91,7 +97,7 @@ export const sectionOf = (r: Route): Section => {
 };
 
 /** Detail screens keep the list you came from as the Back target. */
-const isDetail = (r: Route) => r.view === 'thread' || r.view === 'file' || r.view === 'contact' || r.view === 'project' || r.view === 'campaign';
+const isDetail = (r: Route) => r.view === 'thread' || r.view === 'file' || r.view === 'contact' || r.view === 'project' || r.view === 'campaign' || r.view === 'invoice';
 
 /** A new email or reply being written in the compose window. */
 export interface ComposeDraft {
@@ -104,6 +110,8 @@ export interface ComposeDraft {
   project?: string;
   /** Files attached from the person's computer, already uploaded (real workspaces). */
   files?: MailFile[];
+  /** The invoice or quote this email sends: sending it marks it sent and ties it to the email. */
+  invoice?: string;
 }
 
 interface Snapshot {
@@ -213,6 +221,10 @@ export type Action =
   | ({ type: 'ws'; ops: WsOp[] } & WsOptions)
   | { type: 'compose'; draft: ComposeDraft | null }
   | { type: 'sendNew'; draft: ComposeDraft }
+  /** A new invoice or quote, numbered here so the server gives the number (src/state/invoices.ts). */
+  | { type: 'newInvoice'; kind: InvoiceKind; id: string; contact?: string; project?: string; thread?: string; fromQuote?: string }
+  /** What happened to one: paid, accepted, declined, void, or back to how it was before that. */
+  | { type: 'invoice'; op: 'paid' | 'accepted' | 'declined' | 'void' | 'reopen'; id: string }
   | { type: 'reply'; id: string; body: string; track?: { on: string; item: string; due?: string } | null; files?: MailFile[] }
   | { type: 'simulateReply'; id: string }
   /** Timmy drafts a nudge or reply; with `note`, the reply says what you asked it to. */
@@ -1026,12 +1038,85 @@ export function reducer(s: State, a: Action): State {
         context: track ? 'Timmy will draft a nudge if the date slips.' : undefined,
         history: [{ at: NOW, text: track ? `Sent and tracked in [02] Waiting${due ? ` until ${fmtDay(due)}` : ''}` : 'Sent' }],
       };
+      const inv = d.invoice ? s.ws.invoices[d.invoice] : undefined;
+      const sentInvoice: Invoice | undefined = inv && inv.status !== 'void' ? { ...inv, status: inv.status === 'draft' ? 'sent' : inv.status, sentAt: NOW, thread: tid } : undefined;
       return {
         ...s,
         compose: null,
         threads: [thread, ...s.threads],
+        ...(sentInvoice ? { ws: { ...s.ws, invoices: { ...s.ws.invoices, [sentInvoice.id]: sentInvoice } } } : {}),
         activity: logged(s, `You sent “${thread.subject}”${track ? ' and Timmy started tracking the reply' : ''}`, 'send', tid),
         toasts: withToast(s, track ? `Sent · tracking in [02] Waiting${due ? ` until ${fmtDay(due)}` : ''}` : `Sent to ${names}`, snap(s)),
+      };
+    }
+
+    case 'newInvoice': {
+      if (s.ws.invoices[a.id] || (a.kind !== 'invoice' && a.kind !== 'quote')) return s;
+      const settings = s.ws.billing.settings ?? defaultBilling(PEOPLE.me?.company || 'Your business', PEOPLE.me?.email || undefined);
+      const quote = a.fromQuote ? s.ws.invoices[a.fromQuote] : undefined;
+      if (a.fromQuote && quote?.kind !== 'quote') return s;
+      const contact = a.contact ? s.ws.contacts[a.contact] : undefined;
+      const thread = a.thread ? s.threads.find((t) => t.id === a.thread) : undefined;
+      const who = thread ? counterpart(thread) : undefined;
+      // The name the email itself carries for a real mailbox's sender, before one guessed from their address.
+      const named = who ? thread?.ext?.people?.[who] : undefined;
+      const person = who ? (named ? { name: named.name, email: named.email, company: undefined, internal: false } : (PEOPLE[who] ?? personFromMail(who))) : undefined;
+      const client: Invoice['client'] = quote
+        ? quote.client
+        : contact
+          ? { contact: contact.id, name: contact.name, email: contact.email, ...(contact.company ? { company: contact.company } : {}) }
+          : person && who !== 'me'
+            ? { name: person.name, ...(person.email ? { email: person.email } : {}), ...(person.company && !person.internal ? { company: person.company } : {}) }
+            : { name: '' };
+      const items = quote ? quote.items.filter(lineCounts).map((l, i) => ({ id: `${a.id}-${i + 1}`, description: l.description, qty: l.qty, unitPrice: l.unitPrice, ...(l.taxRate ? { taxRate: l.taxRate } : {}) })) : undefined;
+      const project = quote?.project ?? a.project ?? thread?.project;
+      const { invoice, settings: next } = newDraft(settings, a.kind, a.id, new Date(NOW), {
+        client,
+        ...(items ? { items } : {}),
+        ...(project ? { project } : {}),
+        ...((quote?.thread ?? a.thread) ? { thread: quote?.thread ?? a.thread } : {}),
+        ...(quote ? { fromQuote: quote.id, ...(quote.intro ? { intro: quote.intro } : {}), ...(quote.discount ? { discount: quote.discount } : {}) } : {}),
+      });
+      const label = a.kind === 'invoice' ? 'Invoice' : 'Quote';
+      return {
+        ...s,
+        ws: { ...s.ws, invoices: { ...s.ws.invoices, [a.id]: invoice }, billing: { ...s.ws.billing, settings: next } },
+        route: { view: 'invoice', id: a.id },
+        back: s.route,
+        activity: logged(s, quote ? `Turned quote ${quote.number} into invoice ${invoice.number}` : `Started ${label.toLowerCase()} ${invoice.number}`, 'file'),
+        toasts: withToast(s, quote ? `Invoice ${invoice.number} made from quote ${quote.number}` : `${label} ${invoice.number} started`, snap(s)),
+      };
+    }
+
+    case 'invoice': {
+      const inv = s.ws.invoices[a.id];
+      if (!inv) return s;
+      const quote = inv.kind === 'quote';
+      const at = new Date(NOW);
+      let next: Invoice | null = null;
+      let said = '';
+      if (a.op === 'paid' && !quote && inv.status !== 'paid' && inv.status !== 'void') {
+        next = { ...inv, status: 'paid', paidAt: at };
+        said = `${inv.number} marked paid`;
+      } else if ((a.op === 'accepted' || a.op === 'declined') && quote && inv.status !== 'void') {
+        next = a.op === 'accepted' ? { ...inv, status: 'accepted', acceptedAt: at, declinedAt: undefined } : { ...inv, status: 'declined', declinedAt: at, acceptedAt: undefined };
+        said = a.op === 'accepted' ? `Quote ${inv.number} accepted. You can turn it into an invoice.` : `Quote ${inv.number} marked declined`;
+      } else if (a.op === 'void' && inv.status !== 'paid' && inv.status !== 'void') {
+        next = { ...inv, status: 'void', voidedAt: at };
+        said = `${inv.number} is void`;
+      } else if (a.op === 'reopen' && inv.status !== 'draft' && inv.status !== 'sent') {
+        next = { ...inv, status: inv.sentAt ? 'sent' : 'draft', paidAt: undefined, acceptedAt: undefined, declinedAt: undefined, voidedAt: undefined };
+        said = `${inv.number} is open again`;
+      }
+      if (!next) return s;
+      // Paid: the email it went out in has nothing more to wait for, so it leaves Waiting (and the mailbox's label).
+      const waiting = a.op === 'paid' && inv.thread ? s.threads.find((t) => t.id === inv.thread && t.box === 'waiting') : undefined;
+      return {
+        ...s,
+        ws: { ...s.ws, invoices: { ...s.ws.invoices, [inv.id]: next } },
+        threads: waiting ? patch(s.threads, waiting.id, (x) => ({ ...moveThread(x, 'archived'), history: [...(x.history ?? []), { at: NOW, text: `Paid: ${inv.number}. Nothing more to wait for, so it is archived` }] })) : s.threads,
+        activity: logged(s, said, 'file'),
+        toasts: withToast(s, waiting ? `${said}. Its email left Waiting.` : said, snap(s)),
       };
     }
 

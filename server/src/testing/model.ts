@@ -90,6 +90,13 @@ export class FakeModel implements ModelProvider {
       const m = /(Please ([a-z][^."\\]{3,80}?)(?: by (\d{4}-\d{2}-\d{2}))?[.!])/.exec(content);
       return { content: JSON.stringify({ todos: m ? [{ what: m[2]![0]!.toUpperCase() + m[2]!.slice(1), due: m[3] ?? null, quote: m[1] }] : [] }) };
     }
+    // Lines to bill from sentences like "That's 120 seats at $58 per seat." (and one resting on nothing).
+    if (req.route === 'invoice') {
+      const content = req.messages[req.messages.length - 1]!.content;
+      const mail = content.slice(content.indexOf('<untrusted source="mail">'));
+      const lines = [...mail.matchAll(/([^."\\\n]*?(\d+) ([a-z][a-z ]{2,40}?) at \$(\d[\d,]*(?:\.\d{2})?)[^."\\\n]*\.)/g)].map((m) => ({ description: m[3]![0]!.toUpperCase() + m[3]!.slice(1), qty: Number(m[2]), unit_price: m[4]!.replace(/,/g, ''), quote: m[1]!.trim() }));
+      return { content: JSON.stringify({ intro: lines.length ? 'For the work in this email.' : '', lines: [...lines, { description: 'Made-up line', qty: 1, unit_price: '999', quote: 'A sentence that is not in the mail at all.' }] }) };
+    }
     if (req.route === 'summary') {
       const listed = [...req.messages[req.messages.length - 1]!.content.matchAll(/^\[([\w.:@+-]+)\] (.+)$/gm)].map((m) => ({ id: m[1]!, text: m[2]! }));
       return {
