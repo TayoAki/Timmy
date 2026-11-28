@@ -429,6 +429,7 @@ function BillButton({ t }: { t: Thread }) {
   return (
     <Menu
       label="Bill for this"
+      triggerClass="btn btn-sm btn-ghost"
       trigger={
         <>
           <Receipt size={14} />

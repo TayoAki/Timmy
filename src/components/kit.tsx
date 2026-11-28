@@ -241,7 +241,7 @@ export interface MenuItem {
 }
 
 /** A "more" button that opens a short list of actions. */
-export function Menu({ items, label = 'More actions', trigger }: { items: MenuItem[]; label?: string; trigger?: ReactNode }) {
+export function Menu({ items, label = 'More actions', trigger, triggerClass = 'btn btn-sm' }: { items: MenuItem[]; label?: string; trigger?: ReactNode; triggerClass?: string }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -259,7 +259,7 @@ export function Menu({ items, label = 'More actions', trigger }: { items: MenuIt
     <div className="menu" ref={wrap}>
       <button
         type="button"
-        className={trigger ? 'btn btn-sm' : 'icon-btn sm'}
+        className={trigger ? triggerClass : 'icon-btn sm'}
         aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}
