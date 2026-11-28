@@ -229,8 +229,8 @@
   {
    "id": "api-outlook",
    "file": "server/test/outlook.test.ts",
-   "covers": "Outlook through Composio: HTML bodies to text, folders to places, a forged display name never taken for an address; connect and the one-mailbox rule; first read, paging, new mail by event stored under the listing's id, a quoted conversation id can't change the query, the nightly check, hand-sent mail noticed; a new email sent once exactly as approved; a reply addressed to the approved people and not to whoever Outlook would answer; nothing sent when the draft's recipients don't match; timeouts found in Sent Items or left unconfirmed, never re-sent; filing as categories and the Archive folder, in batches of 20, finished after a partial refusal; disconnect removes the mail",
-   "tests": 24,
+   "covers": "Outlook through Composio: HTML bodies to text, folders to places, a forged display name never taken for an address; connect and the one-mailbox rule; first read, paging, new mail by event stored under the listing's id, a quoted conversation id can't change the query, the nightly check, hand-sent mail noticed; a new email sent once exactly as approved; a reply addressed to the approved people and not to whoever Outlook would answer; nothing sent when the draft's recipients don't match; timeouts found in Sent Items or left unconfirmed, never re-sent; filing as categories and the Archive folder, in batches of 20, finished after a partial refusal; disconnect removes the mail; a meeting guest listed by address takes the name their email gives, whichever reaches the screen first, on the page and in what the server writes; files sent from Outlook",
+   "tests": 30,
    "status": "pass"
   },
   {
@@ -452,9 +452,9 @@
    "id": "live-outlook",
    "file": "e2e/live/live-outlook.cjs",
    "covers": "in the browser: the Outlook card says what Timmy really reads; connect Outlook; Gmail refused beside it; an Outlook email arrives and reads as plain words; accepting a suggestion puts the category on it in Outlook; a drafted reply is approved, held, and sent once from the Outlook mailbox in the same conversation; archiving moves it to Outlook's Archive; connect Drive, a new file is announced, Ask finds it by name; disconnecting Outlook removes its thread; the Outlook card says it reads mail and calendar; Outlook’s events show on Timmy’s calendar",
-   "checks": 31,
+   "checks": 44,
    "status": "pass",
-   "result": " Nov 18, 2026 (Drive editing): passes again after its Drive check was changed to the new behaviour (a Google Doc now offers Edit in Timmy; the Drive card says what Timmy may write)."
+   "result": "Nov 28, 2026: passes in two full live runs. Its \"sender by name\" check, which had failed twice in full runs, caught a real bug: a meeting guest listed by address kept the address on the screens after their email named them (fixed in src/state/ws.ts, namesKnown). Before that, Nov 18 (Drive editing): passes again after its Drive check was changed to the new behaviour (a Google Doc now offers Edit in Timmy; the Drive card says what Timmy may write)."
   },
   {
    "id": "live-pages",
