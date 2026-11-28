@@ -87,7 +87,8 @@ export class HttpTreg implements TregEngine {
           ...(req.headers ?? {}),
         },
         body: JSON.stringify(req.body),
-        signal: AbortSignal.timeout(this.timeoutMs),
+        // Finding and checking an email tries one provider after another and verifies the hit: it can take minutes.
+        signal: AbortSignal.timeout(req.route === TREG.emailFind || req.route === TREG.emailVerify ? Math.max(this.timeoutMs, 180_000) : this.timeoutMs),
       });
     } catch (e) {
       log.warn('treg unreachable', { route: req.route, error: (e as Error).message });

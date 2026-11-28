@@ -602,7 +602,13 @@ function FindLeadsButton() {
     setBusy(true);
     try {
       const r = await api.suggestLeads(q);
-      const left = [r.skipped.noEmail + r.skipped.unconfirmed ? `${r.skipped.noEmail + r.skipped.unconfirmed} left out because their email couldn’t be confirmed` : '', r.skipped.known ? `${r.skipped.known} you already had` : ''].filter(Boolean).join(', ');
+      const left = [
+        r.skipped.noEmail + r.skipped.unconfirmed ? `${r.skipped.noEmail + r.skipped.unconfirmed} left out because their work email couldn’t be found or confirmed` : '',
+        r.skipped.personal ? `${r.skipped.personal} with only a personal address` : '',
+        r.skipped.known ? `${r.skipped.known} you already had` : '',
+      ]
+        .filter(Boolean)
+        .join(', ');
       dispatch({ type: 'toast', text: r.added ? `Added ${plural(r.added, 'lead')} to “Suggested by Timmy”, each with a checked email${left ? ` (${left})` : ''}. Nobody was contacted.` : `No new leads found${left ? ` (${left})` : ''}. Try different words.` });
       if (r.added) dispatch({ type: 'navigate', route: { view: 'outbound', tab: 'leads', list: 'list-suggested' } });
       setOpen(false);

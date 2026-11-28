@@ -18,17 +18,24 @@ That answer changes one standing decision. On Nov 16 the owner said every connec
   - The workspace's own limits are told to the person: its Treg allowance for the day, being blocked, or the cost cap.
   - The team account's problems are logged and never shown: balance, funds, the platform's daily cap. The person sees "Finding leads is paused for this server just now."
   - The token, a balance and a top-up link are never repeated.
-- The routed lookups used: `treg.companies.search`, `treg.people.search`, `treg.people.email.find` (asked to verify, with the domain matched strictly) and `treg.web.extract`. `treg.people.email.verify` and `treg.companies.enrich` are wired but not yet used.
+- The routed lookups used: `treg.people.search`, `treg.people.email.find` (asked to verify), `treg.companies.enrich` and `treg.web.extract`. `treg.companies.search` and `treg.people.email.verify` are wired but not used (see below for why).
 - A stand-in (`server/src/testing/treg.ts`) answers with made-up companies and people on `.example` domains, and charges like Treg.
 
 **Suggest leads** (`server/src/treg/leads.ts`; Outbound › Leads › Suggest leads; Ask's `suggest_leads`). Steps:
-1. Companies like the offer's ideal customer, or what the person asked for ("15 dental practices in Austin"), a page at a time. A company already in the leads is skipped.
-2. The person with the ideal customer's job title at each company.
-3. Their work email, found and checked in the same call. It is kept only when the check says the mailbox takes mail. Catch-all and unknown addresses are left out, so nothing bounces and nobody is written to at a guessed address.
-4. Why each lead fits the offer (the Leads screen's fit score), and which provider each detail came from.
-5. A first line for each lead (`{{opener}}`), written by Timmy's model from what the provider said about the company. It is kept only when every figure and name in it is in that description.
+1. **People** with the ideal customer's job title, the work's words and the place, if one was given ("15 dental practices in Austin"), through `treg.people.search`, a page at a time. Anyone at a company already in the leads is skipped.
+2. **Their work email**, found from their LinkedIn profile and checked in the same call (`treg.people.email.find` with `X-Treg-Route-Verify`). It is kept only when the check says the mailbox takes mail. Catch-all, unknown and personal (Gmail-type) addresses are left out, so nothing bounces and nobody is written to at a guessed or private address.
+3. **The company**, from the email's domain (`treg.companies.enrich`): its name, industry, size and description.
+4. Why each fits the offer (the Leads screen's fit score), and which provider each detail came from.
+5. A first line for each (`{{opener}}`), written by Timmy's model from the company's description. It is kept only when every figure and name in it is in that description.
 
 The leads go into **Suggested by Timmy**, at most `TREG_LEADS_PER_DAY` (25) per workspace per day. Nobody is contacted.
+
+**Checked against the real Treg (Nov 28, with the owner's token, about $0.10 in all).** The first design searched companies by industry and country, then looked for a person at each. On the real routes:
+- The better providers rejected a free-text industry ("Dental" isn't in their lists), and the search fell back to Hunter.
+- Hunter ignores the country, doesn't page, and names a company `organization`. It returned a behaviour clinic, an Icelandic hospital and a Chinese university.
+- LeadOcean nests its fields under `company_data` and matched words in company names.
+
+A search for **people by title and place** (served by Exa) gave the right people: practice managers at Portland dental practices, each with a LinkedIn profile but no company website. So the pipeline now starts from people and finds the email from the profile (Tomba, Crawl4AI). Bounceban checks it, and the company comes from the email's domain (Findymail, Crawl4AI). Run end to end for two leads, it found two practice managers at Portland dental practices, each with a work email checked as taking mail, the company's size and description, and the sources, for **$0.047**. Finding and checking an email can take over a minute, so those calls wait up to three minutes. `server/scripts/treg-smoke.mts` runs this same test again (masking names and emails in what it prints).
 
 **The offer from the business's website** (Templates & offer › Draft from my website). Treg reads the page and Timmy's model fills in the offer and the ideal customer. The proof is kept only when its sentence, with a number, is on the page; otherwise it is left empty for the person to add. Nothing is saved until they press Save offer.
 

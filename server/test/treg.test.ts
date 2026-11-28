@@ -118,7 +118,9 @@ describe('the checks on what the model writes', () => {
     expect(stepHolds({ channel: 'email', subject: 'Re: hi', body: 'Hi {{firstName}}, 30% fewer no-shows at Harbor Dental, from our proof.' }, OFFER, false)).toBe(true);
     expect(stepHolds({ channel: 'email', subject: 'Hi', body: 'Hi {{firstName}}, your {{revenue}} could grow.' }, OFFER, false)).toBe(false);
     expect(stepHolds({ channel: 'email', subject: 'Hi', body: 'Hi {{firstName}}, see https://x.example for a demo of it all.' }, OFFER, true)).toBe(false);
-    expect(readAsk('find 15 dental practices in Austin')).toEqual({ count: 15, words: 'dental practices in Austin' });
+    expect(readAsk('find 15 dental practices in Austin')).toEqual({ count: 15, words: 'dental practices', place: 'Austin' });
+    expect(readAsk('dental practices in Portland, Oregon')).toEqual({ words: 'dental practices', place: 'Portland, Oregon' });
+    expect(readAsk('plumbers')).toEqual({ words: 'plumbers' });
   });
 });
 
@@ -150,27 +152,30 @@ describe('leads on a workspace', () => {
     expect((await setOffer()).ok).toBe(true);
     expect(await w.json('GET', '/api/v1/leads/status')).toEqual({ on: true, sample: true, today: 0, left: 25, perDay: 25 });
     const r = await w.json<{ added: number; skipped: Record<string, number>; left: number }>('POST', '/api/v1/leads/suggest', { ask: 'dental practices in Portland', count: 12 });
-    // One company had nobody with the title, one no findable address, and one an address that couldn't be confirmed.
-    expect(r).toEqual({ added: 12, skipped: { known: 0, noPerson: 1, noEmail: 1, unconfirmed: 1 }, left: 13 });
+    // At one company no address was found, at one it couldn't be confirmed, and at one only a personal address was.
+    expect(r).toEqual({ added: 12, skipped: { known: 0, noEmail: 1, unconfirmed: 1, personal: 1 }, left: 13 });
     const list = await suggested();
     expect(list).toHaveLength(12);
     const lead = list.find((l) => l.company === 'Cedar Dental Studio')!;
     expect(lead).toMatchObject({ source: 'found', status: 'new', title: 'Practice Manager', website: 'cedar-dental-studio.example', industry: 'Dental Practices', city: 'Portland, OR, US' });
     expect(lead.email).toMatch(/^[a-z]+\.[a-z]+@cedar-dental-studio\.example$/);
     expect(lead.suggested!.why).toEqual(expect.arrayContaining(['Practice Manager', 'Dental Practices']));
-    expect(lead.suggested!.sources.map((s) => s.field)).toEqual(['company', 'person', 'email']);
-    expect(lead.suggested!.sources[2]!.from).toBe('Treg (sample), checked: takes mail');
-    expect(list.some((l) => /granite|northgate|maple/.test(l.email))).toBe(false);
+    expect(lead.linkedin).toMatch(/^https:\/\/linkedin\.com\/in\//);
+    expect(lead.employees).toBeGreaterThan(0);
+    expect(lead.suggested!.sources.map((s) => s.field)).toEqual(['person', 'email', 'company']);
+    expect(lead.suggested!.sources[1]!.from).toBe('Treg (sample), checked: takes mail');
+    expect(list.some((l) => /granite|northgate|maple|gmail/.test(l.email))).toBe(false);
     expect((await w.state()).out.lists[SUGGESTED_LIST]).toMatchObject({ name: 'Suggested by Timmy' });
     // Nobody was written to.
     expect((await w.state()).out.messages).toHaveLength(0);
 
-    // Every call carried this workspace's tag, and the email lookups asked for the check.
+    // Every call carried this workspace's tag; the search was for people by title and place; emails asked for the check.
     expect(new Set(ft().calls.map((c) => c.meta))).toEqual(new Set([`workspace=${`timmy-${w.workspaceId.toLowerCase()}`},feature=lead-suggest`]));
-    expect(ft().calls.filter((c) => c.route === 'treg.people.email.find').every((c) => c.headers?.['x-treg-route-verify'] === 'true' && c.headers?.['x-treg-route-domain-match'] === 'strict')).toBe(true);
+    expect(ft().calls[0]).toMatchObject({ route: 'treg.people.search', body: { title: 'Practice Manager', keywords: ['dental', 'practices'], location: 'Portland', country: 'US' } });
+    expect(ft().calls.filter((c) => c.route === 'treg.people.email.find').every((c) => c.headers?.['x-treg-route-verify'] === 'true' && typeof c.body.linkedin_url === 'string')).toBe(true);
     // And each is in the usage log with what it cost and Treg's id for it.
     const used = await usage();
-    expect(used.filter((u) => u.route === 'treg:companies.search').map((u) => Number(u.cost_usd))).toEqual([FAKE_TREG_COST['treg.companies.search']! / 1e6]);
+    expect(used.filter((u) => u.route === 'treg:people.search').map((u) => Number(u.cost_usd))).toEqual([FAKE_TREG_COST['treg.people.search']! / 1e6]);
     expect(used.every((u) => u.generation_id?.startsWith('fake-call-'))).toBe(true);
     expect(used.filter((u) => u.route === 'treg:people.email.find' && Number(u.cost_usd) === 0)).toHaveLength(1);
   });
@@ -189,6 +194,7 @@ describe('leads on a workspace', () => {
     await setOffer();
     config.treg.leadsPerDay = 15;
     expect((await w.json<{ added: number }>('POST', '/api/v1/leads/suggest', { ask: 'dental practices in Portland', count: 10 })).added).toBe(10);
+    // The same search again gets past the people already suggested, on the next page.
     const again = await w.json<{ added: number; skipped: { known: number }; left: number }>('POST', '/api/v1/leads/suggest', { ask: 'dental practices in Portland', count: 10 });
     expect(again.skipped.known).toBeGreaterThan(0);
     expect(again.added).toBe(5);
@@ -211,11 +217,11 @@ describe('leads on a workspace', () => {
   it('says what Treg refused about the workspace, keeps the team’s account to itself, and needs something to look for', async () => {
     expect((await w.request('POST', '/api/v1/leads/suggest', {})).status).toBe(400);
     await setOffer();
-    ft().failNext['treg.companies.search'] = { status: 429, body: { error: 'tag_spend_cap_reached', dim: 'workspace' } };
+    ft().failNext['treg.people.search'] = { status: 429, body: { error: 'tag_spend_cap_reached', dim: 'workspace' } };
     const capped = await w.request('POST', '/api/v1/leads/suggest', { ask: 'dental' });
     expect(capped.status).toBe(429);
     expect(((await capped.json()) as { error: string }).error).toBe('This workspace has used today’s allowance for finding leads. It starts again tomorrow.');
-    ft().failNext['treg.companies.search'] = { status: 402, body: { error: 'insufficient_balance', balance_micro: 3, topup_url: 'https://treg.to/topup' } };
+    ft().failNext['treg.people.search'] = { status: 402, body: { error: 'insufficient_balance', balance_micro: 3, topup_url: 'https://treg.to/topup' } };
     const paused = await w.request('POST', '/api/v1/leads/suggest', { ask: 'dental' });
     expect(paused.status).toBe(503);
     expect(JSON.stringify(await paused.json())).not.toMatch(/balance|topup/);

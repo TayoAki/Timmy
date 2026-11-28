@@ -120,7 +120,7 @@ export const api = {
   invoiceFromEmail: (thread: string, kind: 'invoice' | 'quote') => call<{ invoice: { id: string; number: string; lines: number } }>('POST', '/api/v1/invoices/from-email', { thread, kind }),
   /** Leads that fit the offer, through Treg, and the words for cold email (server/src/http/leads.ts). */
   leadsStatus: () => call<{ on: boolean; sample: boolean; today: number; left: number; perDay: number }>('GET', '/api/v1/leads/status'),
-  suggestLeads: (ask: string, count?: number) => call<{ added: number; skipped: { known: number; noPerson: number; noEmail: number; unconfirmed: number }; left: number }>('POST', '/api/v1/leads/suggest', { ask, ...(count ? { count } : {}) }),
+  suggestLeads: (ask: string, count?: number) => call<{ added: number; skipped: { known: number; noEmail: number; unconfirmed: number; personal: number }; left: number }>('POST', '/api/v1/leads/suggest', { ask, ...(count ? { count } : {}) }),
   offerDraft: (website: string) => call<{ offer: Offer; proofFound: boolean }>('POST', '/api/v1/outbound/offer-draft', { website }),
   writeSequence: (call_: boolean) => call<{ steps: SeqStep[]; written: number; replaced: number }>('POST', '/api/v1/outbound/sequence', { call: call_ }),
   /** Bids, with Kontract as the engine (server/src/http/bids.ts). */

@@ -32,7 +32,8 @@ export function tregRefusal(status: number, body: Record<string, unknown> | null
   if (code === 'tag_spend_cap_reached') return new TregError(429, 'This workspace has used today’s allowance for finding leads. It starts again tomorrow.', undefined, code);
   if (code === 'tag_blocked') return new TregError(403, 'Finding leads is switched off for this workspace.', undefined, code);
   if (code === 'route_max_cost') return new TregError(402, 'That lookup would cost more than Timmy allows for one search. Try asking for fewer.', undefined, code);
-  if (status === 429 || status === 503) return new TregError(429, `The lead data is busy. Try again in ${wait} second${wait === 1 ? '' : 's'}.`, wait, code);
+  // The same request is still being answered under its idempotency key: asking again later gets the stored answer.
+  if (status === 409 || status === 429 || status === 503) return new TregError(429, `The lead data is busy. Try again in ${wait} second${wait === 1 ? '' : 's'}.`, wait, code);
   if (status === 422) return new TregError(400, 'Timmy couldn’t ask for that the way it was put. Try different words.', undefined, code);
   if (code === 'route_failed' || status >= 500) return new TregError(502, 'No data provider could answer just now. Try again in a moment.', undefined, code);
   return new TregError(502, 'The lead data had a problem with that. Try again in a moment.', undefined, code);

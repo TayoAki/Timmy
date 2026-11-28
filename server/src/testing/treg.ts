@@ -89,38 +89,48 @@ export class FakeTreg implements TregEngine {
         break;
       }
       case 'treg.people.search': {
-        const domain = String(b.company_domain ?? '');
         const title = String(b.title ?? 'Owner');
-        const limit = Math.min(Number(b.limit ?? 10) || 10, 10);
-        // A company whose name says it has nobody listed answers with no one, as a real miss does.
-        if (/maple/.test(domain)) {
-          output = { people: [], count: 0, next_cursor: null };
-          charged = false;
+        const limit = Math.min(Number(b.limit ?? 10) || 10, 25);
+        if (b.company_domain) {
+          const domain = String(b.company_domain);
+          const h = hash(domain);
+          const first = FIRST[h % FIRST.length]!;
+          const last = LAST[(h >> 3) % LAST.length]!;
+          output = { people: [{ full_name: `${first} ${last}`, first_name: first, last_name: last, title, company_domain: domain, linkedin_url: `https://www.linkedin.com/in/${slug(`${first}-${last}`)}-example` }], count: 1, next_cursor: null };
           break;
         }
-        const h = hash(domain);
+        // A search by title and place, answered the way Exa does: a name, a title, the company's name, where they
+        // are and their profile, with no company domain.
+        const words = [...((b.keywords as string[] | undefined) ?? []), String(b.location ?? '')].join(' ');
+        const offset = Number(b.cursor ?? 0) || 0;
+        const companies = fakeCompanies(words, limit, offset);
         output = {
-          people: Array.from({ length: Math.min(limit, 1) }, (_, i) => {
+          people: companies.map((c, i) => {
+            const h = hash(c.domain);
             const first = FIRST[(h + i) % FIRST.length]!;
             const last = LAST[(h >> 3) % LAST.length]!;
-            return { full_name: `${first} ${last}`, first_name: first, last_name: last, title, company_domain: domain, linkedin_url: `https://www.linkedin.com/in/${slug(`${first}-${last}`)}-example` };
+            return { name: `${first} ${last}`, title, company: c.name, location: c.location, profile_url: `https://linkedin.com/in/${slug(`${first}-${last}`)}--${c.domain.replace(/\.example$/, '')}` };
           }),
-          count: 1,
-          next_cursor: null,
+          count: companies.length,
+          next_cursor: String(offset + limit),
         };
         break;
       }
       case 'treg.people.email.find': {
-        const domain = String(b.domain ?? '');
-        const first = String(b.first_name ?? String(b.full_name ?? '').split(' ')[0] ?? '').toLowerCase();
-        const last = String(b.last_name ?? String(b.full_name ?? '').split(' ').slice(1).join(' ') ?? '').toLowerCase();
-        // One kind of company has no findable address; another's can't be confirmed (it accepts all mail).
+        // From a profile, the company is the part after "--" (the stand-in's own way of knowing who they work for).
+        const fromProfile = typeof b.linkedin_url === 'string' ? /\/in\/([a-z]+)-([a-z]+)--([a-z0-9-]+)$/.exec(b.linkedin_url) : null;
+        const domain = fromProfile ? `${fromProfile[3]}.example` : String(b.domain ?? '');
+        const first = fromProfile ? fromProfile[1]! : String(b.first_name ?? String(b.full_name ?? '').split(' ')[0] ?? '').toLowerCase();
+        const last = fromProfile ? fromProfile[2]! : String(b.last_name ?? String(b.full_name ?? '').split(' ').slice(1).join(' ') ?? '').toLowerCase();
+        // One kind of company has no findable address; another's can't be confirmed (it accepts all mail); at a
+        // third the only address found is the person's own free mail.
         if (!domain || !first || /northgate/.test(domain)) {
           output = { email: null };
           charged = false;
           break;
         }
-        output = { email: `${first}.${last}@${domain}`, confidence: 0.92, first_name: b.first_name, last_name: b.last_name, verified: !/granite/.test(domain) };
+        const own = /maple/.test(domain);
+        output = { email: own ? `${first}.${last}@gmail.com` : `${first}.${last}@${domain}`, confidence: 0.92, first_name: first, last_name: last, verified: !/granite/.test(domain) };
         if (req.headers?.['x-treg-route-verify'] === 'true') verification = { verdict: /granite/.test(domain) ? 'accept_all' : 'valid' };
         break;
       }
@@ -130,9 +140,12 @@ export class FakeTreg implements TregEngine {
         break;
       }
       case 'treg.companies.enrich': {
+        // As Findymail answers: a size range as text, and a location that may be just a country.
         const domain = String(b.domain ?? '');
-        const c = fakeCompanies(domain, 1)[0]!;
-        output = { ...c, domain, website: `https://${domain}` };
+        const i = PREFIX.findIndex((x) => domain.startsWith(slug(x)));
+        const c = fakeCompanies(domain, Math.max(i, 0) + 1).find((x) => x.domain === domain) ?? fakeCompanies(domain, 1)[0]!;
+        const name = c.domain === domain ? c.name : domain.replace(/\.example$/, '').replace(/-/g, ' ');
+        output = { name, domain, description: c.description, industry: c.industry, employees: `${c.employees}-${c.employees + 40}`, location: 'us', linkedin_url: `https://www.linkedin.com/company/${slug(name)}` };
         break;
       }
       case 'treg.web.extract': {

@@ -58,9 +58,9 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 - A stand-in answers with made-up companies on `.example` domains.
 
 **Suggest leads** (Outbound › Leads, and Ask's `suggest_leads`)
-- Companies like the ideal customer, a page at a time, skipping ones already in the leads.
-- The person with the right title at each.
-- Their email found and checked in the same call, and kept only when it takes mail.
+- People with the ideal customer's title, the work's words and the place, a page at a time, skipping companies already in the leads.
+- Their work email, found from their LinkedIn profile and checked in the same call, and kept only when it takes mail. Personal (Gmail-type) addresses are left out.
+- The company from the email's domain: name, industry, size, description.
 - Why each fits the offer, and where each detail came from.
 - A first line (`{{opener}}`) from the provider's description of the company, kept only when the description states it.
 - At most 25 a day per workspace, into "Suggested by Timmy". Nobody is contacted.
@@ -74,7 +74,14 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 - Writing to a lead in a campaign starts from their next step. When the email shows in Sent, the lead moves to the next step, due after its wait.
 - Launch is still refused on a real workspace.
 
-**Off until you add `TREG_TOKEN`** on the `app` service (see "Needs your attention").
+**Checked against the real Treg** (Nov 28, with the owner's token, about $0.10 in all).
+- The first design searched companies by industry and country. On the real routes the better providers rejected a free-text industry, and the fallback (Hunter) ignored the country and returned an Icelandic hospital and a Chinese university.
+- Searching people by title and place (Exa) gave the right people. So the pipeline now starts from people, finds the email from their profile, and reads the company from the email's domain.
+- End to end for two leads, it found two practice managers at Portland dental practices with checked work emails, for $0.047.
+- Email lookups wait up to three minutes (finding and checking can take over one).
+- `server/scripts/treg-smoke.mts` repeats the test.
+
+**Off until you add `TREG_TOKEN`** on the `app` service (see "Needs your attention"). The token saved through the secure form only reaches this session's own network proxy; production needs it as a Railway variable.
 
 **Tested:**
 - `treg.test` (14): includes the real HTTP client against a local server.

@@ -36,34 +36,55 @@ import { callTreg, TREG, TregError } from './client';
 export const SUGGESTED_LIST = 'list-suggested';
 const str = (v: unknown, max = 300) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
 
-/** A company row as providers give it (Treg relays their own field names); read into the few fields a lead keeps. */
-function companyOf(row: Record<string, unknown>): { name: string; domain: string; industry?: string; employees?: number; location?: string; about?: string } | null {
-  const name = str(row.name ?? row.company_name ?? row.organization_name, 300);
-  const site = str(row.domain ?? row.website ?? row.website_url ?? row.primary_domain, 300);
-  const domain = site
+/** A domain as written in a row (a bare domain, or a website address), or "" when it isn't one. */
+function domainOf(v: unknown): string {
+  const d = str(v, 300)
     .toLowerCase()
     .replace(/^https?:\/\//, '')
     .replace(/^www\./, '')
     .replace(/[/?#].*$/, '');
-  if (!name || !/^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain)) return null;
-  const size = row.employees ?? row.employee_count ?? row.estimated_num_employees ?? row.size;
-  const employees = typeof size === 'number' ? size : Number(String(size ?? '').match(/\d[\d,]*/)?.[0]?.replace(/,/g, '') ?? NaN);
-  const location = str(row.location ?? row.city ?? row.headquarters ?? row.hq_location, 200);
-  const about = str(row.description ?? row.short_description ?? row.summary, 600);
-  const industry = str(row.industry, 120);
-  return { name, domain, ...(industry ? { industry } : {}), ...(Number.isFinite(employees) && employees > 0 ? { employees: Math.round(employees) } : {}), ...(location ? { location } : {}), ...(about ? { about } : {}) };
+  return /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d) ? d : '';
 }
 
-/** A person row, read the same way. */
-function personOf(row: Record<string, unknown>): { first: string; last: string; title?: string; linkedin?: string } | null {
+/** "11-50", "51–200 employees" or 37: the smallest number of people it states. */
+function headcount(v: unknown): number | undefined {
+  if (typeof v === 'number' && Number.isFinite(v) && v > 0) return Math.round(v);
+  const n = Number(String(v ?? '').match(/\d[\d,]*/)?.[0]?.replace(/,/g, '') ?? NaN);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : undefined;
+}
+
+/**
+ * A company as a provider describes it, read into the few fields a lead keeps. Treg relays each provider's own field
+ * names, so the common ones are tried: `name`, `organization` (Hunter), `company_data.company_name` (LeadOcean)…
+ */
+export function companyOf(row: Record<string, unknown>): { name: string; domain: string; industry?: string; employees?: number; location?: string; about?: string } | null {
+  const r = (row.company_data && typeof row.company_data === 'object' ? { ...row, ...(row.company_data as Record<string, unknown>) } : row) as Record<string, unknown>;
+  const web = r.company_web_address && typeof r.company_web_address === 'object' ? (r.company_web_address as { url?: unknown }).url : undefined;
+  const name = str(r.name ?? r.company_name ?? r.organization ?? r.organization_name, 300);
+  const domain = domainOf(r.domain ?? r.company_domain ?? r.website ?? r.website_url ?? r.primary_domain ?? web);
+  if (!name || !domain) return null;
+  const employees = headcount(r.employees ?? r.employee_count ?? r.estimated_num_employees ?? r.size ?? r.company_size);
+  const location = str(r.location ?? r.city ?? r.headquarters ?? r.hq_location, 200);
+  const about = str(r.description ?? r.company_description ?? r.short_description, 600);
+  const industry = str(r.industry, 120);
+  return { name, domain, ...(industry ? { industry } : {}), ...(employees ? { employees } : {}), ...(location && location.length > 2 ? { location } : {}), ...(about ? { about } : {}) };
+}
+
+/** A person as a provider describes them (Exa gives `name`, `title`, `company`, `location`, `profile_url`). */
+export function personOf(row: Record<string, unknown>): { first: string; last: string; title?: string; linkedin?: string; company?: string; location?: string } | null {
   const full = str(row.full_name ?? row.name, 200);
   const first = str(row.first_name, 100) || full.split(' ')[0] || '';
   const last = str(row.last_name, 100) || full.split(' ').slice(1).join(' ');
   if (!first || !last) return null;
   const title = str(row.title ?? row.job_title ?? row.headline, 200);
-  const linkedin = str(row.linkedin_url ?? row.linkedin, 300);
-  return { first, last, ...(title ? { title } : {}), ...(/^https:\/\/(www\.)?linkedin\.com\//.test(linkedin) ? { linkedin } : {}) };
+  const linkedin = str(row.linkedin_url ?? row.profile_url ?? row.linkedin, 300).replace(/^http:/, 'https:');
+  const company = str(row.company ?? row.company_name ?? row.organization, 300);
+  const location = str(row.location, 200);
+  return { first, last, ...(title ? { title } : {}), ...(/^https:\/\/(www\.)?linkedin\.com\/in\//.test(linkedin) ? { linkedin } : {}), ...(company ? { company } : {}), ...(location ? { location } : {}) };
 }
+
+/** Free mail: an address there is someone's own, not their work one, so it isn't used for a business lead. */
+const PERSONAL_MAIL = new Set(['gmail.com', 'googlemail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'live.com', 'msn.com', 'aol.com', 'icloud.com', 'me.com', 'mac.com', 'proton.me', 'protonmail.com', 'gmx.com', 'yandex.com', 'comcast.net', 'att.net', 'verizon.net']);
 
 const today = () => new Date().toISOString().slice(0, 10);
 const isoDay = (d: unknown) => (d ? new Date(d as string).toISOString().slice(0, 10) : '');
@@ -75,109 +96,126 @@ export async function suggestionsLeft(workspaceId: string): Promise<{ today: num
   return { today: n, left: Math.max(0, config.treg.leadsPerDay - n), perDay: config.treg.leadsPerDay };
 }
 
-export type SuggestResult =
-  | { ok: true; added: number; skipped: { known: number; noPerson: number; noEmail: number; unconfirmed: number }; left: number; spentMicro: number }
-  | { ok: false; status: number; error: string };
+export type Skipped = { known: number; noEmail: number; unconfirmed: number; personal: number };
+export type SuggestResult = { ok: true; added: number; skipped: Skipped; left: number; spentMicro: number } | { ok: false; status: number; error: string };
 
-/** "15 dental practices in Austin" → how many, and the words to search with. */
-export function readAsk(ask: string): { count?: number; words: string } {
+/** "15 dental practices in Austin, TX" → how many, the words for the work, and the place. */
+export function readAsk(ask: string): { count?: number; words: string; place?: string } {
   const n = ask.match(/\b(\d{1,3})\b/)?.[1];
-  return { ...(n ? { count: Number(n) } : {}), words: ask.replace(/\b\d{1,3}\b/, '').replace(/\b(leads?|people|find|me|some|that fit( my offer)?)\b/gi, ' ').replace(/\s+/g, ' ').trim() };
+  const place = ask.match(/\b(?:in|near|around)\s+([A-Z][\w.' -]*(?:,\s*[A-Za-z][\w .'-]*)?)\s*$/)?.[1]?.trim();
+  const rest = (place ? ask.slice(0, ask.lastIndexOf(place)).replace(/\b(in|near|around)\s*$/i, '') : ask)
+    .replace(/\b\d{1,3}\b/, '')
+    .replace(/\b(leads?|people|find|me|some|that fit( my offer)?)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return { ...(n ? { count: Number(n) } : {}), words: rest, ...(place ? { place } : {}) };
 }
 
-export async function suggestLeads(workspaceId: string, opts: { ask?: string; count?: number; runId?: string; unattended?: boolean }): Promise<SuggestResult> {
-  const { state } = await readState(workspaceId);
-  const offer = state.out.offer;
+/** One Treg lookup, as the pipeline asks for it; suggestLeads gives it the workspace's own caller (callTreg). */
+export type TregCaller = <T>(route: (typeof TREG)[keyof typeof TREG], body: Record<string, unknown>, headers?: Record<string, string>) => Promise<{ answer: { output: T; _treg?: { verification?: { verdict?: string } } }; costMicro: number; servedBy: string | null }>;
+
+/**
+ * The lookups behind a suggestion, with no workspace state: who to look for, then for each person their work email
+ * (checked) and their company. Tried against Treg's real routes on Nov 28: a company search ignores the industry and
+ * country filters, so the search is for people by title, place and the work's words, the way a lead list is built;
+ * the email is found from their profile; the company is read from their email's domain.
+ */
+export async function findSuggestions(call: TregCaller, offer: Offer, opts: { ask?: string; want: number; known: Set<string> }): Promise<{ found: Lead[]; skipped: Skipped; spentMicro: number; error?: TregError }> {
   const ask = readAsk(str(opts.ask, 200));
-  const industry = offer.icp.industries[0];
-  const words = ask.words || str(offer.audience, 120);
-  if (!industry && !words) return { ok: false, status: 400, error: 'Tell Timmy who your offer is for first: fill in the ideal customer on your offer, or say what to look for.' };
-  const room = await suggestionsLeft(workspaceId);
-  if (!room.left) return { ok: false, status: 429, error: `Timmy has suggested ${room.perDay} leads today, this workspace’s daily limit. More tomorrow.` };
-  const want = Math.max(1, Math.min(opts.count ?? ask.count ?? 10, 25, room.left));
-  const known = new Set(Object.values(state.out.leads).flatMap((l) => [l.email.toLowerCase().split('@')[1] ?? '', l.company.toLowerCase()]).filter(Boolean));
+  const words = ask.words || offer.icp.industries[0] || str(offer.audience, 80);
   const title = offer.icp.titles[0] || 'Owner';
-  const key = `${today()}|${words}|${industry ?? ''}`;
-  const skipped = { known: 0, noPerson: 0, noEmail: 0, unconfirmed: 0 };
-  let spent = 0;
+  const skipped: Skipped = { known: 0, noEmail: 0, unconfirmed: 0, personal: 0 };
   const found: Lead[] = [];
-  const base = { feature: 'lead-suggest' as const, ...(opts.runId ? { runId: opts.runId } : {}), ...(opts.unattended ? { unattended: true } : {}) };
+  let spent = 0;
+  const from = (r: { servedBy: string | null }) => `Treg (${r.servedBy ?? 'a provider'})`;
   try {
-    // Companies a page at a time, so ones already suggested don't use up the search: at most three pages.
-    let cursor: string | null = null;
-    let page = 0;
-    let lastSearch: Awaited<ReturnType<typeof callTreg>> | null = null;
-    const companies: NonNullable<ReturnType<typeof companyOf>>[] = [];
-    const take = async () => {
-      const search = await callTreg<{ companies?: Record<string, unknown>[]; next_cursor?: string | null }>(workspaceId, TREG.companiesSearch, { ...(words ? { q: words } : {}), ...(industry ? { industry } : {}), country: 'US', limit: Math.min(want * 2, 25), ...(cursor ? { cursor } : {}) }, { ...base, key });
-      spent += search.costMicro;
-      lastSearch = search;
-      cursor = typeof search.answer.output.next_cursor === 'string' && search.answer.output.next_cursor ? search.answer.output.next_cursor : null;
-      page += 1;
-      for (const r of search.answer.output.companies ?? []) {
-        const c = companyOf(r);
-        if (c) companies.push(c);
+    // People a page at a time (at most three), so ones already suggested don't use up the search.
+    const query = { title, keywords: words.split(/\s+/).filter((w) => w.length > 2).slice(0, 4), ...(ask.place ? { location: ask.place } : {}), country: 'US', limit: Math.min(opts.want * 2, 25) };
+    let search = await call<{ people?: Record<string, unknown>[]; next_cursor?: string | null }>(TREG.peopleSearch, query);
+    spent += search.costMicro;
+    const rows = [...(search.answer.output.people ?? [])];
+    let cursor = typeof search.answer.output.next_cursor === 'string' ? search.answer.output.next_cursor : null;
+    let pages = 1;
+    for (let i = 0; found.length < opts.want; i++) {
+      if (i >= rows.length) {
+        if (!cursor || pages >= 3) break;
+        search = await call<{ people?: Record<string, unknown>[]; next_cursor?: string | null }>(TREG.peopleSearch, { ...query, cursor });
+        spent += search.costMicro;
+        rows.push(...(search.answer.output.people ?? []));
+        cursor = typeof search.answer.output.next_cursor === 'string' ? search.answer.output.next_cursor : null;
+        pages += 1;
+        if (i >= rows.length) break;
       }
-    };
-    await take();
-    for (let i = 0; found.length < want; i++) {
-      if (i >= companies.length) {
-        if (!cursor || page >= 3) break;
-        await take();
-        if (i >= companies.length) break;
+      const row = rows[i]!;
+      const p = personOf(row);
+      if (!p?.linkedin) {
+        skipped.noEmail += 1;
+        continue;
       }
-      const c = companies[i]!;
-      if (known.has(c.domain) || known.has(c.name.toLowerCase())) {
+      if (p.company && opts.known.has(p.company.toLowerCase())) {
         skipped.known += 1;
         continue;
       }
-      known.add(c.domain);
-      const people = await callTreg<{ people?: Record<string, unknown>[] }>(workspaceId, TREG.peopleSearch, { company_domain: c.domain, title, limit: 1 }, { ...base, key });
-      spent += people.costMicro;
-      const person = (people.answer.output.people ?? []).map((r) => personOf(r)).find(Boolean);
-      if (!person) {
-        skipped.noPerson += 1;
-        continue;
-      }
-      const mail = await callTreg<{ email?: string | null; verified?: boolean }>(workspaceId, TREG.emailFind, { domain: c.domain, first_name: person.first, last_name: person.last }, { ...base, key, headers: { 'x-treg-route-verify': 'true', 'x-treg-route-domain-match': 'strict' } });
+      // Found from their profile and checked in the same call; kept only when the mailbox takes mail.
+      const mail = await call<{ email?: string | null; verified?: boolean }>(TREG.emailFind, { linkedin_url: p.linkedin, full_name: `${p.first} ${p.last}` }, { 'x-treg-route-verify': 'true' });
       spent += mail.costMicro;
       const email = str(mail.answer.output.email, 320).toLowerCase();
+      const domain = email.split('@')[1] ?? '';
       if (!email || !/^[^\s@<>]+@[^\s@<>]+\.[a-z]{2,}$/.test(email)) {
         skipped.noEmail += 1;
         continue;
       }
-      // Kept only when the check says the mailbox takes mail; "accept all" and "unknown" can't be trusted.
+      if (PERSONAL_MAIL.has(domain)) {
+        skipped.personal += 1;
+        continue;
+      }
       const verdict = mail.answer._treg?.verification?.verdict ?? (mail.answer.output.verified === true ? 'valid' : 'unknown');
-      if (verdict !== 'valid' || !email.endsWith(`@${c.domain}`)) {
+      if (verdict !== 'valid') {
         skipped.unconfirmed += 1;
         continue;
       }
-      const from = (call: { servedBy: string | null }) => `Treg (${call.servedBy ?? 'a provider'})`;
+      if (opts.known.has(domain)) {
+        skipped.known += 1;
+        continue;
+      }
+      opts.known.add(domain);
+      if (p.company) opts.known.add(p.company.toLowerCase());
+      // What the company is, from its domain: for the fit and the first line. A miss leaves those out.
+      let company: ReturnType<typeof companyOf> = null;
+      let companyFrom = from(search);
+      try {
+        const co = await call<Record<string, unknown>>(TREG.companiesEnrich, { domain });
+        spent += co.costMicro;
+        company = companyOf({ ...co.answer.output, domain: co.answer.output.domain ?? domain });
+        if (company) companyFrom = from(co);
+      } catch (e) {
+        if (!(e instanceof TregError)) throw e;
+      }
       const lead: Lead = {
         id: newId('lead'),
-        first: person.first,
-        last: person.last,
+        first: p.first,
+        last: p.last,
         email,
-        ...(person.title ? { title: person.title } : {}),
-        company: c.name,
-        website: c.domain,
-        ...(person.linkedin ? { linkedin: person.linkedin } : {}),
-        ...(c.employees ? { employees: c.employees } : {}),
-        ...(c.industry ? { industry: c.industry } : {}),
-        ...(c.location ? { city: c.location } : {}),
+        ...(p.title ? { title: p.title } : {}),
+        company: company?.name || p.company || domain,
+        website: domain,
+        linkedin: p.linkedin,
+        ...(company?.employees ? { employees: company.employees } : {}),
+        ...(company?.industry ? { industry: company.industry } : {}),
+        ...(p.location || company?.location ? { city: p.location || company!.location } : {}),
         source: 'found',
         list: SUGGESTED_LIST,
         added: new Date(),
         status: 'new',
-        enriched: { by: 'Treg', at: new Date(), fields: ['title', 'company', 'website', ...(c.employees ? ['employees'] : []), ...(c.industry ? ['industry'] : []), 'email'] },
+        enriched: { by: 'Treg', at: new Date(), fields: ['title', 'company', 'website', 'linkedin', ...(company?.employees ? ['employees'] : []), ...(company?.industry ? ['industry'] : []), 'email'] },
         suggested: {
           at: new Date(),
           why: [],
-          ...(c.about ? { about: c.about } : {}),
+          ...(company?.about ? { about: company.about } : {}),
           sources: [
-            { field: 'company', from: from(lastSearch ?? { servedBy: null }) },
-            { field: 'person', from: from(people) },
+            { field: 'person', from: from(search) },
             { field: 'email', from: `${from(mail)}, checked: takes mail` },
+            { field: 'company', from: companyFrom },
           ],
           ...(opts.ask ? { ask: str(opts.ask, 200) } : {}),
         },
@@ -186,13 +224,36 @@ export async function suggestLeads(workspaceId: string, opts: { ask?: string; co
       found.push(lead);
     }
   } catch (e) {
-    if (e instanceof TregError) {
-      if (!found.length) return { ok: false, status: e.status, error: e.message };
-      log.warn('lead suggestions stopped early', { workspaceId, error: e.message });
-    } else if (e instanceof BudgetError) {
-      if (!found.length) return { ok: false, status: 429, error: e.message };
-    } else throw e;
+    if (e instanceof TregError) return { found, skipped, spentMicro: spent, error: e };
+    throw e;
   }
+  return { found, skipped, spentMicro: spent };
+}
+
+export async function suggestLeads(workspaceId: string, opts: { ask?: string; count?: number; runId?: string; unattended?: boolean }): Promise<SuggestResult> {
+  const { state } = await readState(workspaceId);
+  const offer = state.out.offer;
+  const ask = readAsk(str(opts.ask, 200));
+  if (!offer.icp.industries.length && !ask.words && !offer.audience.trim()) return { ok: false, status: 400, error: 'Tell Timmy who your offer is for first: fill in the ideal customer on your offer, or say what to look for.' };
+  const room = await suggestionsLeft(workspaceId);
+  if (!room.left) return { ok: false, status: 429, error: `Timmy has suggested ${room.perDay} leads today, this workspace’s daily limit. More tomorrow.` };
+  const want = Math.max(1, Math.min(opts.count ?? ask.count ?? 10, 25, room.left));
+  const known = new Set(Object.values(state.out.leads).flatMap((l) => [l.email.toLowerCase().split('@')[1] ?? '', l.company.toLowerCase()]).filter(Boolean));
+  const key = `${today()}|${str(opts.ask, 200)}|${offer.icp.titles[0] ?? ''}`;
+  const base = { feature: 'lead-suggest' as const, key, ...(opts.runId ? { runId: opts.runId } : {}), ...(opts.unattended ? { unattended: true } : {}) };
+  const call: TregCaller = (route, body, headers) => callTreg(workspaceId, route, body, { ...base, ...(headers ? { headers } : {}) });
+  let r: Awaited<ReturnType<typeof findSuggestions>>;
+  try {
+    r = await findSuggestions(call, offer, { ...(opts.ask ? { ask: opts.ask } : {}), want, known });
+  } catch (e) {
+    if (e instanceof BudgetError) return { ok: false, status: 429, error: e.message };
+    throw e;
+  }
+  if (r.error) {
+    if (!r.found.length) return { ok: false, status: r.error.status, error: r.error.message };
+    log.warn('lead suggestions stopped early', { workspaceId, error: r.error.message });
+  }
+  const found = r.found;
   if (found.length) await addOpeners(workspaceId, offer, found, opts.runId);
   const added = await mutate<number>(workspaceId, 'leads', async (_tx, loaded) => {
     const have = new Set(Object.values(loaded.state.out.leads).map((l) => l.email.toLowerCase()));
@@ -205,7 +266,7 @@ export async function suggestLeads(workspaceId: string, opts: { ask?: string; co
     const line = { id: newId('act'), at: new Date(), text: `Timmy suggested ${fresh.length} lead${fresh.length === 1 ? '' : 's'} that fit “${offer.name}”, each with a checked email. Nobody was contacted.`, kind: 'triage' as const };
     return { state: { ...loaded.state, out: { ...out, leads, lists }, activity: [line, ...loaded.state.activity].slice(0, 500) }, result: fresh.length };
   });
-  return { ok: true, added, skipped, left: Math.max(0, room.left - added), spentMicro: spent };
+  return { ok: true, added, skipped: r.skipped, left: Math.max(0, room.left - added), spentMicro: r.spentMicro };
 }
 
 /* ───────────── A first line for each lead ───────────── */
