@@ -3,12 +3,15 @@
  * pain, the outcome, the proof, the ask, and the ideal customer behind fit
  * scores), and the template library for emails, calls and texts.
  */
-import { Braces, Copy, Pencil, Plus, Save, Trash2 } from 'lucide-react';
+import { Braces, Copy, Pencil, Plus, Save, Trash2, Wand2 } from 'lucide-react';
 import { useState } from 'react';
 import type { Channel, Offer, Template } from '../../data/outbound-types';
 import { VARIABLES } from '../../lib/outbound';
 import { fill } from '../../state/outbound';
 import { useStore } from '../../state/store';
+import { api } from '../../live/api';
+import { isLive } from '../../live/clock';
+import { useLeadsStatus } from './leads-status';
 import { Field, Menu, Modal } from '../../components/kit';
 import { CHANNEL, ChannelIcon } from './shared';
 
@@ -70,6 +73,41 @@ export function TemplatesTab() {
   );
 }
 
+/** Fills the offer in from the business's own website (Treg reads it; Timmy writes the fields). Saved only by Save offer. */
+function OfferFromSite({ onDraft }: { onDraft: (o: Offer) => void }) {
+  const { dispatch } = useStore();
+  const { status } = useLeadsStatus();
+  const [site, setSite] = useState('');
+  const [busy, setBusy] = useState(false);
+  if (!status?.on) return null;
+  const go = async () => {
+    setBusy(true);
+    try {
+      const r = await api.offerDraft(site.trim());
+      onDraft(r.offer);
+      dispatch({ type: 'toast', text: r.proofFound ? 'Filled in from your website. Check it, then Save offer.' : 'Filled in from your website. It shows no customer result with a number, so Proof is empty: add one of yours. Then Save offer.' });
+    } catch (e) {
+      dispatch({ type: 'toast', text: (e as Error).message, tone: 'warn' });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form
+      className="offer-site"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (site.trim()) void go();
+      }}
+    >
+      <input className="input" aria-label="Your website" placeholder="Your website, e.g. yourbusiness.com" value={site} onChange={(e) => setSite(e.target.value)} />
+      <button className="btn btn-sm" type="submit" disabled={busy || !site.trim()}>
+        <Wand2 size={14} /> {busy ? 'Reading your site…' : 'Draft from my website'}
+      </button>
+    </form>
+  );
+}
+
 function OfferCard() {
   const { state, dispatch } = useStore();
   const [o, setO] = useState<Offer>(state.out.offer);
@@ -90,6 +128,7 @@ function OfferCard() {
           Save offer
         </button>
       </header>
+      {isLive() && <OfferFromSite onDraft={(d) => setO({ ...d, price: o.price })} />}
       <div className="offer-grid">
         <Field label="Name">
           <input className="input" value={o.name} onChange={(e) => set({ name: e.target.value })} />

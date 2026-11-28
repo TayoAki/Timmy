@@ -97,6 +97,35 @@ export class FakeModel implements ModelProvider {
       const lines = [...mail.matchAll(/([^."\\\n]*?(\d+) ([a-z][a-z ]{2,40}?) at \$(\d[\d,]*(?:\.\d{2})?)[^."\\\n]*\.)/g)].map((m) => ({ description: m[3]![0]!.toUpperCase() + m[3]!.slice(1), qty: Number(m[2]), unit_price: m[4]!.replace(/,/g, ''), quote: m[1]!.trim() }));
       return { content: JSON.stringify({ intro: lines.length ? 'For the work in this email.' : '', lines: [...lines, { description: 'Made-up line', qty: 1, unit_price: '999', quote: 'A sentence that is not in the mail at all.' }] }) };
     }
+    // First lines for suggested leads: one built from each description, and one that adds a figure it doesn't state.
+    if (req.route === 'opener') {
+      const content = req.messages[req.messages.length - 1]!.content;
+      const companies = [...content.matchAll(/\{"id":"([^"]+)","company":"([^"]+)","description":"([^"]+)"\}/g)].map((m) => ({ id: m[1]!, company: m[2]!, about: m[3]! }));
+      const lines = companies.map((c, i) => {
+        const m = /in ([A-Z][a-z]+) with (\d+) locations/.exec(c.about);
+        return i === 1 ? { id: c.id, line: `Congrats on growing ${c.company} by 40% this year.` } : { id: c.id, line: m ? `Running ${m[2]} locations in ${m[1]} keeps a front desk busy.` : `Saw ${c.company} is growing.` };
+      });
+      return { content: JSON.stringify({ lines }) };
+    }
+    // An offer from a website: the brand's own words, and the proof copied from the page when it has one.
+    if (req.route === 'offer') {
+      const content = req.messages[req.messages.length - 1]!.content;
+      const brand = /# ([^\\\n]+)/.exec(content)?.[1] ?? 'Our product';
+      const proof = /([A-Z][^.\\]*\d+%[^.\\]*\.)/.exec(content)?.[1] ?? 'We tripled revenue for 500 clinics.';
+      return { content: JSON.stringify({ name: `${brand} reminders`, product: `${brand} sends text reminders that cut no-shows.`, audience: 'Dental practices with 5 to 50 staff', pain: 'patients miss appointments and chairs sit empty', hook: 'no-shows', outcome: 'fewer missed appointments', proof, cta: 'Open to a 15-minute demo next week?', icp: { titles: ['Practice Manager', 'Owner'], industries: ['Dental'], minEmployees: 5, maxEmployees: 50 } }) };
+    }
+    // A sequence: good steps, one with a figure the offer doesn't give, and one with a merge field Timmy doesn't fill.
+    if (req.route === 'sequence') {
+      const call = /Include one call step/.test(req.messages[req.messages.length - 1]!.content);
+      const steps = [
+        { channel: 'email', wait: 0, subject: '{{offerHook}} at {{companyName}}', body: '{{opener}}\n\nHi {{firstName}}, most practices like {{companyName}} lose hours to {{offerHook}}. {{offerCta}}\n\n{{senderFirstName}}' },
+        { channel: 'email', wait: 3, subject: 'Re: {{companyName}}', body: 'Hi {{firstName}}, floating this back up. We cut no-shows by 45% for practices like yours. {{offerCta}}\n\n{{senderFirstName}}' },
+        ...(call ? [{ channel: 'call', wait: 2, subject: '', body: 'Hi {{firstName}}, it’s {{senderFirstName}}. I emailed about {{offerHook}}. Do you have 30 seconds?' }] : []),
+        { channel: 'email', wait: 4, subject: 'what {{offerOutcome}} looks like', body: 'Hi {{firstName}},\n\n{{offerProof}}\n\nWorth a look for {{companyName}}? {{offerCta}}\n\n{{senderFirstName}}' },
+        { channel: 'email', wait: 5, subject: 'close the loop?', body: 'Hi {{firstName}}, I’ll stop here. Your {{revenue}} could still grow. Just reply if the timing changes.\n\n{{senderFirstName}}' },
+      ];
+      return { content: JSON.stringify({ steps }) };
+    }
     if (req.route === 'summary') {
       const listed = [...req.messages[req.messages.length - 1]!.content.matchAll(/^\[([\w.:@+-]+)\] (.+)$/gm)].map((m) => ({ id: m[1]!, text: m[2]! }));
       return {

@@ -1,5 +1,6 @@
 import type { Action } from '../state/store';
 import type { FoundSub, OpportunityResults, PermitContractor } from '../data/kontract-api';
+import type { Offer, SeqStep } from '../data/outbound-types';
 import { clearsAsNull, fromWire, toWire } from './patches';
 import type { TrackedOverview, TrackedThing } from './tracked';
 import type { CommandResult, LiveProfile } from './types';
@@ -117,6 +118,11 @@ export const api = {
   invoiceAttachment: (id: string) => call<{ file: { id: string; name: string; type: string; size: number } }>('POST', `/api/v1/invoices/${encodeURIComponent(id)}/attachment`, {}),
   /** Timmy drafts an invoice or quote from what an email says (server/src/invoices/from-email.ts). */
   invoiceFromEmail: (thread: string, kind: 'invoice' | 'quote') => call<{ invoice: { id: string; number: string; lines: number } }>('POST', '/api/v1/invoices/from-email', { thread, kind }),
+  /** Leads that fit the offer, through Treg, and the words for cold email (server/src/http/leads.ts). */
+  leadsStatus: () => call<{ on: boolean; sample: boolean; today: number; left: number; perDay: number }>('GET', '/api/v1/leads/status'),
+  suggestLeads: (ask: string, count?: number) => call<{ added: number; skipped: { known: number; noPerson: number; noEmail: number; unconfirmed: number }; left: number }>('POST', '/api/v1/leads/suggest', { ask, ...(count ? { count } : {}) }),
+  offerDraft: (website: string) => call<{ offer: Offer; proofFound: boolean }>('POST', '/api/v1/outbound/offer-draft', { website }),
+  writeSequence: (call_: boolean) => call<{ steps: SeqStep[]; written: number; replaced: number }>('POST', '/api/v1/outbound/sequence', { call: call_ }),
   /** Bids, with Kontract as the engine (server/src/http/bids.ts). */
   bidsStatus: () => call<{ on: boolean; sample: boolean }>('GET', '/api/v1/bids/status'),
   bidSearch: (q: Record<string, string>) => call<OpportunityResults>('GET', `/api/v1/bids/search?${new URLSearchParams(q)}`),

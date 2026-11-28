@@ -65,6 +65,13 @@ export interface Lead {
   notes?: string;
   /** Filled in by an enrichment provider: which, when, and which fields. */
   enriched?: { by: string; at: Date; fields: string[] };
+  /**
+   * Suggested by Timmy from lead data (Treg): when, why they fit the offer, what was learned about the company, and
+   * which provider each detail came from. The email was checked before it was kept.
+   */
+  suggested?: { at: Date; why: string[]; about?: string; sources: { field: string; from: string }[]; ask?: string };
+  /** A first line about them for {{opener}}, written from what was learned about the company and checked against it. */
+  opener?: string;
 }
 
 export interface LeadList {

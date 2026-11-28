@@ -103,6 +103,17 @@ export const config = {
    * Kontract's engine API (kontract/client.ts): public contracting data for the Bids screens and Ask. Both are needed;
    * the key must also be one of the keys in Kontract's own KONTRACT_SERVICE_KEYS.
    */
+  /**
+   * Treg (treg/client.ts): lead data for suggesting leads that fit a workspace's offer. `TREG_TOKEN` is the team's
+   * org-scoped token; `TREG_MAX_COST_USD` caps each lookup; `TREG_LEADS_PER_DAY` is how many leads one workspace may
+   * be suggested in a day.
+   */
+  treg: {
+    url: (env.TREG_URL ?? 'https://treg.to').trim().replace(/\/$/, ''),
+    token: (env.TREG_TOKEN ?? '').trim(),
+    maxCostUsd: Math.max(0.001, Math.min(5, Number(env.TREG_MAX_COST_USD ?? 0.25) || 0.25)),
+    leadsPerDay: Math.max(1, Math.min(500, Math.round(Number(env.TREG_LEADS_PER_DAY ?? 25)) || 25)),
+  },
   kontract: {
     url: (env.KONTRACT_URL ?? '').trim().replace(/\/$/, ''),
     key: (env.KONTRACT_SERVICE_KEY ?? '').trim(),

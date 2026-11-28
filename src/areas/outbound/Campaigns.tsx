@@ -6,7 +6,9 @@
 import { Download, Pause, Play, Plus, Rocket, Send, Sparkles } from 'lucide-react';
 import { downloadCsv } from '../../lib/download';
 import { useState } from 'react';
-import type { Campaign } from '../../data/outbound-types';
+import type { Campaign, SeqStep } from '../../data/outbound-types';
+import { api } from '../../live/api';
+import { isLive } from '../../live/clock';
 import { fmtDay, plural } from '../../lib/format';
 import { campaignCap, fitOf, mailboxCap, pct, project, statsOf, writeSequence } from '../../lib/outbound';
 import { ctxOf } from '../../state/outbound';
@@ -199,15 +201,30 @@ function NewCampaign({ onClose, onCreated, preset }: { onClose: () => void; onCr
         ? netNew.filter((l) => l.list === list).map((l) => l.id)
         : netNew.filter((l) => fitOf(l, state.out.offer).score >= 70).map((l) => l.id);
 
-  const create = () => {
+  const [writing, setWriting] = useState(false);
+  /** On a real workspace Timmy's model writes the steps from the offer; the demo, and any failure, use Timmy's own wording. */
+  const stepsFor = async (): Promise<SeqStep[]> => {
+    if (writer !== 'timmy') return [{ id: 'st1', channel: 'email', wait: 0, variants: [{ id: 'a', subject: '', body: '' }] }];
+    if (!isLive()) return writeSequence(state.out.offer, { call });
+    try {
+      return (await api.writeSequence(call)).steps;
+    } catch (e) {
+      dispatch({ type: 'toast', text: `${(e as Error).message} Timmy used its own wording instead.`, tone: 'warn' });
+      return writeSequence(state.out.offer, { call });
+    }
+  };
+  const create = async () => {
+    setWriting(true);
+    const steps = await stepsFor();
+    setWriting(false);
     const id = `camp-${Date.now().toString(36)}`;
     const c: Campaign = {
       id,
       name: nameText.trim() || 'New campaign',
       status: 'draft',
-      created: new Date(2026, 10, 16, 8, 12),
+      created: isLive() ? new Date() : new Date(2026, 10, 16, 8, 12),
       leads: [],
-      steps: writer === 'timmy' ? writeSequence(state.out.offer, { call }) : [{ id: 'st1', channel: 'email', wait: 0, variants: [{ id: 'a', subject: '', body: '' }] }],
+      steps,
       schedule: { days: [1, 2, 3, 4, 5], start: '09:00', end: '17:00', tz: 'America/New_York' },
       options: { dailyLimit: Math.min(limit, room), mailboxes, stopOnReply: true, trackOpens: false, unsubscribe: true, plainText: true },
     };
@@ -244,9 +261,10 @@ function NewCampaign({ onClose, onCreated, preset }: { onClose: () => void; onCr
           <button className="btn" onClick={onClose}>
             Cancel
           </button>
-          <button className="btn btn-primary" disabled={!mailboxes.length} onClick={create}>
+          {/* On a real workspace each email opens in the person's own mail app, so no sending mailbox is needed. */}
+          <button className="btn btn-primary" disabled={(!isLive() && !mailboxes.length) || writing} onClick={() => void create()}>
             {writer === 'timmy' ? <Sparkles size={14} /> : null}
-            {writer === 'timmy' ? 'Write the sequence' : 'Create campaign'}
+            {writing ? 'Writing…' : writer === 'timmy' ? 'Write the sequence' : 'Create campaign'}
           </button>
         </>
       }
