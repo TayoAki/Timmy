@@ -206,6 +206,13 @@
    "status": "pass"
   },
   {
+   "id": "api-bids",
+   "file": "server/test/bids.test.ts",
+   "covers": "Kontract as the engine: the HTTP client against a local server (bearer key and X-Workspace-Id, query parameters, the cost header, 401/429/404/400/500 and unreachable in plain words without the key or internals, Retry-After), workspace ids timmy-<id>; the sums in whole cents and dueText; search with only checked parameters; tracking with Kontract's own copy and a deadline to-do, once, a screen can't forge one, 404/400; reading the documents into cited facts, a plain-English read and price lines, a closed federal notice read from the kept copy; past awards kept short; local businesses, permit contractors and website facts, website URLs checked, costs logged; nothing paid asked at the monthly limit while free calls work; Kontract's 429 passed on; bid and company records refused when no screen or sum could use them; a quote request marks the sub asked and moves the bid to sourcing without showing its price; the proposal's bracketed blanks; a read-only role can search but not start, change or spend; Ask's seven tools (outside content, free document text, find businesses only attended, track once) and the tools hidden when Kontract is off",
+   "tests": 17,
+   "status": "pass"
+  },
+  {
    "id": "api-waiting",
    "file": "server/test/waiting.test.ts",
    "covers": "a draft that asks for something carries the item and a date; Send & track moves the thread to Waiting and labels it; the morning run drafts a nudge once the date passes; a nudge is never sent by itself; a reply ends the wait and drops the nudge",
@@ -518,6 +525,13 @@
    "file": "e2e/live/live-invoices.cjs",
    "covers": "in the browser on a real workspace: Invoices & quotes from the rail, business details saved, a new invoice numbered INV-0001 and saved as typed, its total, the PDF, Send opening the email written with the PDF attached and the payment tracked, the email going out with the PDF after the undo window, the invoice sent and its email in Waiting, Mark paid ending the wait, and Bill for this on an email drafting only the two priced lines for the person who wrote; a paid invoice filed in a project from its page, saved on the server, and listed on the project's Invoices tab with what was paid",
    "checks": 24,
+   "status": "pass"
+  },
+  {
+   "id": "live-bids",
+   "file": "e2e/live/live-bids.cjs",
+   "covers": "in the browser on a real workspace with the stand-in Kontract: Bids on, Find, tracking with the deadline as a to-do, reading the documents (a fact with its words), five years of price lines, past awards, pricing at markup saved in cents, a sub found and added, their email from their website, a quote request sent through the mailbox without the bid's price and marking them asked, the proposal page saved with bracketed blanks, and Kontract calls in the usage log",
+   "checks": 15,
    "status": "pass"
   },
   {

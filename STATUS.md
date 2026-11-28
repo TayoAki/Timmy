@@ -1,6 +1,6 @@
 # Timmy backend: status
 
-Last updated: Nov 28, 2026 (invoices and quotes, version 1). Read this first, then `tests.json`, then `git log`.
+Last updated: Nov 28, 2026 (bids on Kontract's engine; invoices tied to projects). Read this first, then `tests.json`, then `git log`.
 The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 
 ## Where things stand
@@ -42,6 +42,45 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 | Cold email (phase 2, built early because the decision was made) | Built as decided: Timmy writes it and opens the compose window of the connected mail app (Gmail, or Outlook on the web); nothing cold goes through an API. The lead is marked contacted when sync sees the email in Sent, and replies show in the Unibox. |
 | Frontend live mode (`VITE_TIMMY_LIVE=1`) | Built: sign-in, onboarding, state from the API, Connect buttons, model picker, monthly limit, approvals for writes Timmy proposes. The demo is unchanged and still the default build. |
 | Railway | `app` (API + live app), `pgvector` and the bucket `timmy-files` exist in `production` and `staging`. Both `app` services have the OpenRouter and Composio keys. |
+
+## Bids, with Kontract as the engine (Nov 28, 2026)
+
+**Asked:** "Now let's enable Timmy to support this architecture", with Kontract's `ARCHITECTURE.md`.
+- I read this as: Timmy becomes a second server on Kontract's engine API (`/api/v1`), the way Magpie is. Timmy keeps each workspace's bids, and calls Kontract for the public data. Kontract stores nothing of Timmy's.
+- The full write-up, including how to turn it on and what comes next, is `docs/kontract-plan.md`.
+
+**Server**
+- `kontract/client.ts` is the client. It sends the service key and `X-Workspace-Id: timmy-<workspace id>` (never a name). It reads the cost header and puts each refusal in plain words, with Retry-After passed on.
+- Calls that can cost money are checked against the workspace's monthly limit first. Every call is logged with its cost next to the model's usage, so one limit covers both.
+- A stand-in engine answers from made-up sample notices.
+- `http/bids.ts` covers search, a notice, track, reading the documents, past awards, local businesses, contractors pulling permits nearby, and a website's facts.
+- Tracking fetches Kontract's own copy of the notice, and the server refuses `trackBid` from a screen. The deadline becomes a high-priority to-do.
+- The server checks each bid and the company record before saving.
+
+**Ask**
+- Seven tools: search, read a notice, read its documents (Kontract's free text, read by Timmy's model), past awards, find businesses, list bids and track one.
+- Everything from Kontract reaches the model as outside content. Finding businesses and tracking a bid happen only in a conversation someone is having.
+- The tools are offered only while Kontract is set up (new `AgentTool.available`).
+
+**Screens**
+- A Bids section shows in the rail only where Kontract is set up (always in the sample demo). It has Find, My bids and Company.
+- A bid has stage and project pickers and four tabs:
+  - Overview: what the documents say, each fact with its words and document, and a plain-English read.
+  - Pricing: past awards and the typical price, price lines with sub cost and markup in whole cents, totals and margin, compared with the typical award.
+  - Subs: subs with status and quote; a quote request through the compose window (never showing your price) that marks the sub asked; their email from their website; save to People; a paid business search; free permit contractors nearby.
+  - Proposal: a Docs page filled from the bid, with [bracketed] blanks and nothing made up.
+- The sample demo has a worked sample bid.
+
+**Off until you add two variables** on the `app` service: `KONTRACT_URL` and `KONTRACT_SERVICE_KEY`. Add the same key to Kontract's `KONTRACT_SERVICE_KEYS` (see "Needs your attention").
+
+**One test changed:** `e2e-calm-phone` now counts 12 sections under More, with Bids.
+
+**One bug found while testing:** the sample demo turns saved ISO times back into dates, so a tracked bid's deadline came back as a date and the Bids sidebar broke on reload. The bid code now takes a deadline either way.
+
+**Tested:**
+- `bids.test` (17): includes the real HTTP client against a local server.
+- `e2e-bids` (demo, 30).
+- `live-bids` (15).
 
 ## Invoices and quotes, version 1 (Nov 28, 2026)
 
@@ -605,6 +644,8 @@ Next: the code debt listed below (the gateway's screen list moved out, routes sp
 
 
 ## Needs your attention
+
+- **Turn on bids (Kontract).** On Railway, on the `app` service, add `KONTRACT_URL` (Kontract's public `https://` address, no trailing slash) and `KONTRACT_SERVICE_KEY` (at least 32 characters; `openssl rand -hex 32`). Add the same key to the `kontract` service's `KONTRACT_SERVICE_KEYS`, after a comma, so Magpie's key keeps working. Until then the Bids section doesn't show on real workspaces. Kontract's business search and website reading cost a little per call, and each workspace's Kontract cost counts toward its Timmy monthly limit.
 
 - **CopilotKit Intelligence key.** Rotate the `cpk-` key you pasted in chat (CopilotKit dashboard), then add the new one to `app` in Railway as `CPK_INTELLIGENCE_API_KEY`, staging first. Until then Ask runs through CopilotKit's runtime without saving conversations in its cloud.
 
