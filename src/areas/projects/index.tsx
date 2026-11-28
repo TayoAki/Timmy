@@ -24,6 +24,7 @@ import {
   Search,
   FileText,
   CalendarDays,
+  Receipt,
 } from 'lucide-react';
 import { UploadButton } from '../viewers/Upload';
 import { Suspense, lazy, useEffect, useState } from 'react';
@@ -52,6 +53,7 @@ function useProjectLinks(projectId: string) {
   return links;
 }
 import { NewDocDialog } from '../docs/NewDocDialog';
+import { ProjectInvoices } from '../invoices';
 import { TaskDialog } from '../tasks/TaskDialog';
 import { ContactDialog } from '../people/ContactDialog';
 import { Avatar, DueChip, Folder } from '../../components/common';
@@ -62,7 +64,7 @@ import { NOW, PEOPLE, PROJECTS } from '../../data/mock';
 import type { Project, Task, WFile } from '../../data/ws-types';
 import { fmtDate, fmtListDate, fmtStamp, money, plural } from '../../lib/format';
 import { byNewest, useStore, ws, type Route } from '../../state/store';
-import { folderLabel, patch, pathOf, personName, type WsOp } from '../../state/ws';
+import { folderLabel, patch, pathOf, personName, uid, type WsOp } from '../../state/ws';
 import { ThreadRow } from '../../views/MailboxView';
 import { DecisionDialog, NewProjectDialog, PromptDialog, RemoveButton, SourcePickerDialog } from './dialogs';
 import {
@@ -407,6 +409,7 @@ export function ProjectView() {
         { id: 'notes', label: 'Notes', count: docs.length },
         { id: 'mail', label: 'Mail', count: threads.filter((t) => t.box !== 'archived').length },
         { id: 'files', label: 'Files', count: files.length },
+        { id: 'invoices', label: 'Invoices', count: Object.values(state.ws.invoices ?? {}).filter((x) => x.project === p.id).length },
         { id: 'ai', label: 'AI' },
       ]}
       active={tab}
@@ -472,6 +475,7 @@ export function ProjectView() {
           label="More project actions"
           items={[
             { label: 'Draft a project update', icon: Sparkles, onSelect: draftUpdate },
+            { label: 'New invoice for this project', icon: Receipt, onSelect: () => dispatch({ type: 'newInvoice', kind: 'invoice', id: uid('inv'), project: p.id }) },
             { label: 'Open in Tasks board', icon: Kanban, onSelect: () => dispatch({ type: 'navigate', route: { view: 'tasks', tab: 'board', project: p.id } }) },
             archived
               ? { label: 'Restore project', icon: ArchiveRestore, onSelect: () => restore(p) }
@@ -485,6 +489,7 @@ export function ProjectView() {
       {tab === 'notes' && <NotesTab ctx={ctx} />}
       {tab === 'mail' && <MailTab ctx={ctx} />}
       {tab === 'files' && <FilesTab ctx={ctx} />}
+      {tab === 'invoices' && <ProjectInvoices project={p} />}
       {tab === 'ai' && <AiTab ctx={ctx} />}
 
       <TaskDialog open={dialog === 'task'} onClose={close} initial={{ project: p.id }} />

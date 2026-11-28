@@ -62,7 +62,7 @@ The full brief, with its 53 sources, is in the session's notes. The points above
   - the business block, INVOICE or QUOTE, the dates, Bill to (pick a contact or type), what it is for;
   - lines with quantity, price, tax and amount; totals with the discount; notes, terms, how to pay.
   - It is editable while it is a draft. Once sent, it is what was sent; to change it, void it and start a new one.
-- **PDF**: made on the server with pdfkit (`server/src/invoices/pdf.ts`), downloadable from the invoice. In the sample demo, Print or save as PDF prints the page alone.
+- **PDF**: made on the server with pdfkit (`server/src/invoices/pdf.ts`), downloadable from the invoice. In the sample demo, the PDF button prints the page alone (or saves it as a PDF).
 - **Send** opens the compose window, already written:
   - subject "Invoice INV-0001 from …", the amount, the due date and how to pay;
   - the PDF attached, the project set, and the payment tracked in Waiting until the due date.
@@ -72,6 +72,11 @@ The full brief, with its 53 sources, is in the session's notes. The points above
   - Mark accepted or Declined.
   - Turn into an invoice copies the lines the client chose, the discount and the intro.
 - **Void** keeps it for the records. **Open it again** undoes paid, accepted, declined or void. **Delete draft** removes it, with undo.
+- **Projects**:
+  - each invoice and quote has a project, chosen on its page and changeable at any time;
+  - each project's page has an Invoices tab (billed, owed, overdue, paid, quotes waiting, and its list);
+  - the sidebar's project picker narrows the invoices screens;
+  - a draft started with a project picked, or from a project's tab, is that project's.
 - **Bill for this** on an email (Make an invoice / Make a quote) starts a draft for the person who wrote, in the email's project.
   - On a real workspace, one small model call lists the lines the email prices.
   - A line is kept only when the sentence it rests on is really in the email and the price is written in that sentence.
@@ -84,9 +89,9 @@ The full brief, with its 53 sources, is in the session's notes. The points above
   - business details can be changed but not removed.
 - **Who can**: anyone whose role can work in the workspace. Read-only roles (RevOps, viewers) can see and download but not start, change or send.
 - **Tested**:
-  - `server/test/invoices.test.ts` (14): sums, numbering, refusals, quote to invoice, send and paid, the PDF and its attachment, Bill for this, roles.
-  - `e2e/e2e-invoices.cjs` (demo, 33 checks).
-  - `e2e/live/live-invoices.cjs` (live, 21 checks).
+  - `server/test/invoices.test.ts` (15): sums, numbering, refusals, projects, quote to invoice, send and paid, the PDF and its attachment, Bill for this, roles.
+  - `e2e/e2e-invoices.cjs` (demo, 44 checks).
+  - `e2e/live/live-invoices.cjs` (live, 24 checks).
 
 ## Version 2: options to choose from
 

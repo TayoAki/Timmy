@@ -9,11 +9,14 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Frame } from '../../components/Frame';
 import { AutoTextarea, Menu, SideHead } from '../../components/kit';
 import { Folder } from '../../components/common';
+import { ScopeNote } from '../../components/ProjectScope';
+import { SectionHead } from '../projects/ui';
 import { PEOPLE } from '../../data/mock';
-import type { BillingSettings, Invoice, InvoiceKind, LineItem } from '../../data/ws-types';
+import type { BillingSettings, Invoice, InvoiceKind, LineItem, Project } from '../../data/ws-types';
 import { api } from '../../live/api';
 import { isLive } from '../../live/clock';
 import { centsFrom, defaultBilling, emailFor, money, shownStatus, STATUS_LABEL, totals, type ShownStatus } from '../../state/invoices';
+import { scopedInvoices } from '../../state/scope';
 import { useStore, ws } from '../../state/store';
 import { isoDay, mailId, put, remove, uid } from '../../state/ws';
 
@@ -36,14 +39,19 @@ export function useBilling(): BillingSettings {
   return state.ws.billing?.settings ?? fallback;
 }
 
-function StatusChip({ inv }: { inv: Invoice }) {
+export function StatusChip({ inv }: { inv: Invoice }) {
   const s = shownStatus(inv);
   return <span className={`chip inv-status inv-${s}`}>{STATUS_LABEL[s]}</span>;
 }
 
+/**
+ * Starts a draft. With one project picked at the top of the sidebar, a draft started from these screens is that
+ * project's; one made from a quote or an email takes the quote's or the email's project instead.
+ */
 function useNew() {
-  const { dispatch } = useStore();
-  return (kind: InvoiceKind, fill: { contact?: string; project?: string; thread?: string; fromQuote?: string } = {}) => dispatch({ type: 'newInvoice', kind, id: uid(kind === 'invoice' ? 'inv' : 'quo'), ...fill });
+  const { state, dispatch } = useStore();
+  return (kind: InvoiceKind, fill: { contact?: string; project?: string; thread?: string; fromQuote?: string } = {}) =>
+    dispatch({ type: 'newInvoice', kind, id: uid(kind === 'invoice' ? 'inv' : 'quo'), ...(state.scope && !fill.thread && !fill.fromQuote ? { project: state.scope } : {}), ...fill });
 }
 
 /* ───────────── The list ───────────── */
@@ -51,7 +59,7 @@ function useNew() {
 export function InvoicesView() {
   const { state, dispatch } = useStore();
   const r = state.route.view === 'invoices' ? state.route : { view: 'invoices' as const, tab: 'invoices' as Tab };
-  const all = Object.values(state.ws.invoices ?? {});
+  const all = scopedInvoices(state);
   const tabs = [
     { id: 'invoices', label: 'Invoices', count: all.filter((x) => x.kind === 'invoice').length },
     { id: 'quotes', label: 'Quotes', count: all.filter((x) => x.kind === 'quote').length },
@@ -83,10 +91,11 @@ const FILTERS: Record<InvoiceKind, { id: 'all' | ShownStatus; label: string }[]>
 };
 
 function InvoiceList({ kind }: { kind: InvoiceKind }) {
-  const { state, dispatch } = useStore();
+  const { state } = useStore();
   const make = useNew();
   const [filter, setFilter] = useState<'all' | ShownStatus>('all');
-  const mine = Object.values(state.ws.invoices ?? {})
+  const scope = state.scope ? state.ws.projects[state.scope] : undefined;
+  const mine = scopedInvoices(state)
     .filter((x) => x.kind === kind)
     .sort((a, b) => new Date(b.issued).getTime() - new Date(a.issued).getTime() || b.number.localeCompare(a.number));
   const rows = filter === 'all' ? mine : mine.filter((x) => shownStatus(x) === filter);
@@ -119,6 +128,7 @@ function InvoiceList({ kind }: { kind: InvoiceKind }) {
           New {kind}
         </button>
       </div>
+      <ScopeNote hidden={Object.values(state.ws.invoices ?? {}).filter((x) => x.kind === kind).length - mine.length} noun={kind === 'invoice' ? ['invoice', 'invoices'] : ['quote', 'quotes']} />
       <div className="inv-cards">
         {cards.map((c) => (
           <div key={c.label} className={`card inv-card${'warn' in c && c.warn ? ' warn' : ''}`}>
@@ -140,44 +150,53 @@ function InvoiceList({ kind }: { kind: InvoiceKind }) {
           <span className="empty-icon">
             <Receipt size={20} />
           </span>
-          <strong>{mine.length ? `No ${kind}s here` : `No ${kind}s yet`}</strong>
-          <span>{mine.length ? 'Pick another filter.' : `Start one here, or from an email with “Make ${kind === 'invoice' ? 'an invoice' : 'a quote'}”.`}</span>
+          <strong>{mine.length ? `No ${kind}s here` : scope ? `No ${kind}s in ${scope.name} yet` : `No ${kind}s yet`}</strong>
+          <span>{mine.length ? 'Pick another filter.' : `Start one here, or from an email with “Bill for this”.`}</span>
         </div>
       ) : (
-        <div className="table inv-table" role="table" aria-label={kind === 'invoice' ? 'Invoices' : 'Quotes'}>
-          <div className="table-row table-head" role="row">
-            <span>Number</span>
-            <span>Client</span>
-            <span>Issued</span>
-            <span>{kind === 'invoice' ? 'Due' : 'Valid until'}</span>
-            <span className="inv-num">Amount</span>
-            <span>Status</span>
-          </div>
-          {rows.map((x) => {
-            const project = x.project ? state.ws.projects[x.project] : undefined;
-            return (
-              <button key={x.id} role="row" className="table-row inv-row" onClick={() => dispatch({ type: 'navigate', route: { view: 'invoice', id: x.id } })}>
-                <span className="mono">{x.number}</span>
-                <span className="inv-client">
-                  <span>{x.client.name || x.client.company || 'No client yet'}</span>
-                  {project && (
-                    <span className="inv-sub">
-                      <Folder color={project.color} size={12} /> {project.name}
-                    </span>
-                  )}
-                </span>
-                <span>{dayText(x.issued)}</span>
-                <span>{dayText(x.due)}</span>
-                <span className="inv-num">{money(totals(x).total, x.currency)}</span>
-                <span>
-                  <StatusChip inv={x} />
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        <InvoiceRows rows={rows} label={kind === 'invoice' ? 'Invoices' : 'Quotes'} dueLabel={kind === 'invoice' ? 'Due' : 'Valid until'} />
       )}
     </section>
+  );
+}
+
+/** The table of invoices or quotes, each row opening its page. `withKind` adds the kind, for a list of both. */
+function InvoiceRows({ rows, label, dueLabel, withKind }: { rows: Invoice[]; label: string; dueLabel: string; withKind?: boolean }) {
+  const { state, dispatch } = useStore();
+  return (
+    <div className="table inv-table" role="table" aria-label={label}>
+      <div className="table-row table-head" role="row">
+        <span>Number</span>
+        <span>Client</span>
+        <span>Issued</span>
+        <span>{dueLabel}</span>
+        <span className="inv-num">Amount</span>
+        <span>Status</span>
+      </div>
+      {rows.map((x) => {
+        const project = !withKind && x.project ? state.ws.projects[x.project] : undefined;
+        return (
+          <button key={x.id} role="row" className="table-row inv-row" onClick={() => dispatch({ type: 'navigate', route: { view: 'invoice', id: x.id } })}>
+            <span className="mono">{x.number}</span>
+            <span className="inv-client">
+              <span>{x.client.name || x.client.company || 'No client yet'}</span>
+              {withKind && <span className="inv-sub">{x.kind === 'invoice' ? 'Invoice' : 'Quote'}</span>}
+              {project && (
+                <span className="inv-sub">
+                  <Folder color={project.color} size={12} /> {project.name}
+                </span>
+              )}
+            </span>
+            <span>{dayText(x.issued)}</span>
+            <span>{dayText(x.due)}</span>
+            <span className="inv-num">{money(totals(x).total, x.currency)}</span>
+            <span>
+              <StatusChip inv={x} />
+            </span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -225,6 +244,10 @@ export function InvoiceView() {
   return (
     <Frame tabs={[{ id: 'doc', label: `${NOUN[inv.kind]} ${inv.number}` }]} active="doc" onTab={() => undefined} scrollKey={inv.id}>
       <InvoiceBar inv={inv} settings={s} onBeforeAction={save} />
+      <div className="inv-filed">
+        <span className="muted">Project</span>
+        <ProjectPick value={inv.project} onChange={(project) => change({ ...inv, project })} />
+      </div>
       {!editable && <SentNote inv={inv} />}
       <Paper inv={inv} s={s} editable={editable} onChange={change} />
     </Frame>
@@ -375,9 +398,9 @@ function InvoiceBar({ inv, settings, onBeforeAction }: { inv: Invoice; settings:
           {sending ? 'Preparing…' : st === 'draft' ? 'Send' : 'Send again'}
         </button>
       )}
-      <button className="btn btn-sm" onClick={download}>
+      <button className="btn btn-sm" onClick={download} title={isLive() ? 'Download the PDF' : 'Print it, or save it as a PDF'}>
         <Download size={14} />
-        {isLive() ? 'PDF' : 'Print or save as PDF'}
+        PDF
       </button>
       {more.length > 0 && <Menu label={`More for ${inv.number}`} items={more} />}
     </div>
@@ -593,6 +616,88 @@ function Paper({ inv, s, editable, onChange }: { inv: Invoice; s: BillingSetting
   );
 }
 
+/**
+ * Which project an invoice or quote belongs to. It files the invoice and is not printed on it, so it can be changed
+ * whatever the invoice's state, and an archived project stays listed while it is the one chosen.
+ */
+function ProjectPick({ value, onChange }: { value: string | undefined; onChange: (project: string | undefined) => void }) {
+  const { state } = useStore();
+  const projects = Object.values(state.ws.projects)
+    .filter((p) => p.status !== 'archived' || p.id === value)
+    .sort((a, b) => String(a.num).localeCompare(String(b.num), undefined, { numeric: true }));
+  return (
+    <label className="inv-project">
+      <Folder color={(value && state.ws.projects[value]?.color) || 'var(--text-3)'} size={14} />
+      <select className="input" aria-label="Project" value={value ?? ''} onChange={(e) => onChange(e.target.value || undefined)}>
+        <option value="">No project</option>
+        {projects.map((p) => (
+          <option key={p.id} value={p.id}>
+            [{p.num}] {p.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+/** A project's Invoices tab: what was billed for it, what is owed and paid, its quotes, and new ones for it. */
+export function ProjectInvoices({ project }: { project: Project }) {
+  const { state, dispatch } = useStore();
+  const all = Object.values(state.ws.invoices ?? {})
+    .filter((x) => x.project === project.id)
+    .sort((a, b) => new Date(b.issued).getTime() - new Date(a.issued).getTime() || b.number.localeCompare(a.number));
+  const invoices = all.filter((x) => x.kind === 'invoice' && x.status !== 'void');
+  const quotes = all.filter((x) => x.kind === 'quote');
+  const cur = useBilling().currency;
+  const sum = (xs: Invoice[]) => xs.reduce((n, x) => n + totals(x).total, 0);
+  const billed = invoices.filter((x) => x.status === 'sent' || x.status === 'paid');
+  const owed = invoices.filter((x) => x.status === 'sent');
+  const overdue = invoices.filter((x) => shownStatus(x) === 'overdue');
+  const paid = invoices.filter((x) => x.status === 'paid');
+  const waiting = quotes.filter((x) => shownStatus(x) === 'sent');
+  const start = (kind: InvoiceKind) => dispatch({ type: 'newInvoice', kind, id: uid(kind === 'invoice' ? 'inv' : 'quo'), project: project.id });
+  const cards = [
+    { label: 'Billed', value: money(sum(billed), cur), sub: `${billed.length} invoice${billed.length === 1 ? '' : 's'} sent` },
+    { label: 'Owed', value: money(sum(owed), cur), sub: overdue.length ? `${money(sum(overdue), cur)} of it overdue` : 'nothing overdue', warn: overdue.length > 0 },
+    { label: 'Paid', value: money(sum(paid), cur), sub: `${paid.length} paid` },
+    { label: 'Quotes waiting', value: money(sum(waiting), cur), sub: `${waiting.length} waiting for an answer` },
+  ];
+  return (
+    <section className="pj-tab inv-list" aria-label="Invoices for this project">
+      <SectionHead title="Invoices & quotes" sub={`Everything billed and quoted for [${project.num}] ${project.name}`}>
+        <button className="btn btn-sm btn-primary" onClick={() => start('invoice')}>
+          <Plus size={14} />
+          New invoice
+        </button>
+        <button className="btn btn-sm" onClick={() => start('quote')}>
+          <Plus size={14} />
+          New quote
+        </button>
+      </SectionHead>
+      <div className="inv-cards">
+        {cards.map((c) => (
+          <div key={c.label} className={`card inv-card${c.warn ? ' warn' : ''}`}>
+            <span className="inv-card-label">{c.label}</span>
+            <strong className="inv-card-value">{c.value}</strong>
+            <span className="inv-card-sub">{c.sub}</span>
+          </div>
+        ))}
+      </div>
+      {all.length ? (
+        <InvoiceRows rows={all} label="Invoices and quotes for this project" dueLabel="Due" withKind />
+      ) : (
+        <div className="card empty">
+          <span className="empty-icon">
+            <Receipt size={20} />
+          </span>
+          <strong>Nothing billed for this project yet</strong>
+          <span>Start an invoice or a quote here, or use “Bill for this” on one of the project’s emails.</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
 /* ───────────── Business details ───────────── */
 
 function BillingForm() {
@@ -663,7 +768,7 @@ export function InvoicesSide() {
   const make = useNew();
   const r = state.route;
   const tab = r.view === 'invoices' ? r.tab : r.view === 'invoice' ? (state.ws.invoices?.[r.id]?.kind === 'quote' ? 'quotes' : 'invoices') : null;
-  const all = Object.values(state.ws.invoices ?? {});
+  const all = scopedInvoices(state);
   const owed = all.filter((x) => x.kind === 'invoice' && x.status === 'sent');
   const cur = useBilling().currency;
   const views: { id: Tab; label: string; hint: string; icon: typeof Receipt; count?: number }[] = [
@@ -712,7 +817,7 @@ export function InvoicesSide() {
 
 export function InvoicesContext() {
   const { state, dispatch } = useStore();
-  const overdue = Object.values(state.ws.invoices ?? {})
+  const overdue = scopedInvoices(state)
     .filter((x) => shownStatus(x) === 'overdue')
     .sort((a, b) => new Date(a.due ?? 0).getTime() - new Date(b.due ?? 0).getTime());
   return (

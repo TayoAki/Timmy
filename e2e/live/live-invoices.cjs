@@ -85,6 +85,20 @@ run('live-invoices', async (browser) => {
   }
   ok(archived, 'and its email leaves Waiting');
 
+  // Filed in a project from its page, after it was paid; the project's Invoices tab then lists it.
+  const made = await api(page, 'POST', '/api/v1/commands', { id: `pj-${Date.now()}`, action: { type: 'ws', ops: [{ op: 'put', col: 'projects', item: { id: 'apollo', num: '10', name: 'Apollo launch', color: 'var(--c-blue)', status: 'active', folder: 'f02-10', sources: [] } }] } });
+  ok(made.body.ok, 'a project to file it in');
+  await page.locator('.inv-filed select option[value="apollo"]').waitFor({ state: 'attached' });
+  await page.locator('.inv-filed select').selectOption('apollo');
+  ok(await until('ws.invoices', (all) => all[inv.id]?.project === 'apollo' && all[inv.id]?.status === 'paid'), 'choosing a project on the paid invoice files it there, on the server');
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.click('button[aria-label="Projects"]');
+  await page.locator('.pj-list').getByText('Apollo launch').first().click();
+  await page.getByRole('tab', { name: /Invoices/ }).click();
+  const pjTab = page.getByRole('region', { name: 'Invoices for this project' });
+  await pjTab.waitFor();
+  ok((await pjTab.locator('.inv-row').count()) === 1 && /INV-0001/.test(await pjTab.innerText()) && /\$1,948\.50/.test(await pjTab.locator('.inv-card', { hasText: 'Paid' }).innerText()), 'the project’s Invoices tab lists it, with what was paid');
+
   // Bill for this: Timmy drafts the lines the email prices, for the person who wrote, and nothing else.
   await deliver(page, { from: 'Dana Whitfield <dana@acme.test>', subject: 'November work', body: 'Hi Grace,\n\nPlease bill us for November. We agreed 12 design hours at $150. Also 2 site visits at $400.00 each.\n\nDana' });
   for (let i = 0; i < 80 && !(await api(page, 'GET', '/api/v1/state')).body.slices.threads.some((t) => t.subject === 'November work'); i++) await page.waitForTimeout(150);

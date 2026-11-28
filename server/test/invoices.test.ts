@@ -5,6 +5,7 @@
  *     subtotal, optional lines counted only when chosen;
  *   - numbers given by the server, in order, never shared; records the screens can't be handed in a broken form;
  *   - a quote turned into an invoice, paid ending the wait on its email, the email that sends it marking it sent;
+ *   - the project an invoice is started in (only a real one), carried from a quote, and changed after sending;
  *   - the PDF, and the PDF kept as an attachment that a send carries out with the email;
  *   - "Bill for this" on an email (server/src/invoices/from-email.ts): only lines resting on a sentence of the email
  *     whose price is written in it, for the client who wrote, numbered like any other draft.
@@ -144,6 +145,27 @@ describe('invoices in a workspace', () => {
     expect(saved.error).toBeUndefined();
     expect((await billing()).payment).toBe('Bank transfer to account 0042.');
     expect((await w.cmd({ type: 'ws', ops: [{ op: 'put', col: 'billing', item: { ...(await billing()), termsDays: 9999 } }] })).ok).toBe(false);
+  });
+
+  it('an invoice belongs to the project it is started in, never to one that isn’t there, and can be moved', async () => {
+    const project = (id: string, num: string, name: string) => ({ id, num, name, color: 'var(--c-blue)', status: 'active', folder: `f02-${num}`, sources: [] });
+    expect((await w.cmd({ type: 'ws', ops: [{ op: 'put', col: 'projects', item: project('apollo', '10', 'Apollo') }, { op: 'put', col: 'projects', item: project('zephyr', '11', 'Zephyr') }] })).ok).toBe(true);
+    await w.cmd({ type: 'newInvoice', kind: 'invoice', id: 'inv-p1', project: 'apollo' });
+    expect((await inv('inv-p1')).project).toBe('apollo');
+    // A project that isn't in the workspace is left off.
+    await w.cmd({ type: 'newInvoice', kind: 'quote', id: 'quo-p2', project: 'no-such-project' });
+    expect((await inv('quo-p2')).project).toBeUndefined();
+    // A quote's project goes with the invoice made from it.
+    await put({ ...(await inv('quo-p2')), project: 'zephyr' });
+    await w.cmd({ type: 'invoice', op: 'accepted', id: 'quo-p2' });
+    await w.cmd({ type: 'newInvoice', kind: 'invoice', id: 'inv-p3', fromQuote: 'quo-p2', project: 'apollo' });
+    expect((await inv('inv-p3')).project).toBe('zephyr');
+    // Once sent, it can still be moved to another project: the project files it and isn't printed on it.
+    const a = await inv('inv-p1');
+    await put({ ...a, client: { name: 'Sam Rivera', email: 'sam@acme.test' }, items: [line('x', 1, 10000)] });
+    expect((await w.cmd({ type: 'sendNew', draft: { to: ['mail:sam@acme.test'], subject: 'Invoice', body: 'Attached.', invoice: 'inv-p1' } })).ok).toBe(true);
+    expect((await put({ ...(await inv('inv-p1')), project: 'zephyr' })).ok).toBe(true);
+    expect(await inv('inv-p1')).toMatchObject({ status: 'sent', project: 'zephyr' });
   });
 
   it('a role that may not make changes can’t start one', async () => {

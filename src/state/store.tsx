@@ -39,7 +39,7 @@ export type Route =
   | { view: 'docs'; tab: 'recent' | 'meetings' | 'templates' }
   | { view: 'file'; id: string }
   | { view: 'projects'; tab: 'active' | 'archived' }
-  | { view: 'project'; id: string; tab: 'overview' | 'tasks' | 'notes' | 'mail' | 'files' | 'ai' }
+  | { view: 'project'; id: string; tab: 'overview' | 'tasks' | 'notes' | 'mail' | 'files' | 'invoices' | 'ai' }
   | { view: 'contact'; id: string; tab: 'overview' | 'activity'; filter?: string }
   | { view: 'library'; tab: 'prompts' | 'captured' | 'routines' | 'learned' | 'automations' }
   | { view: 'automation'; id: string }
@@ -1069,7 +1069,8 @@ export function reducer(s: State, a: Action): State {
             ? { name: person.name, ...(person.email ? { email: person.email } : {}), ...(person.company && !person.internal ? { company: person.company } : {}) }
             : { name: '' };
       const items = quote ? quote.items.filter(lineCounts).map((l, i) => ({ id: `${a.id}-${i + 1}`, description: l.description, qty: l.qty, unitPrice: l.unitPrice, ...(l.taxRate ? { taxRate: l.taxRate } : {}) })) : undefined;
-      const project = quote?.project ?? a.project ?? thread?.project;
+      // A quote's project goes with it; otherwise the one asked for (if it exists), else the email's.
+      const project = quote?.project ?? (a.project && s.ws.projects[a.project] ? a.project : undefined) ?? thread?.project;
       const { invoice, settings: next } = newDraft(settings, a.kind, a.id, new Date(NOW), {
         client,
         ...(items ? { items } : {}),

@@ -163,6 +163,45 @@ const savedInvoice = async (p, id, test) => {
   await go(p, { view: 'invoice', id });
   assert((await text(p, '.inv-foot')).includes('Bank transfer to Northpeak LLC'), 'how to pay shows on the invoice');
 
+  // A project's Invoices tab: what was billed for it, and new ones started for it.
+  await go(p, { view: 'project', id: 'acme', tab: 'invoices' });
+  const tab = p.locator('section[aria-label="Invoices for this project"]');
+  await tab.waitFor();
+  const acme = Object.values((await saved(p)).ws.invoices).filter((x) => x.project === 'acme');
+  assert(acme.length >= 3 && (await tab.locator('.inv-row').count()) === acme.length, `the Acme project's tab lists its ${acme.length} invoices and quotes`);
+  assert((await tab.locator('.inv-card', { hasText: 'Paid' }).innerText()).includes('$6,200.00'), 'and what has been paid for it');
+  assert((await p.locator('.frame-tab, [role=tab]', { hasText: 'Invoices' }).first().innerText()).includes(String(acme.length)), 'the tab shows how many');
+  await tab.getByRole('button', { name: 'New invoice' }).click();
+  await p.waitForSelector('.inv-paper.editing');
+  const pid = await openId(p, bid);
+  assert((await saved(p)).ws.invoices[pid].project === 'acme' && (await p.locator('.inv-filed select').inputValue()) === 'acme', 'New invoice on a project’s tab starts one for that project');
+
+  // The invoice's own project can be set, or changed once it has been sent and paid.
+  await go(p, { view: 'invoice', id });
+  assert((await p.locator('.inv-filed select').inputValue()) === '', 'the invoice started from the list has no project');
+  await p.locator('.inv-filed select').selectOption('northwind');
+  assert(await until(p, (st) => st.ws.invoices[id].project === 'northwind' && st.ws.invoices[id].status === 'paid'), 'choosing a project on a paid invoice files it there, and it stays paid');
+
+  // The picker at the top of the sidebar narrows the invoices, and a new one is that project's.
+  await p.click('.scope-btn');
+  await p.click('.scope-item:has-text("Northwind Pilot")');
+  await p.locator('.rail [aria-label="Invoices & quotes"]').click();
+  await p.waitForSelector('.inv-list');
+  const north = Object.values((await saved(p)).ws.invoices).filter((x) => x.kind === 'invoice' && x.project === 'northwind');
+  assert((await p.locator('.inv-row').count()) === north.length && north.length === 2, 'with Northwind picked, only its two invoices are listed');
+  assert((await p.locator('.scope-note').innerText()).includes('Northwind Pilot'), 'a note says only Northwind is showing');
+  assert((await p.locator('.inv-card', { hasText: 'Overdue' }).innerText()).includes('$6,820.00'), 'the sums are Northwind’s');
+  await p.locator('.inv-head button:has-text("New invoice")').click();
+  await p.waitForSelector('.inv-paper.editing');
+  const nid = await openId(p, pid);
+  assert((await saved(p)).ws.invoices[nid].project === 'northwind', 'a new invoice started with Northwind picked is Northwind’s');
+  await p.locator('.rail [aria-label="Invoices & quotes"]').click();
+  await p.waitForSelector('.inv-list');
+  await p.click('.scope-note .link-btn');
+  await p.locator('.scope-note').waitFor({ state: 'detached' });
+  const rowsAll = await p.locator('.inv-row').count();
+  assert(await until(p, (st) => Object.values(st.ws.invoices).filter((x) => x.kind === 'invoice').length === rowsAll) && rowsAll > north.length, `Show all projects lists every invoice again (${rowsAll})`);
+
   // On a phone, the page fits the screen.
   // The phone starts with this browser's saved state, so it opens on the same invoice.
   await go(p, { view: 'invoice', id: fid });

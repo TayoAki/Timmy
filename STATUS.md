@@ -68,6 +68,12 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
   - A line is kept only if its sentence is really in the email and states the price.
   - The email is treated as information, never as instructions.
 - **The server checks every invoice and the business details** before saving (kinds, statuses, whole-cent prices, quantities, tax, discount, currency, email shape, text limits). Read-only roles can see and download but not start, change or send.
+- **Invoices and projects** (asked the same day: "address the 4"):
+  - **A project picker on each invoice and quote**, under its top bar. It files the invoice and isn't printed, so it can be changed whatever the state, sent and paid included.
+  - **An Invoices tab on every project's page**: billed, owed (with what is overdue), paid, and quotes waiting, then the project's invoices and quotes, with New invoice and New quote for the project. The project's ⋯ menu has "New invoice for this project" too.
+  - **The project picker at the top of the sidebar narrows invoices** as it does mail and tasks. It covers the list, its sums, the tab counts, the sidebar's totals and the overdue panel, with the same "Showing … only · Show all projects" note.
+  - **A new invoice or quote started with a project picked is that project's.** One made from a quote keeps the quote's project, and Bill for this keeps the email's. A project that isn't in the workspace is never set.
+  - In the sample demo, "Print or save as PDF" is now "PDF", as on a real workspace, so the bar of a sent invoice fits on one line.
 - **One fix found by the live suite:** before any invoice existed, the Business details form rebuilt its defaults on every render, so what was typed was lost. The defaults are now made once.
 - **One test changed:** `e2e-calm-phone` counted 10 sections under More on a phone. There are 11 now, with Invoices & quotes; the check says so.
 - **Not built** (version 2, for the owner to choose, in `docs/invoices-plan.md`):
@@ -77,9 +83,9 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
   - a pricing-table block and variables in pages;
   - templates; Ask tools; QuickBooks or Xero.
 - **Tested:**
-  - `invoices.test` (14);
-  - `e2e-invoices` (demo, 33 checks, including a phone width);
-  - `live-invoices` (21).
+  - `invoices.test` (15);
+  - `e2e-invoices` (demo, 44 checks, including a phone width and the project links);
+  - `live-invoices` (24).
 
 ## Do it with Timmy, and booking meetings from Ask (Nov 27, 2026)
 

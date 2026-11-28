@@ -474,3 +474,31 @@
     display: none !important;
   }
 }
+
+/* Which project an invoice belongs to, and the note when the sidebar's picker narrows the list. */
+.inv-filed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -4px 0 14px;
+  font-size: 13px;
+}
+
+.inv-project {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inv-project .input {
+  height: 30px;
+  max-width: 220px;
+  font-size: 13px;
+}
+
+
+@media print {
+  .inv-filed {
+    display: none !important;
+  }
+}

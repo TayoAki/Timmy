@@ -4,7 +4,7 @@
  * read through these, so one choice changes everything consistently.
  */
 import type { Thread } from '../data/types';
-import type { WEvent } from '../data/ws-types';
+import type { Invoice, WEvent } from '../data/ws-types';
 import { openApprovals, type Approval } from './approvals';
 import { useStore, type State } from './store';
 
@@ -26,6 +26,9 @@ export const eventInScope = (s: State, e: WEvent) => {
 };
 
 export const scopedThreads = (s: State, list: Thread[] = s.threads) => list.filter((t) => threadInScope(s, t));
+/** Invoices and quotes belong to a project through their own project, set when they are started or on their page. */
+export const invoiceInScope = (s: State, x: Invoice) => !s.scope || x.project === s.scope;
+export const scopedInvoices = (s: State) => Object.values(s.ws.invoices ?? {}).filter((x) => invoiceInScope(s, x));
 export const scopedApprovals = (s: State) => openApprovals(s).filter((a) => approvalInScope(s, a));
 
 export function useScope() {
