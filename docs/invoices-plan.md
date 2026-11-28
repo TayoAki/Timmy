@@ -85,7 +85,7 @@ The full brief, with its 53 sources, is in the session's notes. The points above
 - **Who can**: anyone whose role can work in the workspace. Read-only roles (RevOps, viewers) can see and download but not start, change or send.
 - **Tested**:
   - `server/test/invoices.test.ts` (14): sums, numbering, refusals, quote to invoice, send and paid, the PDF and its attachment, Bill for this, roles.
-  - `e2e/e2e-invoices.cjs` (demo, 34 checks).
+  - `e2e/e2e-invoices.cjs` (demo, 33 checks).
   - `e2e/live/live-invoices.cjs` (live, 21 checks).
 
 ## Version 2: options to choose from

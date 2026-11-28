@@ -355,8 +355,8 @@
   {
    "id": "demo-e2e",
    "file": "e2e/run-all.sh",
-   "covers": "the 17 demo-mode Playwright suites (483 checks), including the frontend branch’s five: round4, story, intro, pages and uis",
-   "tests": 483,
+   "covers": "the 18 demo-mode Playwright suites (524 checks), including the frontend branch’s five (round4, story, intro, pages and uis) and invoices",
+   "tests": 524,
    "status": "pass"
   },
   {
