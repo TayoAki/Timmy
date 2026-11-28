@@ -4,7 +4,7 @@ import { draftHash } from './hash';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { NOW, PEOPLE, PROJECTS, setUnknownPerson } from '../data/mock';
 import { ALL_LABELS, StoreCtx, reducer, type Action, type State } from '../state/store';
-import { personFromMail, registerPerson } from '../state/ws';
+import { learnNames, personFromMail } from '../state/ws';
 import { api, type Snapshot } from './api';
 import { blankState } from './blank';
 import { scopeConversations } from '../agent/conversations';
@@ -32,11 +32,8 @@ export function enterLiveWorld(profile: LiveProfile, me: Snapshot['me']) {
   scopeConversations(profile.user.id, profile.workspace.id);
 }
 
-/** Names from the mailbox, so threads show "Dana Whitfield" and not an address. */
-function learnPeople(state: State) {
-  for (const t of state.threads) for (const [id, p] of Object.entries(t.ext?.people ?? {})) if (!(id in PEOPLE)) registerPerson({ id, name: p.name, email: p.email });
-  for (const c of Object.values(state.ws.contacts)) if (!(c.id in PEOPLE)) registerPerson({ id: c.id, name: c.name, email: c.email, title: c.title, company: c.company });
-}
+/** Names from the mailbox and the contacts, so threads show "Dana Whitfield" and not an address. */
+const learnPeople = (state: State) => learnNames(state.threads, state.ws.contacts);
 
 let seq = 0;
 const commandId = () => `c-${Date.now().toString(36)}-${++seq}-${Math.random().toString(36).slice(2, 8)}`;

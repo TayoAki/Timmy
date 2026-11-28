@@ -13,6 +13,10 @@ import { LABEL_NAMES } from '../src/sync/labels';
 import { htmlToText, type MailMessage } from '../src/sync/message';
 import { fromOutlook, outlookPlan, replyHtml } from '../src/sync/outlook';
 import { boot, connectApp, fake, jobs, model, newWorkspace, releaseHolds, rows, samples, uploadFile, type Client } from './helpers';
+import { PEOPLE } from '../../src/data/mock';
+import { learnNames, namesKnown, personName } from '../../src/state/ws';
+import { withGlobals } from '../src/state/engine';
+import { readState } from '../src/state/mutate';
 
 let w: Client;
 let box: { connectionId: string; account: string };
@@ -370,6 +374,47 @@ describe('filing in Outlook', () => {
     await reconcileEffect(w.workspaceId, e.id);
     expect((await effects('mail.modify')).find((x) => x.id === e.id)).toMatchObject({ status: 'completed' });
     expect(calls('OUTLOOK_BATCH_UPDATE_MESSAGES').filter((c) => JSON.stringify(c.args).includes(LABEL_NAMES['read-through']))).toHaveLength(1);
+  });
+});
+
+describe('the name a sender is shown by', () => {
+  // A meeting's guest is listed among the people by address (calendars give guests no names), and a moment later their
+  // first email gives their name. Which of the two reaches the screen first depends on how busy the queue is.
+  it('a meeting guest listed by address takes the name their email gives, whichever reaches the screen first', async () => {
+    const id = 'mail:john@nasa.test';
+    const noon = new Date();
+    noon.setHours(13, 0, 0, 0);
+    await w.post('/api/test/fake', { op: 'calendar-event', event: { id: 'AAMk-guest-1', summary: 'Launch readiness review', start: noon.toISOString(), end: new Date(noon.getTime() + 3600000).toISOString(), attendees: ['john@nasa.test'] } });
+    await jobs().drain();
+    const guest = await w.state();
+    expect(guest.ws.contacts[id]).toMatchObject({ name: 'john@nasa.test', auto: true });
+
+    // His email is taken in; the map has not looked at it yet, so his contact still has only the address.
+    await w.post('/api/test/fake', { op: 'deliver', message: { from: 'John Glenn <john@nasa.test>', subject: 'Trajectory check', body: 'Can you check the numbers?' } });
+    const mailed = await w.state();
+    expect(mailed.ws.contacts[id]?.name).toBe('john@nasa.test');
+    expect(mailed.threads.find((t) => t.subject === 'Trajectory check')?.ext?.people?.[id]?.name).toBe('John Glenn');
+    expect(namesKnown(mailed.threads, mailed.ws.contacts).find((p) => p.id === id)?.name).toBe('John Glenn');
+
+    try {
+      // The screens, when the contact came first: the name his email gives replaces the address.
+      learnNames(guest.threads, guest.ws.contacts);
+      expect(PEOPLE[id]?.name).toBe('john@nasa.test');
+      learnNames(mailed.threads, mailed.ws.contacts);
+      expect(PEOPLE[id]?.name).toBe('John Glenn');
+      // A name the person gives the contact comes before the one in the email, and shows as soon as it is saved.
+      const renamed = { ...mailed.ws.contacts, [id]: { ...mailed.ws.contacts[id]!, name: 'Col. John Glenn' } };
+      learnNames(mailed.threads, renamed);
+      expect(PEOPLE[id]?.name).toBe('Col. John Glenn');
+    } finally {
+      delete PEOPLE[id];
+    }
+
+    // What the server writes about him (a thread's history, what someone owes) names him the same way.
+    expect(withGlobals(await readState(w.workspaceId), mailed, () => personName(id))).toBe('John Glenn');
+    // And once the map has read the email, his contact has the name too.
+    await jobs().drain();
+    expect((await w.state()).ws.contacts[id]?.name).toBe('John Glenn');
   });
 });
 
