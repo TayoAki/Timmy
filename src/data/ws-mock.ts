@@ -1,4 +1,6 @@
-import { PEOPLE } from './mock';
+import { NOW, PEOPLE } from './mock';
+import { sampleBreakdown, sampleDetails, sampleOpportunities, samplePricing } from './bids-sample';
+import { linesFromBreakdown, newBid, pricingQueryFor, trimDetails } from '../state/bids';
 import type {
   Automation,
   BillingSettings,
@@ -753,6 +755,26 @@ const invoices: Invoice[] = [
   },
 ];
 
+/* A bid the sample business is working on: the documents read, past awards looked up, subs asked for prices. */
+const bidNow = new Date(NOW);
+const janitorial = sampleOpportunities(bidNow).find((o) => o.id === 'sample-janitorial-va')!;
+const bidBreakdown = sampleBreakdown(janitorial.id, bidNow);
+const trackedBid = newBid('bid-janitorial', janitorial, d(13, 10), 18);
+trackedBid.stage = 'sourcing';
+trackedBid.details = trimDetails(sampleDetails(janitorial.id, bidNow));
+trackedBid.breakdown = bidBreakdown;
+const pricedLines = linesFromBreakdown(bidBreakdown, (n) => `bid-janitorial-${n}`);
+pricedLines[0] = { ...pricedLines[0]!, subCost: 1_350_000, price: 1_593_000 };
+pricedLines[1] = { ...pricedLines[1]!, subCost: 420_000, price: 495_600 };
+trackedBid.pricing = { periods: 5, periodLabel: 'year', markupPct: 18, lines: pricedLines };
+const past = samplePricing(pricingQueryFor(trackedBid).keywords);
+trackedBid.pastPricing = { at: d(14, 9), query: pricingQueryFor(trackedBid), stats: past.stats, awards: past.awards, recipients: past.recipients };
+trackedBid.subs = [
+  { id: 'bs-1', name: 'Evergreen Commercial Cleaning (sample)', phone: '(503) 555-0142', email: 'bids@evergreen-clean.example', website: 'https://evergreen-clean.example', rating: 4.7, reviewCount: 112, source: 'sample', status: 'quoted', quote: 17_880_000 },
+  { id: 'bs-2', name: 'Rose City Janitorial (sample)', phone: '(503) 555-0187', website: 'https://rosecity-janitorial.example', rating: 4.4, reviewCount: 58, source: 'sample', status: 'asked' },
+];
+trackedBid.project = undefined;
+
 export const WS_SEED: WS = {
   folders: byId(folders),
   files: byId(files),
@@ -774,4 +796,6 @@ export const WS_SEED: WS = {
   chats: byId(chats),
   invoices: byId(invoices),
   billing: { settings: billing },
+  bids: { [trackedBid.id]: trackedBid },
+  bidding: { profile: { id: 'profile', companyName: 'Northpeak Facility Group (sample)', uei: '', cage: '', contactName: 'Taylor Morgan', contactTitle: 'Owner', email: 'bids@northpeak.io', phone: '(503) 555-0100', capabilities: '', states: ['OR', 'WA'], defaultMarkupPct: 18 } },
 };

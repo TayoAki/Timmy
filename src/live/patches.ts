@@ -22,7 +22,7 @@ export interface SliceSpec {
 
 const slice = (name: string, kind: SliceKind): SliceSpec => ({ name, path: name.split('.'), kind });
 
-export const WS_COLLECTIONS = ['folders', 'files', 'docs', 'sheets', 'decks', 'tasks', 'notes', 'events', 'contacts', 'interactions', 'projects', 'prompts', 'routines', 'learned', 'trash', 'automations', 'chat', 'chats', 'invoices', 'billing'] as const;
+export const WS_COLLECTIONS = ['folders', 'files', 'docs', 'sheets', 'decks', 'tasks', 'notes', 'events', 'contacts', 'interactions', 'projects', 'prompts', 'routines', 'learned', 'trash', 'automations', 'chat', 'chats', 'invoices', 'billing', 'bids', 'bidding'] as const;
 
 /** Every part of the state the server owns. Anything not listed stays in the browser (the open screen, notices, search). */
 export const SLICES: SliceSpec[] = [

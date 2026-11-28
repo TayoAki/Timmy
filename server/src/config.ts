@@ -99,6 +99,14 @@ export const config = {
     fallbacks: (env.TIMMY_MODEL_FALLBACKS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
   },
 
+  /**
+   * Kontract's engine API (kontract/client.ts): public contracting data for the Bids screens and Ask. Both are needed;
+   * the key must also be one of the keys in Kontract's own KONTRACT_SERVICE_KEYS.
+   */
+  kontract: {
+    url: (env.KONTRACT_URL ?? '').trim().replace(/\/$/, ''),
+    key: (env.KONTRACT_SERVICE_KEY ?? '').trim(),
+  },
   composio: {
     apiKey: env.COMPOSIO_API_KEY ?? '',
     webhookSecret: env.COMPOSIO_WEBHOOK_SECRET ?? '',

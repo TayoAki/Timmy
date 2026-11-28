@@ -4,7 +4,9 @@ import type { Activity, Box, Deal, Label, MailFile, MailRule, ProjectId, Rule, R
 import { describeMailRule, RULE_BOXES, senderKey, sweepRule } from './mail-rules';
 import { DECISIONS, type Decision } from '../data/decisions';
 import { WS_SEED } from '../data/ws-mock';
-import type { Invoice, InvoiceKind, LearnedRule, WS } from '../data/ws-types';
+import type { Bid, Invoice, InvoiceKind, LearnedRule, Task, WS } from '../data/ws-types';
+import type { Opportunity } from '../data/kontract-api';
+import { defaultProfile, newBid } from './bids';
 import { counts as lineCounts, defaultBilling, newDraft } from './invoices';
 import { fmtDate, fmtDay, fmtTime, money } from '../lib/format';
 import type { ApprovalKind, ApprovalRecord } from './approvals';
@@ -35,6 +37,8 @@ export type Route =
   | { view: 'tasks'; tab: 'board' | 'list' | 'review'; project?: string }
   | { view: 'invoices'; tab: 'invoices' | 'quotes' | 'details' }
   | { view: 'invoice'; id: string }
+  | { view: 'bids'; tab: 'find' | 'mine' | 'company' }
+  | { view: 'bid'; id: string; tab: 'overview' | 'pricing' | 'subs' | 'proposal' }
   | { view: 'calendar'; tab: 'week' | 'day'; date?: string }
   | { view: 'docs'; tab: 'recent' | 'meetings' | 'templates' }
   | { view: 'file'; id: string }
@@ -51,7 +55,7 @@ export type Route =
 
 export type OutboundTab = 'leads' | 'campaigns' | 'drafts' | 'unibox' | 'speed' | 'chat' | 'calls' | 'templates' | 'channels';
 
-export type Section = 'mail' | 'approvals' | 'activity' | 'people' | 'files' | 'rules' | 'tasks' | 'calendar' | 'docs' | 'invoices' | 'projects' | 'library' | 'outbound' | 'social' | 'connections';
+export type Section = 'mail' | 'approvals' | 'activity' | 'people' | 'files' | 'rules' | 'tasks' | 'calendar' | 'docs' | 'invoices' | 'bids' | 'projects' | 'library' | 'outbound' | 'social' | 'connections';
 
 export const sectionOf = (r: Route): Section => {
   switch (r.view) {
@@ -76,6 +80,9 @@ export const sectionOf = (r: Route): Section => {
     case 'invoices':
     case 'invoice':
       return 'invoices';
+    case 'bids':
+    case 'bid':
+      return 'bids';
     case 'projects':
     case 'project':
       return 'projects';
@@ -97,7 +104,7 @@ export const sectionOf = (r: Route): Section => {
 };
 
 /** Detail screens keep the list you came from as the Back target. */
-const isDetail = (r: Route) => r.view === 'thread' || r.view === 'file' || r.view === 'contact' || r.view === 'project' || r.view === 'campaign' || r.view === 'invoice';
+const isDetail = (r: Route) => r.view === 'thread' || r.view === 'file' || r.view === 'contact' || r.view === 'project' || r.view === 'campaign' || r.view === 'invoice' || r.view === 'bid';
 
 /** A new email or reply being written in the compose window. */
 export interface ComposeDraft {
@@ -112,6 +119,8 @@ export interface ComposeDraft {
   files?: MailFile[];
   /** The invoice or quote this email sends: sending it marks it sent and ties it to the email. */
   invoice?: string;
+  /** The bid and sub this email asks for a price: sending it marks the sub asked and ties it to the email. */
+  bidSub?: { bid: string; sub: string };
 }
 
 interface Snapshot {
@@ -223,6 +232,8 @@ export type Action =
   | { type: 'sendNew'; draft: ComposeDraft }
   /** A new invoice or quote, numbered here so the server gives the number (src/state/invoices.ts). */
   | { type: 'newInvoice'; kind: InvoiceKind; id: string; contact?: string; project?: string; thread?: string; fromQuote?: string }
+  /** Starts a bid on a notice. On a real workspace only the server sends it, with Kontract's copy of the notice. */
+  | { type: 'trackBid'; id: string; notice: Opportunity; task: string }
   /** What happened to one: paid, accepted, declined, void, or back to how it was before that. */
   | { type: 'invoice'; op: 'paid' | 'accepted' | 'declined' | 'void' | 'reopen'; id: string }
   | { type: 'reply'; id: string; body: string; track?: { on: string; item: string; due?: string } | null; files?: MailFile[] }
@@ -1040,13 +1051,42 @@ export function reducer(s: State, a: Action): State {
       };
       const inv = d.invoice ? s.ws.invoices[d.invoice] : undefined;
       const sentInvoice: Invoice | undefined = inv && inv.status !== 'void' ? { ...inv, status: inv.status === 'draft' ? 'sent' : inv.status, sentAt: NOW, thread: tid } : undefined;
+      // A quote request to a sub on a bid: the sub is marked asked (unless they already quoted) and the email kept.
+      const askedBid = d.bidSub ? s.ws.bids?.[d.bidSub.bid] : undefined;
+      const askedSub = askedBid?.subs.find((x) => x.id === d.bidSub!.sub);
+      const bidAsked: Bid | undefined =
+        askedBid && askedSub
+          ? { ...askedBid, updated: NOW, stage: askedBid.stage === 'found' ? 'sourcing' : askedBid.stage, subs: askedBid.subs.map((x) => (x.id === askedSub.id ? { ...x, status: x.status === 'new' ? 'asked' : x.status, thread: tid } : x)) }
+          : undefined;
+      const wsAfter = sentInvoice || bidAsked ? { ...s.ws, ...(sentInvoice ? { invoices: { ...s.ws.invoices, [sentInvoice.id]: sentInvoice } } : {}), ...(bidAsked ? { bids: { ...s.ws.bids, [bidAsked.id]: bidAsked } } : {}) } : null;
       return {
         ...s,
         compose: null,
         threads: [thread, ...s.threads],
-        ...(sentInvoice ? { ws: { ...s.ws, invoices: { ...s.ws.invoices, [sentInvoice.id]: sentInvoice } } } : {}),
+        ...(wsAfter ? { ws: wsAfter } : {}),
         activity: logged(s, `You sent “${thread.subject}”${track ? ' and Timmy started tracking the reply' : ''}`, 'send', tid),
         toasts: withToast(s, track ? `Sent · tracking in [02] Waiting${due ? ` until ${fmtDay(due)}` : ''}` : `Sent to ${names}`, snap(s)),
+      };
+    }
+
+    case 'trackBid': {
+      // One bid per notice: tracking it again opens the one there is.
+      const had = Object.values(s.ws.bids ?? {}).find((b) => b.notice.id === a.notice.id);
+      if (had) return { ...s, route: { view: 'bid', id: had.id, tab: 'overview' }, back: s.route };
+      if (s.ws.bids?.[a.id] || s.ws.tasks[a.task]) return s;
+      const markup = s.ws.bidding?.profile?.defaultMarkupPct ?? defaultProfile('').defaultMarkupPct;
+      const deadline = a.notice.responseDeadline ? new Date(a.notice.responseDeadline) : null;
+      const due = deadline && !Number.isNaN(deadline.getTime()) && deadline.getTime() > NOW.getTime() ? deadline : null;
+      const bid = newBid(a.id, a.notice, new Date(NOW), markup, due ? a.task : undefined);
+      // The deadline goes on the to-do list, so it shows with everything else that is due.
+      const task: Task | null = due ? { id: a.task, title: `Submit the bid: ${a.notice.title.slice(0, 160)}`, status: 'todo', priority: 'high', due, created: new Date(NOW), notes: `${a.notice.agency}${a.notice.solicitationNumber ? ` · ${a.notice.solicitationNumber}` : ''}` } : null;
+      return {
+        ...s,
+        ws: { ...s.ws, bids: { ...s.ws.bids, [bid.id]: bid }, ...(task ? { tasks: { ...s.ws.tasks, [task.id]: task } } : {}) },
+        route: { view: 'bid', id: bid.id, tab: 'overview' },
+        back: s.route,
+        activity: logged(s, `Started a bid on “${a.notice.title.slice(0, 120)}”`, 'file'),
+        toasts: withToast(s, due ? `Tracking this bid · its deadline is on your to-do list` : 'Tracking this bid', snap(s)),
       };
     }
 

@@ -219,6 +219,8 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
   const state = loaded.state;
   if (!a || typeof a.type !== 'string') return { state, reject: 'That isn’t a command.' };
   if (DEMO_ONLY.has(a.type)) return { state, reject: NOT_LIVE };
+  // A tracked bid carries Kontract's copy of the notice, so only the server makes one (http/bids.ts), from Kontract.
+  if (a.type === 'trackBid') return { state, reject: 'Track a bid from the Bids screen.' };
   // "Already approved" is the server's to know, never a screen's to say: the reducer skips a CRM or delegate hold
   // for an action that carries it, so whatever a client sends there is dropped.
   if ('approved' in a) delete (a as { approved?: unknown }).approved;
@@ -245,6 +247,11 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
   }
   if (a.type === 'invoice' && (typeof a.id !== 'string' || !state.ws.invoices?.[a.id] || !['paid', 'accepted', 'declined', 'void', 'reopen'].includes(a.op))) return { state, reject: 'That invoice isn’t here.' };
   if (a.type === 'sendNew' && a.draft?.invoice !== undefined && (typeof a.draft.invoice !== 'string' || !state.ws.invoices?.[a.draft.invoice])) return { state, reject: 'That invoice isn’t here.' };
+  if (a.type === 'sendNew' && a.draft?.bidSub !== undefined) {
+    const bs = a.draft.bidSub as { bid?: unknown; sub?: unknown } | null;
+    const bid = bs && typeof bs.bid === 'string' ? state.ws.bids?.[bs.bid] : undefined;
+    if (!bid || typeof bs?.sub !== 'string' || !bid.subs.some((x) => x.id === bs.sub)) return { state, reject: 'That bid or subcontractor isn’t here.' };
+  }
   if (a.type === 'dismissProjectGuess' && (typeof a.id !== 'string' || !state.threads.some((t) => t.id === a.id))) return { state, reject: 'That email is no longer here.' };
   if (a.type === 'move') {
     // A thread can only be put in one of the five places. Who moved it is the server's to say, never the caller's:

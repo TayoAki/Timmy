@@ -387,10 +387,81 @@ function billingProblem(b: Record<string, unknown>): string | null {
   return null;
 }
 
+const BID_STAGES = new Set(['found', 'sourcing', 'quoted', 'submitted', 'won', 'lost']);
+const SUB_SOURCES = new Set(['search', 'sample', 'permits', 'contact', 'manual']);
+const SUB_STATUSES = new Set(['new', 'asked', 'quoted', 'selected', 'declined']);
+/** The size of a part written from Kontract's data, as it travels: a bound on what one record can hold. */
+const sizeOf = (v: unknown) => {
+  try {
+    return JSON.stringify(v ?? null).length;
+  } catch {
+    return Infinity;
+  }
+};
+
+/**
+ * A bid: Kontract's copy of the notice and what its documents say (written by the server, bounded in size here), and
+ * the workspace's own price lines and subs (checked field by field: whole cents, sensible quantities, known states).
+ */
+function bidProblem(b: Record<string, unknown>): string | null {
+  const refused = 'That bid isn’t in a form Timmy can save.';
+  if (!text(b.id, 100) || !BID_STAGES.has(b.stage as string) || !date(b.created)) return refused;
+  for (const k of ['updated', 'submittedAt', 'decidedAt']) if (b[k] !== undefined && !date(b[k])) return refused;
+  const n = b.notice as Record<string, unknown> | undefined;
+  if (!plain(n) || !text(n.id, 200) || !text(n.title, 500) || !text(n.agency, 500) || !plain(n.placeOfPerformance) || sizeOf(n) > 40_000) return refused;
+  if (b.details !== undefined && (!plain(b.details) || sizeOf(b.details) > 150_000)) return refused;
+  if (b.breakdown !== undefined && (!plain(b.breakdown) || sizeOf(b.breakdown) > 30_000)) return refused;
+  if (b.pastPricing !== undefined && (!plain(b.pastPricing) || sizeOf(b.pastPricing) > 40_000)) return refused;
+  const p = b.pricing as Record<string, unknown> | undefined;
+  if (!plain(p) || !finite(p.periods, 1, 50) || !Number.isInteger(p.periods) || (p.periodLabel !== 'year' && p.periodLabel !== 'contract') || !finite(p.markupPct, 0, 1000)) return 'A bid runs for 1 to 50 periods, with a markup from 0 to 1,000%.';
+  if (!Array.isArray(p.lines) || p.lines.length > 60) return 'A bid can have up to 60 price lines.';
+  const lineIds = new Set<string>();
+  for (const raw of p.lines) {
+    const l = raw as Record<string, unknown>;
+    if (!plain(l) || !text(l.id, 100) || lineIds.has(l.id as string)) return refused;
+    lineIds.add(l.id as string);
+    if (!text(l.description, 2000) || !text(l.unit, 40)) return 'A price line’s description can be up to 2,000 characters, and its unit up to 40.';
+    if (!finite(l.quantity, 0, 1e7)) return 'A price line’s quantity has to be a number from 0 up.';
+    for (const k of ['subCost', 'price']) if (!finite(l[k], 0, MONEY_MAX) || !Number.isInteger(l[k])) return refused;
+  }
+  if (!Array.isArray(b.subs) || b.subs.length > 60) return 'A bid can have up to 60 subcontractors.';
+  const subIds = new Set<string>();
+  for (const raw of b.subs) {
+    const x = raw as Record<string, unknown>;
+    if (!plain(x) || !text(x.id, 100) || subIds.has(x.id as string) || !text(x.name, 300) || !(x.name as string).trim()) return refused;
+    subIds.add(x.id as string);
+    if (!SUB_SOURCES.has(x.source as string) || !SUB_STATUSES.has(x.status as string)) return refused;
+    for (const k of ['phone', 'address', 'category', 'license']) if (!shortText(x[k])) return refused;
+    if (x.email !== undefined && x.email !== '' && !(typeof x.email === 'string' && EMAIL_SHAPE.test(x.email))) return 'That subcontractor’s email address doesn’t look right.';
+    if (x.website !== undefined && x.website !== '' && !(typeof x.website === 'string' && x.website.length <= 500 && /^https?:\/\//i.test(x.website))) return 'A website starts with http:// or https://.';
+    if (x.rating !== undefined && !finite(x.rating, 0, 5)) return refused;
+    if (x.reviewCount !== undefined && (!finite(x.reviewCount, 0, 1e7) || !Number.isInteger(x.reviewCount))) return refused;
+    if (x.quote !== undefined && (!finite(x.quote, 0, MONEY_MAX) || !Number.isInteger(x.quote))) return refused;
+    if (!shortText(x.notes, 4000)) return refused;
+    for (const k of ['contact', 'thread']) if (x[k] !== undefined && !text(x[k], 200)) return refused;
+  }
+  if (!shortText(b.notes, 20_000)) return 'Notes can be up to 20,000 characters.';
+  for (const k of ['project', 'task', 'proposal']) if (b[k] !== undefined && !text(b[k], 200)) return refused;
+  return null;
+}
+
+/** The company's details for bids: plain text within limits, NAICS codes and state codes, a markup. */
+function biddingProblem(b: Record<string, unknown>): string | null {
+  const refused = 'Those company details aren’t in a form Timmy can save.';
+  if (b.id !== 'profile' || !text(b.companyName, 300)) return refused;
+  for (const k of ['uei', 'cage', 'contactName', 'contactTitle', 'phone', 'website']) if (!shortText(b[k])) return refused;
+  if (b.email !== undefined && b.email !== '' && !(typeof b.email === 'string' && EMAIL_SHAPE.test(b.email))) return 'That email address doesn’t look right.';
+  for (const k of ['address', 'capabilities']) if (!shortText(b[k], 4000)) return refused;
+  if (b.naics !== undefined && (!Array.isArray(b.naics) || b.naics.length > 20 || !b.naics.every((x) => typeof x === 'string' && /^\d{2,6}$/.test(x)))) return 'NAICS codes are 2 to 6 digits.';
+  if (b.states !== undefined && (!Array.isArray(b.states) || b.states.length > 60 || !b.states.every((x) => typeof x === 'string' && /^[A-Z]{2}$/.test(x)))) return 'States are two-letter codes, such as OR.';
+  if (!finite(b.defaultMarkupPct, 0, 1000)) return 'The markup is a percentage from 0 to 1,000.';
+  return null;
+}
+
 /** The settings on a visitor's conversation that a member may flip. Everything else in it is written by the server. */
 const CHAT_FLAGS = new Set(['unread', 'starred']);
 
-const CHECKS: Partial<Record<string, (item: Record<string, unknown>, pictures: Pictures) => string | null>> = { docs: docProblem, automations: automationProblem, chat: chatProblem, tasks: taskProblem, contacts: contactProblem, events: eventProblem, invoices: invoiceProblem, billing: billingProblem };
+const CHECKS: Partial<Record<string, (item: Record<string, unknown>, pictures: Pictures) => string | null>> = { docs: docProblem, automations: automationProblem, chat: chatProblem, tasks: taskProblem, contacts: contactProblem, events: eventProblem, invoices: invoiceProblem, billing: billingProblem, bids: bidProblem, bidding: biddingProblem };
 
 /** The record a collection really holds under an id: its own, never something every object has. */
 const ownRecord = (col: Record<string, unknown> | undefined, id: string) => (col && Object.hasOwn(col, id) ? (col[id] as Record<string, unknown>) : null);
@@ -439,6 +510,7 @@ export function checkWsOps(state: State, ops: unknown, pictures: Pictures = NO_P
 
     if (col === 'chat' && o.op === 'remove') return 'The website chat’s settings can be changed, not removed.';
     if (col === 'billing' && o.op === 'remove') return 'The billing details can be changed, not removed.';
+    if (col === 'bidding' && o.op === 'remove') return 'The company details can be changed, not removed.';
     if (item) {
       const bad = CHECKS[col]?.(item, pictures) ?? null;
       if (bad) return bad;

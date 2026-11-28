@@ -4,6 +4,8 @@
  * the browser for now; Gmail is the only outside service the product connects to.
  */
 
+import type { BidDetails, Breakdown, Opportunity, PastAward, PricingQuery, PricingStats, RecipientSummary } from './kontract-api';
+
 export type ProjectId = string;
 
 /* ───────────── Drive ───────────── */
@@ -417,6 +419,10 @@ export interface WS {
   invoices: Record<string, Invoice>;
   /** The business details and numbering invoices and quotes use: one record, `settings`. */
   billing: Record<string, BillingSettings>;
+  /** Contracts the workspace is bidding on (src/state/bids.ts); the public data comes from Kontract. */
+  bids: Record<string, Bid>;
+  /** The company as government buyers see it: one record, `profile`. */
+  bidding: Record<string, BidProfile>;
 }
 
 /* ───────────── Invoices and quotes ───────────── */
@@ -500,3 +506,99 @@ export interface BillingSettings {
 
 export type Col = keyof WS;
 export type ItemOf<C extends Col> = WS[C][string];
+
+/* ───────────── Bids (government and public contracts) ───────────── */
+
+/** Found → sourcing subs → quoted → submitted → won or lost, as in Kontract. */
+export type BidStage = 'found' | 'sourcing' | 'quoted' | 'submitted' | 'won' | 'lost';
+
+/** One price line: what a sub charges per unit, what the buyer is charged, and how many units each period. Whole cents. */
+export interface BidLine {
+  id: string;
+  description: string;
+  /** "month", "visit", "each"… */
+  unit: string;
+  /** Units each period (each year, or for the whole job). */
+  quantity: number;
+  /** What the sub charges you per unit. */
+  subCost: number;
+  /** What you charge the buyer per unit. */
+  price: number;
+}
+
+export type BidSubStatus = 'new' | 'asked' | 'quoted' | 'selected' | 'declined';
+
+/** A subcontractor on a bid: found by a search, from permits near the job, from Contacts, or typed in. */
+export interface BidSub {
+  id: string;
+  name: string;
+  phone?: string;
+  email?: string;
+  website?: string;
+  address?: string;
+  category?: string;
+  rating?: number;
+  reviewCount?: number;
+  license?: string;
+  source: 'search' | 'sample' | 'permits' | 'contact' | 'manual';
+  /** The contact it is, once saved to Contacts. */
+  contact?: string;
+  status: BidSubStatus;
+  /** Their price for each period, in cents, once they quote. */
+  quote?: number;
+  notes?: string;
+  /** The email that asked them for a quote. */
+  thread?: string;
+}
+
+/** What past awards like this one went for (USAspending, through Kontract), kept with the bid. */
+export interface BidPastPricing {
+  at: Date;
+  query: PricingQuery;
+  stats: PricingStats;
+  awards: PastAward[];
+  recipients: RecipientSummary[];
+}
+
+export interface Bid {
+  id: string;
+  /** Kontract's copy of the notice when it was tracked. Sent back when the notice has closed, so it stays readable. */
+  notice: Opportunity;
+  stage: BidStage;
+  created: Date;
+  updated?: Date;
+  submittedAt?: Date;
+  /** When it was won or lost. */
+  decidedAt?: Date;
+  notes?: string;
+  project?: string;
+  /** The to-do for its deadline. */
+  task?: string;
+  /** The page the proposal is written on. */
+  proposal?: string;
+  /** What the documents say, each fact with the words it came from (Kontract's free rules). */
+  details?: BidDetails;
+  breakdown?: Breakdown;
+  pastPricing?: BidPastPricing;
+  pricing: { periods: number; periodLabel: 'year' | 'contract'; markupPct: number; lines: BidLine[] };
+  subs: BidSub[];
+}
+
+/** The company's details for bids and proposals: UEI and CAGE, who to contact, what it does. */
+export interface BidProfile {
+  id: 'profile';
+  companyName: string;
+  uei?: string;
+  cage?: string;
+  address?: string;
+  contactName?: string;
+  contactTitle?: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  capabilities?: string;
+  /** Codes and states it bids in, used as the default search. */
+  naics?: string[];
+  states?: string[];
+  defaultMarkupPct: number;
+}
