@@ -43,6 +43,27 @@ The brief is `docs/fable-build-prompt.md`; the plan is `docs/backend-prd.md`.
 | Frontend live mode (`VITE_TIMMY_LIVE=1`) | Built: sign-in, onboarding, state from the API, Connect buttons, model picker, monthly limit, approvals for writes Timmy proposes. The demo is unchanged and still the default build. |
 | Railway | `app` (API + live app), `pgvector` and the bucket `timmy-files` exist in `production` and `staging`. Both `app` services have the OpenRouter and Composio keys. |
 
+## Due today for sequences (Nov 28, 2026)
+
+**Asked:** "build the due today list for sequences."
+
+On a real workspace a campaign never sends by itself (the Nov 16 decision), so the steps of a sequence need a place to be worked. **Outbound › Due today** is that place. Full write-up: `docs/leads-plan.md`.
+
+- Every lead's first step is due as soon as they join a campaign, and each later step once its wait is up. Overdue steps come first and say since when.
+- Each row is the lead's step written for them from the sequence, with no merge field left showing.
+- **Write it** opens that email, filled in, and from there it opens in their Gmail or Outlook. A call step opens the call dialog with the step's script.
+- Once opened, the row says "Opened in Gmail at …" and offers **Open again**, until the email shows up in Sent. Then the lead moves on, and their next step is due after its wait. The server marks the opened step (`openedStep`, in `server/src/state/engine.ts`) and clears it when the sent email syncs (`server/src/sync/ingest.ts`).
+- **Skip this step** moves a lead past a step without sending it; the next is due after its wait, at the campaign's start time.
+- A lead who replied, bounced or opted out has nothing due, and campaigns that run by themselves (the demo's launched ones) aren't listed.
+- The tab, and its entry in the Outbound list, count the steps not yet opened.
+- In the demo the tab lists the steps of campaigns not launched yet, and sending one moves the lead on.
+
+**Tested:**
+- `sequence-due.test` (4, new).
+- `live-leads` now covers Due today too (18 checks, was 13).
+- `e2e-due` (11, new demo suite).
+- `e2e-outbound` (53) still passes.
+
 ## Leads that fit the offer, through Treg, and sequences by Timmy's model (Nov 28, 2026)
 
 **Asked:** "suggest leads for a person's business using Treg and their offer", and whether Timmy can write cold email sequences. Then: "yes connect treg, build it with the stand-in first."

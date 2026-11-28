@@ -4,6 +4,7 @@
  "safetyProperties": {
   "no outside write without an approved effect record or a rule": [
    "server/test/gateway.test.ts",
+   "server/test/sequence-due.test.ts",
    "server/test/agent.test.ts",
    "server/test/audit.test.ts",
    "server/test/filing.test.ts",
@@ -217,6 +218,13 @@
    "file": "server/test/treg.test.ts",
    "covers": "Treg for leads: the HTTP client against a local server (X-Treg-Token, X-Treg-Meta workspace tag, X-Treg-Route-Max-Cost, Idempotency-Key, routing headers, cost, call id and provider read); a workspace's own refusals said (its daily allowance, blocked, cost cap, busy with Retry-After, no provider), the team account's never (balance, funds, platform cap), the token and balance never repeated; workspace tags; first lines kept only when the description states them; sequence steps kept only with known merge fields, no made-up figure and no link in the first email; suggestions: the right person at companies that fit, emails found and checked and kept only when they take mail, why each fits and where each detail came from, nobody contacted, every call tagged and logged with its cost; a first line dropped when it adds a figure; no company twice, the daily limit, the monthly limit before any lookup; Treg's refusals; the offer from a website with the proof only when on the page, website addresses checked; a sequence written by the model with bad steps replaced; a sent email moving a lead in a campaign to the next step while launch stays refused; Ask's suggest_leads attended only and hidden when Treg is off; a read-only role can't look up, draft or write",
    "tests": 14,
+   "status": "pass"
+  },
+  {
+   "id": "api-sequence-due",
+   "file": "server/test/sequence-due.test.ts",
+   "covers": "Due today: every lead's first step due as soon as they join a campaign worked by hand, written for them with no merge field showing; opening a step in the mail app marks it, nothing goes out through the provider, and the email arriving in Sent moves the lead on and clears the mark, with their next step waiting out its days; a step skipped moves the lead on with the next step days away; a lead who replied has nothing due; a later step due once its wait is up, the overdue one first and saying so; a campaign that runs by itself not listed",
+   "tests": 4,
    "status": "pass"
   },
   {
@@ -544,8 +552,8 @@
   {
    "id": "live-leads",
    "file": "e2e/live/live-leads.cjs",
-   "covers": "in the browser on a real workspace with the stand-in Treg: the offer drafted from a website with its proof copied from the page and saved; Suggest leads adding ten leads with checked emails, sources and first lines; the lead panel's reasons; a campaign for the list with four steps written by Timmy's model, a made-up figure and field replaced; the lead's first step opened in Gmail, filled in with their first line; nothing sent by Timmy",
-   "checks": 13,
+   "covers": "in the browser on a real workspace with the stand-in Treg: the offer drafted from a website with its proof copied from the page and saved; Suggest leads adding ten leads with checked emails, sources and first lines; the lead panel's reasons; a campaign for the list with four steps written by Timmy's model, a made-up figure and field replaced; the lead's first step opened in Gmail, filled in with their first line; nothing sent by Timmy; Due today listing the first step for each of the ten leads, the one opened in Gmail saying so until it is in Sent, the lead moving on once it is and leaving the list, and a step skipped",
+   "checks": 18,
    "status": "pass"
   },
   {

@@ -48,6 +48,13 @@ A search for **people by title and place** (served by Exa) gave the right people
 - When the email shows up in Sent, the lead moves to the next step, due after its wait. A reply from them stops the sequence.
 - A campaign can't send by itself.
 
+**Due today** (Outbound › Due today; `dueSteps` and `skipStep` in `src/state/outbound.ts`, `src/areas/outbound/Due.tsx`). This is where a sequence is worked day to day:
+- Every lead's first step is due as soon as they join a campaign. Each later step is due once its wait is up. Overdue steps come first and say since when.
+- Each row is the lead's step written for them from the sequence, with no merge field left showing. **Write it** opens the email, filled in, and from there it opens in their Gmail or Outlook. A call step opens the call dialog with the step's script.
+- Once opened, the row says "Opened in Gmail at 10:42" and offers **Open again**, until the email shows up in Sent. Then the lead moves on, and their next step is due after its wait. The tab's count leaves out steps already opened.
+- **Skip this step** moves the lead past a step without sending it. Their next step is due after its wait (at least a day), at the campaign's start time. Skipping the last step ends the sequence for them.
+- A lead who replied, bounced or opted out has nothing due. Campaigns that run by themselves (the demo's launched ones) aren't listed. In the demo the tab lists the steps of campaigns not launched yet, and sending one moves the lead on.
+
 **Tests**
 - `server/test/treg.test.ts` (14), covering:
   - the real HTTP client against a local server: headers, costs, each refusal, and that the token and balance are never repeated;
@@ -60,7 +67,9 @@ A search for **people by title and place** (served by Exa) gave the right people
   - a sent email moving a lead to the next step, with launch still refused;
   - Ask's tool, attended only and hidden when Treg is off;
   - roles.
-- `e2e/live/live-leads.cjs` (13 checks).
+- `server/test/sequence-due.test.ts` (4): first steps due on joining, written with no merge field showing; opened, then Sent moves the lead on and their next step waits; a skip; a reply ends what's due; overdue first; campaigns that run by themselves left out.
+- `e2e/live/live-leads.cjs` (18 checks), now also Due today on a real workspace: ten first steps, the opened one marked until it's in Sent, then the lead moves on, and a skip.
+- `e2e/e2e-due.cjs` (11 checks): Due today in the sample demo.
 
 ## Turning it on (the owner's step)
 
@@ -92,8 +101,7 @@ Each workspace's Treg cost counts toward its Timmy monthly limit.
 
 ## Next, in the order I'd build them
 
-1. **"Due today" for sequences.** A list in Outbound of the leads whose next step is due, each one click from their mail app.
-2. **Suggest leads on a schedule.** A few each morning, within the day's allowance, as work nobody asked for (its share of the limit).
-3. **A company's own facts for the first line.** Read a short excerpt of the company's site with `treg.web.extract`, for a better opener, checked the same way.
-4. **Re-check an email** with `treg.people.email.verify` before the first send if it was found more than 30 days earlier.
-5. **Leads in the Unibox**, sorted by Timmy when they reply. This already works for leads on a real workspace; suggested leads use the same path.
+1. **Suggest leads on a schedule.** A few each morning, within the day's allowance, as work nobody asked for (its share of the limit).
+2. **A company's own facts for the first line.** Read a short excerpt of the company's site with `treg.web.extract`, for a better opener, checked the same way.
+3. **Re-check an email** with `treg.people.email.verify` before the first send if it was found more than 30 days earlier.
+4. **Leads in the Unibox**, sorted by Timmy when they reply. This already works for leads on a real workspace; suggested leads use the same path.
