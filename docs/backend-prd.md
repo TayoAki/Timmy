@@ -362,6 +362,13 @@ Next, in this order:
 
 **Treg, as built (Nov 28, 2026).** The owner said to connect Treg (overriding the Composio-only decision for it). It is built as described below, with the workspace tag `workspace=timmy-<id>`. Timmy suggests leads that fit the offer (companies, the right person, an email found and checked, why each fits, a first line checked against the provider's description), drafts the offer from the business's website, and writes sequences with its own model. Each cold email is still sent by the person from their own mail app. It is off until `TREG_TOKEN` is set. See `docs/leads-plan.md`.
 
+**Stripe Connect, as built (Nov 28, 2026), for "Pay online" on invoices.** Asked: "build the payment link on invoices." Like Treg, it goes straight to the provider rather than through Composio, because the money has to land in each business's own account and Stripe's signed events have to reach Timmy.
+- **Accounts:** Timmy is the platform (Accounts v2). Each business gets its own Stripe account, connected by an owner or admin through Stripe's onboarding page. It has the full Stripe Dashboard; Stripe charges its fee to the business and covers losses. There is no application fee.
+- **Links:** an invoice's link is a Payment Link on the business's account, for its total, good for one payment.
+- **Safety:** making a link goes through the Action gateway as `invoice.link`, approved by the person's click, and only a person's click can propose one. Marking paid by hand or voiding switches the link off (`invoice.unlink`).
+- **Paid:** the invoice is marked paid from Stripe's signed event (or a check with Stripe), never from a screen.
+- It is off until `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` are set. See `docs/invoices-plan.md`.
+
 **Treg for data.** [Treg](https://treg.to/) is a pay-per-call marketplace of data and tools for AI agents: more than 4,100 endpoints from 127 providers behind one token, open source under Apache 2.0. Every workspace has it on by default. Following Treg's guide for products, Timmy holds one Treg team token and tags every call with the workspace in the `X-Treg-Meta` header. Our code sets that tag, never the model ([integration guide](https://treg.to/integrate.md)). A per-workspace daily cap comes from Treg's budgets endpoint, and `X-Treg-Route-Max-Cost` caps each call. Costs come back in `X-Treg-Cost-Micro` and count against the workspace's enrichment budget. The agent uses Treg's routed lookups, which pick the provider and fall back on failure, and only catalog tools, never raw upstream URLs. v1 uses Treg only to look things up; a write through Treg would be an effect record like any other.
 
 ## Safety, security and compliance

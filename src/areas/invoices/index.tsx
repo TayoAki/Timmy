@@ -15,8 +15,10 @@ import { PEOPLE } from '../../data/mock';
 import type { BillingSettings, Invoice, InvoiceKind, LineItem, Project } from '../../data/ws-types';
 import { api } from '../../live/api';
 import { isLive } from '../../live/clock';
-import { centsFrom, defaultBilling, emailFor, money, shownStatus, STATUS_LABEL, totals, type ShownStatus } from '../../state/invoices';
+import { centsFrom, defaultBilling, emailFor, money, payUrl, shownStatus, STATUS_LABEL, totals, type ShownStatus } from '../../state/invoices';
 import { scopedInvoices } from '../../state/scope';
+import { linkForSending, PayRow, StripeCard } from './Pay';
+import { usePayments } from './payments';
 import { useStore, ws } from '../../state/store';
 import { isoDay, mailId, put, remove, uid } from '../../state/ws';
 
@@ -249,6 +251,7 @@ export function InvoiceView() {
         <ProjectPick value={inv.project} onChange={(project) => change({ ...inv, project })} />
       </div>
       {!editable && <SentNote inv={inv} />}
+      <PayRow inv={inv} onBeforeAction={save} />
       <Paper inv={inv} s={s} editable={editable} onChange={change} />
     </Frame>
   );
@@ -284,6 +287,7 @@ function SentNote({ inv }: { inv: Invoice }) {
 function InvoiceBar({ inv, settings, onBeforeAction }: { inv: Invoice; settings: BillingSettings; onBeforeAction: () => void }) {
   const { state, dispatch } = useStore();
   const make = useNew();
+  const payments = usePayments();
   const [sending, setSending] = useState(false);
   const st = shownStatus(inv);
   const t = totals(inv);
@@ -306,10 +310,13 @@ function InvoiceBar({ inv, settings, onBeforeAction }: { inv: Invoice; settings:
     }
     setSending(true);
     try {
+      // With card payments on, the invoice gets its "Pay online" link first, so the PDF and the email both carry it.
+      const url = await linkForSending(inv, payments.on && payments.stripe === 'ready', dispatch);
       // On a real workspace the PDF is made by the server and attached; the sample demo sends the email alone.
       const files = isLive() ? [(await api.invoiceAttachment(inv.id)).file] : [];
       const contact = inv.client.contact && PEOPLE[inv.client.contact] ? inv.client.contact : mailId(inv.client.email!);
-      const mail = emailFor(inv, settings, PEOPLE.me?.name || settings.business);
+      const withLink: Invoice = url ? { ...inv, pay: { link: inv.pay?.link ?? '', ...inv.pay, url, amount: t.total, currency: inv.currency, active: true, at: new Date(), paid: undefined } } : inv;
+      const mail = emailFor(withLink, settings, PEOPLE.me?.name || settings.business);
       dispatch({
         type: 'compose',
         draft: {
@@ -605,9 +612,17 @@ function Paper({ inv, s, editable, onChange }: { inv: Invoice; s: BillingSetting
           <span className="inv-label">Terms</span>
           {field(inv.terms, (v) => set({ terms: v }), 'Terms', { multi: true })}
         </div>
+        {inv.kind === 'invoice' && payUrl(inv) && (
+          <div>
+            <span className="inv-label">Pay online by card</span>
+            <a className="inv-ro inv-paylink" href={payUrl(inv)!} target="_blank" rel="noopener noreferrer">
+              {payUrl(inv)}
+            </a>
+          </div>
+        )}
         {inv.kind === 'invoice' && (
           <div>
-            <span className="inv-label">How to pay</span>
+            <span className="inv-label">{payUrl(inv) ? 'Or pay' : 'How to pay'}</span>
             {s.payment ? <span className="inv-ro">{s.payment}</span> : <span className="inv-ro muted">Add how clients pay you in Business details; it goes on every invoice.</span>}
           </div>
         )}
@@ -717,6 +732,7 @@ function BillingForm() {
     <section className="inv-details">
       <h1 className="page-title">Business details</h1>
       <p className="page-sub">What every invoice and quote shows about you, and how they are numbered.</p>
+      <StripeCard currency={s.currency} />
       <div className="card inv-form">
         {text('business', 'Business name')}
         <label className="field">

@@ -42,7 +42,21 @@ export const KINDS = {
    * version in its version history.
    */
   'file.update': { domain: 'files', outbound: false, hold: false, autoEligible: false, label: 'Save a file to Drive' },
+  /**
+   * A "Pay online" link for one invoice, made on the business's own Stripe account (payments/links.ts). It moves no
+   * money: the client chooses to pay on Stripe's page, into the business's account. It reaches nobody by itself (the
+   * email that carries it is its own send), and only a person's click makes one.
+   */
+  'invoice.link': { domain: 'invoices', outbound: false, hold: false, autoEligible: false, label: 'Put a payment link on an invoice' },
+  /** Switching an invoice's payment link off, once the invoice is paid another way or voided, so it can't be paid twice. */
+  'invoice.unlink': { domain: 'invoices', outbound: false, hold: false, autoEligible: false, label: 'Switch off an invoice’s payment link' },
 } as const;
+
+/**
+ * Kinds only a person's own click may propose: nothing Timmy decides on its own, no rule and no unattended run. A
+ * payment link asks for money in the business's name, so it is made when someone presses for it, and not otherwise.
+ */
+export const PERSON_ONLY: ReadonlySet<string> = new Set(['invoice.link', 'invoice.unlink']);
 
 export type EffectKind = keyof typeof KINDS;
 export const isKind = (k: string): k is EffectKind => k in KINDS;

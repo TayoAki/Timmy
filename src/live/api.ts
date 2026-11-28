@@ -71,6 +71,14 @@ export interface PageVersion {
   blockCount: number;
 }
 
+/** Whether card payments are on here, and where this business's Stripe account stands (server/src/payments/accounts.ts). */
+export interface PaymentsStatus {
+  on: boolean;
+  stripe: 'none' | 'started' | 'checking' | 'ready';
+  country?: string;
+  canConnect: boolean;
+}
+
 export const api = {
   me: () => call<Me>('GET', '/api/v1/me').catch((e) => (e instanceof ApiError && e.status === 401 ? null : Promise.reject(e))),
   /** `token` is null when the address has to be confirmed first: the account exists but nobody is signed in yet. */
@@ -118,6 +126,12 @@ export const api = {
   invoiceAttachment: (id: string) => call<{ file: { id: string; name: string; type: string; size: number } }>('POST', `/api/v1/invoices/${encodeURIComponent(id)}/attachment`, {}),
   /** Timmy drafts an invoice or quote from what an email says (server/src/invoices/from-email.ts). */
   invoiceFromEmail: (thread: string, kind: 'invoice' | 'quote') => call<{ invoice: { id: string; number: string; lines: number } }>('POST', '/api/v1/invoices/from-email', { thread, kind }),
+  /** Card payments for invoices, through the business's own Stripe account (server/src/http/payments.ts). */
+  paymentsStatus: (askStripe = false) => call<PaymentsStatus>('GET', `/api/v1/payments/status${askStripe ? '?refresh=1' : ''}`),
+  connectStripe: (country: string) => call<{ url: string }>('POST', '/api/v1/payments/stripe/connect', { country }),
+  disconnectStripe: () => call<{ ok: boolean }>('POST', '/api/v1/payments/stripe/disconnect', {}),
+  invoicePayLink: (id: string) => call<{ url: string; amount: number; currency: string }>('POST', `/api/v1/invoices/${encodeURIComponent(id)}/pay-link`, {}),
+  invoicePayCheck: (id: string) => call<{ paid: boolean; clearing: boolean }>('POST', `/api/v1/invoices/${encodeURIComponent(id)}/pay-check`, {}),
   /** Leads that fit the offer, through Treg, and the words for cold email (server/src/http/leads.ts). */
   leadsStatus: () => call<{ on: boolean; sample: boolean; today: number; left: number; perDay: number }>('GET', '/api/v1/leads/status'),
   suggestLeads: (ask: string, count?: number) => call<{ added: number; skipped: { known: number; noEmail: number; unconfirmed: number; personal: number }; left: number }>('POST', '/api/v1/leads/suggest', { ask, ...(count ? { count } : {}) }),

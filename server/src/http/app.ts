@@ -31,6 +31,7 @@ import { connectionEventRoutes, connectionRoutes } from './connections';
 import { assetHeaders, fileRoutes, isFileUpload } from './files';
 import { connectedFileRoutes } from './connected-files';
 import { invoiceRoutes } from './invoices';
+import { paymentRoutes, stripeEventRoutes } from './payments';
 import { bidRoutes } from './bids';
 import { leadRoutes } from './leads';
 import { mailRoutes } from './mail';
@@ -89,6 +90,8 @@ export function buildApp(): Hono<Env> {
 
   // Webhooks are signed by their sender; they carry no session and skip the same-origin check (http/connections.ts).
   connectionEventRoutes(app);
+  // Stripe's events about the businesses' own accounts (http/payments.ts), signed the same way.
+  stripeEventRoutes(app);
 
   // Apps connected over MCP (http/mcp.ts) register themselves, trade a code for a token and refresh it from their
   // own servers or from a browser on another origin. These endpoints take no cookie, only what the app sends, so
@@ -165,6 +168,7 @@ export function buildApp(): Hono<Env> {
   fileRoutes(app);
   connectedFileRoutes(app);
   invoiceRoutes(app);
+  paymentRoutes(app);
   bidRoutes(app);
   leadRoutes(app);
   mailRoutes(app);

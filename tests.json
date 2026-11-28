@@ -5,6 +5,7 @@
   "no outside write without an approved effect record or a rule": [
    "server/test/gateway.test.ts",
    "server/test/sequence-due.test.ts",
+   "server/test/payments.test.ts",
    "server/test/agent.test.ts",
    "server/test/audit.test.ts",
    "server/test/filing.test.ts",
@@ -218,6 +219,13 @@
    "file": "server/test/treg.test.ts",
    "covers": "Treg for leads: the HTTP client against a local server (X-Treg-Token, X-Treg-Meta workspace tag, X-Treg-Route-Max-Cost, Idempotency-Key, routing headers, cost, call id and provider read); a workspace's own refusals said (its daily allowance, blocked, cost cap, busy with Retry-After, no provider), the team account's never (balance, funds, platform cap), the token and balance never repeated; workspace tags; first lines kept only when the description states them; sequence steps kept only with known merge fields, no made-up figure and no link in the first email; suggestions: the right person at companies that fit, emails found and checked and kept only when they take mail, why each fits and where each detail came from, nobody contacted, every call tagged and logged with its cost; a first line dropped when it adds a figure; no company twice, the daily limit, the monthly limit before any lookup; Treg's refusals; the offer from a website with the proof only when on the page, website addresses checked; a sequence written by the model with bad steps replaced; a sent email moving a lead in a campaign to the next step while launch stays refused; Ask's suggest_leads attended only and hidden when Treg is off; a read-only role can't look up, draft or write",
    "tests": 14,
+   "status": "pass"
+  },
+  {
+   "id": "api-payments",
+   "file": "server/test/payments.test.ts",
+   "covers": "Pay online through Stripe Connect: the real client against a local server (the key as a bearer, the pinned Stripe-Version, Stripe-Account, Idempotency-Key, nested form fields for Payment Links and v2 JSON for accounts and account links, paid checkouts read), refusals in plain words with neither Stripe's own words nor the key; signed events (signature, age, entries in any order); connecting only by an owner or admin, one account per business made on Stripe and prefilled, card payments on only when Stripe says so, the account id never in the workspace's state; a link through the gateway approved by the person's click, on the business's account, for the invoice's total, once, in the email and the PDF; none for a quote, an empty or paid invoice, a read-only role or a business without Stripe; a screen can't set, change or drop a link or say it was paid online; a changed total gets a new link and the old one is switched off; paid by Stripe's event, the email out of Waiting, once, and not opened again; events from another mode, account, workspace or link change nothing; a bank payment clears or fails; paid by hand or voided switches the link off, and a payment after that is recorded and flagged; Check Stripe finds a payment whose event never came; only a person's click can propose a link; Stripe off offers nothing; disconnected, no new links, and a link already sent still counts",
+   "tests": 16,
    "status": "pass"
   },
   {
@@ -554,6 +562,13 @@
    "file": "e2e/live/live-leads.cjs",
    "covers": "in the browser on a real workspace with the stand-in Treg: the offer drafted from a website with its proof copied from the page and saved; Suggest leads adding ten leads with checked emails, sources and first lines; the lead panel's reasons; a campaign for the list with four steps written by Timmy's model, a made-up figure and field replaced; the lead's first step opened in Gmail, filled in with their first line; nothing sent by Timmy; Due today listing the first step for each of the ten leads, the one opened in Gmail saying so until it is in Sent, the lead moving on once it is and leaving the list, and a step skipped",
    "checks": 18,
+   "status": "pass"
+  },
+  {
+   "id": "live-pay",
+   "file": "e2e/live/live-pay.cjs",
+   "covers": "in the browser on a real workspace with the stand-in Stripe: Business details offers card payments into the business's own account; Connect Stripe through Stripe's (stand-in) page and back with card payments on; an invoice that says sending it adds a link; the email with the Pay online link and the bank details as the other way; the PDF with the same link; the email that went out carrying it; the invoice showing its link with Check Stripe; paid by Stripe's signed event, shown as paid online through Stripe, marked paid with its email out of Waiting; a link made on its own for the invoice's total; Check Stripe finding a payment whose event never came",
+   "checks": 14,
    "status": "pass"
   },
   {

@@ -479,6 +479,27 @@ export interface Invoice {
   voidedAt?: Date;
   /** Timmy drafted it from an email. */
   by?: 'timmy';
+  /** An invoice's "Pay online" link, on the business's own Stripe account. Written by the server only (payments/links.ts). */
+  pay?: PayLink;
+}
+
+/** A Stripe payment link for one invoice, and what Stripe has said about it. */
+export interface PayLink {
+  /** Stripe's id for the link (plink_…). */
+  link: string;
+  url: string;
+  /** The total it was made for, in cents, and its currency. A link whose amount no longer matches isn't offered. */
+  amount: number;
+  currency: string;
+  /** False once it is switched off: the invoice was paid another way, voided, or paid through it. */
+  active: boolean;
+  at: Date;
+  /** Paid through it: when, how much (cents), and Stripe's reference for the payment. */
+  paid?: { at: Date; amount: number; ref: string };
+  /** A bank payment the client started that hasn't cleared yet. */
+  clearing?: Date;
+  /** The sample demo's link, which goes nowhere. */
+  sample?: true;
 }
 
 export interface BillingSettings {

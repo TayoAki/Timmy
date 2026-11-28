@@ -502,3 +502,81 @@
     display: none !important;
   }
 }
+
+/* Getting paid online: the Stripe card in Business details, and an invoice's payment link. */
+.pay-card {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 16px 18px;
+}
+
+.pay-card .section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.pay-card p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.pay-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.pay-country {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.pay-country .input {
+  height: 34px;
+  min-width: 200px;
+}
+
+.pay-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: -4px 0 14px;
+  padding: 8px 12px;
+  border-radius: var(--r);
+  border: 1px dashed var(--line);
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.pay-row-paid {
+  border-style: solid;
+  background: var(--ok-soft);
+}
+
+.pay-url {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 12.5px;
+}
+
+@media print {
+  .pay-row,
+  .pay-card {
+    display: none !important;
+  }
+}
+
+.inv-paylink {
+  overflow-wrap: anywhere;
+  color: #2457c5;
+}

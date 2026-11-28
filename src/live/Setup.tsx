@@ -22,6 +22,7 @@ import { useStore, type State } from '../state/store';
 import { api } from './api';
 import { useProfile } from './LiveApp';
 import { sortedNotice } from './Settings';
+import { refreshPayments } from '../areas/invoices/payments';
 
 type StepId = 'mail' | 'files' | 'projects' | 'tour' | 'sorting' | 'calendar' | 'morning';
 
@@ -240,6 +241,22 @@ export function SetupDialog() {
     const params = new URLSearchParams(window.location.search);
     const outcome = params.get('connect');
     const app = params.get('app') ?? '';
+    // The way back from Stripe's own onboarding page (server/src/http/payments.ts): Business details, and how it went.
+    const payments = params.get('payments');
+    if (payments) {
+      params.delete('payments');
+      const rest = params.toString();
+      window.history.replaceState(window.history.state, '', `${window.location.pathname}${rest ? `?${rest}` : ''}${window.location.hash}`);
+      void refreshPayments();
+      dispatch({ type: 'navigate', route: { view: 'invoices', tab: 'details' } });
+      dispatch(
+        payments === 'ready'
+          ? { type: 'toast', text: 'Stripe is connected. Invoices you send now carry a “Pay online” link.' }
+          : payments === 'pending'
+            ? { type: 'toast', text: 'Stripe has your details and is checking them, or needs a few more. Card payments switch on when it’s done.' }
+            : { type: 'toast', text: 'Connecting Stripe didn’t finish. Try again from Business details.', tone: 'warn' },
+      );
+    }
     if (outcome) {
       params.delete('connect');
       params.delete('app');

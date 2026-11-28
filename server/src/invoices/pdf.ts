@@ -5,7 +5,7 @@
  */
 import PDFDocument from 'pdfkit';
 import type { BillingSettings, Invoice } from '../../../src/data/ws-types';
-import { money, totals } from '../../../src/state/invoices';
+import { money, payUrl, totals } from '../../../src/state/invoices';
 
 const INK = '#1d2230';
 const SOFT = '#5d6475';
@@ -108,7 +108,16 @@ export async function invoicePdf(inv: Invoice, s: BillingSettings): Promise<Uint
   };
   block('Notes', inv.notes);
   block('Terms', inv.terms);
-  if (inv.kind === 'invoice') block('How to pay', s.payment);
+  // The "Pay online" link, when the invoice has a good one: printed in full (a printed copy can still be typed in)
+  // and clickable in the file.
+  const online = payUrl(inv);
+  if (online) {
+    doc.moveDown(1);
+    doc.font('Helvetica-Bold').fontSize(8).fillColor(SOFT).text('PAY ONLINE BY CARD', MARGIN, undefined, { width });
+    doc.font('Helvetica').fontSize(9.5).fillColor('#2457c5').text(online, { width, link: online, underline: true });
+    doc.fillColor(INK);
+  }
+  if (inv.kind === 'invoice') block(online ? 'Or pay' : 'How to pay', s.payment);
 
   doc.end();
   await done;

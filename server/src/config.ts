@@ -118,6 +118,19 @@ export const config = {
     url: (env.KONTRACT_URL ?? '').trim().replace(/\/$/, ''),
     key: (env.KONTRACT_SERVICE_KEY ?? '').trim(),
   },
+  /**
+   * Stripe Connect (payments/stripe.ts): a "Pay online" link on invoices, paid into each business's own Stripe
+   * account. `STRIPE_SECRET_KEY` is the platform's key (Timmy's Stripe account, with Connect switched on);
+   * `STRIPE_WEBHOOK_SECRET` signs the events Stripe sends about connected accounts. Both are needed; without them
+   * card payments are off and invoices carry the business's own "how to pay" text only.
+   */
+  stripe: {
+    url: (env.STRIPE_API_URL ?? 'https://api.stripe.com').trim().replace(/\/$/, ''),
+    secretKey: (env.STRIPE_SECRET_KEY ?? '').trim(),
+    webhookSecret: (env.STRIPE_WEBHOOK_SECRET ?? '').trim(),
+    /** Pinned, so a change on Stripe's side can't change what the code reads. */
+    version: '2026-11-18.endive',
+  },
   composio: {
     apiKey: env.COMPOSIO_API_KEY ?? '',
     webhookSecret: env.COMPOSIO_WEBHOOK_SECRET ?? '',
@@ -405,6 +418,9 @@ export function assertSafeConfig() {
   const chat = config.chat.publicUrl;
   if (chat && (!/^https?:\/\/[a-z0-9.-]+(:\d{1,5})?$/i.test(chat) || new URL(chat).host === new URL(config.publicUrl).host)) throw new Error('CHAT_PUBLIC_URL must be an address such as https://chat.example.com, on another host than the app.');
   if (chat && isProd() && !chat.startsWith('https://')) throw new Error('CHAT_PUBLIC_URL must start with https:// in production.');
+  // A publishable key (pk_…) in the secret's place would fail every call; a webhook secret is whsec_….
+  if (config.stripe.secretKey && !/^(sk|rk)_(live|test)_/.test(config.stripe.secretKey)) throw new Error('STRIPE_SECRET_KEY must be a secret or restricted key (sk_… or rk_…).');
+  if (config.stripe.webhookSecret && !config.stripe.webhookSecret.startsWith('whsec_')) throw new Error('STRIPE_WEBHOOK_SECRET must be the endpoint’s signing secret (whsec_…).');
 }
 
 /** The model a workspace runs on: its own choice if that is still on the list, else the default. */

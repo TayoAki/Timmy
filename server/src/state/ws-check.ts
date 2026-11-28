@@ -532,3 +532,27 @@ export function checkWsOps(state: State, ops: unknown, pictures: Pictures = NO_P
   }
   return null;
 }
+
+/**
+ * An invoice's payment link (`pay`) is written by the server only, from Stripe (payments/links.ts). A screen saving
+ * an invoice sends the whole record back, perhaps from a copy older than the link: the link is put back as the
+ * server has it, and nothing a screen says there is kept. A new invoice starts with none.
+ */
+export function keepPayLinks(state: State, ops: unknown): unknown {
+  if (!Array.isArray(ops)) return ops;
+  const invoices = (state.ws as unknown as { invoices?: Record<string, Record<string, unknown>> }).invoices ?? {};
+  return ops.map((o) => {
+    if (!plain(o) || o.col !== 'invoices') return o;
+    if (o.op === 'put' && plain(o.item) && typeof o.item.id === 'string') {
+      const { pay: _dropped, ...item } = o.item;
+      const had = Object.hasOwn(invoices, o.item.id) ? invoices[o.item.id]?.pay : undefined;
+      return { ...o, item: had ? { ...item, pay: had } : item };
+    }
+    if (o.op === 'patch' && plain(o.patch) && 'pay' in o.patch && typeof o.id === 'string') {
+      const { pay: _dropped, ...patch } = o.patch;
+      const had = Object.hasOwn(invoices, o.id) ? invoices[o.id]?.pay : undefined;
+      return { ...o, patch: had ? { ...patch, pay: had } : patch };
+    }
+    return o;
+  });
+}

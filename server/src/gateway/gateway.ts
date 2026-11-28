@@ -18,7 +18,7 @@ import { log } from '../lib/log';
 import { commitState, loadState, remember, type Loaded } from '../state/docs';
 import { EXECUTORS, reconcile } from './executors';
 import { effectApproved, effectSettled } from './hooks';
-import { KINDS, approverFor, mayDecide, neverAllowed, reachesSomeoneElse, ruleCovers, type Actor, type EffectKind, type PolicyRow, type Route } from './policy';
+import { KINDS, PERSON_ONLY, approverFor, mayDecide, neverAllowed, reachesSomeoneElse, ruleCovers, type Actor, type EffectKind, type PolicyRow, type Route } from './policy';
 import { afterEffect, withPending } from './screens';
 
 export interface EffectRow {
@@ -128,6 +128,7 @@ export async function propose(tx: Tx, loaded: Loaded, state: State, actor: Actor
   if (never) return refuse(never);
   if (loaded.workspace.kill_switch) return refuse('Sending is switched off for this workspace.');
   if (actor && !actor.rules.work) return refuse('Your role can’t make changes in this workspace.');
+  if (PERSON_ONLY.has(p.kind) && (p.source !== 'user' || !actor)) return refuse('Only a person’s own click can do that.');
   const kind = p.kind as EffectKind;
   const k = KINDS[kind];
 

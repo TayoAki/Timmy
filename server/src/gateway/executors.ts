@@ -6,6 +6,7 @@ import { createEvent, reconcileEvent } from '../sync/calendar-write';
 import { mailboxFor, type FilePayload, type MailPayload } from '../sync/mailbox';
 import { connectionById } from '../sync/tools';
 import { ruleSaved, saveRuleEffect } from '../sync/mail-rules';
+import { createLink, switchOffLink } from '../payments/links';
 import type { EffectRow, Outcome } from './gateway';
 import type { EffectKind } from './policy';
 
@@ -61,6 +62,9 @@ export const EXECUTORS: Partial<Record<EffectKind, Executor>> = {
   'rule.save': saveRuleEffect,
   // A file edited in Timmy, saved over the Drive original once its bytes and Drive's version check out.
   'file.update': updateDriveFile,
+  // A "Pay online" link on the business's own Stripe account, and switching one off (payments/links.ts).
+  'invoice.link': createLink,
+  'invoice.unlink': switchOffLink,
 };
 
 /** Whether the mailbox already shows the filing an effect asked for. */

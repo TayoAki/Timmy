@@ -21,7 +21,8 @@ import type { RoleRules } from '../auth/roles';
 import { withWorkspace, type Tx } from '../db/pool';
 import { cancelHeld, decide, GatewayError, propose, type EffectRow } from '../gateway/gateway';
 import { onReplay } from '../gateway/hooks';
-import { checkWsOps, leadsProblem, withClearedFields } from './ws-check';
+import { checkWsOps, keepPayLinks, leadsProblem, withClearedFields } from './ws-check';
+import { unlinkAfter } from '../payments/links';
 import { assetRefsIn, usablePictures } from '../files/assets';
 import { attachmentsFor } from '../files/attachments';
 import { LIVE_DECISION } from '../agent/read';
@@ -109,7 +110,7 @@ const NOT_LIVE = 'That isn’t available on a real workspace yet.';
 /** Actions that exist only to drive the demo. */
 // “reload” is here on purpose: in the demo it re-reads the browser's saved copy, and on the server there is none,
 // so it would put the demo's sample workspace in place of the real one.
-const DEMO_ONLY = new Set(['reset', 'reload', 'simulateReply', 'client', 'release', 'restore', 'server']);
+const DEMO_ONLY = new Set(['reset', 'reload', 'simulateReply', 'client', 'release', 'restore', 'server', 'samplePayLink']);
 
 /** Outbound operations that would contact someone or pretend an account is connected. Each becomes real in the sales phase. */
 const OUT_NOT_LIVE: Record<string, string> = {
@@ -222,6 +223,8 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
   if (DEMO_ONLY.has(a.type)) return { state, reject: NOT_LIVE };
   // A tracked bid carries Kontract's copy of the notice, so only the server makes one (http/bids.ts), from Kontract.
   if (a.type === 'trackBid') return { state, reject: 'Track a bid from the Bids screen.' };
+  // Only Stripe says an invoice was paid online, through its signed events (payments/events.ts) or a check with it.
+  if (a.type === 'invoicePayment') return { state, reject: 'Stripe says when an invoice is paid online.' };
   // "Already approved" is the server's to know, never a screen's to say: the reducer skips a CRM or delegate hold
   // for an action that carries it, so whatever a client sends there is dropped.
   if ('approved' in a) delete (a as { approved?: unknown }).approved;
@@ -288,6 +291,9 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
     return chatCommand(tx, loaded, ctx, actorOf(ctx), cmd.id, a.op, apply);
   }
   if (a.type === 'ws') {
+    // An invoice's payment link is the server's to write (payments/links.ts): whatever a screen sends there is replaced
+    // by what the server has, before anything is checked, so a saved draft can't drop it, change its address or say it was paid.
+    a.ops = keepPayLinks(state, a.ops) as typeof a.ops;
     // Docs, pages, tasks, automations and chat settings arrive as plain put / patch / remove operations.
     // What is acceptable is decided here, before the reducer applies them and before anything is saved.
     // An uploaded picture is saved by reference. Which references are this workspace's own uploaded pictures is looked up first.
@@ -371,6 +377,8 @@ async function handle(tx: Tx, loaded: Loaded, ctx: Ctx, cmd: { id: string; actio
   const badLead = leadsProblem(state, next);
   if (badLead) return { state, reject: badLead };
   next = afterDeciding(loaded, ctx, a, state, next);
+  // Paid by hand, or voided: the invoice's live payment link is switched off, so it can't be paid twice.
+  if (a.type === 'invoice' && (a.op === 'paid' || a.op === 'void')) next = (await unlinkAfter(tx, loaded, ctx, state, next, a.id)).state;
   return gateSends(tx, loaded, ctx, cmd, state, next);
 }
 

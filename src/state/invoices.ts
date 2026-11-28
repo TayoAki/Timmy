@@ -3,7 +3,7 @@
  * cents everywhere, and every total is worked out here from the lines, never typed in or taken from a model, so the
  * figures on the screen, in the PDF and in the email always agree.
  */
-import type { BillingSettings, Invoice, InvoiceKind, LineItem } from '../data/ws-types';
+import type { BillingSettings, Invoice, InvoiceKind, LineItem, PayLink } from '../data/ws-types';
 
 export interface Totals {
   /** Each line's amount (quantity times price), in cents; 0 for an optional line that wasn't chosen. */
@@ -127,6 +127,24 @@ export function newDraft(
   return { invoice, settings };
 }
 
+/**
+ * The invoice's "Pay online" address, when there is one to offer: a link that is switched on, not paid through, and
+ * made for the amount and currency the invoice shows now. A draft edited after its link was made has none until
+ * a new one is made for the new total.
+ */
+export function payUrl(inv: Pick<Invoice, 'kind' | 'status' | 'items' | 'discount' | 'currency' | 'pay'>): string | null {
+  const p = inv.pay;
+  if (inv.kind !== 'invoice' || !p || !p.active || p.paid || inv.status === 'paid' || inv.status === 'void') return null;
+  return p.amount === totals(inv).total && p.currency === inv.currency ? p.url : null;
+}
+
+/** The sample demo's payment link for an invoice's total: shaped like Stripe's, going nowhere. */
+export function samplePay(inv: Pick<Invoice, 'id' | 'items' | 'discount' | 'currency'>, at: Date): PayLink {
+  const total = totals(inv).total;
+  const link = `plink_sample_${inv.id.replace(/[^\w]/g, '').slice(-12)}${total}`;
+  return { link, url: `https://pay.stripe-standin.example/${link}`, amount: total, currency: inv.currency, active: true, at, sample: true };
+}
+
 /** The email that carries an invoice or quote: what it is, the amount, the date, and how to pay. */
 export function emailFor(inv: Invoice, s: BillingSettings, from: string): { subject: string; body: string } {
   const t = totals(inv);
@@ -140,6 +158,12 @@ export function emailFor(inv: Invoice, s: BillingSettings, from: string): { subj
   }
   return {
     subject: `Invoice ${inv.number} from ${s.business}`,
-    body: [`Hi ${first},`, `Here is invoice ${inv.number} for ${money(t.total, inv.currency)}${due ? `, due ${due}` : ''}. The PDF is attached.`, ...(s.payment ? [`How to pay:\n${s.payment}`] : []), `Thanks,\n${from}`].join('\n\n'),
+    body: [
+      `Hi ${first},`,
+      `Here is invoice ${inv.number} for ${money(t.total, inv.currency)}${due ? `, due ${due}` : ''}. The PDF is attached.`,
+      ...(payUrl(inv) ? [`Pay online by card:\n${payUrl(inv)}`] : []),
+      ...(s.payment ? [`${payUrl(inv) ? 'Or pay' : 'How to pay'}:\n${s.payment}`] : []),
+      `Thanks,\n${from}`,
+    ].join('\n\n'),
   };
 }

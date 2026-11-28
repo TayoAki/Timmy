@@ -10,6 +10,8 @@ import { withWorkspace } from '../db/pool';
 import { executeEffect } from '../gateway/gateway';
 import { inlineJobs } from '../jobs/jobs';
 import { fakeComposio, signWebhook } from '../providers/composio';
+import { fakeStripe } from '../payments/stripe';
+import { readState } from '../state/mutate';
 import type { FakeEvent } from '../testing/composio';
 import { fakeFileEvent } from '../testing/composio-files';
 import { CALENDAR_TOOLKITS } from '../sync/calendars';
@@ -25,7 +27,7 @@ export function testRoutes(app: Hono<Env>): void {
   // On a deployed server (staging) the hooks need the test token. The one exception is the page that stands in
   // for the provider's consent screen, which a browser opens by navigation and which only returns to our own callback.
   app.use('/api/test/*', async (c, next) => {
-    if (!isLocal() && !c.req.path.endsWith('/fake-connect')) {
+    if (!isLocal() && !c.req.path.endsWith('/fake-connect') && !c.req.path.endsWith('/fake-stripe-onboard')) {
       const given = Buffer.from(c.req.header('x-test-token') ?? '');
       const want = Buffer.from(config.testToken);
       if (given.length !== want.length || !timingSafeEqual(given, want)) return c.json({ error: 'Not found' }, 404);
@@ -47,6 +49,38 @@ export function testRoutes(app: Hono<Env>): void {
     if (!to.startsWith(`${config.publicUrl}/api/v1/connections/callback?`)) return c.json({ error: 'Not found' }, 404);
     fake.completeConnect(String(c.req.query('account')));
     return c.redirect(to);
+  });
+
+  // Stands in for Stripe's onboarding page when the stand-in Stripe is on: the business is done, and back to Timmy.
+  app.get('/api/test/fake-stripe-onboard', (c) => {
+    const fake = fakeStripe();
+    if (!fake) return c.json({ error: 'the stand-in Stripe is off' }, 404);
+    const to = String(c.req.query('to') ?? '');
+    if (to !== `${config.publicUrl}/api/v1/payments/stripe/return`) return c.json({ error: 'Not found' }, 404);
+    fake.completeOnboarding(String(c.req.query('account')), c.req.query('status') === 'pending' ? 'pending' : 'active');
+    return c.redirect(to);
+  });
+
+  // The client pays an invoice's link on the stand-in Stripe's page; Stripe's signed event is delivered as Stripe
+  // would deliver it, unless `silent` (an event that never arrived, for the "Check Stripe" button).
+  app.post('/api/test/stripe', requireWorkspace, async (c) => {
+    const fake = fakeStripe();
+    if (!fake) return c.json({ error: 'the stand-in Stripe is off' }, 404);
+    const ctx = ctxOf(c);
+    const body = (await c.req.json()) as { op: string; invoice?: string; bank?: boolean; silent?: boolean; session?: string; ok?: boolean };
+    const deliver = async (w: { headers: Record<string, string>; body: string }) => {
+      const res = await app.request('/api/hooks/stripe', { method: 'POST', headers: w.headers, body: w.body });
+      return { status: res.status, body: await res.json() };
+    };
+    if (body.op === 'pay') {
+      const loaded = await readState(ctx.workspaceId);
+      const link = loaded.state.ws.invoices?.[String(body.invoice)]?.pay?.link;
+      if (!link) return c.json({ error: 'that invoice has no payment link' }, 400);
+      const paid = fake.pay(link, { bank: !!body.bank });
+      return c.json({ session: paid.session, ...(body.silent ? {} : { delivered: await deliver(paid.webhook) }) });
+    }
+    if (body.op === 'clear' && body.session) return c.json({ delivered: await deliver(fake.clear(body.session, body.ok !== false)) });
+    return c.json({ error: 'unknown op' }, 400);
   });
 
   app.post('/api/test/fake', requireWorkspace, async (c) => {

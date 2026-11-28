@@ -7,7 +7,7 @@ import { WS_SEED } from '../data/ws-mock';
 import type { Bid, Invoice, InvoiceKind, LearnedRule, Task, WS } from '../data/ws-types';
 import type { Opportunity } from '../data/kontract-api';
 import { defaultProfile, newBid } from './bids';
-import { counts as lineCounts, defaultBilling, newDraft } from './invoices';
+import { counts as lineCounts, defaultBilling, money as invMoney, newDraft, samplePay, totals as invTotals } from './invoices';
 import { fmtDate, fmtDay, fmtTime, money } from '../lib/format';
 import type { ApprovalKind, ApprovalRecord } from './approvals';
 import { draftFor } from './drafting';
@@ -236,6 +236,13 @@ export type Action =
   | { type: 'trackBid'; id: string; notice: Opportunity; task: string }
   /** What happened to one: paid, accepted, declined, void, or back to how it was before that. */
   | { type: 'invoice'; op: 'paid' | 'accepted' | 'declined' | 'void' | 'reopen'; id: string }
+  /**
+   * What Stripe said about an invoice's "Pay online" link: paid, a bank payment started (clearing), or that payment
+   * failed. On a real workspace only the server sends it, from Stripe's signed events (server/src/payments/events.ts).
+   */
+  | { type: 'invoicePayment'; id: string; event: 'paid' | 'clearing' | 'failed'; at: Date | string; amount: number; currency: string; ref: string }
+  /** The sample demo's stand-in for a payment link (on a real workspace the server makes it on Stripe). */
+  | { type: 'samplePayLink'; id: string }
   | { type: 'reply'; id: string; body: string; track?: { on: string; item: string; due?: string } | null; files?: MailFile[] }
   | { type: 'simulateReply'; id: string }
   /** Timmy drafts a nudge or reply; with `note`, the reply says what you asked it to. */
@@ -1145,6 +1152,9 @@ export function reducer(s: State, a: Action): State {
       } else if (a.op === 'void' && inv.status !== 'paid' && inv.status !== 'void') {
         next = { ...inv, status: 'void', voidedAt: at };
         said = `${inv.number} is void`;
+      } else if (a.op === 'reopen' && inv.pay?.paid) {
+        // The money is in the business's Stripe account: only a refund there undoes it.
+        return { ...s, toasts: withToast(s, `${inv.number} was paid online through Stripe, so it stays paid. A refund is made in your Stripe Dashboard.`, undefined, 'warn') };
       } else if (a.op === 'reopen' && inv.status !== 'draft' && inv.status !== 'sent') {
         next = { ...inv, status: inv.sentAt ? 'sent' : 'draft', paidAt: undefined, acceptedAt: undefined, declinedAt: undefined, voidedAt: undefined };
         said = `${inv.number} is open again`;
@@ -1159,6 +1169,58 @@ export function reducer(s: State, a: Action): State {
         activity: logged(s, said, 'file'),
         toasts: withToast(s, waiting ? `${said}. Its email left Waiting.` : said, snap(s)),
       };
+    }
+
+    case 'invoicePayment': {
+      const inv = s.ws.invoices[a.id];
+      if (!inv || inv.kind !== 'invoice' || !inv.pay) return s;
+      const at = new Date(a.at);
+      const amount = invMoney(a.amount, a.currency);
+      const who = inv.client.name || 'The client';
+      let next: Invoice;
+      let said: string;
+      let tone: Toast['tone'] | undefined;
+      if (a.event === 'clearing') {
+        if (inv.pay.paid || inv.pay.clearing) return s;
+        next = { ...inv, pay: { ...inv.pay, active: false, clearing: at } };
+        said = `${who} started a bank payment of ${amount} for ${inv.number}. It clears in a few days; Timmy marks it paid then.`;
+      } else if (a.event === 'failed') {
+        if (inv.pay.paid) return s;
+        next = { ...inv, pay: { ...inv.pay, clearing: undefined } };
+        said = `The bank payment for ${inv.number} didn’t go through. The invoice is still open.`;
+        tone = 'warn';
+      } else {
+        // The same payment told twice (an event and a check) is recorded once.
+        if (inv.pay.paid?.ref === a.ref) return s;
+        const pay = { ...inv.pay, active: false, clearing: undefined, paid: { at, amount: a.amount, ref: a.ref } };
+        const total = invTotals(inv).total;
+        if (inv.status === 'paid' || inv.status === 'void') {
+          // Paid by hand already, or voided: the money is real, so it is recorded and the person is told.
+          next = { ...inv, pay };
+          said = inv.status === 'void' ? `${inv.number} is void, but ${who} paid ${amount} online. Refund it in your Stripe Dashboard if it shouldn’t have been paid.` : `${inv.number} was already marked paid, and ${who} has also paid ${amount} online. If that is twice, refund one in your Stripe Dashboard.`;
+          tone = 'warn';
+        } else {
+          next = { ...inv, status: 'paid', paidAt: at, pay };
+          said = `${inv.number} paid online: ${amount} from ${who}${a.amount !== total ? ` (the invoice is for ${invMoney(total, inv.currency)})` : ''}`;
+        }
+      }
+      const paidNow = next.status === 'paid' && inv.status !== 'paid';
+      const waiting = paidNow && inv.thread ? s.threads.find((t) => t.id === inv.thread && t.box === 'waiting') : undefined;
+      return {
+        ...s,
+        ws: { ...s.ws, invoices: { ...s.ws.invoices, [inv.id]: next } },
+        threads: waiting ? patch(s.threads, waiting.id, (x) => ({ ...moveThread(x, 'archived'), history: [...(x.history ?? []), { at: NOW, text: `Paid online: ${inv.number}. Nothing more to wait for, so it is archived` }] })) : s.threads,
+        activity: logged(s, said, 'file'),
+        toasts: withToast(s, waiting ? `${said}. Its email left Waiting.` : said, undefined, tone),
+      };
+    }
+
+    case 'samplePayLink': {
+      const inv = s.ws.invoices[a.id];
+      if (!inv || inv.kind !== 'invoice' || inv.status === 'paid' || inv.status === 'void') return s;
+      const total = invTotals(inv).total;
+      if (inv.pay?.active && inv.pay.amount === total && inv.pay.currency === inv.currency) return s;
+      return { ...s, ws: { ...s.ws, invoices: { ...s.ws.invoices, [inv.id]: { ...inv, pay: samplePay(inv, new Date(NOW)) } } } };
     }
 
     case 'reply': {

@@ -93,6 +93,81 @@ The full brief, with its 53 sources, is in the session's notes. The points above
   - `e2e/e2e-invoices.cjs` (demo, 44 checks).
   - `e2e/live/live-invoices.cjs` (live, 24 checks).
 
+## Pay online with Stripe (built Nov 28, 2026, against a stand-in; off until Stripe's keys are set)
+
+Option 2 below, built when asked: "build the payment link on invoices".
+
+**How the money moves (Stripe Connect, Accounts v2, the setup Stripe recommends for software platforms):**
+- Timmy is the platform. Each business gets **its own Stripe account**, made by Timmy when an owner or admin presses **Connect Stripe** in Business details.
+  - The account is prefilled with the business name and billing email.
+  - The business fills in who it is and its bank on **Stripe's own onboarding page**, then comes back to Timmy.
+  - It has the full Stripe Dashboard. Stripe charges its fee to the business and covers losses (`fees_collector` and `losses_collector` are `stripe`).
+- An invoice's **"Pay online" link** is a Stripe Payment Link on that account (a direct charge): Stripe's page takes the card, so card details never reach Timmy.
+  - Each link is good for one payment (`restrictions.completed_sessions.limit = 1`) and for the invoice's total at that moment.
+  - **No application fee**: what the client pays, less Stripe's fee, is the business's.
+- **Paid** is what Stripe says, through a signed event to `POST /api/hooks/stripe`, or a "Check Stripe" on the invoice when an event didn't come.
+
+**What the person sees:**
+- **Business details › Get paid online**:
+  - Connect Stripe, with the country the business is registered in;
+  - "Stripe still needs a few details" (Carry on with Stripe);
+  - "Stripe is checking your details" (Check again);
+  - "Card payments are on" (Open Stripe, Disconnect).
+- **On an invoice**:
+  - "Sending it adds a Pay online link" (or Make the link now);
+  - once made, the link with Copy and Check Stripe;
+  - when paid, "Paid online Nov 28: $1,800.00 through Stripe";
+  - while a bank payment clears, "Sam started a bank payment… it clears in a few days".
+- **Send** makes the link first, so **the email and the PDF both carry it**: "Pay online by card: …", then the business's own "Or pay: …" text. The invoice page shows it too.
+- **Paid through it**:
+  - the invoice is marked paid and its email leaves Waiting;
+  - the activity log says "INV-0001 paid online: $1,800.00 from Sam Rivera".
+- **A bank payment** (ACH, SEPA) is marked paid when it clears; if it fails, the invoice stays open and the person is told.
+
+**Safety:**
+- **Making a link is an outside write**, so it goes through the Action gateway as `invoice.link`, like a send. The person's press is the approval, and it is recorded and audited.
+  - Only a person's click can propose one (`PERSON_ONLY` in `server/src/gateway/policy.ts`). Timmy on its own can't, and neither can a rule or an unattended run.
+  - It moves no money: the client chooses to pay, into the business's account. Refunds, payouts and charges stay on the never-list.
+- **Switching a link off** (`invoice.unlink`) happens when the person marks the invoice paid by hand or voids it, approved by that same click, so the client can't pay twice.
+- **Changed total:** a link for an old total isn't offered. A draft whose total changes gets a new link and the old one is switched off.
+- **The link is the server's to write.** A screen saving an invoice can't set it, change its address, drop it or say it was paid (`keepPayLinks` in `ws-check.ts`). Only Stripe says an invoice was paid online (`invoicePayment` is refused from screens).
+- **The business's Stripe account id** is kept on the server (`payment_account`, with row-level security), never in the workspace's state. Only an owner or admin connects or disconnects it, so nobody else can point payments elsewhere.
+- **Each event is checked before it is read:**
+  - the signature and its age;
+  - its mode (live or test);
+  - the connected account, which says whose it is;
+  - the workspace and the invoice named in its metadata;
+  - the link the invoice carries.
+  - An event seen before is not applied twice.
+- **A payment that arrives after the invoice was paid by hand or voided** is recorded, and the person is told to refund it in Stripe if it shouldn't have been paid. An invoice paid online can't be "opened again" in Timmy: a refund is made in Stripe.
+- **Disconnecting** stops new links. Links already sent still mark their invoice paid.
+
+**In the sample demo:**
+- Stripe counts as connected, and links go nowhere (`https://pay.stripe-standin.example/…`).
+- "Sample: the client pays" shows the paid state.
+
+**Files:**
+- Server: `server/src/payments/` (`stripe.ts` the client, `accounts.ts`, `links.ts`, `events.ts`), `server/src/http/payments.ts`, `server/migrations/0021_payment_account.sql`.
+- Stand-in: `server/src/testing/stripe.ts`.
+- Screens: `src/areas/invoices/Pay.tsx`.
+
+**Tested:**
+- `server/test/payments.test.ts` (16), covering:
+  - the real client against a local server, including its form fields, v2 JSON, headers and refusals in plain words;
+  - signatures; connecting and roles; links through the gateway;
+  - forged links refused; changed totals;
+  - paid, bank payments and failed ones;
+  - the event checks; paid by hand or voided; Check Stripe;
+  - person-only; Stripe off; disconnected.
+- `e2e/live/live-pay.cjs` (14):
+  - connect through Stripe's (stand-in) page;
+  - send with the link in the email and PDF;
+  - paid by Stripe's event;
+  - Check Stripe.
+- `e2e/e2e-pay.cjs` (demo, 11).
+
+**To switch it on** (the owner's step): see STATUS.md, "Needs your attention".
+
 ## Version 2: options to choose from
 
 In the order I would build them. Each is its own piece of work.
@@ -103,9 +178,7 @@ In the order I would build them. Each is its own piece of work.
    - The signed PDF is emailed to both sides.
    - Needs: a public page on the app's address (like the website chat's), signed tokens, and a records table. No outside service.
    - Each acceptance is the client's act, not Timmy's.
-2. **Pay now with Stripe** on the invoice link, set to paid when Stripe confirms.
-   - **Needs your OK and your Stripe keys** (you add them as Railway variables). Stripe's fees are paid by you or passed on, your choice.
-   - Payment details never touch Timmy.
+2. **Pay now with Stripe**: built (see above). Off until Stripe's keys are on Railway.
 3. **Viewed, reminders and expiry**:
    - "Viewed" when the link is opened.
    - The morning run drafts a reminder every 5 days for an unpaid invoice or unanswered quote, at most 10. As with nudges, they wait for Send.
@@ -119,6 +192,6 @@ In the order I would build them. Each is its own piece of work.
 ## Not done, and why
 
 - **No email goes out by itself**: sending is always the person's Send in the compose window, through the gateway with the undo window.
-- **No payment provider is connected**: that needs the owner's OK and keys (option 2).
+- **Stripe is built but off**: it needs Timmy's Stripe platform account with Connect, and its keys on Railway (see STATUS.md).
 - **No e-signature yet**: Mark accepted is the person's own record that the client said yes. It is not a signature (option 1).
 - **Tax is a rate per line**: it is not worked out from the client's address.
