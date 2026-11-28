@@ -280,7 +280,12 @@ export function noteLeadMail(state: State, fresh: MailMessage[]): State {
       added.push({ id, lead: lead.id, channel: 'email', dir: sentByUser ? 'out' : 'in', at: m.at, subject: m.subject, body: paragraphs(m.text).join('\n\n'), ...(sentByUser ? { status: 'sent' as const } : {}) });
       const cur = leads[lead.id]!;
       const status = sentByUser ? (cur.status === 'new' || cur.status === 'queued' ? 'contacted' : cur.status) : ['new', 'queued', 'contacted'].includes(cur.status) ? 'replied' : cur.status;
-      leads = { ...leads, [lead.id]: { ...cur, status, ...(sentByUser ? {} : { unread: true }) } as typeof cur };
+      // In a campaign, the email the person sent was this step: the lead moves on to the next one, due after its wait.
+      // A reply from them stops the sequence where it is.
+      const camp = sentByUser && cur.campaign && !['replied', 'interested', 'meeting', 'not-interested', 'unsubscribed', 'bounced'].includes(cur.status) ? state.out.campaigns[cur.campaign] : undefined;
+      const nextStep = camp ? (cur.step ?? 0) + 1 : undefined;
+      const moved = camp && nextStep !== undefined ? { step: nextStep, ...(camp.steps[nextStep] ? { nextAt: new Date(new Date(m.at).getTime() + camp.steps[nextStep]!.wait * 86_400_000) } : { nextAt: undefined }) } : {};
+      leads = { ...leads, [lead.id]: { ...cur, status, ...moved, ...(sentByUser ? {} : { unread: true }) } as typeof cur };
     }
   }
   if (!added.length) return state;

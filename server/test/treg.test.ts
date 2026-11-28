@@ -14,7 +14,7 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import type { Lead, Offer } from '../../src/data/outbound-types';
+import type { Campaign, Lead, Offer } from '../../src/data/outbound-types';
 import { startRun } from '../src/agent/loop';
 import { ASK_SYSTEM } from '../src/agent/prompts';
 import { rulesFor } from '../src/auth/roles';
@@ -24,7 +24,7 @@ import { forgetServiceSpend } from '../src/providers/model';
 import { FAKE_TREG_COST } from '../src/testing/treg';
 import { fakeTreg, HttpTreg, setTregForTests, treg, TregError, tregMeta } from '../src/treg/client';
 import { openerHolds, readAsk, stepHolds, SUGGESTED_LIST } from '../src/treg/leads';
-import { addMember, boot, jobs, model, newWorkspace, rows, type Client } from './helpers';
+import { addMember, boot, connectGmail, fake, jobs, model, newWorkspace, rows, type Client } from './helpers';
 
 const OFFER: Offer = {
   name: 'Chair Reminders',
@@ -245,6 +245,27 @@ describe('leads on a workspace', () => {
     const all = JSON.stringify(r.steps);
     expect(all).not.toContain('45%');
     expect(all).not.toContain('{{revenue}}');
+  });
+
+  it('a sequence is worked by hand: an email the person sends a lead in a campaign moves them to the next step', async () => {
+    const box = await connectGmail(w, 'owner@chair.test');
+    await jobs().drain();
+    await setOffer();
+    await w.json('POST', '/api/v1/leads/suggest', { ask: 'dental practices in Portland', count: 2 });
+    const [lead] = await suggested();
+    const { steps } = await w.json<{ steps: Campaign['steps'] }>('POST', '/api/v1/outbound/sequence', {});
+    const campaign: Campaign = { id: 'camp-1', name: 'Dental', status: 'draft', created: new Date(), leads: [], steps, schedule: { days: [1, 2, 3, 4, 5], start: '09:00', end: '17:00', tz: 'America/New_York' }, options: { dailyLimit: 20, mailboxes: [], stopOnReply: true, trackOpens: false, unsubscribe: true, plainText: true } };
+    expect((await w.cmd({ type: 'out', op: { op: 'campaign', campaign, quiet: true } })).ok).toBe(true);
+    expect((await w.cmd({ type: 'out', op: { op: 'addToCampaign', id: 'camp-1', leads: [lead!.id] } })).ok).toBe(true);
+    // A campaign still can't send by itself on a real workspace.
+    expect((await w.cmd({ type: 'out', op: { op: 'launch', id: 'camp-1' } })).ok).toBe(false);
+    const at = new Date();
+    const d = fake().deliver(box.account, { from: 'owner@chair.test', to: [lead!.email], subject: 'no-shows at Cedar Dental Studio', body: 'Hi, a quick idea.', labels: ['SENT'], at });
+    await (await boot()).request('/api/hooks/composio', { method: 'POST', headers: d.webhook.headers, body: d.webhook.body });
+    await jobs().drain();
+    const after = (await w.state()).out.leads[lead!.id]!;
+    expect(after).toMatchObject({ status: 'contacted', step: 1, campaign: 'camp-1' });
+    expect(new Date(after.nextAt!).getTime()).toBe(at.getTime() + steps[1]!.wait * 86_400_000);
   });
 
   it('Ask suggests leads in a conversation someone is having, and only while Treg is set up', async () => {

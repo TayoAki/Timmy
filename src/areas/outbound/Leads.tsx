@@ -11,6 +11,9 @@ import { FIELD_LABELS, guessFields, parseCsv, SAMPLE_CSV, type LeadField } from 
 import { enrichApp, leadOrigin } from '../../state/connect';
 import { downloadCsv } from '../../lib/download';
 import { useStore } from '../../state/store';
+import { api } from '../../live/api';
+import { isLive } from '../../live/clock';
+import { useLeadsStatus } from './leads-status';
 import { Field, Menu, Modal } from '../../components/kit';
 import { EmptyState } from '../../components/kit';
 import { FitBadge, LeadMark, StatusChip, name, useFit } from './shared';
@@ -581,37 +584,60 @@ function FindLeadsButton() {
   const { state, dispatch } = useStore();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
+  const [busy, setBusy] = useState(false);
+  const live = isLive();
+  const { status, refresh } = useLeadsStatus();
   const e = state.conn.enrich;
   const app = enrichApp(state);
-  const room = Math.max(0, e.perDay - e.foundToday);
+  const room = live ? (status?.left ?? 0) : Math.max(0, e.perDay - e.foundToday);
+  const offer = state.out.offer;
+  const noIcp = live && !offer.icp.industries.length && !offer.audience.trim();
+  const find = async () => {
+    if (!live) {
+      dispatch({ type: 'conn', op: { op: 'find', query: q || '10' } });
+      dispatch({ type: 'navigate', route: { view: 'outbound', tab: 'leads', list: 'list-found' } });
+      setOpen(false);
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await api.suggestLeads(q);
+      const left = [r.skipped.noEmail + r.skipped.unconfirmed ? `${r.skipped.noEmail + r.skipped.unconfirmed} left out because their email couldn’t be confirmed` : '', r.skipped.known ? `${r.skipped.known} you already had` : ''].filter(Boolean).join(', ');
+      dispatch({ type: 'toast', text: r.added ? `Added ${plural(r.added, 'lead')} to “Suggested by Timmy”, each with a checked email${left ? ` (${left})` : ''}. Nobody was contacted.` : `No new leads found${left ? ` (${left})` : ''}. Try different words.` });
+      if (r.added) dispatch({ type: 'navigate', route: { view: 'outbound', tab: 'leads', list: 'list-suggested' } });
+      setOpen(false);
+    } catch (err) {
+      dispatch({ type: 'toast', text: (err as Error).message, tone: 'warn' });
+    } finally {
+      setBusy(false);
+      refresh();
+    }
+  };
+  if (live && status && !status.on) return null;
   return (
     <>
-      <button className="btn" onClick={() => setOpen(true)}>
+      <button className="btn" onClick={() => (refresh(), setOpen(true))}>
         <Radar size={15} />
-        Find leads
+        {live ? 'Suggest leads' : 'Find leads'}
       </button>
       {open && (
         <Modal
           open
           onClose={() => setOpen(false)}
           title="Find leads that fit your offer"
-          description={`Timmy searches for people who match “${state.out.offer.name}” and adds them to “Found by Timmy”${app ? `, enriched with ${app.name}` : ''}. Nothing is sent.`}
+          description={
+            live
+              ? `Timmy looks for the right person at companies that fit “${offer.name}”, checks each email, and adds them to “Suggested by Timmy”. Nobody is contacted. Each lead found costs a little and counts toward the monthly limit.`
+              : `Timmy searches for people who match “${offer.name}” and adds them to “Found by Timmy”${app ? `, enriched with ${app.name}` : ''}. Nothing is sent.`
+          }
           width={520}
           footer={
             <>
               <button className="btn btn-sm btn-ghost" onClick={() => setOpen(false)}>
                 Cancel
               </button>
-              <button
-                className="btn btn-sm btn-primary"
-                disabled={!room}
-                onClick={() => {
-                  dispatch({ type: 'conn', op: { op: 'find', query: q || '10' } });
-                  dispatch({ type: 'navigate', route: { view: 'outbound', tab: 'leads', list: 'list-found' } });
-                  setOpen(false);
-                }}
-              >
-                <Radar size={14} /> Find and add
+              <button className="btn btn-sm btn-primary" disabled={!room || busy || (noIcp && !q.trim())} onClick={() => void find()}>
+                <Radar size={14} /> {busy ? 'Finding…' : 'Find and add'}
               </button>
             </>
           }
@@ -619,8 +645,9 @@ function FindLeadsButton() {
           <Field label="What to look for" hint="Optional. For example: 15 dental practices in Austin. Blank uses your offer’s ideal customer.">
             <input className="input" value={q} placeholder="10 leads that fit my offer" onChange={(x) => setQ(x.target.value)} data-autofocus />
           </Field>
+          {noIcp && !q.trim() && <p className="field-hint warn">Your offer doesn’t say who it’s for yet. Say what to look for, or fill in the ideal customer in Templates › Your offer.</p>}
           <p className="field-hint">
-            {room} of {e.perDay} left today · {e.credits} enrichment credits left this month{app ? '' : ' · no enrichment provider connected'}
+            {live ? `${room} of ${status?.perDay ?? 0} left today${status?.sample ? ' · sample data (no real lead data connected)' : ''}` : `${room} of ${e.perDay} left today · ${e.credits} enrichment credits left this month${app ? '' : ' · no enrichment provider connected'}`}
           </p>
         </Modal>
       )}

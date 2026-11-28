@@ -133,6 +133,27 @@ export function LeadPanel({ lead }: { lead: Lead }) {
         </div>
       </RpSection>
 
+      {lead.suggested && (
+        <RpSection title="Why Timmy suggested them">
+          {lead.suggested.about && <p className="rp-text">{lead.suggested.about}</p>}
+          {lead.opener && (
+            <p className="rp-text lp-opener">
+              <strong>First line:</strong> {lead.opener}
+            </p>
+          )}
+          <ul className="lp-sources" aria-label="Where each detail came from">
+            {lead.suggested.sources.map((x) => (
+              <li key={x.field}>
+                <span className="muted">{x.field === 'company' ? 'Company' : x.field === 'person' ? 'Name and title' : 'Email'}:</span> {x.from}
+              </li>
+            ))}
+          </ul>
+          <p className="field-hint">
+            Suggested {lead.suggested.ask ? `for “${lead.suggested.ask}” ` : ''}on {new Date(lead.suggested.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}. Nobody was contacted.
+          </p>
+        </RpSection>
+      )}
+
       <RpSection title="Fit with your offer" aside={<span className="rp-aside mono">{fit.score}</span>}>
         <ul className="lp-why">
           {fit.why.map((w) => (
@@ -160,7 +181,7 @@ export function LeadPanel({ lead }: { lead: Lead }) {
               {c.name}
             </button>
             {lead.nextAt && (lead.step ?? 0) < c.steps.length && !['interested', 'meeting', 'not-interested', 'unsubscribed', 'bounced'].includes(lead.status)
-              ? `. Step ${(lead.step ?? 0) + 1} of ${c.steps.length} (${c.steps[lead.step ?? 0]!.channel}) ${c.status === 'active' ? `goes ${fmtDay(lead.nextAt)}` : 'waits until the campaign launches'}.`
+              ? `. Step ${(lead.step ?? 0) + 1} of ${c.steps.length} (${c.steps[lead.step ?? 0]!.channel}) ${isLive() ? `is next${lead.step ? `, from ${fmtDay(lead.nextAt)}` : ''}: write it from here and it opens in your mail app, filled in` : c.status === 'active' ? `goes ${fmtDay(lead.nextAt)}` : 'waits until the campaign launches'}.`
               : (lead.step ?? 0) >= c.steps.length
                 ? '. Sequence finished.'
                 : '. Sequence stopped: they replied or opted out.'}
@@ -236,7 +257,11 @@ export function MessageDialog({ lead, channel, onClose, initial }: { lead: Lead;
   const templates = Object.values(state.out.templates).filter((t) => t.channel === channel);
   const replied = state.out.messages.some((m) => m.lead === lead.id && m.dir === 'in');
   const pick = templates.find((t) => (replied ? t.kind === 'reply' : lead.source === 'form' ? t.kind === 'speed' || t.kind === 'sms' : t.kind === 'intro')) ?? templates[0];
-  const start = initial ?? (pick ? { subject: pick.subject ? fill(state, pick.subject, lead).text : '', body: fill(state, pick.body, lead).text } : { subject: '', body: `Hi ${lead.first},\n\n\n\nBest,\n${sender().first}` });
+  // In a campaign, the email starts as the lead's own next step of its sequence, filled in for them.
+  const camp = lead.campaign ? state.out.campaigns[lead.campaign] : undefined;
+  const stepNow = !replied && camp ? camp.steps[lead.step ?? 0] : undefined;
+  const fromStep = stepNow && stepNow.channel === channel && stepNow.variants[0] ? { subject: stepNow.variants[0].subject ? fill(state, stepNow.variants[0].subject, lead).text : '', body: fill(state, stepNow.variants[0].body, lead).text } : null;
+  const start = initial ?? fromStep ?? (pick ? { subject: pick.subject ? fill(state, pick.subject, lead).text : '', body: fill(state, pick.body, lead).text } : { subject: '', body: `Hi ${lead.first},\n\n\n\nBest,\n${sender().first}` });
   const [tpl, setTpl] = useState(initial ? '' : pick?.id ?? '');
   const [subject, setSubject] = useState(start.subject ?? '');
   const [body, setBody] = useState(start.body);

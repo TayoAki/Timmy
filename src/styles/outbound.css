@@ -2783,3 +2783,29 @@ td.lead-sub {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
+/* Suggested leads: where each detail came from; the offer drafted from a website. */
+.lp-sources {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.lp-opener {
+  font-style: italic;
+}
+
+.offer-site {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 14px;
+}
+
+.offer-site .input {
+  flex: 1 1 260px;
+  width: auto;
+}

@@ -90,7 +90,9 @@ export function values(lead: Partial<Lead>, offer: Offer, sender: Sender, slots:
 /** Fills {{variables}}; anything missing is listed so you can fix it before sending. */
 export function render(text: string, vals: Record<string, string | undefined>): { text: string; missing: string[] } {
   const missing: string[] = [];
-  const out = text.replace(/\{\{\s*(\w+)\s*\}\}/g, (all, key: string) => {
+  // A personal first line is only there for leads Timmy found something about; for others its line goes, quietly.
+  const lines = vals.opener ? text : text.replace(/^[ \t]*\{\{\s*opener\s*\}\}[ \t]*(\r?\n)+/gm, '').replace(/\{\{\s*opener\s*\}\}/g, '');
+  const out = lines.replace(/\{\{\s*(\w+)\s*\}\}/g, (all, key: string) => {
     const v = vals[key];
     if (v === undefined || v === '') {
       missing.push(key);
