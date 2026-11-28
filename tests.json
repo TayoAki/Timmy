@@ -201,8 +201,8 @@
   {
    "id": "api-invoices",
    "file": "server/test/invoices.test.ts",
-   "covers": "invoices and quotes: sums in whole cents (decimal quantities, a discount that lowers the tax, an amount discount capped at the subtotal, optional lines only when chosen); money as typed; overdue and expired worked out from the date; the email that sends one; numbers given by the server in order from the business details, never shared; records no screen could use refused; business details saved before any invoice exists, never removed; a read-only role can't start one; a quote turned into an invoice with the lines chosen; the email that sends it marks it sent and tracks the payment, paid takes it out of Waiting; the PDF, kept as an attachment the send carries; Bill for this on an email keeps only lines whose sentence is in the email and states the price, for the client who wrote, numbered like any draft; 404, 400 and 403 for the wrong email, kind and role",
-   "tests": 14,
+   "covers": "invoices and quotes: sums in whole cents (decimal quantities, a discount that lowers the tax, an amount discount capped at the subtotal, optional lines only when chosen); money as typed; overdue and expired worked out from the date; the email that sends one; numbers given by the server in order from the business details, never shared; records no screen could use refused; business details saved before any invoice exists, never removed; a read-only role can't start one; a quote turned into an invoice with the lines chosen; the email that sends it marks it sent and tracks the payment, paid takes it out of Waiting; the PDF, kept as an attachment the send carries; Bill for this on an email keeps only lines whose sentence is in the email and states the price, for the client who wrote, numbered like any draft; 404, 400 and 403 for the wrong email, kind and role; an invoice belongs to the project it is started in (never one that isn't there), keeps its quote's project, and can be moved after it is sent",
+   "tests": 15,
    "status": "pass"
   },
   {
@@ -516,8 +516,8 @@
   {
    "id": "live-invoices",
    "file": "e2e/live/live-invoices.cjs",
-   "covers": "in the browser on a real workspace: Invoices & quotes from the rail, business details saved, a new invoice numbered INV-0001 and saved as typed, its total, the PDF, Send opening the email written with the PDF attached and the payment tracked, the email going out with the PDF after the undo window, the invoice sent and its email in Waiting, Mark paid ending the wait, and Bill for this on an email drafting only the two priced lines for the person who wrote",
-   "checks": 21,
+   "covers": "in the browser on a real workspace: Invoices & quotes from the rail, business details saved, a new invoice numbered INV-0001 and saved as typed, its total, the PDF, Send opening the email written with the PDF attached and the payment tracked, the email going out with the PDF after the undo window, the invoice sent and its email in Waiting, Mark paid ending the wait, and Bill for this on an email drafting only the two priced lines for the person who wrote; a paid invoice filed in a project from its page, saved on the server, and listed on the project's Invoices tab with what was paid",
+   "checks": 24,
    "status": "pass"
   },
   {
